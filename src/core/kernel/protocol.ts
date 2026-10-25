@@ -1,9 +1,6 @@
-import type { Vec2 } from "../types";
+import type { ProfileLoop } from "../types";
 
-/** A closed profile loop, in sketch-plane millimetres. */
-export type ProfileLoop =
-  | { kind: "polygon"; points: Vec2[] }
-  | { kind: "circle"; center: Vec2; radius: number };
+export type { ProfileLoop };
 
 export interface ExtrudeParams {
   outer: ProfileLoop;

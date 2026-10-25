@@ -21,16 +21,19 @@ engine matters more than feature count.
 **M1 core is in.** The app is an editable sketcher driving an exact extrude:
 
 - Real: `slvs` adapter, tangent-space constrained dragging, line/rectangle/circle tools,
-  grid + point snapping, automatic horizontal/vertical constraints, loop extraction,
-  undo/redo, DOF/diagnostics, worker protocol, three.js viewport, exact volume/face
-  counts, unit + e2e tests.
+  grid + point snapping, automatic horizontal/vertical constraints, profile extraction
+  (line loops or circles as the body, nested loops/circles as holes), click/shift-click
+  selection, cascading delete, a dimension tool (distance/diameter, driving or reference,
+  inline edit and delete), undo/redo, DOF/diagnostics, worker protocol, three.js
+  viewport, exact volume/face counts, unit + e2e tests.
 - Temporary: profile selection is "largest closed loop" (`core/sketch/loops.ts`), the
-  example sketch is hand-authored (`core/sketch/demo.ts`), dimensions are demo-only,
-  there is no entity selection/delete, the feature tree is static, and nothing is
-  persisted.
+  example sketch is hand-authored (`core/sketch/demo.ts`), dimension labels cannot be
+  repositioned after placement, there is no constraint tool for
+  parallel/perpendicular/tangent/equal/angle, no arc tool, the feature tree is static,
+  and nothing is persisted.
 
-Next: **finish M1** (dimension tools, constraint UI, selection) then **M2** (explicit
-region selection, picking). Read `docs/PLAN.md`; it is the source of truth for done.
+Next: **finish M1** (constraint tool, arcs, label dragging) then **M2** (explicit region
+selection, picking). Read `docs/PLAN.md`; it is the source of truth for done.
 
 ## Stack (decided)
 
@@ -71,7 +74,8 @@ src/
   sketch/         sketch-mode UI: SVG overlay, tools, dimension labels
   core/
     doc/          (M3) document types, schema version, migrations
-    sketch/       types, slvs adapter, drag projection, pure edits, loop extraction
+    sketch/       types, slvs adapter, drag projection, create/edit, dimensions,
+                  loop extraction
     features/     feature evaluators (extrude today)
     rebuild/      (M3) rebuild pipeline, caching, topological references
     kernel/       brepjs worker client + protocol
@@ -124,6 +128,9 @@ docs/
 - All sketch mutations go through `useHistory` (`ui/useHistory.ts`). One gesture = one
   undo entry: pass a `mergeKey` while dragging a point or slider and call `endMerge()`
   on pointer-up. Never push one entry per pointer-move.
+- **Selection is ephemeral UI state, never document state.** It is not undoable, not
+  persisted, and is cleared on tool change, Escape, and delete. Selection ids are checked
+  against the current sketch before use (undo can remove them).
 - The worker protocol is a discriminated union in `core/kernel/protocol.ts`. Both
   sides import the same types.
 - Prefer small, explicit functions over clever abstractions. This domain is already
@@ -145,16 +152,25 @@ docs/
 - `solveSketch().dof` includes **6** DOF from the base workplane's rigid-body frame.
   Subtract 6 for the sketch's in-plane DOF. Measured: empty = 6, one free point = 8,
   rectangle (h/v + anchored corner) = 8 → 2 (width + height).
+- **Reference dimensions are annotations.** `driving: false` must be skipped by the
+  solver *and* by the drag Jacobian (`core/sketch/drag.ts`); otherwise a reference
+  measurement silently constrains the geometry or lies about the DOF. Every new
+  constraint type needs a residual/gradient there.
 - **Never pin the dragged point at the cursor.** Any off-manifold target (a circle, an
   angled line) makes the constraint system `INCONSISTENT`. `solveDrag()` instead projects
   the cursor delta onto the constraint tangent space (`core/sketch/drag.ts`), applies it
   to all points, and lets the solver clean up the second-order error. A fully constrained
   sketch legitimately returns `null` (no movement).
-- Loop extraction is currently "the largest closed cycle, plus every circle whose centre
-  is inside it". Construction lines are excluded. Two disjoint loops → the larger wins.
-  Explicit region selection is M2; do not pretend this is general.
-- The kernel validates hole clearances. A circle that crosses the boundary is reported as
-  an error (and the last good mesh stays visible), not silently dropped.
+- Profile extraction is currently "the largest closed region" where a region is a line
+  loop **or** a circle. Every other closed region strictly inside it becomes a hole,
+  except loops that share edges with the outer (those are subdivisions, not holes).
+  Construction geometry is excluded. One nesting level only (an island inside a hole is
+  ignored). Two disjoint loops → the larger wins. Explicit region selection is M2; do not
+  pretend this is general.
+- The kernel validates hole clearances. A hole that crosses the boundary is reported as an
+  error (and the last good mesh stays visible), not silently dropped.
+- Build faces with `addHoles(face(outer), holes)`, **not** `face(outer, holes)`. The
+  latter silently returns the wrong solid when a circular outer has a line-loop hole.
 - The `slvs` npm package has no `latest` dist-tag. Use `slvs@stable`.
 - The solver chunk is ~8 MB (~1.6 MB gzip) because the WASM is inlined. It is lazy-loaded
   by `core/sketch/solver.ts`; never import it from the entry chunk.

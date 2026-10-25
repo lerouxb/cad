@@ -80,6 +80,79 @@ describe("loop extraction", () => {
     expect(profileFromSketch(withOutside)?.holes).toHaveLength(0);
   });
 
+  it("uses a lone circle as the outer profile", () => {
+    const sketch = addCircle(emptySketch(), { point: [0, 0] }, 12);
+    const profile = profileFromSketch(sketch);
+
+    expect(profile).not.toBeNull();
+    expect(profile!.outer).toMatchObject({ kind: "circle", radius: 12 });
+    expect(profile!.holes).toHaveLength(0);
+    expect(profile!.outerCircleId).toBe(sketch.curves[0]!.id);
+  });
+
+  it("makes concentric circles a tube", () => {
+    const outer = addCircle(emptySketch(), { point: [0, 0] }, 20);
+    const tube = addCircle(outer, { point: [0, 0] }, 8);
+
+    const profile = profileFromSketch(tube);
+    expect(profile!.outer).toMatchObject({ kind: "circle", radius: 20 });
+    expect(profile!.holes).toHaveLength(1);
+    expect(profile!.holes[0]).toMatchObject({ kind: "circle", radius: 8 });
+  });
+
+  it("uses a nested line loop as a hole", () => {
+    const outer = addRectangle(emptySketch(), [0, 0], [100, 60]);
+    const withHole = addRectangle(outer, [30, 20], [70, 40]);
+
+    const profile = profileFromSketch(withHole);
+    expect(profile!.outer).toMatchObject({ kind: "polygon" });
+    expect(profile!.holes).toHaveLength(1);
+    expect(profile!.holes[0]).toMatchObject({ kind: "polygon" });
+  });
+
+  it("does not treat a subdivision loop as a hole", () => {
+    const withDiagonal = addPolyline(
+      emptySketch(),
+      [
+        { point: [0, 0] },
+        { point: [60, 0] },
+        { point: [60, 40] },
+        { point: [0, 40] },
+        { point: [0, 0] },
+        { point: [60, 40] },
+      ],
+      false,
+    );
+    expect(profileFromSketch(withDiagonal)?.holes).toHaveLength(0);
+  });
+
+  it("uses a line loop inside a circle as a hole", () => {
+    const circle = addCircle(emptySketch(), { point: [0, 0] }, 50);
+    const withRect = addRectangle(circle, [-10, -10], [10, 10]);
+
+    const profile = profileFromSketch(withRect);
+    expect(profile!.outer).toMatchObject({ kind: "circle", radius: 50 });
+    expect(profile!.holes).toHaveLength(1);
+    expect(profile!.holes[0]).toMatchObject({ kind: "polygon" });
+  });
+
+  it("keeps only one level of nesting (no island inside a hole)", () => {
+    const outer = addRectangle(emptySketch(), [0, 0], [100, 60]);
+    const hole = addRectangle(outer, [20, 10], [80, 50]);
+    const island = addRectangle(hole, [40, 25], [60, 35]);
+
+    const profile = profileFromSketch(island);
+    expect(profile!.holes).toHaveLength(1);
+  });
+
+  it("prefers the larger region when a circle and a line loop compete", () => {
+    const rectangle = addRectangle(emptySketch(), [0, 0], [20, 10]);
+    const withBigCircle = addCircle(rectangle, { point: [100, 100] }, 20);
+
+    const profile = profileFromSketch(withBigCircle);
+    expect(profile!.outer).toMatchObject({ kind: "circle", radius: 20 });
+  });
+
   it("returns null when there is no closed profile", () => {
     const sketch: Sketch = emptySketch();
     expect(profileFromSketch(sketch)).toBeNull();

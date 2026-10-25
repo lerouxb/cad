@@ -30,6 +30,8 @@ export interface SketchCircle {
   type: "circle";
   center: string;
   radius: number;
+  /** Reference/dimension helper; never part of a profile. */
+  construction?: boolean;
 }
 
 export type SketchCurve = SketchLine | SketchCircle;
@@ -37,8 +39,26 @@ export type SketchCurve = SketchLine | SketchCircle;
 export type SketchConstraint =
   | { id: string; type: "coincident"; a: string; b: string }
   | { id: string; type: "horizontal" | "vertical"; line: string }
-  | { id: string; type: "distance"; a: string; b: string; value: number }
-  | { id: string; type: "diameter"; circle: string; value: number }
+  | {
+      id: string;
+      type: "distance";
+      a: string;
+      b: string;
+      value: number;
+      /** Driving dimensions constrain; reference dimensions only measure. */
+      driving?: boolean;
+      /** Signed perpendicular offset of the dimension line, mm. */
+      offset?: number;
+    }
+  | {
+      id: string;
+      type: "diameter";
+      circle: string;
+      value: number;
+      driving?: boolean;
+      /** Leader angle in degrees. */
+      angle?: number;
+    }
   | { id: string; type: "midpoint"; point: string; line: string };
 
 export interface Sketch {

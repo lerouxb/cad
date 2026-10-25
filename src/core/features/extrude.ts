@@ -9,10 +9,10 @@ import type { SketchProfile } from "../sketch/loops";
  */
 export function extrudeParams(profile: SketchProfile, height: number): ExtrudeParams {
   return {
-    outer: {
-      kind: "polygon",
-      points: ensureCounterClockwise(profile.outer.points),
-    },
+    outer:
+      profile.outer.kind === "polygon"
+        ? { kind: "polygon", points: ensureCounterClockwise(profile.outer.points) }
+        : profile.outer,
     holes: profile.holes,
     height,
   };

@@ -1,4 +1,4 @@
-import type { Vec2 } from "../types";
+import type { ProfileLoop, Vec2 } from "../types";
 import type { Sketch, SketchConstraint } from "./types";
 
 /** A solved sketch, in the form the UI and the kernel care about. */
@@ -39,6 +39,15 @@ export function polygonBounds(points: readonly Vec2[]): Bounds2 | null {
   const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
   return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+}
+
+export function loopBounds(loop: ProfileLoop): Bounds2 {
+  if (loop.kind === "circle") {
+    const [x, y] = loop.center;
+    const r = loop.radius;
+    return { minX: x - r, minY: y - r, maxX: x + r, maxY: y + r, width: 2 * r, height: 2 * r };
+  }
+  return polygonBounds(loop.points) ?? { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0 };
 }
 
 export function distance(a: Vec2, b: Vec2): number {

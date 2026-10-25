@@ -1,5 +1,6 @@
 import {
   OcctWasmAdapter,
+  addHoles,
   circle,
   extrude,
   face,
@@ -79,8 +80,10 @@ function buildBody(params: ExtrudeParams): BodyMesh {
   return withScope((scope) => {
     const outerWire = scope.track(toWire(params.outer));
     const holeWires = params.holes.map((hole) => scope.track(toWire(hole)));
-    const profile = scope.track(unwrap(face(outerWire, holeWires)));
-    const solid = scope.track(unwrap(extrude(profile, [0, 0, params.height])));
+    const profile = scope.track(unwrap(face(outerWire)));
+    const withHoles =
+      holeWires.length > 0 ? scope.track(addHoles(profile, holeWires)) : profile;
+    const solid = scope.track(unwrap(extrude(withHoles, [0, 0, params.height])));
 
     // Meshing returns plain typed arrays; everything kernel-side stays in scope.
     const mesh = shape(solid).mesh({ tolerance: 0.05 });
@@ -141,10 +144,42 @@ function toWire(loop: ProfileLoop): ClosedWire & PlanarWire {
  */
 function validateProfile(params: ExtrudeParams): void {
   const outer = params.outer;
-  if (outer.kind !== "polygon") return;
+  if (outer.kind === "circle") {
+    for (const hole of params.holes) {
+      if (hole.kind === "circle") {
+        const gap = Math.hypot(
+          hole.center[0] - outer.center[0],
+          hole.center[1] - outer.center[1],
+        );
+        if (gap + hole.radius >= outer.radius - 1e-6) {
+          throw new Error(
+            `Hole Ø${(hole.radius * 2).toFixed(1)} crosses the outer circle (clearance ${(outer.radius - gap - hole.radius).toFixed(1)} mm).`,
+          );
+        }
+        continue;
+      }
+      for (const point of hole.points) {
+        const distance = Math.hypot(
+          point[0] - outer.center[0],
+          point[1] - outer.center[1],
+        );
+        if (distance >= outer.radius - 1e-6) {
+          throw new Error("A hole crosses the outer circle.");
+        }
+      }
+    }
+    return;
+  }
 
   for (const hole of params.holes) {
-    if (hole.kind !== "circle") continue;
+    if (hole.kind !== "circle") {
+      for (const point of hole.points) {
+        if (!pointInPolygon(point, outer.points)) {
+          throw new Error("A hole is outside the profile boundary.");
+        }
+      }
+      continue;
+    }
     const { center, radius } = hole;
     if (!pointInPolygon(center, outer.points)) {
       throw new Error(

@@ -48,8 +48,8 @@ export function createDemoModel(options: DemoOptions = DEMO_DEFAULTS): DemoModel
 
   if (constrained) {
     constraints.push(
-      { id: "dim-width", type: "distance", a: "p0", b: "p1", value: width },
-      { id: "dim-height", type: "distance", a: "p1", b: "p2", value: height },
+      { id: "dim-width", type: "distance", a: "p0", b: "p1", value: width, offset: 16 },
+      { id: "dim-height", type: "distance", a: "p1", b: "p2", value: height, offset: 16 },
     );
   }
 
@@ -78,25 +78,6 @@ export function createDemoModel(options: DemoOptions = DEMO_DEFAULTS): DemoModel
       constraints,
     },
   };
-}
-
-/** Add or remove the driving width/height dimensions. */
-export function setSizeConstraints(
-  sketch: Sketch,
-  enabled: boolean,
-  width: number,
-  height: number,
-): Sketch {
-  const constraints = sketch.constraints.filter(
-    (constraint) => !constraint.id.startsWith("dim-"),
-  );
-  if (enabled) {
-    constraints.push(
-      { id: "dim-width", type: "distance", a: "p0", b: "p1", value: width },
-      { id: "dim-height", type: "distance", a: "p1", b: "p2", value: height },
-    );
-  }
-  return { ...sketch, constraints };
 }
 
 export const DEMO_MIN_SIZE = 20;

@@ -3,39 +3,42 @@ import {
   useMemo,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import type { Vec2 } from "../core/types";
+import type { ProfileLoop, Vec2 } from "../core/types";
 import type { DraftVertex } from "../core/sketch/create";
-import type { Sketch, SketchCircle, SketchLine } from "../core/sketch/types";
+import type { DimensionPlacement, DimensionTarget } from "../core/sketch/dimensions";
+import type { Sketch, SketchCircle, SketchCurve, SketchLine } from "../core/sketch/types";
 import { useElementSize } from "../ui/useElementSize";
 
-export type SketchTool = "select" | "line" | "rect" | "circle";
+export type SketchTool = "select" | "line" | "rect" | "circle" | "dimension";
 export type SketchTone = "under" | "full" | "conflict";
-
-export interface SketchDimensions {
-  width: { from: Vec2; to: Vec2; value: number };
-  height: { from: Vec2; to: Vec2; value: number };
-}
 
 export interface SketchCanvasProps {
   sketch: Sketch;
   points: Record<string, Vec2>;
   radii: Record<string, number>;
   tone: SketchTone;
-  /** Largest closed loop, used for the translucent fill. */
-  outerLoop?: Vec2[];
-  dimensions?: SketchDimensions | null;
+  /** Largest closed region, used for the translucent fill. */
+  outer?: ProfileLoop;
   tool: SketchTool;
   /** Bump to cancel an in-progress draft (Escape). */
   cancelToken: number;
   /** Increment to re-fit the view. */
   fitToken: number;
+  /** Ids of the selected curves/points (ephemeral UI state, not the document). */
+  selected: ReadonlySet<string>;
+  /** Select one entity, clear the selection, or add/toggle with `additive`. */
+  onSelect: (entityId: string | null, additive: boolean) => void;
   onDragPoint: (pointId: string, x: number, y: number) => void;
   onDragEnd: () => void;
   onCreatePolyline: (vertices: DraftVertex[], closed: boolean) => void;
   onCreateRectangle: (a: Vec2, b: Vec2) => void;
   onCreateCircle: (center: DraftVertex, radius: number) => void;
+  onCreateDimension: (target: DimensionTarget, placement: DimensionPlacement) => void;
+  onChangeDimension: (id: string, value: number) => void;
+  onDeleteDimension: (id: string) => void;
 }
 
 interface ViewBox {
@@ -57,6 +60,9 @@ const TONE_COLOR: Record<SketchTone, string> = {
   conflict: "#ff7b72",
 };
 
+/** Selection is deliberately not the tone colour: it must read as "picked". */
+const SELECT_COLOR = "#ffd479";
+
 const GRID_STEP = 10;
 const MAJOR_EVERY = 5;
 const DRAW_GRID = 5;
@@ -66,16 +72,20 @@ export function SketchCanvas({
   points,
   radii,
   tone,
-  outerLoop,
-  dimensions,
+  outer,
   tool,
   cancelToken,
   fitToken,
+  selected,
+  onSelect,
   onDragPoint,
   onDragEnd,
   onCreatePolyline,
   onCreateRectangle,
   onCreateCircle,
+  onCreateDimension,
+  onChangeDimension,
+  onDeleteDimension,
 }: SketchCanvasProps) {
   const [svgRef, size] = useElementSize<SVGSVGElement>();
   const [viewBox, setViewBox] = useState<ViewBox>(() => fitView(sketch, radii));
@@ -88,6 +98,16 @@ export function SketchCanvas({
   const [hover, setHover] = useState<Snap | null>(null);
   const [rect, setRect] = useState<{ a: Vec2; b: Vec2 } | null>(null);
   const [circleCenter, setCircleCenter] = useState<DraftVertex | null>(null);
+  const [dimStart, setDimStart] = useState<string | null>(null);
+  const [dimTarget, setDimTarget] = useState<DimensionTarget | null>(null);
+  const [dimPlacement, setDimPlacement] = useState<DimensionPlacement | null>(null);
+  const [editor, setEditor] = useState<{
+    id: string;
+    value: string;
+    reference: boolean;
+    x: number;
+    y: number;
+  } | null>(null);
   const lastFitToken = useRef(fitToken);
 
   const scale = Math.min(size.width / viewBox.w, size.height / viewBox.h) || 1;
@@ -117,6 +137,10 @@ export function SketchCanvas({
     setRectStart(null);
     setCircleCenter(null);
     setHover(null);
+    setDimStart(null);
+    setDimTarget(null);
+    setDimPlacement(null);
+    setEditor(null);
   }
 
   useEffect(() => {
@@ -190,6 +214,100 @@ export function SketchCanvas({
     Math.round(raw[1] / DRAW_GRID) * DRAW_GRID,
   ];
 
+  const distanceBetween = (a: Vec2, b: Vec2): number =>
+    Math.hypot(b[0] - a[0], b[1] - a[1]);
+
+  /** Signed perpendicular distance from the measured segment to the cursor. */
+  const dimensionOffset = (a: Vec2, b: Vec2, cursor: Vec2): number => {
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const length = Math.hypot(dx, dy) || 1;
+    const nx = dy / length;
+    const ny = -dx / length;
+    const raw = (cursor[0] - (a[0] + b[0]) / 2) * nx + (cursor[1] - (a[1] + b[1]) / 2) * ny;
+    const magnitude = Math.max(8, Math.abs(raw));
+    return raw < 0 ? -magnitude : magnitude;
+  };
+
+  const openDimensionEditor = (
+    event: ReactPointerEvent | ReactMouseEvent,
+    id: string,
+    value: number,
+    reference: boolean,
+  ) => {
+    event.stopPropagation();
+    event.preventDefault();
+    const rect = svgRef.current?.getBoundingClientRect();
+    setEditor({
+      id,
+      value: formatEditable(value),
+      reference,
+      x: event.clientX - (rect?.left ?? 0),
+      y: event.clientY - (rect?.top ?? 0),
+    });
+  };
+
+  const commitEditor = () => {
+    if (!editor) return;
+    if (!editor.reference) {
+      const value = Number(editor.value);
+      if (Number.isFinite(value) && value > 0) onChangeDimension(editor.id, value);
+    }
+    setEditor(null);
+  };
+
+  const pickDimensionPoint = (event: ReactPointerEvent, pointId: string) => {
+    event.stopPropagation();
+    event.preventDefault();
+    if (dimTarget) return;
+    if (!dimStart) {
+      setDimStart(pointId);
+      return;
+    }
+    if (dimStart === pointId) {
+      setDimStart(null);
+      return;
+    }
+    setDimTarget({ kind: "distance", a: dimStart, b: pointId });
+    setDimStart(null);
+  };
+
+  const pickDimensionCurve = (event: ReactPointerEvent, curve: SketchCurve) => {
+    event.stopPropagation();
+    event.preventDefault();
+    if (dimStart || dimTarget) return;
+    if (curve.type === "line") {
+      setDimTarget({ kind: "distance", a: curve.a, b: curve.b });
+    } else {
+      setDimTarget({ kind: "diameter", circle: curve.id });
+    }
+  };
+
+  const placeDimension = (cursor: Vec2) => {
+    if (!dimTarget) return;
+    if (dimTarget.kind === "distance") {
+      const a = points[dimTarget.a];
+      const b = points[dimTarget.b];
+      if (!a || !b) {
+        setDimTarget(null);
+        return;
+      }
+      onCreateDimension(dimTarget, { offset: dimensionOffset(a, b, cursor) });
+    } else {
+      const curve = sketch.curves.find(
+        (candidate): candidate is SketchCircle =>
+          candidate.id === dimTarget.circle && candidate.type === "circle",
+      );
+      const center = curve ? points[curve.center] : null;
+      const angle = center
+        ? (Math.atan2(cursor[1] - center[1], cursor[0] - center[0]) * 180) / Math.PI
+        : 45;
+      onCreateDimension(dimTarget, { angle });
+    }
+    setDimTarget(null);
+    setDimPlacement(null);
+  };
+
   const startPan = (event: ReactPointerEvent<SVGSVGElement>) => {
     svgRef.current?.setPointerCapture(event.pointerId);
     panRef.current = { clientX: event.clientX, clientY: event.clientY, box: viewBox };
@@ -233,7 +351,19 @@ export function SketchCanvas({
 
     const raw = toSketch(event);
 
+    if (tool === "dimension") {
+      if (dimTarget) {
+        placeDimension(raw);
+      } else {
+        setDimStart(null);
+      }
+      return;
+    }
     if (tool === "select") {
+      // Empty space clears the selection; modifiers keep it (and still pan).
+      if (!event.shiftKey && !event.metaKey && !event.ctrlKey) {
+        onSelect(null, false);
+      }
       startPan(event);
       return;
     }
@@ -258,7 +388,7 @@ export function SketchCanvas({
           snap.point[0] - circleCenter.point[0],
           snap.point[1] - circleCenter.point[1],
         );
-        if (radius >= 0.5) onCreateCircle(circleCenter, roundTo(radius, 0.5));
+        if (radius >= 0.5) onCreateCircle(circleCenter, roundTo(radius, 1));
         setCircleCenter(null);
       }
     }
@@ -280,6 +410,29 @@ export function SketchCanvas({
       return;
     }
 
+    if (tool === "dimension") {
+      if (dimTarget) {
+        if (dimTarget.kind === "distance") {
+          const a = points[dimTarget.a];
+          const b = points[dimTarget.b];
+          if (a && b) setDimPlacement({ offset: dimensionOffset(a, b, raw) });
+        } else {
+          const curve = sketch.curves.find(
+            (candidate): candidate is SketchCircle =>
+              candidate.id === dimTarget.circle && candidate.type === "circle",
+          );
+          const center = curve ? points[curve.center] : null;
+          if (center) {
+            setDimPlacement({
+              angle: (Math.atan2(raw[1] - center[1], raw[0] - center[0]) * 180) / Math.PI,
+            });
+          }
+        }
+      } else if (dimStart) {
+        setHover(snapPoint(raw));
+      }
+      return;
+    }
     if (tool === "select") return;
 
     const axisFrom = tool === "line" ? draft[draft.length - 1]?.point : undefined;
@@ -317,13 +470,23 @@ export function SketchCanvas({
     panRef.current = null;
   };
 
+  const additiveSelection = (event: ReactPointerEvent): boolean =>
+    event.shiftKey || event.metaKey || event.ctrlKey;
+
   const startPointDrag = (event: ReactPointerEvent, pointId: string) => {
     if (tool !== "select") return;
     event.stopPropagation();
     event.preventDefault();
+    onSelect(pointId, additiveSelection(event));
     svgRef.current?.setPointerCapture(event.pointerId);
     dragRef.current = pointId;
     setDragging(pointId);
+  };
+
+  const selectCurve = (event: ReactPointerEvent, curveId: string) => {
+    event.stopPropagation();
+    event.preventDefault();
+    onSelect(curveId, additiveSelection(event));
   };
 
   const onDoubleClick = () => {
@@ -353,6 +516,7 @@ export function SketchCanvas({
       : 0;
 
   return (
+    <div className="sketch-surface">
     <svg
       ref={svgRef}
       className="sketch-canvas"
@@ -402,9 +566,18 @@ export function SketchCanvas({
         />
       </g>
 
-      {outerLoop && outerLoop.length >= 3 ? (
+      {outer?.kind === "polygon" && outer.points.length >= 3 ? (
         <polygon
-          points={outerLoop.map((point) => `${point[0]},${point[1]}`).join(" ")}
+          points={outer.points.map((point) => `${point[0]},${point[1]}`).join(" ")}
+          fill={tone === "conflict" ? "rgba(255,123,114,0.07)" : "rgba(116,169,255,0.06)"}
+          stroke="none"
+        />
+      ) : null}
+      {outer?.kind === "circle" ? (
+        <circle
+          cx={outer.center[0]}
+          cy={outer.center[1]}
+          r={outer.radius}
           fill={tone === "conflict" ? "rgba(255,123,114,0.07)" : "rgba(116,169,255,0.06)"}
           stroke="none"
         />
@@ -413,6 +586,7 @@ export function SketchCanvas({
       {circles.map((circle) => {
         const center = points[circle.center];
         if (!center) return null;
+        const isSelected = selected.has(circle.id);
         return (
           <circle
             key={circle.id}
@@ -420,8 +594,8 @@ export function SketchCanvas({
             cy={center[1]}
             r={radii[circle.id] ?? circle.radius}
             fill="none"
-            stroke={color}
-            strokeWidth={1.4}
+            stroke={isSelected ? SELECT_COLOR : color}
+            strokeWidth={isSelected ? 2.4 : 1.4}
             vectorEffect="non-scaling-stroke"
           />
         );
@@ -432,6 +606,7 @@ export function SketchCanvas({
         const a = points[curve.a];
         const b = points[curve.b];
         if (!a || !b) return null;
+        const isSelected = selected.has(curve.id);
         return (
           <line
             key={curve.id}
@@ -439,8 +614,8 @@ export function SketchCanvas({
             y1={a[1]}
             x2={b[0]}
             y2={b[1]}
-            stroke={curve.construction ? "#4c5b6f" : color}
-            strokeWidth={1.6}
+            stroke={isSelected ? SELECT_COLOR : curve.construction ? "#4c5b6f" : color}
+            strokeWidth={isSelected ? 2.6 : 1.6}
             strokeDasharray={curve.construction ? "5 4" : undefined}
             strokeLinecap="round"
             vectorEffect="non-scaling-stroke"
@@ -448,28 +623,166 @@ export function SketchCanvas({
         );
       })}
 
-      {dimensions ? (
-        <>
-          <Dimension
-            from={dimensions.width.from}
-            to={dimensions.width.to}
-            offset={[0, -16]}
-            value={dimensions.width.value}
-            px={px}
-            fontSize={fontSize}
-          />
-          <Dimension
-            from={dimensions.height.from}
-            to={dimensions.height.to}
-            offset={[16, 0]}
-            value={dimensions.height.value}
-            px={px}
-            fontSize={fontSize}
-          />
-        </>
+      {tool === "select" || tool === "dimension" ? (
+        <g>
+          {sketch.curves.map((curve) => {
+            if (curve.type === "line") {
+              const a = points[curve.a];
+              const b = points[curve.b];
+              if (!a || !b) return null;
+              return (
+                <line
+                  key={curve.id}
+                  x1={a[0]}
+                  y1={a[1]}
+                  x2={b[0]}
+                  y2={b[1]}
+                  stroke="transparent"
+                  strokeWidth={12}
+                  strokeLinecap="round"
+                  vectorEffect="non-scaling-stroke"
+                  pointerEvents="stroke"
+                  style={{ cursor: "pointer" }}
+                  data-curve-id={curve.id}
+                  onPointerDown={(event) =>
+                    tool === "dimension"
+                      ? pickDimensionCurve(event, curve)
+                      : selectCurve(event, curve.id)
+                  }
+                />
+              );
+            }
+            const center = points[curve.center];
+            if (!center) return null;
+            return (
+              <circle
+                key={curve.id}
+                cx={center[0]}
+                cy={center[1]}
+                r={radii[curve.id] ?? curve.radius}
+                fill="none"
+                stroke="transparent"
+                strokeWidth={12}
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="stroke"
+                style={{ cursor: "pointer" }}
+                data-curve-id={curve.id}
+                onPointerDown={(event) =>
+                  tool === "dimension"
+                    ? pickDimensionCurve(event, curve)
+                    : selectCurve(event, curve.id)
+                }
+              />
+            );
+          })}
+        </g>
       ) : null}
 
-      {circles[0] ? <CircleLeader circle={circles[0]} points={points} radii={radii} px={px} fontSize={fontSize} /> : null}
+      <g>
+        {sketch.constraints.map((constraint) => {
+          if (constraint.type === "distance") {
+            const a = points[constraint.a];
+            const b = points[constraint.b];
+            if (!a || !b) return null;
+            return (
+              <LinearDimension
+                key={constraint.id}
+                id={constraint.id}
+                a={a}
+                b={b}
+                offset={constraint.offset ?? 12}
+                value={distanceBetween(a, b)}
+                reference={constraint.driving === false}
+                px={px}
+                fontSize={fontSize}
+                onEdit={openDimensionEditor}
+              />
+            );
+          }
+          if (constraint.type === "diameter") {
+            const curve = sketch.curves.find(
+              (candidate) => candidate.id === constraint.circle && candidate.type === "circle",
+            );
+            if (!curve || curve.type !== "circle") return null;
+            const center = points[curve.center];
+            if (!center) return null;
+            const radius = radii[curve.id] ?? curve.radius;
+            return (
+              <DiameterDimension
+                key={constraint.id}
+                id={constraint.id}
+                center={center}
+                radius={radius}
+                angle={constraint.angle ?? 45}
+                value={radius * 2}
+                reference={constraint.driving === false}
+                px={px}
+                fontSize={fontSize}
+                onEdit={openDimensionEditor}
+              />
+            );
+          }
+          return null;
+        })}
+      </g>
+
+      {tool === "dimension" && dimStart && hover && points[dimStart] ? (
+        <line
+          x1={points[dimStart]![0]}
+          y1={points[dimStart]![1]}
+          x2={hover.point[0]}
+          y2={hover.point[1]}
+          stroke={SELECT_COLOR}
+          strokeWidth={1.2}
+          strokeDasharray="5 4"
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      ) : null}
+
+      {tool === "dimension" && dimTarget && dimPlacement ? (
+        <g opacity={0.65}>
+          {dimTarget.kind === "distance" &&
+          points[dimTarget.a] &&
+          points[dimTarget.b] ? (
+            <LinearDimension
+              id="preview"
+              a={points[dimTarget.a]!}
+              b={points[dimTarget.b]!}
+              offset={dimPlacement.offset ?? 12}
+              value={distanceBetween(points[dimTarget.a]!, points[dimTarget.b]!)}
+              reference={false}
+              preview
+              px={px}
+              fontSize={fontSize}
+            />
+          ) : null}
+          {dimTarget.kind === "diameter" &&
+          (() => {
+            const curve = sketch.curves.find(
+              (candidate): candidate is SketchCircle =>
+                candidate.id === dimTarget.circle && candidate.type === "circle",
+            );
+            if (!curve) return null;
+            const center = points[curve.center];
+            if (!center) return null;
+            const radius = radii[curve.id] ?? curve.radius;
+            return (
+              <DiameterDimension
+                id="preview"
+                center={center}
+                radius={radius}
+                angle={dimPlacement.angle ?? 45}
+                value={radius * 2}
+                reference={false}
+                preview
+                px={px}
+                fontSize={fontSize}
+              />
+            );
+          })()}
+        </g>
+      ) : null}
 
       <ConstraintBadges sketch={sketch} points={points} px={px} />
 
@@ -500,9 +813,10 @@ export function SketchCanvas({
         const position = points[point.id];
         if (!position) return null;
         const active = dragging === point.id;
+        const isSelected = selected.has(point.id);
         return (
           <g key={point.id}>
-            {tool === "select" ? (
+            {tool === "select" || tool === "dimension" ? (
               <circle
                 cx={position[0]}
                 cy={position[1]}
@@ -510,15 +824,19 @@ export function SketchCanvas({
                 fill="transparent"
                 style={{ cursor: active ? "grabbing" : "grab" }}
                 data-point-id={point.id}
-                onPointerDown={(event) => startPointDrag(event, point.id)}
+                onPointerDown={(event) =>
+                  tool === "dimension"
+                    ? pickDimensionPoint(event, point.id)
+                    : startPointDrag(event, point.id)
+                }
               />
             ) : null}
             <circle
               cx={position[0]}
               cy={position[1]}
               r={active ? pointRadius * 1.35 : pointRadius}
-              fill={active ? color : "#101317"}
-              stroke={color}
+              fill={isSelected ? SELECT_COLOR : active ? color : "#101317"}
+              stroke={isSelected ? SELECT_COLOR : color}
               strokeWidth={1.6}
               vectorEffect="non-scaling-stroke"
               pointerEvents="none"
@@ -602,110 +920,122 @@ export function SketchCanvas({
         />
       ) : null}
     </svg>
+      {editor ? (
+        <div className="dimension-editor" style={{ left: editor.x, top: editor.y }}>
+          {editor.reference ? (
+            <span className="mono dimension-readonly">{editor.value} mm · reference</span>
+          ) : (
+            <input
+              autoFocus
+              className="mono"
+              data-testid="dimension-input"
+              value={editor.value}
+              inputMode="decimal"
+              onChange={(event) => setEditor({ ...editor, value: event.target.value })}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  commitEditor();
+                } else if (event.key === "Escape") {
+                  event.preventDefault();
+                  setEditor(null);
+                }
+              }}
+              onBlur={commitEditor}
+            />
+          )}
+          <button
+            className="dimension-delete"
+            type="button"
+            data-testid="dimension-delete"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => {
+              onDeleteDimension(editor.id);
+              setEditor(null);
+            }}
+          >
+            Delete
+          </button>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
-function CircleLeader({
-  circle,
-  points,
-  radii,
-  px,
-  fontSize,
-}: {
-  circle: SketchCircle;
-  points: Record<string, Vec2>;
-  radii: Record<string, number>;
+interface DimensionHandlers {
+  id: string;
+  value: number;
+  reference: boolean;
+  preview?: boolean;
   px: number;
   fontSize: number;
-}) {
-  const center = points[circle.center];
-  if (!center) return null;
-  const radius = radii[circle.id] ?? circle.radius;
-  const diagonal = Math.SQRT1_2;
-  const start: Vec2 = [center[0] + radius * diagonal, center[1] + radius * diagonal];
-  const end: Vec2 = [start[0] + 10, start[1] + 10];
-
-  return (
-    <g stroke="#c8b06a" fill="#c8b06a">
-      <line
-        x1={start[0]}
-        y1={start[1]}
-        x2={end[0]}
-        y2={end[1]}
-        strokeWidth={1}
-        vectorEffect="non-scaling-stroke"
-      />
-      <text
-        x={end[0] + 1.5 * px}
-        y={end[1] + 3 * px}
-        fontSize={fontSize}
-        stroke="#171b21"
-        strokeWidth={3 * px}
-        paintOrder="stroke"
-      >
-        ⌀ {roundTo(radius * 2, 0.1)}
-      </text>
-    </g>
-  );
+  onEdit?: (
+    event: ReactMouseEvent,
+    id: string,
+    value: number,
+    reference: boolean,
+  ) => void;
 }
 
-function Dimension({
-  from,
-  to,
+function LinearDimension({
+  id,
+  a,
+  b,
   offset,
   value,
+  reference,
+  preview,
   px,
   fontSize,
-}: {
-  from: Vec2;
-  to: Vec2;
-  offset: Vec2;
-  value: number;
-  px: number;
-  fontSize: number;
-}) {
-  const a: Vec2 = [from[0] + offset[0], from[1] + offset[1]];
-  const b: Vec2 = [to[0] + offset[0], to[1] + offset[1]];
-  const mid: Vec2 = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-  const along = normalize([b[0] - a[0], b[1] - a[1]]);
+  onEdit,
+}: DimensionHandlers & { a: Vec2; b: Vec2; offset: number }) {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const length = Math.hypot(dx, dy) || 1;
+  const nx = dy / length;
+  const ny = -dx / length;
+  const A: Vec2 = [a[0] + nx * offset, a[1] + ny * offset];
+  const B: Vec2 = [b[0] + nx * offset, b[1] + ny * offset];
+  const mid: Vec2 = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2];
   const tick = 3.5 * px;
-  const normal: Vec2 = [-along[1], along[0]];
+  const color = reference ? "#7f8b9c" : "#c8b06a";
+  const label = `${reference ? "(" : ""}${formatLength(value)}${reference ? ")" : ""}`;
 
   return (
-    <g stroke="#c8b06a" fill="#c8b06a">
-      <line
-        x1={from[0]}
-        y1={from[1]}
-        x2={a[0]}
-        y2={a[1]}
-        strokeWidth={0.8}
-        opacity={0.55}
-        vectorEffect="non-scaling-stroke"
-      />
-      <line
-        x1={to[0]}
-        y1={to[1]}
-        x2={b[0]}
-        y2={b[1]}
-        strokeWidth={0.8}
-        opacity={0.55}
-        vectorEffect="non-scaling-stroke"
-      />
+    <g stroke={color} fill={color} opacity={preview ? 0.7 : 1}>
       <line
         x1={a[0]}
         y1={a[1]}
-        x2={b[0]}
-        y2={b[1]}
+        x2={A[0]}
+        y2={A[1]}
+        strokeWidth={0.8}
+        opacity={0.55}
+        vectorEffect="non-scaling-stroke"
+      />
+      <line
+        x1={b[0]}
+        y1={b[1]}
+        x2={B[0]}
+        y2={B[1]}
+        strokeWidth={0.8}
+        opacity={0.55}
+        vectorEffect="non-scaling-stroke"
+      />
+      <line
+        x1={A[0]}
+        y1={A[1]}
+        x2={B[0]}
+        y2={B[1]}
         strokeWidth={1}
         vectorEffect="non-scaling-stroke"
       />
-      {[a, b].map((point, index) => (
+      {[A, B].map((point, index) => (
         <line
           key={index}
-          x1={point[0] - normal[0] * tick}
-          y1={point[1] - normal[1] * tick}
-          x2={point[0] + normal[0] * tick}
-          y2={point[1] + normal[1] * tick}
+          x1={point[0] - nx * tick}
+          y1={point[1] - ny * tick}
+          x2={point[0] + nx * tick}
+          y2={point[1] + ny * tick}
           strokeWidth={1.4}
           vectorEffect="non-scaling-stroke"
         />
@@ -718,8 +1048,70 @@ function Dimension({
         stroke="#171b21"
         strokeWidth={3 * px}
         paintOrder="stroke"
+        data-dimension-id={preview ? undefined : id}
+        style={{ cursor: onEdit && !preview ? "text" : "default" }}
+        onDoubleClick={
+          onEdit && !preview
+            ? (event) => onEdit(event, id, value, reference)
+            : undefined
+        }
       >
-        {formatLength(value)}
+        {label}
+      </text>
+    </g>
+  );
+}
+
+function DiameterDimension({
+  id,
+  center,
+  radius,
+  angle,
+  value,
+  reference,
+  preview,
+  px,
+  fontSize,
+  onEdit,
+}: DimensionHandlers & { center: Vec2; radius: number; angle: number }) {
+  const theta = (angle * Math.PI) / 180;
+  const dx = Math.cos(theta);
+  const dy = Math.sin(theta);
+  const start: Vec2 = [center[0] + dx * radius, center[1] + dy * radius];
+  const end: Vec2 = [center[0] + dx * (radius + 12), center[1] + dy * (radius + 12)];
+  const textX = end[0] + dx * 1.5 * px;
+  const textY = end[1] + dy * 1.5 * px + fontSize * 0.35;
+  const anchor = dx < -0.3 ? "end" : dx > 0.3 ? "start" : "middle";
+  const color = reference ? "#7f8b9c" : "#c8b06a";
+  const label = `${reference ? "(" : ""}⌀ ${formatLength(value)}${reference ? ")" : ""}`;
+
+  return (
+    <g stroke={color} fill={color} opacity={preview ? 0.7 : 1}>
+      <line
+        x1={start[0]}
+        y1={start[1]}
+        x2={end[0]}
+        y2={end[1]}
+        strokeWidth={1}
+        vectorEffect="non-scaling-stroke"
+      />
+      <text
+        x={textX}
+        y={textY}
+        fontSize={fontSize}
+        textAnchor={anchor}
+        stroke="#171b21"
+        strokeWidth={3 * px}
+        paintOrder="stroke"
+        data-dimension-id={preview ? undefined : id}
+        style={{ cursor: onEdit && !preview ? "text" : "default" }}
+        onDoubleClick={
+          onEdit && !preview
+            ? (event) => onEdit(event, id, value, reference)
+            : undefined
+        }
+      >
+        {label}
       </text>
     </g>
   );
@@ -740,7 +1132,7 @@ function ConstraintBadges({
     ),
   );
   return (
-    <g fontSize={8 * px} fill="#6f7d8f" textAnchor="middle">
+    <g fontSize={8 * px} fill="#6f7d8f" textAnchor="middle" pointerEvents="none">
       {sketch.constraints.map((constraint) => {
         if (constraint.type !== "horizontal" && constraint.type !== "vertical") return null;
         const line = lines.get(constraint.line);
@@ -824,11 +1216,6 @@ function normalizeRect(a: Vec2, b: Vec2) {
   };
 }
 
-function normalize(v: Vec2): Vec2 {
-  const length = Math.hypot(v[0], v[1]) || 1;
-  return [v[0] / length, v[1] / length];
-}
-
 function formatLength(value: number): string {
   return Number.isInteger(value) ? `${value}` : value.toFixed(1);
 }
@@ -839,4 +1226,8 @@ function roundTo(value: number, step: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function formatEditable(value: number): string {
+  return String(Math.round(value * 100) / 100);
 }

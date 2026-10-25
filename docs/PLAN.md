@@ -19,20 +19,25 @@ then sketches on faces, then more features.
 - Draw with line (chain, closes on first point), rectangle (drag), and circle
   (centre + radius). Grid and point snapping; automatic horizontal/vertical constraints;
   coincident endpoints come from shared points.
-- Closed profiles are extracted from the graph (largest loop + circles inside it) and
-  extruded by OCCT in a worker; three.js renders the solid and its B-rep edges, Z-up.
+- Closed profiles are extracted from the graph: the largest region (a line loop or a
+  circle) becomes the body, nested loops/circles become holes. Extruded by OCCT in a
+  worker; three.js renders the solid and its B-rep edges, Z-up.
 - Undo/redo with gesture grouping (`Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`); one drag or slider
-  gesture is one step. `Esc` cancels a draft.
+  gesture is one step. `Esc` cancels a draft and clears the selection.
+- Click curves/points to select them, Shift-click to multi-select, and Delete/Backspace to
+  remove. Deletion cascades to dependent curves and constraints, and leaves no orphaned
+  references. A selection card reports length/diameter/position.
 - The example sketch can be loaded, cleared, edited, or replaced by drawing.
-- `npm run verify` (24 unit tests) and `npm run e2e` are green. The e2e asserts exact
-  volumes, drags, dimensions, draws a rectangle, and undoes it.
+- `npm run verify` (31 unit tests) and `npm run e2e` are green. The e2e asserts exact
+  volumes, drags, dimensions, draws, selects/deletes, and undoes.
 
 Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
 95 017.7 mm³ and rebuilds in ~35 ms after warm-up.
 
 **Still temporary** (all scheduled below): profile selection is "largest loop"; line
 loops cannot be holes; dimensions exist only on the example and are edited with sliders;
-there is no entity selection/delete; the feature tree is static; nothing is persisted.
+there is no dimension or constraint tool yet; the feature tree is static; nothing is
+persisted.
 
 ---
 
@@ -58,10 +63,10 @@ there is no entity selection/delete; the feature tree is static; nothing is pers
 
 ---
 
-## M1 — The real sketcher (core done, ~4–6 days left)
+## M1 — The real sketcher (selection done; dimension/constraint UI left)
 
-The most UX-sensitive milestone. The solver plumbing and the drawing loop work; what is
-left is the constraint *editing* experience.
+The most UX-sensitive milestone. The solver plumbing, the drawing loop, and selection
+work; what is left is the constraint *editing* experience.
 
 - [x] Tools: line (chain), rectangle, circle; select mode; grid + point snapping;
       automatic coincident endpoints (shared points) and horizontal/vertical constraints
@@ -73,10 +78,14 @@ left is the constraint *editing* experience.
 - [x] Sketch origin as a group-0 fixed entity; construction geometry
 - [x] Zoom (wheel), pan (middle/right, or select-drag on empty space), double-click fit
 - [x] Keyboard: `V/L/R/C`, `Esc`, `Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`
-- [ ] **Selection + deletion**: click curves/points, delete, multi-select, then entity
-      property panel
-- [ ] **Dimension tool**: pick two entities → place a dimension; inline editing; driving
-      vs reference. The example's slider dimensions are a placeholder.
+- [x] **Selection + deletion**: click curves/points, delete, multi-select, then entity
+      property panel. Selection is ephemeral UI state; deletion is a pure sketch edit in
+      `core/sketch/edit.ts` and is covered by unit + e2e tests.
+- [x] **Dimension tool**: click two points, a line, or a circle → place the dimension;
+      inline edit and delete; driving vs reference. The example's sliders now drive real
+      dimensions, not special-cased annotations.
+- [ ] Reposition an existing dimension label (placement currently happens at creation)
+- [ ] Angular and point-to-line dimensions; radius (not just diameter)
 - [ ] **Constraint tool**: apply the remaining solver constraints (parallel, perpendicular,
       tangent, equal, angle, point-on-line, symmetric, radius) and show their badges
 - [ ] Endpoint *coincident constraints* for points that are near but not identical
@@ -86,8 +95,10 @@ left is the constraint *editing* experience.
 - [ ] Move the sketch out of component state into the document store
 
 **Done when:** you can draw a rectangle from scratch, dimension it with real dimension
-annotations, drag it, see it become fully constrained, break a constraint and see the
-exact conflict highlighted, delete an entity, then undo everything back to empty.
+annotations, drag it, see it become fully constrained, delete an entity, then undo
+everything back to empty. (All of that works today except creating the remaining
+constraint types via UI, and the conflict state is only reachable through inconsistent
+edits, not through a "break this constraint" interaction.)
 
 ## M2 — Profiles and solids (the spike covers ~70%)
 
@@ -95,18 +106,26 @@ exact conflict highlighted, delete an entity, then undo everything back to empty
 - [x] Extrude evaluator: polygon/circle loops → wire → face → solid, with validation
 - [x] Tessellation via `toBufferGeometryData` / `meshEdges`, transferred to the main thread
 - [x] Shaded solid + dark B-rep edges, Z-up, auto-framing
-- [x] `core/sketch/loops.ts`: graph → simple cycles → largest loop → circles inside it
-      as holes, with tests
-- [ ] Region picking in the sketch UI (click an enclosed area)
-- [ ] Multiple regions per sketch; line loops as holes (nesting), not just circles
+- [x] `core/sketch/loops.ts`: graph → simple cycles → largest region (line loop or
+      circle) → nested loops and circles as holes, with tests
+- [ ] Region picking in the sketch UI (click an enclosed area). A **region** is a face of
+      the sketch: an outer loop plus the holes directly inside it. Build the containment
+      tree, treat even depth as solid and odd depth as holes, and let the user pick one or
+      more. Highlight the picked regions and preview the extrude.
+- [ ] `regionId = hash(sorted curve ids)` so a selection survives edits and can be stored
+      in a feature (same idea as `TopoRef`, one level down). A region that disappears marks
+      the feature as errored instead of silently changing the profile.
+- [ ] Multiple regions per extrude (Fusion extrudes each selected profile), and prepare for
+      one sketch feeding several features in M3.
+- [ ] Deeper nesting (islands inside holes); currently one level
 - [ ] Replace cycle enumeration with planar face traversal (intersecting segments, nested
       loops, disjoint regions)
 - [ ] Rebuild goldens: several profiles → volume/bbox/face-count assertions
 - [ ] Face/edge picking + hover/selection highlight (`faceGroups`/`edgeGroups` are already
       in the mesh payload but unused)
 
-**Done when:** an arbitrary multi-loop sketch can be extruded, with holes, without the
-"largest loop" rule.
+**Done when:** an arbitrary multi-region sketch can be extruded, with holes, without the
+"largest region" rule.
 
 ## M3 — History (4–6 days)
 

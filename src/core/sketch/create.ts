@@ -10,7 +10,7 @@ import type { Sketch, SketchConstraint } from "./types";
 let counter = 0;
 const session = Math.random().toString(36).slice(2, 7);
 
-function nextId(prefix: string): string {
+export function newId(prefix: string): string {
   counter += 1;
   return `${prefix}-${session}${counter.toString(36)}`;
 }
@@ -50,7 +50,7 @@ export function addPolyline(
       ids.push(existing.id);
       continue;
     }
-    const id = nextId("p");
+    const id = newId("p");
     ids.push(id);
     points.push({ id, x: vertex.point[0], y: vertex.point[1] });
   }
@@ -68,11 +68,11 @@ export function addPolyline(
     const pb = byId.get(b)!;
     if (Math.hypot(pb.x - pa.x, pb.y - pa.y) < 1e-6) continue;
 
-    curves.push({ id: nextId("l"), type: "line", a, b });
+    curves.push({ id: newId("l"), type: "line", a, b });
     if (Math.abs(pb.y - pa.y) < 1e-6) {
-      constraints.push({ id: nextId("c"), type: "horizontal", line: curves[curves.length - 1]!.id });
+      constraints.push({ id: newId("c"), type: "horizontal", line: curves[curves.length - 1]!.id });
     } else if (Math.abs(pb.x - pa.x) < 1e-6) {
-      constraints.push({ id: nextId("c"), type: "vertical", line: curves[curves.length - 1]!.id });
+      constraints.push({ id: newId("c"), type: "vertical", line: curves[curves.length - 1]!.id });
     }
   }
 
@@ -86,7 +86,7 @@ export function addRectangle(sketch: Sketch, a: Vec2, b: Vec2): Sketch {
   const y1 = Math.max(a[1], b[1]);
   if (x1 - x0 < 1 || y1 - y0 < 1) return sketch;
 
-  const ids = Array.from({ length: 4 }, () => nextId("p"));
+  const ids = Array.from({ length: 4 }, () => newId("p"));
   const points = [
     ...sketch.points,
     { id: ids[0]!, x: x0, y: y0 },
@@ -95,7 +95,7 @@ export function addRectangle(sketch: Sketch, a: Vec2, b: Vec2): Sketch {
     { id: ids[3]!, x: x0, y: y1 },
   ];
 
-  const lineIds = Array.from({ length: 4 }, () => nextId("l"));
+  const lineIds = Array.from({ length: 4 }, () => newId("l"));
   const curves = [
     ...sketch.curves,
     { id: lineIds[0]!, type: "line" as const, a: ids[0]!, b: ids[1]! },
@@ -106,10 +106,10 @@ export function addRectangle(sketch: Sketch, a: Vec2, b: Vec2): Sketch {
 
   const constraints: SketchConstraint[] = [
     ...sketch.constraints,
-    { id: nextId("c"), type: "horizontal", line: lineIds[0]! },
-    { id: nextId("c"), type: "vertical", line: lineIds[1]! },
-    { id: nextId("c"), type: "horizontal", line: lineIds[2]! },
-    { id: nextId("c"), type: "vertical", line: lineIds[3]! },
+    { id: newId("c"), type: "horizontal", line: lineIds[0]! },
+    { id: newId("c"), type: "vertical", line: lineIds[1]! },
+    { id: newId("c"), type: "horizontal", line: lineIds[2]! },
+    { id: newId("c"), type: "vertical", line: lineIds[3]! },
   ];
 
   return { ...sketch, points, curves, constraints };
@@ -122,12 +122,12 @@ export function addCircle(
 ): Sketch {
   if (radius < 0.5) return sketch;
 
-  const centerId = center.existingPointId ?? nextId("p");
+  const centerId = center.existingPointId ?? newId("p");
   const points = center.existingPointId
     ? [...sketch.points]
     : [...sketch.points, { id: centerId, x: center.point[0], y: center.point[1] }];
 
-  const curveId = nextId("l");
+  const curveId = newId("l");
   return {
     ...sketch,
     points,
@@ -138,7 +138,7 @@ export function addCircle(
     constraints: [
       ...sketch.constraints,
       {
-        id: nextId("c"),
+        id: newId("c"),
         type: "diameter",
         circle: curveId,
         value: radius * 2,
@@ -170,7 +170,7 @@ export function setCircleDiameter(
     ...sketch,
     constraints: [
       ...sketch.constraints,
-      { id: nextId("c"), type: "diameter", circle: circleId, value: diameter },
+      { id: newId("c"), type: "diameter", circle: circleId, value: diameter },
     ],
   };
 }

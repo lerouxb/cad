@@ -104,6 +104,27 @@ describe("slvs adapter", () => {
     expect(b[0]).toBeLessThan(55);
   });
 
+  it("treats reference dimensions as annotations, not constraints", () => {
+    const pendulum: Sketch = {
+      points: [
+        { id: "origin", x: 0, y: 0, fixed: true },
+        { id: "b", x: 50, y: 0 },
+      ],
+      curves: [],
+      constraints: [
+        { id: "ref", type: "distance", a: "origin", b: "b", value: 50, driving: false },
+      ],
+    };
+
+    const solved = solveSketch(pendulum);
+    expect(solved.dof).toBe(2);
+
+    const dragged = solveDrag(pendulum, { pointId: "b", x: 60, y: 10 });
+    expect(dragged).not.toBeNull();
+    expect(at(dragged!, "b")[0]).toBeCloseTo(60, 4);
+    expect(at(dragged!, "b")[1]).toBeCloseTo(10, 4);
+  });
+
   it("does not drag fixed reference geometry", () => {
     const pendulum: Sketch = {
       points: [{ id: "origin", x: 0, y: 0, fixed: true }],

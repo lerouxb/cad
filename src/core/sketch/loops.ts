@@ -1,4 +1,4 @@
-import type { Vec2 } from "../types";
+import type { ProfileLoop, Vec2 } from "../types";
 import type { Sketch } from "./types";
 
 /**
@@ -11,9 +11,13 @@ import type { Sketch } from "./types";
  */
 
 export interface SketchProfile {
-  outer: { kind: "polygon"; points: Vec2[] };
-  holes: { kind: "circle"; center: Vec2; radius: number }[];
-  loop: SketchLoop;
+  outer: ProfileLoop;
+  /** Closed regions strictly inside the outer loop. */
+  holes: ProfileLoop[];
+  /** The line loop, when the outer profile is a polygon. */
+  loop: SketchLoop | null;
+  /** Set when the outer profile came from a circle. */
+  outerCircleId?: string;
 }
 
 export interface SketchLoop {
@@ -81,38 +85,106 @@ export function findLoops(sketch: Sketch): SketchLoop[] {
   return [...loops.values()].sort((a, b) => b.area - a.area);
 }
 
-/** The largest closed profile plus every circle contained inside it. */
+interface Candidate {
+  outer: ProfileLoop;
+  area: number;
+  loop: SketchLoop | null;
+  circleId?: string;
+}
+
+/**
+ * Pick the largest closed region as the outer profile, then every circle whose
+ * centre lies inside it as a hole.
+ *
+ * A circle is itself a closed region, so a lone circle extrudes to a cylinder;
+ * two concentric circles make a tube. Line loops and circles compete by area.
+ * M2 replaces this with explicit region selection.
+ */
 export function profileFromSketch(sketch: Sketch): SketchProfile | null {
-  const loops = findLoops(sketch);
-  const outer = loops[0];
-  if (!outer) return null;
-
-  const polygon = outer.polygon;
   const circles = sketch.curves.flatMap((curve) =>
-    curve.type === "circle" ? [curve] : [],
+    curve.type === "circle" && !curve.construction ? [curve] : [],
   );
-
-  // Circles whose centre is inside the outer loop are holes. Clearance is
-  // validated by the kernel worker, which reports a crossing hole instead of
-  // silently dropping it.
-  const holes = circles.flatMap((circle) => {
+  const circleCenters = new Map<string, Vec2>();
+  for (const circle of circles) {
     const center = sketch.points.find((point) => point.id === circle.center);
-    if (!center) return [];
-    if (!pointInPolygon([center.x, center.y], polygon)) return [];
-    return [
-      {
-        kind: "circle" as const,
-        center: [center.x, center.y] as Vec2,
-        radius: circle.radius,
-      },
-    ];
-  });
+    if (center) circleCenters.set(circle.id, [center.x, center.y]);
+  }
+
+  const candidates: Candidate[] = findLoops(sketch).map((loop) => ({
+    outer: { kind: "polygon", points: loop.polygon },
+    area: loop.area,
+    loop,
+  }));
+
+  for (const circle of circles) {
+    const center = circleCenters.get(circle.id);
+    if (!center) continue;
+    candidates.push({
+      outer: { kind: "circle", center, radius: circle.radius },
+      area: Math.PI * circle.radius * circle.radius,
+      loop: null,
+      circleId: circle.id,
+    });
+  }
+
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => b.area - a.area);
+  const winner = candidates[0]!;
+
+  // Every other closed region strictly inside the winner becomes a hole:
+  // circles and line loops alike. A loop that shares edges with the outer is a
+  // subdivision of it, not a hole (think rectangle + diagonal).
+  const holeCandidates = candidates
+    .filter((candidate) => candidate !== winner)
+    .filter((candidate) => regionInside(candidate.outer, winner.outer))
+    .filter(
+      (candidate) =>
+        !(winner.loop && candidate.loop && sharesCurve(winner.loop, candidate.loop)),
+    )
+    .sort((a, b) => b.area - a.area);
+
+  // Only one level of nesting: an island inside a hole is ignored rather than
+  // subtracted twice.
+  const holes: ProfileLoop[] = [];
+  for (const candidate of holeCandidates) {
+    if (holes.some((hole) => regionInside(candidate.outer, hole))) continue;
+    holes.push(candidate.outer);
+  }
 
   return {
-    outer: { kind: "polygon" as const, points: outer.polygon },
+    outer: winner.outer,
     holes,
-    loop: outer,
+    loop: winner.loop,
+    ...(winner.circleId ? { outerCircleId: winner.circleId } : {}),
   };
+}
+
+/** Is `inner` strictly contained by `outer`? */
+function regionInside(inner: ProfileLoop, outer: ProfileLoop): boolean {
+  if (inner.kind === "polygon") {
+    if (inner.points.length < 3) return false;
+    return inner.points.every((point) => containsPoint(outer, point));
+  }
+
+  if (outer.kind === "circle") {
+    const gap = Math.hypot(
+      inner.center[0] - outer.center[0],
+      inner.center[1] - outer.center[1],
+    );
+    return gap + inner.radius < outer.radius - 1e-9;
+  }
+  return containsPoint(outer, inner.center);
+}
+
+function sharesCurve(a: SketchLoop, b: SketchLoop): boolean {
+  return a.curves.some((curve) => b.curves.includes(curve));
+}
+
+function containsPoint(loop: ProfileLoop, point: Vec2): boolean {
+  if (loop.kind === "polygon") return pointInPolygon(point, loop.points);
+  return (
+    Math.hypot(point[0] - loop.center[0], point[1] - loop.center[1]) < loop.radius
+  );
 }
 
 function addEdge(

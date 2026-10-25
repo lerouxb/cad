@@ -194,6 +194,8 @@ function solveWithModule(s: SlvsModule, sketch: Sketch, drag?: DragTarget): Solv
 
   const constraintIds = new Map<number, string>();
   for (const constraint of sketch.constraints) {
+    // Reference dimensions are annotations; they must not enter the system.
+    if ("driving" in constraint && constraint.driving === false) continue;
     let added;
     switch (constraint.type) {
       case "coincident":

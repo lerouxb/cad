@@ -30,16 +30,19 @@ npm run build
   axis inference adds horizontal/vertical constraints; chains close on their first point.
 - Drag points: the cursor delta is projected onto the constraint tangent space, so points
   slide along lines and circles. Fully constrained geometry refuses to move.
-- Closed profiles are extracted from the sketch graph and extruded in OCCT inside a Web
-  Worker, rendered with three.js (Z-up, mm). Circles inside the loop become holes.
+- Extrude any closed region: a plate, a cylinder from a lone circle, a tube from two
+  concentric circles, or an arbitrary face with nested line/circle cutouts. OCCT runs in
+  a Web Worker; three.js renders the solid with its B-rep edges (Z-up, mm).
+- **Select and delete**: click a curve or point, Shift-click to multi-select, Delete to
+  remove. Deletion cascades through dependent curves/constraints; undo restores it.
 - **Undo/redo** with gesture grouping (`Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`), `Esc` to cancel a
-  draft, `V/L/R/C` for tools.
-- Exact volume/face/triangle stats, and an e2e test that checks them numerically while
-  dragging, dimensioning, drawing, and undoing.
+  draft and clear the selection, `V/L/R/C` for tools.
+- Exact volume/face/triangle stats, and e2e tests that check them numerically while
+  dragging, dimensioning, drawing, selecting/deleting, and undoing.
 
 It is intentionally narrow: profile selection is "largest closed loop", dimensions only
-exist on the example, there is no entity selection/delete, the feature tree is a preview,
-and nothing is persisted yet. See `docs/PLAN.md` for what comes next.
+exist on the example, there is no dimension/constraint tool yet, the feature tree is a
+preview, and nothing is persisted yet. See `docs/PLAN.md` for what comes next.
 
 ## The stack in one line
 

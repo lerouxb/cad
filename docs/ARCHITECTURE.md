@@ -117,13 +117,15 @@ type SketchCurve =
 
 type SketchConstraint =
   | { id: Id; type: "coincident"; a: Id; b: Id }
-  | { id: Id; type: "distance"; a: Id; b: Id; value: Expr }      // point-point
+  | { id: Id; type: "distance"; a: Id; b: Id; value: Expr;
+      driving?: boolean; offset?: number }                       // point-point
   | { id: Id; type: "horizontal" | "vertical"; line: Id }
   | { id: Id; type: "parallel" | "perpendicular"; a: Id; b: Id }
   | { id: Id; type: "tangent"; a: Id; b: Id }
   | { id: Id; type: "equal"; a: Id; b: Id }
   | { id: Id; type: "angle"; a: Id; b: Id; value: Expr }
-  | { id: Id; type: "radius" | "diameter"; curve: Id; value: Expr }
+  | { id: Id; type: "radius" | "diameter"; curve: Id; value: Expr;
+      driving?: boolean; angle?: number }
   | { id: Id; type: "pointOnLine"; point: Id; line: Id }
   | { id: Id; type: "symmetric"; a: Id; b: Id; about: Id };
 ```
@@ -224,6 +226,10 @@ Rules:
   sketch origin (and any projected reference geometry) as group-0 points and constrain
   normal geometry to them. This is a real anchor: unlike `C_WHERE_DRAGGED`, it counts
   toward the rank, so the DOF number is honest. It is how SolveSpace's own groups work.
+- **Reference dimensions are not constraints.** A dimension with `driving: false` is
+  skipped by the solver and by the drag Jacobian; it is an annotation whose displayed
+  value comes from the solved geometry. This is the "measure only" mode of the dimension
+  tool.
 - **Circle/arc normals also go in group 0.** A 2D circle needs an `E_NORMAL_IN_3D`
   argument (`addNormal2D` is rejected), and if that normal lives in the solved group it
   contributes 3 meaningless rotational DOF. Create one fixed group-0 normal and share it.
@@ -244,21 +250,26 @@ Rules:
 
 For extrude we need closed profiles. `core/sketch/loops.ts` currently does this:
 
-1. Build an undirected graph over non-construction line segments and enumerate simple
-   cycles by DFS (capped, deduplicated by curve set).
-2. Sort by absolute polygon area; the largest cycle is the outer profile.
-3. Every circle whose centre is inside that polygon becomes a hole. Clearance is the
-   kernel worker's job: a crossing hole is a reported error, not silently dropped.
+1. Collect **regions**: simple cycles over non-construction line segments (DFS, capped,
+   deduplicated by curve set) and every non-construction circle. Each has an area.
+2. The largest region is the outer profile. It can be a polygon or a circle, so a lone
+   circle extrudes to a cylinder.
+3. Every other region strictly inside the outer becomes a hole: circles and line loops
+   alike. Loops that share an edge with the outer are subdivisions (rectangle + diagonal),
+   not holes, and are excluded. Only one nesting level is supported: an island inside a
+   hole is ignored rather than double-subtracted.
+4. The kernel worker validates clearances and reports a crossing hole as an error.
 
-This is exact for the shapes the sketcher can draw today and is easy to test. It is not
-a general planar arrangement: nested line loops (a rectangular pocket), disjoint regions,
-and intersecting segments are not handled yet. M2 replaces it with face traversal plus
-explicit region picking, at which point "largest loop" disappears.
+This is exact for the shapes the sketcher can draw today and is easy to test. It is not a
+general planar arrangement: multiple disjoint bodies/regions, deeper nesting, arcs, and
+intersecting segments are not handled. M2 replaces it with face traversal plus explicit
+region picking, at which point "largest region" disappears.
 
-The kernel side is already simpler than the original plan: solved loops are converted
-straight to brepjs edges (`line`, `circle`) → `wireLoop` → `face(outer, holes)` →
-`extrude`. No blueprints needed for straight segments and full circles. Arcs will use
-`threePointArc` or the blueprint layer when they land.
+Kernel side: solved loops become brepjs edges (`line`, `circle`) → `wireLoop`, then
+`face(outer)` followed by `addHoles(face, holes)` and `extrude`. Use `addHoles` rather
+than `face(outer, holes)`: the latter silently returns the wrong solid when a circular
+outer has a polygonal hole. No blueprints are needed for straight segments and full
+circles; arcs will use `threePointArc` or the blueprint layer when they land.
 
 Auto-constraints while drawing (snap to horizontal/vertical, coincident to nearby
 endpoints, tangent continuation) are what make the sketcher feel good. They are part of
@@ -373,6 +384,12 @@ and arbitrary edge projection lands with the rest of M4.
   real text for dimension labels. Recompute the overlay's viewBox from the camera on
   zoom/pan. If entity counts ever get large, swap the curve layer to Canvas2D and keep
   SVG for labels.
+- **Sketch selection is ephemeral.** `selected: string[]` lives in `App`, is resolved
+  against the current sketch every render, and never enters the document or undo history.
+  Curves get transparent wide-stroke hit targets; point hit circles are rendered last so
+  they win over curves. Labels have `pointer-events: none` so they never steal a click.
+  Deletion is a pure `core/sketch/edit.ts` operation that removes dependent curves,
+  orphaned points, and constraints that reference anything removed.
 - Geometry constants: ~1 px curves for sketch lines, ~1 px solid edges, darker
   silhouette-ish edges, flat-ish shading with a headlight + hemisphere light.
 
@@ -470,12 +487,12 @@ the honest map, so nobody assumes a layer exists because it is described above.
 | `core/rebuild` | Not started. One sketch and one feature, rebuilt by a debounce. |
 | `core/kernel` | Real: typed protocol, worker client, OCCT worker, hole validation, exact stats. |
 | `viewer` | Real: Z-up scene, framing, meshing, edges. Picking and highlight are not implemented. |
-| `sketch` UI | Real, in a sidebar rather than a full-canvas sketch mode: select/drag, line/rectangle/circle tools, grid + point snapping, auto H/V, dimension display (demo only), undo/redo. |
+| `sketch` UI | Real, in a sidebar rather than a full-canvas sketch mode: select/drag, line/rectangle/circle tools, dimension tool with inline editing, grid + point snapping, auto H/V, undo/redo. |
 | Feature tree | Static markup that communicates the intended product. |
 | Persistence | None yet. |
 
-Known shortcuts, all scheduled: profile selection is "largest loop"; line loops cannot be
-holes yet; no selection or per-entity delete; dimensions are edited with sliders and only
-exist on the example; the example is cleared the first time you draw; `clampDemoDrag`
-keeps the example's hole inside its plate.
+Known shortcuts, all scheduled: profile selection is "largest region"; dimension labels
+cannot be dragged after placement; angular/point-to-line dimensions are missing; the
+example is cleared the first time you draw; there is no constraint tool for the remaining
+solver constraint types.
 

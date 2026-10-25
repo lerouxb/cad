@@ -160,6 +160,7 @@ function buildRows(sketch: Sketch, params: Parameters): Row[] {
   const byId = new Map(sketch.curves.map((curve) => [curve.id, curve]));
 
   for (const constraint of sketch.constraints) {
+    if ("driving" in constraint && constraint.driving === false) continue;
     switch (constraint.type) {
       case "coincident": {
         const x = row();

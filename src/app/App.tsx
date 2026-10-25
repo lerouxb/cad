@@ -1,4 +1,11 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useEffectEvent,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { extrudeParams } from "../core/features/extrude";
 import { KernelClient } from "../core/kernel/client";
 import type { BodyMesh } from "../core/kernel/protocol";
@@ -10,11 +17,21 @@ import {
   setCircleDiameter,
   type DraftVertex,
 } from "../core/sketch/create";
-import { clampDemoDrag, createDemoModel, setSizeConstraints } from "../core/sketch/demo";
+import {
+  addDimension,
+  findDimension,
+  isDrivingDimension,
+  removeConstraint,
+  setDimensionValue,
+  type DimensionPlacement,
+  type DimensionTarget,
+} from "../core/sketch/dimensions";
+import { clampDemoDrag, createDemoModel } from "../core/sketch/demo";
+import { deleteEntities } from "../core/sketch/edit";
 import {
   applySolution,
   distance,
-  polygonBounds,
+  loopBounds,
   sketchGeometry,
   updateConstraintValue,
 } from "../core/sketch/geometry";
@@ -30,7 +47,6 @@ import type { Sketch, SketchCircle } from "../core/sketch/types";
 import type { Vec2 } from "../core/types";
 import {
   SketchCanvas,
-  type SketchDimensions,
   type SketchTool,
   type SketchTone,
 } from "../sketch/SketchCanvas";
@@ -61,9 +77,11 @@ export function App() {
   const { sketch } = doc;
 
   const [tool, setTool] = useState<SketchTool>("select");
+  const [selection, setSelection] = useState<string[]>([]);
   const [cancelToken, setCancelToken] = useState(0);
   const [fitToken, setFitToken] = useState(0);
   const [extrudeHeight, setExtrudeHeight] = useState(12);
+  const [referenceDimensions, setReferenceDimensions] = useState(false);
   const [solveError, setSolveError] = useState<SolveOutcome | null>(null);
   const [solverState, setSolverState] = useState<LoadState>("loading");
   const [solverError, setSolverError] = useState<string | null>(null);
@@ -87,8 +105,16 @@ export function App() {
     () => (doc.kind === "example" ? readDemoSize(sketch) : null),
     [doc.kind, sketch],
   );
-  const demoConstrained =
-    doc.kind === "example" && sketch.constraints.some((c) => c.id === "dim-width");
+  const widthTarget: DimensionTarget = { kind: "distance", a: "p0", b: "p1" };
+  const heightTarget: DimensionTarget = { kind: "distance", a: "p1", b: "p2" };
+  const widthDimension =
+    doc.kind === "example" ? findDimension(sketch, widthTarget) : undefined;
+  const heightDimension =
+    doc.kind === "example" ? findDimension(sketch, heightTarget) : undefined;
+  // Reference dimensions only measure; they must not enable the driving sliders.
+  const widthDriving = isDrivingDimension(widthDimension);
+  const heightDriving = isDrivingDimension(heightDimension);
+  const demoConstrained = widthDriving && heightDriving;
 
   const firstCircle = sketch.curves.find(
     (curve): curve is SketchCircle => curve.type === "circle",
@@ -96,26 +122,24 @@ export function App() {
   const holeDiameter = firstCircle
     ? (geometry.radii[firstCircle.id] ?? firstCircle.radius) * 2
     : null;
-  const outerBounds = profile ? polygonBounds(profile.outer.points) : null;
-  const maxHole = outerBounds
-    ? Math.max(4, Math.min(outerBounds.width, outerBounds.height) - 6)
-    : 4;
+  const firstCircleIsOuter = Boolean(
+    firstCircle && profile?.outerCircleId === firstCircle.id,
+  );
+  const outerBounds = profile ? loopBounds(profile.outer) : null;
+  // A circle that *is* the body can grow freely; one inside a body is limited
+  // by the body's smallest dimension.
+  const maxHole = firstCircleIsOuter
+    ? 200
+    : outerBounds
+      ? Math.max(4, Math.min(outerBounds.width, outerBounds.height) - 6)
+      : 4;
 
-  const dimensions: SketchDimensions | null =
-    doc.kind === "example" && demoConstrained && demoSize
-      ? {
-          width: {
-            from: geometry.points.p0!,
-            to: geometry.points.p1!,
-            value: demoSize.width,
-          },
-          height: {
-            from: geometry.points.p1!,
-            to: geometry.points.p2!,
-            value: demoSize.height,
-          },
-        }
-      : null;
+  const selectedInfo = useMemo(
+    () => describeSelection(sketch, geometry, selection),
+    [sketch, geometry, selection],
+  );
+
+  const selectedSet = useMemo(() => new Set(selectedInfo.map((info) => info.id)), [selectedInfo]);
 
   const commitDoc = (
     nextSketch: Sketch,
@@ -147,6 +171,41 @@ export function App() {
     }
     commitDoc(applySolution(next, outcome), outcome, options);
   };
+
+  const changeTool = (next: SketchTool): void => {
+    setTool(next);
+    setSelection([]);
+  };
+
+  const handleSelect = (entityId: string | null, additive: boolean): void => {
+    if (entityId === null) {
+      setSelection((current) => (current.length === 0 ? current : []));
+      return;
+    }
+    setSelection((current) => {
+      if (!additive) {
+        return current.length === 1 && current[0] === entityId ? current : [entityId];
+      }
+      return current.includes(entityId)
+        ? current.filter((id) => id !== entityId)
+        : [...current, entityId];
+    });
+  };
+
+  const deleteSelection = (): void => {
+    if (selectedInfo.length === 0) return;
+    const current = getState();
+    const next = deleteEntities(
+      current.sketch,
+      selectedInfo.map((info) => info.id),
+    );
+    if (next === current.sketch) return;
+    setSelection([]);
+    solveAndCommit(next, { kind: "user" });
+  };
+
+  // Key handlers are registered once but must see the current selection.
+  const deleteKey = useEffectEvent(() => deleteSelection());
 
   useEffect(() => {
     let cancelled = false;
@@ -241,7 +300,13 @@ export function App() {
       }
       if (event.key === "Escape") {
         setTool("select");
+        setSelection([]);
         setCancelToken((token) => token + 1);
+        return;
+      }
+      if (event.key === "Delete" || event.key === "Backspace") {
+        event.preventDefault();
+        deleteKey();
         return;
       }
       if (meta || event.altKey) return;
@@ -249,15 +314,23 @@ export function App() {
       switch (event.key.toLowerCase()) {
         case "v":
           setTool("select");
+          setSelection([]);
           break;
         case "l":
           setTool("line");
+          setSelection([]);
           break;
         case "r":
           setTool("rect");
+          setSelection([]);
           break;
         case "c":
           setTool("circle");
+          setSelection([]);
+          break;
+        case "d":
+          setTool("dimension");
+          setSelection([]);
           break;
       }
     };
@@ -290,8 +363,8 @@ export function App() {
     const width = clamp(patch.width ?? size.width, MIN_SIZE, MAX_WIDTH);
     const height = clamp(patch.height ?? size.height, MIN_SIZE, MAX_HEIGHT);
 
-    let next = updateConstraintValue(current.sketch, "dim-width", width);
-    next = updateConstraintValue(next, "dim-height", height);
+    let next = setDimensionValue(current.sketch, widthTarget, width);
+    next = setDimensionValue(next, heightTarget, height);
 
     const circle = next.curves.find((curve) => curve.type === "circle");
     if (circle && circle.type === "circle") {
@@ -316,8 +389,20 @@ export function App() {
     const current = getState();
     const size = readDemoSize(current.sketch);
     if (!size) return;
-    const constrained = current.sketch.constraints.some((c) => c.id === "dim-width");
-    solveAndCommit(setSizeConstraints(current.sketch, !constrained, size.width, size.height));
+    const width = findDimension(current.sketch, widthTarget);
+    const height = findDimension(current.sketch, heightTarget);
+    const drivingWidth = isDrivingDimension(width);
+    const drivingHeight = isDrivingDimension(height);
+
+    let next = current.sketch;
+    if (drivingWidth && drivingHeight && width && height) {
+      next = removeConstraint(next, width.id);
+      next = removeConstraint(next, height.id);
+    } else {
+      if (!drivingWidth) next = addDimension(next, widthTarget, true, { offset: 16 });
+      if (!drivingHeight) next = addDimension(next, heightTarget, true, { offset: 16 });
+    }
+    solveAndCommit(next);
     setFitToken((token) => token + 1);
   };
 
@@ -353,6 +438,24 @@ export function App() {
       ? { ...center, existingPointId: base.points.some((p) => p.id === center.existingPointId) ? center.existingPointId : undefined }
       : center;
     drawAndCommit(base, addCircle(base, valid, radius));
+  };
+
+  const handleCreateDimension = (
+    target: DimensionTarget,
+    placement: DimensionPlacement,
+  ): void => {
+    const current = getState();
+    solveAndCommit(addDimension(current.sketch, target, !referenceDimensions, placement));
+  };
+
+  const handleChangeDimension = (id: string, value: number): void => {
+    const current = getState();
+    solveAndCommit(updateConstraintValue(current.sketch, id, value));
+  };
+
+  const handleDeleteDimension = (id: string): void => {
+    const current = getState();
+    solveAndCommit(removeConstraint(current.sketch, id));
   };
 
   const clearSketch = (): void => {
@@ -408,11 +511,13 @@ export function App() {
               : `${shown?.dof ?? "?"} DOF`;
 
   const hint =
-    doc.kind === "example"
-      ? "Drag a corner, or pick a tool and draw. Drawing clears the example."
+    tool === "dimension"
+      ? "Click two points, a line, or a circle, then click to place the dimension. Double-click a value to edit it."
+      : doc.kind === "example"
+      ? "Click to select, drag a corner, or draw. Drawing clears the example."
       : doc.kind === "empty"
         ? "Pick a tool and draw. Close a loop by clicking its first point."
-        : "Drag points to edit. Esc cancels a draft; Cmd/Ctrl+Z undoes.";
+        : "Click to select, drag a point, Delete to remove. Cmd/Ctrl+Z undoes.";
 
   return (
     <div className="app">
@@ -478,7 +583,7 @@ export function App() {
             <ToolButton
               label="Select (V)"
               active={tool === "select"}
-              onClick={() => setTool("select")}
+              onClick={() => changeTool("select")}
               testId="tool-select"
             >
               <CursorIcon />
@@ -486,7 +591,7 @@ export function App() {
             <ToolButton
               label="Line (L)"
               active={tool === "line"}
-              onClick={() => setTool("line")}
+              onClick={() => changeTool("line")}
               testId="tool-line"
             >
               <LineIcon />
@@ -494,7 +599,7 @@ export function App() {
             <ToolButton
               label="Rectangle (R)"
               active={tool === "rect"}
-              onClick={() => setTool("rect")}
+              onClick={() => changeTool("rect")}
               testId="tool-rect"
             >
               <RectIcon />
@@ -502,10 +607,18 @@ export function App() {
             <ToolButton
               label="Circle (C)"
               active={tool === "circle"}
-              onClick={() => setTool("circle")}
+              onClick={() => changeTool("circle")}
               testId="tool-circle"
             >
               <CircleIcon />
+            </ToolButton>
+            <ToolButton
+              label="Dimension (D)"
+              active={tool === "dimension"}
+              onClick={() => changeTool("dimension")}
+              testId="tool-dimension"
+            >
+              <DimensionIcon />
             </ToolButton>
 
             <span className="tool-separator" />
@@ -524,16 +637,20 @@ export function App() {
               points={geometry.points}
               radii={geometry.radii}
               tone={tone}
-              outerLoop={profile?.outer.points}
-              dimensions={dimensions}
+              outer={profile?.outer}
               tool={tool}
               cancelToken={cancelToken}
               fitToken={fitToken}
+              selected={selectedSet}
+              onSelect={handleSelect}
               onDragPoint={handleDragPoint}
               onDragEnd={endMerge}
               onCreatePolyline={handlePolyline}
               onCreateRectangle={handleRectangle}
               onCreateCircle={handleCircle}
+              onCreateDimension={handleCreateDimension}
+              onChangeDimension={handleChangeDimension}
+              onDeleteDimension={handleDeleteDimension}
             />
           </div>
 
@@ -545,7 +662,23 @@ export function App() {
             ) : null}
           </div>
 
+          {selectedInfo.length > 0 ? (
+            <SelectionPanel info={selectedInfo} onDelete={deleteSelection} />
+          ) : null}
+
           <div className="fields">
+            {tool === "dimension" ? (
+              <label className="toggle-field">
+                <input
+                  type="checkbox"
+                  checked={referenceDimensions}
+                  onChange={(event) => setReferenceDimensions(event.target.checked)}
+                  data-testid="reference-toggle"
+                />
+                <span>Reference dimension (measure only)</span>
+              </label>
+            ) : null}
+
             {doc.kind === "example" && demoSize ? (
               <>
                 <div className="field-actions">
@@ -558,7 +691,7 @@ export function App() {
                   value={Math.round(demoSize.width)}
                   min={MIN_SIZE}
                   max={MAX_WIDTH}
-                  disabled={!demoConstrained}
+                  disabled={!widthDriving}
                   testId="width-slider"
                   onChange={(value) => updateDemoSize({ width: value })}
                   onEnd={endMerge}
@@ -568,7 +701,7 @@ export function App() {
                   value={Math.round(demoSize.height)}
                   min={MIN_SIZE}
                   max={MAX_HEIGHT}
-                  disabled={!demoConstrained}
+                  disabled={!heightDriving}
                   testId="height-param-slider"
                   onChange={(value) => updateDemoSize({ height: value })}
                   onEnd={endMerge}
@@ -578,7 +711,7 @@ export function App() {
 
             {holeDiameter !== null ? (
               <SliderField
-                label="Hole ⌀"
+                label={firstCircleIsOuter ? "Circle ⌀" : "Hole ⌀"}
                 value={Math.round(holeDiameter)}
                 min={4}
                 max={maxHole}
@@ -667,6 +800,92 @@ export function App() {
           </div>
         </section>
       </main>
+    </div>
+  );
+}
+
+interface SelectedEntity {
+  id: string;
+  kind: "line" | "circle" | "point";
+  label: string;
+  detail: string;
+}
+
+function describeSelection(
+  sketch: Sketch,
+  geometry: { points: Record<string, Vec2>; radii: Record<string, number> },
+  ids: readonly string[],
+): SelectedEntity[] {
+  const result: SelectedEntity[] = [];
+  for (const id of ids) {
+    const curve = sketch.curves.find((candidate) => candidate.id === id);
+    if (curve) {
+      if (curve.type === "line") {
+        const a = geometry.points[curve.a];
+        const b = geometry.points[curve.b];
+        result.push({
+          id,
+          kind: "line",
+          label: curve.construction ? "Construction line" : "Line",
+          detail: a && b ? `${formatLength(distance(a, b))} mm` : "—",
+        });
+      } else {
+        const radius = geometry.radii[curve.id] ?? curve.radius;
+        result.push({
+          id,
+          kind: "circle",
+          label: "Circle",
+          detail: `⌀ ${formatLength(radius * 2)} mm`,
+        });
+      }
+      continue;
+    }
+
+    const point = sketch.points.find((candidate) => candidate.id === id);
+    // Fixed/construction points are reference geometry and are not selectable.
+    if (!point || point.fixed || point.construction) continue;
+    const position = geometry.points[id] ?? [point.x, point.y];
+    result.push({
+      id,
+      kind: "point",
+      label: "Point",
+      detail: `${formatLength(position[0])}, ${formatLength(position[1])} mm`,
+    });
+  }
+  return result;
+}
+
+function SelectionPanel({
+  info,
+  onDelete,
+}: {
+  info: SelectedEntity[];
+  onDelete: () => void;
+}) {
+  return (
+    <div className="selection-card" data-testid="selection-panel" data-count={info.length}>
+      <div className="selection-head">
+        <span className="selection-title">
+          {info.length === 1 ? "Selection" : `${info.length} selected`}
+        </span>
+        <button
+          className="button button-small"
+          type="button"
+          onClick={onDelete}
+          data-testid="delete-selection"
+        >
+          Delete
+        </button>
+      </div>
+      <div className="selection-list">
+        {info.map((item) => (
+          <div className="selection-item" key={item.id} data-selection-id={item.id}>
+            <span>{item.label}</span>
+            <span className="mono">{item.detail}</span>
+          </div>
+        ))}
+      </div>
+      <p className="selection-hint">Shift-click to add · Delete removes the selection</p>
     </div>
   );
 }
@@ -875,6 +1094,16 @@ function CircleIcon() {
   );
 }
 
+function DimensionIcon() {
+  return (
+    <svg {...svgProps()}>
+      <path d="M4 6v12M20 6v12" />
+      <path d="M4 12h16" />
+      <path d="m8 9-4 3 4 3M16 9l4 3-4 3" />
+    </svg>
+  );
+}
+
 function UndoIcon() {
   return (
     <svg {...svgProps(15)}>
@@ -952,6 +1181,10 @@ function formatInt(value: number): string {
 
 function formatVolume(value: number): string {
   return value.toFixed(1);
+}
+
+function formatLength(value: number): string {
+  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
 }
 
 function clamp(value: number, min: number, max: number): number {
