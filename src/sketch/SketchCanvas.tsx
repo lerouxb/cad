@@ -1002,7 +1002,20 @@ function LinearDimension({
   const label = `${reference ? "(" : ""}${formatLength(value)}${reference ? ")" : ""}`;
 
   return (
-    <g stroke={color} fill={color} opacity={preview ? 0.7 : 1}>
+    <g
+      stroke={color}
+      fill={color}
+      opacity={preview ? 0.7 : 1}
+      style={{ cursor: onEdit && !preview ? "text" : "default" }}
+      onPointerDown={(event) => {
+        if (!preview) event.stopPropagation();
+      }}
+      onDoubleClick={
+        onEdit && !preview
+          ? (event) => onEdit(event, id, value, reference)
+          : undefined
+      }
+    >
       <line
         x1={a[0]}
         y1={a[1]}
@@ -1050,6 +1063,10 @@ function LinearDimension({
         paintOrder="stroke"
         data-dimension-id={preview ? undefined : id}
         style={{ cursor: onEdit && !preview ? "text" : "default" }}
+        onPointerDown={(event) => {
+          if (preview) return;
+          event.stopPropagation();
+        }}
         onDoubleClick={
           onEdit && !preview
             ? (event) => onEdit(event, id, value, reference)
@@ -1086,7 +1103,20 @@ function DiameterDimension({
   const label = `${reference ? "(" : ""}⌀ ${formatLength(value)}${reference ? ")" : ""}`;
 
   return (
-    <g stroke={color} fill={color} opacity={preview ? 0.7 : 1}>
+    <g
+      stroke={color}
+      fill={color}
+      opacity={preview ? 0.7 : 1}
+      style={{ cursor: onEdit && !preview ? "text" : "default" }}
+      onPointerDown={(event) => {
+        if (!preview) event.stopPropagation();
+      }}
+      onDoubleClick={
+        onEdit && !preview
+          ? (event) => onEdit(event, id, value, reference)
+          : undefined
+      }
+    >
       <line
         x1={start[0]}
         y1={start[1]}
@@ -1105,6 +1135,10 @@ function DiameterDimension({
         paintOrder="stroke"
         data-dimension-id={preview ? undefined : id}
         style={{ cursor: onEdit && !preview ? "text" : "default" }}
+        onPointerDown={(event) => {
+          if (preview) return;
+          event.stopPropagation();
+        }}
         onDoubleClick={
           onEdit && !preview
             ? (event) => onEdit(event, id, value, reference)

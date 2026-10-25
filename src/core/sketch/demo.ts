@@ -32,6 +32,18 @@ export const DEMO_DEFAULTS: DemoOptions = {
   constrained: false,
 };
 
+/** The starting sketch: the example, fully dimensioned. */
+export function createExampleModel(): DemoModel {
+  return createDemoModel({ ...DEMO_DEFAULTS, constrained: true });
+}
+
+/** True while the sketch still contains the example's rectangle corners. */
+export function isDemoSketch(sketch: Sketch): boolean {
+  return ["p0", "p1", "p2", "p3"].every((id) =>
+    sketch.points.some((point) => point.id === id),
+  );
+}
+
 export function createDemoModel(options: DemoOptions = DEMO_DEFAULTS): DemoModel {
   const { width, height, holeDiameter, constrained } = options;
   const half = holeDiameter / 2;

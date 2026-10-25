@@ -14,24 +14,19 @@ import {
   addPolyline,
   addRectangle,
   emptySketch,
-  setCircleDiameter,
   type DraftVertex,
 } from "../core/sketch/create";
 import {
   addDimension,
-  findDimension,
-  isDrivingDimension,
   removeConstraint,
-  setDimensionValue,
   type DimensionPlacement,
   type DimensionTarget,
 } from "../core/sketch/dimensions";
-import { clampDemoDrag, createDemoModel } from "../core/sketch/demo";
+import { clampDemoDrag, createExampleModel, isDemoSketch } from "../core/sketch/demo";
 import { deleteEntities } from "../core/sketch/edit";
 import {
   applySolution,
   distance,
-  loopBounds,
   sketchGeometry,
   updateConstraintValue,
 } from "../core/sketch/geometry";
@@ -43,7 +38,7 @@ import {
   solveSketch,
   type SolveOutcome,
 } from "../core/sketch/solver";
-import type { Sketch, SketchCircle } from "../core/sketch/types";
+import type { Sketch } from "../core/sketch/types";
 import type { Vec2 } from "../core/types";
 import {
   SketchCanvas,
@@ -54,28 +49,19 @@ import { useHistory } from "../ui/useHistory";
 import { Viewport } from "../viewer/Viewport";
 
 type LoadState = "loading" | "ready" | "error";
-type DocKind = "example" | "user" | "empty";
 
 interface DocState {
   sketch: Sketch;
   solved: SolveOutcome | null;
-  kind: DocKind;
 }
 
-const MIN_SIZE = 20;
-const MAX_WIDTH = 110;
-const MAX_HEIGHT = 90;
-
 export function App() {
-  const [model] = useState(() => createDemoModel());
-  const history = useHistory<DocState>({
-    sketch: model.sketch,
-    solved: null,
-    kind: "example",
-  });
+  const [model] = useState(() => createExampleModel());
+  const history = useHistory<DocState>({ sketch: model.sketch, solved: null });
   const { state: doc, getState, commit, replace, undo, redo, endMerge } = history;
   const { sketch } = doc;
 
+  const [mode, setMode] = useState<"model" | "sketch">("model");
   const [tool, setTool] = useState<SketchTool>("select");
   const [selection, setSelection] = useState<string[]>([]);
   const [cancelToken, setCancelToken] = useState(0);
@@ -101,39 +87,6 @@ export function App() {
     [profile, extrudeHeight],
   );
 
-  const demoSize = useMemo(
-    () => (doc.kind === "example" ? readDemoSize(sketch) : null),
-    [doc.kind, sketch],
-  );
-  const widthTarget: DimensionTarget = { kind: "distance", a: "p0", b: "p1" };
-  const heightTarget: DimensionTarget = { kind: "distance", a: "p1", b: "p2" };
-  const widthDimension =
-    doc.kind === "example" ? findDimension(sketch, widthTarget) : undefined;
-  const heightDimension =
-    doc.kind === "example" ? findDimension(sketch, heightTarget) : undefined;
-  // Reference dimensions only measure; they must not enable the driving sliders.
-  const widthDriving = isDrivingDimension(widthDimension);
-  const heightDriving = isDrivingDimension(heightDimension);
-  const demoConstrained = widthDriving && heightDriving;
-
-  const firstCircle = sketch.curves.find(
-    (curve): curve is SketchCircle => curve.type === "circle",
-  );
-  const holeDiameter = firstCircle
-    ? (geometry.radii[firstCircle.id] ?? firstCircle.radius) * 2
-    : null;
-  const firstCircleIsOuter = Boolean(
-    firstCircle && profile?.outerCircleId === firstCircle.id,
-  );
-  const outerBounds = profile ? loopBounds(profile.outer) : null;
-  // A circle that *is* the body can grow freely; one inside a body is limited
-  // by the body's smallest dimension.
-  const maxHole = firstCircleIsOuter
-    ? 200
-    : outerBounds
-      ? Math.max(4, Math.min(outerBounds.width, outerBounds.height) - 6)
-      : 4;
-
   const selectedInfo = useMemo(
     () => describeSelection(sketch, geometry, selection),
     [sketch, geometry, selection],
@@ -144,32 +97,21 @@ export function App() {
   const commitDoc = (
     nextSketch: Sketch,
     outcome: SolveOutcome | null,
-    options?: { kind?: DocKind; mergeKey?: string },
+    mergeKey?: string,
   ): void => {
-    const previous = getState();
-    commit(
-      {
-        sketch: nextSketch,
-        solved: outcome,
-        kind: options?.kind ?? previous.kind,
-      },
-      options?.mergeKey,
-    );
+    commit({ sketch: nextSketch, solved: outcome }, mergeKey);
     setSolveError(null);
   };
 
   /** Solve, then commit both the geometry and its diagnostics. */
-  const solveAndCommit = (
-    next: Sketch,
-    options?: { kind?: DocKind; mergeKey?: string },
-  ): void => {
+  const solveAndCommit = (next: Sketch, mergeKey?: string): void => {
     if (!isSolverReady()) return;
     const outcome = solveSketch(next);
     if (!outcome.ok) {
       setSolveError(outcome);
       return;
     }
-    commitDoc(applySolution(next, outcome), outcome, options);
+    commitDoc(applySolution(next, outcome), outcome, mergeKey);
   };
 
   const changeTool = (next: SketchTool): void => {
@@ -201,7 +143,7 @@ export function App() {
     );
     if (next === current.sketch) return;
     setSelection([]);
-    solveAndCommit(next, { kind: "user" });
+    solveAndCommit(next);
   };
 
   // Key handlers are registered once but must see the current selection.
@@ -273,6 +215,10 @@ export function App() {
   }, [params]);
 
   useEffect(() => {
+    viewportRef.current?.setActive(mode === "model");
+  }, [mode]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (
@@ -313,22 +259,27 @@ export function App() {
 
       switch (event.key.toLowerCase()) {
         case "v":
+          setMode("sketch");
           setTool("select");
           setSelection([]);
           break;
         case "l":
+          setMode("sketch");
           setTool("line");
           setSelection([]);
           break;
         case "r":
+          setMode("sketch");
           setTool("rect");
           setSelection([]);
           break;
         case "c":
+          setMode("sketch");
           setTool("circle");
           setSelection([]);
           break;
         case "d":
+          setMode("sketch");
           setTool("dimension");
           setSelection([]);
           break;
@@ -343,82 +294,24 @@ export function App() {
     if (!isSolverReady()) return;
     const current = getState();
     const target: Vec2 =
-      current.kind === "example" ? clampDemoDrag(current.sketch, pointId, [x, y]) : [x, y];
+      isDemoSketch(current.sketch) ? clampDemoDrag(current.sketch, pointId, [x, y]) : [x, y];
     const outcome = solveDrag(current.sketch, {
       pointId,
       x: target[0],
       y: target[1],
     });
     if (!outcome) return;
-    commitDoc(applySolution(current.sketch, outcome), outcome, {
-      mergeKey: `drag:${pointId}`,
-    });
-  };
-
-  const updateDemoSize = (patch: { width?: number; height?: number }): void => {
-    const current = getState();
-    const size = readDemoSize(current.sketch);
-    if (!size) return;
-
-    const width = clamp(patch.width ?? size.width, MIN_SIZE, MAX_WIDTH);
-    const height = clamp(patch.height ?? size.height, MIN_SIZE, MAX_HEIGHT);
-
-    let next = setDimensionValue(current.sketch, widthTarget, width);
-    next = setDimensionValue(next, heightTarget, height);
-
-    const circle = next.curves.find((curve) => curve.type === "circle");
-    if (circle && circle.type === "circle") {
-      const limit = Math.max(4, Math.min(width, height) - 6);
-      const radius = sketchGeometry(next).radii[circle.id] ?? circle.radius;
-      if (radius * 2 > limit) next = setCircleDiameter(next, circle.id, limit);
-    }
-    solveAndCommit(next, { mergeKey: "demo-size" });
-  };
-
-  const updateHole = (value: number): void => {
-    const current = getState();
-    const circle = current.sketch.curves.find((curve) => curve.type === "circle");
-    if (!circle || circle.type !== "circle") return;
-    solveAndCommit(
-      setCircleDiameter(current.sketch, circle.id, clamp(value, 4, maxHole)),
-      { mergeKey: "hole" },
-    );
-  };
-
-  const toggleConstrained = (): void => {
-    const current = getState();
-    const size = readDemoSize(current.sketch);
-    if (!size) return;
-    const width = findDimension(current.sketch, widthTarget);
-    const height = findDimension(current.sketch, heightTarget);
-    const drivingWidth = isDrivingDimension(width);
-    const drivingHeight = isDrivingDimension(height);
-
-    let next = current.sketch;
-    if (drivingWidth && drivingHeight && width && height) {
-      next = removeConstraint(next, width.id);
-      next = removeConstraint(next, height.id);
-    } else {
-      if (!drivingWidth) next = addDimension(next, widthTarget, true, { offset: 16 });
-      if (!drivingHeight) next = addDimension(next, heightTarget, true, { offset: 16 });
-    }
-    solveAndCommit(next);
-    setFitToken((token) => token + 1);
-  };
-
-  const drawingBase = (): Sketch => {
-    const current = getState();
-    return current.kind === "example" ? emptySketch() : current.sketch;
+    commitDoc(applySolution(current.sketch, outcome), outcome, `drag:${pointId}`);
   };
 
   const drawAndCommit = (base: Sketch, next: Sketch): void => {
     if (next === base) return;
-    solveAndCommit(next, { kind: "user" });
+    solveAndCommit(next);
     setFitToken((token) => token + 1);
   };
 
   const handlePolyline = (vertices: DraftVertex[], closed: boolean): void => {
-    const base = drawingBase();
+    const base = getState().sketch;
     const valid = vertices.map((vertex) =>
       vertex.existingPointId && base.points.some((p) => p.id === vertex.existingPointId)
         ? vertex
@@ -428,14 +321,19 @@ export function App() {
   };
 
   const handleRectangle = (a: Vec2, b: Vec2): void => {
-    const base = drawingBase();
+    const base = getState().sketch;
     drawAndCommit(base, addRectangle(base, a, b));
   };
 
   const handleCircle = (center: DraftVertex, radius: number): void => {
-    const base = drawingBase();
+    const base = getState().sketch;
     const valid = center.existingPointId
-      ? { ...center, existingPointId: base.points.some((p) => p.id === center.existingPointId) ? center.existingPointId : undefined }
+      ? {
+          ...center,
+          existingPointId: base.points.some((p) => p.id === center.existingPointId)
+            ? center.existingPointId
+            : undefined,
+        }
       : center;
     drawAndCommit(base, addCircle(base, valid, radius));
   };
@@ -461,17 +359,17 @@ export function App() {
   const clearSketch = (): void => {
     const empty = emptySketch();
     const outcome = isSolverReady() ? solveSketch(empty) : null;
-    commit({ sketch: empty, solved: outcome, kind: "empty" });
+    commit({ sketch: empty, solved: outcome });
     setSolveError(null);
     setTool("select");
     setFitToken((token) => token + 1);
   };
 
   const loadExample = (): void => {
-    const fresh = createDemoModel();
+    const fresh = createExampleModel();
     const outcome = isSolverReady() ? solveSketch(fresh.sketch) : null;
     const applied = outcome?.ok ? applySolution(fresh.sketch, outcome) : fresh.sketch;
-    commit({ sketch: applied, solved: outcome, kind: "example" });
+    commit({ sketch: applied, solved: outcome });
     setSolveError(null);
     setTool("select");
     setFitToken((token) => token + 1);
@@ -513,11 +411,7 @@ export function App() {
   const hint =
     tool === "dimension"
       ? "Click two points, a line, or a circle, then click to place the dimension. Double-click a value to edit it."
-      : doc.kind === "example"
-      ? "Click to select, drag a corner, or draw. Drawing clears the example."
-      : doc.kind === "empty"
-        ? "Pick a tool and draw. Close a loop by clicking its first point."
-        : "Click to select, drag a point, Delete to remove. Cmd/Ctrl+Z undoes.";
+      : "Select to inspect. L line · R rectangle · C circle · D dimension · Delete removes. Cmd/Ctrl+Z undoes.";
 
   return (
     <div className="app">
@@ -546,6 +440,15 @@ export function App() {
 
         <div className="toolbar-spacer" />
 
+        <div className="toolbar-actions">
+          <IconButton label="Undo" disabled={!history.canUndo} onClick={goBack} testId="undo">
+            <UndoIcon />
+          </IconButton>
+          <IconButton label="Redo" disabled={!history.canRedo} onClick={goForward} testId="redo">
+            <RedoIcon />
+          </IconButton>
+        </div>
+
         <div className="badges">
           <StatusBadge
             label="solver"
@@ -563,242 +466,210 @@ export function App() {
       </header>
 
       <main className="workspace">
-        <aside className="panel">
-          <div className="panel-head">
-            <div>
-              <h2>Sketch 1</h2>
-              <p>XY plane</p>
+        <section className="stage">
+          <div className={`model-layer${mode === "model" ? "" : " is-hidden"}`}>
+            <canvas ref={canvasRef} className="viewport-canvas" />
+
+            <div className="viewport-top">
+              <span className="overlay-chip">
+                Extrude 1<span className="overlay-sep">·</span>
+                <span className="mono">{extrudeHeight} mm</span>
+              </span>
+              <button
+                className="button button-small"
+                type="button"
+                onClick={() => viewportRef.current?.frameAll()}
+              >
+                Fit view
+              </button>
             </div>
-            <div className="panel-actions">
-              <IconButton label="Undo" disabled={!history.canUndo} onClick={goBack} testId="undo">
-                <UndoIcon />
-              </IconButton>
-              <IconButton label="Redo" disabled={!history.canRedo} onClick={goForward} testId="redo">
-                <RedoIcon />
-              </IconButton>
+
+            {kernelState === "loading" ? (
+              <div className="viewport-message">
+                <span className="spinner" />
+                Loading geometry kernel…
+              </div>
+            ) : null}
+
+            {!params && kernelState !== "loading" ? (
+              <div className="viewport-message subtle">
+                <strong>No closed profile</strong>
+                <span>Draw a closed loop in the sketch to extrude it.</span>
+              </div>
+            ) : null}
+
+            {kernelError ? (
+              <div className="viewport-message error">
+                <strong>Kernel error</strong>
+                <span>{kernelError}</span>
+              </div>
+            ) : null}
+
+            <div className="viewport-stats">
+              {shownMesh ? (
+                <span
+                  className="mono"
+                  data-testid="mesh-stats"
+                  data-volume={shownMesh.stats.volume.toFixed(2)}
+                >
+                  {formatInt(shownMesh.stats.triangles)} tris
+                  <span className="overlay-sep">·</span>
+                  {shownMesh.stats.faces} faces
+                  <span className="overlay-sep">·</span>
+                  {formatVolume(shownMesh.stats.volume)} mm³
+                  <span className="overlay-sep">·</span>
+                  {shownRoundTrip === null ? "—" : `${shownRoundTrip.toFixed(0)} ms`}
+                </span>
+              ) : (
+                <span className="mono dim">no body</span>
+              )}
+              <span className="overlay-sub">Z-up · millimetres</span>
             </div>
           </div>
 
-          <div className="tool-strip" role="toolbar" aria-label="Sketch tools">
-            <ToolButton
-              label="Select (V)"
-              active={tool === "select"}
-              onClick={() => changeTool("select")}
-              testId="tool-select"
-            >
-              <CursorIcon />
-            </ToolButton>
-            <ToolButton
-              label="Line (L)"
-              active={tool === "line"}
-              onClick={() => changeTool("line")}
-              testId="tool-line"
-            >
-              <LineIcon />
-            </ToolButton>
-            <ToolButton
-              label="Rectangle (R)"
-              active={tool === "rect"}
-              onClick={() => changeTool("rect")}
-              testId="tool-rect"
-            >
-              <RectIcon />
-            </ToolButton>
-            <ToolButton
-              label="Circle (C)"
-              active={tool === "circle"}
-              onClick={() => changeTool("circle")}
-              testId="tool-circle"
-            >
-              <CircleIcon />
-            </ToolButton>
-            <ToolButton
-              label="Dimension (D)"
-              active={tool === "dimension"}
-              onClick={() => changeTool("dimension")}
-              testId="tool-dimension"
-            >
-              <DimensionIcon />
-            </ToolButton>
-
-            <span className="tool-separator" />
-
-            <ToolButton label="Load the example" onClick={loadExample} testId="load-example">
-              <ExampleIcon />
-            </ToolButton>
-            <ToolButton label="Clear sketch" onClick={clearSketch} testId="clear-sketch">
-              <TrashIcon />
-            </ToolButton>
-          </div>
-
-          <div className="sketch-frame">
-            <SketchCanvas
-              sketch={sketch}
-              points={geometry.points}
-              radii={geometry.radii}
-              tone={tone}
-              outer={profile?.outer}
-              tool={tool}
-              cancelToken={cancelToken}
-              fitToken={fitToken}
-              selected={selectedSet}
-              onSelect={handleSelect}
-              onDragPoint={handleDragPoint}
-              onDragEnd={endMerge}
-              onCreatePolyline={handlePolyline}
-              onCreateRectangle={handleRectangle}
-              onCreateCircle={handleCircle}
-              onCreateDimension={handleCreateDimension}
-              onChangeDimension={handleChangeDimension}
-              onDeleteDimension={handleDeleteDimension}
-            />
-          </div>
-
-          <div className={`dof-row ${tone}`} data-testid="dof" data-tone={tone}>
-            <span className="dot" />
-            <span>{statusLabel}</span>
-            {shown && shown.conflicting.length > 0 ? (
-              <span className="mono conflict-list">{shown.conflicting.join(", ")}</span>
-            ) : null}
-          </div>
-
-          {selectedInfo.length > 0 ? (
-            <SelectionPanel info={selectedInfo} onDelete={deleteSelection} />
-          ) : null}
-
-          <div className="fields">
-            {tool === "dimension" ? (
-              <label className="toggle-field">
-                <input
-                  type="checkbox"
-                  checked={referenceDimensions}
-                  onChange={(event) => setReferenceDimensions(event.target.checked)}
-                  data-testid="reference-toggle"
-                />
-                <span>Reference dimension (measure only)</span>
-              </label>
-            ) : null}
-
-            {doc.kind === "example" && demoSize ? (
-              <>
-                <div className="field-actions">
-                  <button className="button button-small" type="button" onClick={toggleConstrained}>
-                    {demoConstrained ? "Remove dimensions" : "Constrain size"}
-                  </button>
-                </div>
-                <SliderField
-                  label="Width"
-                  value={Math.round(demoSize.width)}
-                  min={MIN_SIZE}
-                  max={MAX_WIDTH}
-                  disabled={!widthDriving}
-                  testId="width-slider"
-                  onChange={(value) => updateDemoSize({ width: value })}
-                  onEnd={endMerge}
-                />
-                <SliderField
-                  label="Height"
-                  value={Math.round(demoSize.height)}
-                  min={MIN_SIZE}
-                  max={MAX_HEIGHT}
-                  disabled={!heightDriving}
-                  testId="height-param-slider"
-                  onChange={(value) => updateDemoSize({ height: value })}
-                  onEnd={endMerge}
-                />
-              </>
-            ) : null}
-
-            {holeDiameter !== null ? (
-              <SliderField
-                label={firstCircleIsOuter ? "Circle ⌀" : "Hole ⌀"}
-                value={Math.round(holeDiameter)}
-                min={4}
-                max={maxHole}
-                testId="hole-slider"
-                onChange={updateHole}
-                onEnd={endMerge}
+          <div className={`sketch-layer${mode === "sketch" ? "" : " is-hidden"}`}>
+            <div className="sketch-stage">
+              <SketchCanvas
+                sketch={sketch}
+                points={geometry.points}
+                radii={geometry.radii}
+                tone={tone}
+                outer={profile?.outer}
+                tool={tool}
+                cancelToken={cancelToken}
+                fitToken={fitToken}
+                selected={selectedSet}
+                onSelect={handleSelect}
+                onDragPoint={handleDragPoint}
+                onDragEnd={endMerge}
+                onCreatePolyline={handlePolyline}
+                onCreateRectangle={handleRectangle}
+                onCreateCircle={handleCircle}
+                onCreateDimension={handleCreateDimension}
+                onChangeDimension={handleChangeDimension}
+                onDeleteDimension={handleDeleteDimension}
               />
+            </div>
+
+            <div className="sketch-topbar">
+              <div className="tool-strip" role="toolbar" aria-label="Sketch tools">
+                <ToolButton
+                  label="Select (V)"
+                  active={tool === "select"}
+                  onClick={() => changeTool("select")}
+                  testId="tool-select"
+                >
+                  <CursorIcon />
+                </ToolButton>
+                <ToolButton
+                  label="Line (L)"
+                  active={tool === "line"}
+                  onClick={() => changeTool("line")}
+                  testId="tool-line"
+                >
+                  <LineIcon />
+                </ToolButton>
+                <ToolButton
+                  label="Rectangle (R)"
+                  active={tool === "rect"}
+                  onClick={() => changeTool("rect")}
+                  testId="tool-rect"
+                >
+                  <RectIcon />
+                </ToolButton>
+                <ToolButton
+                  label="Circle (C)"
+                  active={tool === "circle"}
+                  onClick={() => changeTool("circle")}
+                  testId="tool-circle"
+                >
+                  <CircleIcon />
+                </ToolButton>
+                <ToolButton
+                  label="Dimension (D)"
+                  active={tool === "dimension"}
+                  onClick={() => changeTool("dimension")}
+                  testId="tool-dimension"
+                >
+                  <DimensionIcon />
+                </ToolButton>
+
+                <span className="tool-separator" />
+
+                <ToolButton label="Load the example" onClick={loadExample} testId="load-example">
+                  <ExampleIcon />
+                </ToolButton>
+                <ToolButton label="Clear sketch" onClick={clearSketch} testId="clear-sketch">
+                  <TrashIcon />
+                </ToolButton>
+              </div>
+
+              <button className="button button-primary" type="button" onClick={() => setMode("model")}>
+                Finish sketch
+              </button>
+            </div>
+
+            <div className={`dof-pill ${tone}`} data-testid="dof" data-tone={tone}>
+              <span className="dot" />
+              <span>{statusLabel}</span>
+              {shown && shown.conflicting.length > 0 ? (
+                <span className="mono conflict-list">{shown.conflicting.join(", ")}</span>
+              ) : null}
+            </div>
+
+            {selectedInfo.length > 0 ? (
+              <div className="selection-float">
+                <SelectionPanel info={selectedInfo} onDelete={deleteSelection} />
+              </div>
             ) : null}
 
-            <p className="hint">{hint}</p>
-          </div>
+            {tool === "dimension" ? (
+              <div className="sketch-flyout">
+                <label className="toggle-field">
+                  <input
+                    type="checkbox"
+                    checked={referenceDimensions}
+                    onChange={(event) => setReferenceDimensions(event.target.checked)}
+                    data-testid="reference-toggle"
+                  />
+                  <span>Reference dimension (measure only)</span>
+                </label>
+              </div>
+            ) : null}
 
-          <div className="tree">
-            <div className="tree-title">History</div>
-            <div className="tree-row is-active">
+            <div className="sketch-hint">{hint}</div>
+          </div>
+        </section>
+
+        <footer className="timeline">
+          <div className="timeline-title">History</div>
+          <div className="timeline-track">
+            <button
+              className={`timeline-item${mode === "sketch" ? " is-active" : ""}`}
+              type="button"
+              onClick={() => setMode("sketch")}
+              data-testid="timeline-sketch"
+            >
               <SketchIcon />
               <span>Sketch 1</span>
-              <span className="tree-meta">{doc.kind === "example" ? "XY" : "edited"}</span>
-            </div>
-            <div className="tree-row">
+              <span className="tree-meta">XY</span>
+            </button>
+            <span className="timeline-arrow" aria-hidden="true">›</span>
+            <button
+              className={`timeline-item${mode === "model" ? " is-active" : ""}`}
+              type="button"
+              onClick={() => setMode("model")}
+              data-testid="timeline-extrude"
+            >
               <ExtrudeIcon />
               <span>Extrude 1</span>
               <span className="tree-meta">{extrudeHeight} mm</span>
-            </div>
-            <p className="tree-note">Static preview · history lands in M3</p>
-          </div>
-        </aside>
-
-        <section className="viewport">
-          <canvas ref={canvasRef} className="viewport-canvas" />
-
-          <div className="viewport-top">
-            <span className="overlay-chip">
-              Extrude 1<span className="overlay-sep">·</span>
-              <span className="mono">{extrudeHeight} mm</span>
-            </span>
-            <button
-              className="button button-small"
-              type="button"
-              onClick={() => viewportRef.current?.frameAll()}
-            >
-              Fit view
             </button>
           </div>
-
-          {kernelState === "loading" ? (
-            <div className="viewport-message">
-              <span className="spinner" />
-              Loading geometry kernel…
-            </div>
-          ) : null}
-
-          {!params && kernelState !== "loading" ? (
-            <div className="viewport-message subtle">
-              <strong>No closed profile</strong>
-              <span>Draw a closed loop in the sketch to extrude it.</span>
-            </div>
-          ) : null}
-
-          {kernelError ? (
-            <div className="viewport-message error">
-              <strong>Kernel error</strong>
-              <span>{kernelError}</span>
-            </div>
-          ) : null}
-
-          <div className="viewport-stats">
-            {shownMesh ? (
-              <span
-                className="mono"
-                data-testid="mesh-stats"
-                data-volume={shownMesh.stats.volume.toFixed(2)}
-              >
-                {formatInt(shownMesh.stats.triangles)} tris
-                <span className="overlay-sep">·</span>
-                {shownMesh.stats.faces} faces
-                <span className="overlay-sep">·</span>
-                {formatVolume(shownMesh.stats.volume)} mm³
-                <span className="overlay-sep">·</span>
-                {shownRoundTrip === null ? "—" : `${shownRoundTrip.toFixed(0)} ms`}
-              </span>
-            ) : (
-              <span className="mono dim">no body</span>
-            )}
-            <span className="overlay-sub">Z-up · millimetres</span>
+          <div className="timeline-actions">
+            <span className="timeline-note">Static history · M3</span>
           </div>
-        </section>
+        </footer>
       </main>
     </div>
   );
@@ -887,56 +758,6 @@ function SelectionPanel({
       </div>
       <p className="selection-hint">Shift-click to add · Delete removes the selection</p>
     </div>
-  );
-}
-
-function readDemoSize(sketch: Sketch): { width: number; height: number } | null {
-  const points = sketchGeometry(sketch).points;
-  const p0 = points.p0;
-  const p1 = points.p1;
-  const p2 = points.p2;
-  if (!p0 || !p1 || !p2) return null;
-  return { width: distance(p0, p1), height: distance(p1, p2) };
-}
-
-function SliderField({
-  label,
-  value,
-  min,
-  max,
-  disabled,
-  onChange,
-  onEnd,
-  testId,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  disabled?: boolean;
-  onChange: (value: number) => void;
-  onEnd?: () => void;
-  testId: string;
-}) {
-  return (
-    <label className={`field${disabled ? " is-disabled" : ""}`}>
-      <span className="field-label">{label}</span>
-      <span className="field-value mono">{value} mm</span>
-      <input
-        className="slider"
-        type="range"
-        min={min}
-        max={max}
-        step={1}
-        value={clamp(value, min, max)}
-        disabled={disabled}
-        onChange={(event) => onChange(Number(event.target.value))}
-        onPointerUp={onEnd}
-        onKeyUp={onEnd}
-        onBlur={onEnd}
-        data-testid={testId}
-      />
-    </label>
   );
 }
 
@@ -1187,6 +1008,3 @@ function formatLength(value: number): string {
   return Number.isInteger(value) ? `${value}` : value.toFixed(1);
 }
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}

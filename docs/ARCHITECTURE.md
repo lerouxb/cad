@@ -378,9 +378,10 @@ and arbitrary edge projection lands with the rest of M4.
   (copy those vertex ranges) and draw it with an emissive overlay material. Simple and
   fast for interactive selection counts; a `faceId`-keyed shader is the optimisation if
   it ever shows up in profiles.
-- **Sketch mode:** orthographic camera normal to the sketch plane, `slvs` on the main
-  thread, and a **separate SVG overlay** on top of the canvas for sketch curves,
-  dimensions, and constraint badges. SVG gives crisp lines, trivial hit-testing, and
+- **Sketch mode:** a full-stage 2D surface rather than a sidebar. The timeline switches
+  between this and the 3D model; the 3D renderer is paused while the sketch is active.
+  `slvs` stays on the main thread, and a **separate SVG surface** carries sketch curves,
+  dimensions, and constraint badges, with floating HTML controls over it. SVG gives crisp lines, trivial hit-testing, and
   real text for dimension labels. Recompute the overlay's viewBox from the camera on
   zoom/pan. If entity counts ever get large, swap the curve layer to Canvas2D and keep
   SVG for labels.
@@ -487,7 +488,7 @@ the honest map, so nobody assumes a layer exists because it is described above.
 | `core/rebuild` | Not started. One sketch and one feature, rebuilt by a debounce. |
 | `core/kernel` | Real: typed protocol, worker client, OCCT worker, hole validation, exact stats. |
 | `viewer` | Real: Z-up scene, framing, meshing, edges. Picking and highlight are not implemented. |
-| `sketch` UI | Real, in a sidebar rather than a full-canvas sketch mode: select/drag, line/rectangle/circle tools, dimension tool with inline editing, grid + point snapping, auto H/V, undo/redo. |
+| `sketch` UI | Real: full-stage sketch editor toggled from the timeline, with a floating tool strip, DOF pill, and selection/dimension inspector. Select/drag, line/rectangle/circle, dimension tool with inline editing, snapping, auto H/V, undo/redo. |
 | Feature tree | Static markup that communicates the intended product. |
 | Persistence | None yet. |
 

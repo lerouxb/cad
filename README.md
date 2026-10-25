@@ -26,6 +26,10 @@ npm run build
 
 ## What works today
 
+The main stage toggles between the **model** and a full-stage **sketch editor** via the
+timeline at the bottom. Sketch mode has a floating tool strip, a DOF pill, and a floating
+selection/dimension inspector; there is no permanent sidebar.
+
 - Draw with the **line**, **rectangle**, and **circle** tools. Grid and point snapping;
   axis inference adds horizontal/vertical constraints; chains close on their first point.
 - Drag points: the cursor delta is projected onto the constraint tangent space, so points

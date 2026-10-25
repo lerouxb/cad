@@ -17,6 +17,8 @@ export class Viewport {
   private resizeObserver: ResizeObserver;
   private disposed = false;
   private framed = false;
+  private active = true;
+  private dirty = true;
   private readonly canvas: HTMLCanvasElement;
 
   constructor(canvas: HTMLCanvasElement) {
@@ -54,10 +56,19 @@ export class Viewport {
     this.resizeObserver.observe(canvas);
     this.resize();
 
-    this.renderer.setAnimationLoop(() => {
-      this.controls.update();
-      this.renderer.render(this.scene, this.camera);
-    });
+    this.startLoop();
+  }
+
+  /** Pause rendering while the 3D view is hidden (sketch mode). */
+  setActive(active: boolean): void {
+    if (this.active === active || this.disposed) return;
+    this.active = active;
+    if (active) {
+      this.dirty = true;
+      this.startLoop();
+    } else {
+      this.renderer.setAnimationLoop(null);
+    }
   }
 
   setMesh(mesh: BodyMesh): void {
@@ -100,11 +111,13 @@ export class Viewport {
       this.frameAll();
       this.framed = true;
     }
+    this.dirty = true;
   }
 
   clearMesh(): void {
     this.clearBody();
     this.framed = false;
+    this.dirty = true;
   }
 
   frameAll(): void {
@@ -119,6 +132,7 @@ export class Viewport {
     this.camera.position.copy(center).addScaledVector(direction, distance);
     this.controls.target.copy(center);
     this.controls.update();
+    this.dirty = true;
   }
 
   dispose(): void {
@@ -168,6 +182,20 @@ export class Viewport {
     }
   }
 
+  /**
+   * Render on demand instead of at a constant 60 fps: OrbitControls with
+   * damping tells us when the camera moved, and mesh/resize changes set
+   * `dirty`. A static part costs nothing between interactions.
+   */
+  private startLoop(): void {
+    this.renderer.setAnimationLoop(() => {
+      const moved = this.controls.update();
+      if (!moved && !this.dirty) return;
+      this.dirty = false;
+      this.renderer.render(this.scene, this.camera);
+    });
+  }
+
   private resize(): void {
     const width = this.canvas.clientWidth;
     const height = this.canvas.clientHeight;
@@ -175,5 +203,6 @@ export class Viewport {
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    this.dirty = true;
   }
 }

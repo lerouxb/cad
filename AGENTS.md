@@ -26,6 +26,9 @@ engine matters more than feature count.
   selection, cascading delete, a dimension tool (distance/diameter, driving or reference,
   inline edit and delete), undo/redo, DOF/diagnostics, worker protocol, three.js
   viewport, exact volume/face counts, unit + e2e tests.
+- UI: one main stage. The bottom timeline switches between the full-stage sketch editor
+  and the 3D model; the sketch has floating tools, a DOF pill, and a floating selection /
+  dimension inspector. No permanent sidebar.
 - Temporary: profile selection is "largest closed loop" (`core/sketch/loops.ts`), the
   example sketch is hand-authored (`core/sketch/demo.ts`), dimension labels cannot be
   repositioned after placement, there is no constraint tool for
@@ -156,6 +159,9 @@ docs/
   solver *and* by the drag Jacobian (`core/sketch/drag.ts`); otherwise a reference
   measurement silently constrains the geometry or lies about the DOF. Every new
   constraint type needs a residual/gradient there.
+- Dimension labels stop `pointerdown` propagation. Without that the SVG's pan handler
+  captures the pointer on press and the label never receives a `dblclick`; this is subtle
+  and easy to regress.
 - **Never pin the dragged point at the cursor.** Any off-manifold target (a circle, an
   angled line) makes the constraint system `INCONSISTENT`. `solveDrag()` instead projects
   the cursor delta onto the constraint tangent space (`core/sketch/drag.ts`), applies it
