@@ -63,10 +63,10 @@ persisted.
 
 ---
 
-## M1 — The real sketcher (selection done; dimension/constraint UI left)
+## M1 — The real sketcher (core done)
 
-The most UX-sensitive milestone. The solver plumbing, the drawing loop, and selection
-work; what is left is the constraint *editing* experience.
+The most UX-sensitive milestone. The solver plumbing, the drawing loop, selection,
+dimensions and the common constraints work; what is left is refinement.
 
 - [x] Tools: line (chain), rectangle, circle; select mode; grid + point snapping;
       automatic coincident endpoints (shared points) and horizontal/vertical constraints
@@ -86,8 +86,10 @@ work; what is left is the constraint *editing* experience.
       dimensions, not special-cased annotations.
 - [ ] Reposition an existing dimension label (placement currently happens at creation)
 - [ ] Angular and point-to-line dimensions; radius (not just diameter)
-- [ ] **Constraint tool**: apply the remaining solver constraints (parallel, perpendicular,
-      tangent, equal, angle, point-on-line, symmetric, radius) and show their badges
+- [x] **Constraint bar**: parallel, perpendicular, equal, point-on-line, coincident,
+      horizontal/vertical, plus construction geometry, applied from the floating selection
+      card and shown as badges
+- [ ] Angle, tangent and symmetric constraints; radius (as opposed to diameter)
 - [ ] Endpoint *coincident constraints* for points that are near but not identical
       (currently only shared points)
 - [ ] Arc tool (three-point + tangent), plus arc loops in profile extraction

@@ -224,6 +224,37 @@ function solveWithModule(s: SlvsModule, sketch: Sketch, drag?: DragTarget): Solv
       case "diameter":
         added = s.diameter(group, need(entities, constraint.circle), constraint.value);
         break;
+      case "parallel":
+        added = s.parallel(group, need(entities, constraint.a), need(entities, constraint.b), workplane);
+        break;
+      case "perpendicular":
+        added = s.perpendicular(
+          group,
+          need(entities, constraint.a),
+          need(entities, constraint.b),
+          workplane,
+          false,
+        );
+        break;
+      case "equal":
+        added = s.equal(group, need(entities, constraint.a), need(entities, constraint.b), workplane);
+        break;
+      case "pointOnLine":
+        added = s.addConstraint(
+          group,
+          s.C_PT_ON_LINE,
+          workplane,
+          0,
+          need(entities, constraint.point),
+          none,
+          need(entities, constraint.line),
+          none,
+          none,
+          none,
+          false,
+          false,
+        );
+        break;
       case "midpoint":
         added = s.midpoint(
           group,

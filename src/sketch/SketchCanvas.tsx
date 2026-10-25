@@ -9,7 +9,7 @@ import {
 import type { ProfileLoop, Vec2 } from "../core/types";
 import type { DraftVertex } from "../core/sketch/create";
 import type { DimensionPlacement, DimensionTarget } from "../core/sketch/dimensions";
-import type { Sketch, SketchCircle, SketchCurve, SketchLine } from "../core/sketch/types";
+import type { Sketch, SketchCircle, SketchCurve } from "../core/sketch/types";
 import { useElementSize } from "../ui/useElementSize";
 
 export type SketchTool = "select" | "line" | "rect" | "circle" | "dimension";
@@ -1160,33 +1160,88 @@ function ConstraintBadges({
   points: Record<string, Vec2>;
   px: number;
 }) {
-  const lines = new Map<string, SketchLine>(
-    sketch.curves.flatMap((curve) =>
-      curve.type === "line" ? [[curve.id, curve] as const] : [],
-    ),
-  );
+  const curves = new Map(sketch.curves.map((curve) => [curve.id, curve]));
+  const stacks = new Map<string, number>();
+  const badges: {
+    key: string;
+    id: string;
+    type: string;
+    x: number;
+    y: number;
+    label: string;
+  }[] = [];
+
+  const baseFor = (id: string): { x: number; y: number } | null => {
+    const curve = curves.get(id);
+    if (!curve) {
+      const point = points[id];
+      return point ? { x: point[0], y: point[1] } : null;
+    }
+    if (curve.type === "line") {
+      const a = points[curve.a];
+      const b = points[curve.b];
+      return a && b ? { x: (a[0] + b[0]) / 2, y: (a[1] + b[1]) / 2 } : null;
+    }
+    const center = points[curve.center];
+    return center ? { x: center[0], y: center[1] - curve.radius } : null;
+  };
+
+  const place = (constraintId: string, type: string, id: string, label: string) => {
+    const base = baseFor(id);
+    if (!base) return;
+    const index = stacks.get(id) ?? 0;
+    stacks.set(id, index + 1);
+    badges.push({
+      key: `${constraintId}:${id}`,
+      id: constraintId,
+      type,
+      x: base.x,
+      y: base.y - 5 * px - index * 9 * px,
+      label,
+    });
+  };
+
+  for (const constraint of sketch.constraints) {
+    switch (constraint.type) {
+      case "horizontal":
+        place(constraint.id, "horizontal", constraint.line, "H");
+        break;
+      case "vertical":
+        place(constraint.id, "vertical", constraint.line, "V");
+        break;
+      case "parallel":
+      case "perpendicular":
+      case "equal": {
+        const label =
+          constraint.type === "parallel" ? "∥" : constraint.type === "perpendicular" ? "⊥" : "=";
+        place(constraint.id, constraint.type, constraint.a, label);
+        place(constraint.id, constraint.type, constraint.b, label);
+        break;
+      }
+      case "pointOnLine":
+        place(constraint.id, "pointOnLine", constraint.point, "∈");
+        break;
+      default:
+        break;
+    }
+  }
+
   return (
     <g fontSize={8 * px} fill="#6f7d8f" textAnchor="middle" pointerEvents="none">
-      {sketch.constraints.map((constraint) => {
-        if (constraint.type !== "horizontal" && constraint.type !== "vertical") return null;
-        const line = lines.get(constraint.line);
-        if (!line) return null;
-        const a = points[line.a];
-        const b = points[line.b];
-        if (!a || !b) return null;
-        return (
-          <text
-            key={constraint.id}
-            x={(a[0] + b[0]) / 2}
-            y={(a[1] + b[1]) / 2 - 5 * px}
-            stroke="#171b21"
-            strokeWidth={2.5 * px}
-            paintOrder="stroke"
-          >
-            {constraint.type === "horizontal" ? "H" : "V"}
-          </text>
-        );
-      })}
+      {badges.map((badge) => (
+        <text
+          key={badge.key}
+          x={badge.x}
+          y={badge.y}
+          stroke="#171b21"
+          strokeWidth={2.5 * px}
+          paintOrder="stroke"
+          data-constraint-id={badge.id}
+          data-constraint-type={badge.type}
+        >
+          {badge.label}
+        </text>
+      ))}
     </g>
   );
 }

@@ -30,6 +30,20 @@ async function enterSketch(page: Page): Promise<void> {
   await expect(page.getByTestId("tool-select")).toBeVisible();
 }
 
+async function dblclickSketch(page: Page, x: number, y: number): Promise<void> {
+  const screen = await page.evaluate(
+    ([sx, sy]) => {
+      const svg = document.querySelector<SVGSVGElement>("svg.sketch-canvas");
+      const matrix = svg?.getScreenCTM();
+      if (!matrix) throw new Error("Sketch canvas is not visible");
+      const point = new DOMPoint(sx, sy).matrixTransform(matrix);
+      return { x: point.x, y: point.y };
+    },
+    [x, y],
+  );
+  await page.mouse.dblclick(screen.x, screen.y);
+}
+
 async function dragSketch(
   page: Page,
   from: [number, number],
@@ -313,6 +327,45 @@ test("creates, edits and deletes parametric dimensions", async ({ page }) => {
   await page.getByTestId("dimension-delete").click();
   await expect(page.getByTestId("dof")).toContainText("4 DOF");
   await expect(page.locator("[data-dimension-id]")).toHaveCount(1);
+
+  expect(errors).toEqual([]);
+});
+
+test("applies constraints and construction from the floating bar", async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto("/");
+  await expect(page.getByTestId("kernel-status")).toContainText("ready");
+  await enterSketch(page);
+
+  await page.getByTestId("clear-sketch").click();
+  await page.getByTestId("tool-line").click();
+
+  // Two separate, deliberately non-axis-aligned lines (8 DOF total).
+  await clickSketch(page, -40, -25);
+  await dblclickSketch(page, 40, -15);
+  await clickSketch(page, -40, 20);
+  await dblclickSketch(page, 40, 10);
+  await page.keyboard.press("Escape");
+
+  await clickSketch(page, 0, -20);
+  await page.keyboard.down("Shift");
+  await clickSketch(page, 0, 15);
+  await page.keyboard.up("Shift");
+
+  await expect(page.getByTestId("selection-panel")).toHaveAttribute("data-count", "2");
+  await expect(page.getByTestId("dof")).toContainText("8 DOF");
+
+  await page.getByTestId("constraint-perpendicular").click();
+  await expect(page.getByTestId("dof")).toContainText("7 DOF");
+  await expect(page.locator('[data-constraint-type="perpendicular"]')).toHaveCount(2);
+
+  await page.keyboard.press("Control+z");
+  await expect(page.getByTestId("dof")).toContainText("8 DOF");
+  await expect(page.locator('[data-constraint-type="perpendicular"]')).toHaveCount(0);
+
+  // Construction geometry: the same selection is still active.
+  await page.getByTestId("toggle-construction").click();
+  await expect(page.getByTestId("toggle-construction")).toContainText("Make normal");
 
   expect(errors).toEqual([]);
 });

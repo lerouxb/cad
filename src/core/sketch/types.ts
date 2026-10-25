@@ -39,6 +39,8 @@ export type SketchCurve = SketchLine | SketchCircle;
 export type SketchConstraint =
   | { id: string; type: "coincident"; a: string; b: string }
   | { id: string; type: "horizontal" | "vertical"; line: string }
+  | { id: string; type: "parallel" | "perpendicular" | "equal"; a: string; b: string }
+  | { id: string; type: "pointOnLine"; point: string; line: string }
   | {
       id: string;
       type: "distance";

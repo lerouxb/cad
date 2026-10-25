@@ -17,6 +17,13 @@ import {
   type DraftVertex,
 } from "../core/sketch/create";
 import {
+  applicableConstraints,
+  applyConstraint,
+  constructionState,
+  toggleConstruction,
+  type ConstraintType,
+} from "../core/sketch/constraints";
+import {
   addDimension,
   removeConstraint,
   type DimensionPlacement,
@@ -93,6 +100,14 @@ export function App() {
   );
 
   const selectedSet = useMemo(() => new Set(selectedInfo.map((info) => info.id)), [selectedInfo]);
+  const constraintActions = useMemo(
+    () => applicableConstraints(sketch, selection),
+    [sketch, selection],
+  );
+  const construction = useMemo(
+    () => constructionState(sketch, selection),
+    [sketch, selection],
+  );
 
   const commitDoc = (
     nextSketch: Sketch,
@@ -354,6 +369,20 @@ export function App() {
   const handleDeleteDimension = (id: string): void => {
     const current = getState();
     solveAndCommit(removeConstraint(current.sketch, id));
+  };
+
+  const handleConstraint = (type: ConstraintType): void => {
+    const current = getState();
+    const next = applyConstraint(current.sketch, type, selection);
+    if (next === current.sketch) return;
+    solveAndCommit(next);
+  };
+
+  const handleConstruction = (): void => {
+    const current = getState();
+    const next = toggleConstruction(current.sketch, selection);
+    if (next === current.sketch) return;
+    solveAndCommit(next);
   };
 
   const clearSketch = (): void => {
@@ -619,7 +648,14 @@ export function App() {
 
             {selectedInfo.length > 0 ? (
               <div className="selection-float">
-                <SelectionPanel info={selectedInfo} onDelete={deleteSelection} />
+                <SelectionPanel
+                  info={selectedInfo}
+                  actions={constraintActions}
+                  construction={construction}
+                  onConstraint={handleConstraint}
+                  onConstruction={handleConstruction}
+                  onDelete={deleteSelection}
+                />
               </div>
             ) : null}
 
@@ -728,9 +764,17 @@ function describeSelection(
 
 function SelectionPanel({
   info,
+  actions,
+  construction,
+  onConstraint,
+  onConstruction,
   onDelete,
 }: {
   info: SelectedEntity[];
+  actions: { type: ConstraintType; label: string }[];
+  construction: "none" | "mixed" | "all" | null;
+  onConstraint: (type: ConstraintType) => void;
+  onConstruction: () => void;
   onDelete: () => void;
 }) {
   return (
@@ -756,7 +800,34 @@ function SelectionPanel({
           </div>
         ))}
       </div>
-      <p className="selection-hint">Shift-click to add · Delete removes the selection</p>
+      {actions.length > 0 || construction !== null ? (
+        <div className="constraint-bar">
+          {actions.map((action) => (
+            <button
+              key={action.type}
+              className="constraint-chip"
+              type="button"
+              onClick={() => onConstraint(action.type)}
+              data-testid={`constraint-${action.type}`}
+            >
+              {action.label}
+            </button>
+          ))}
+          {construction !== null ? (
+            <button
+              className="constraint-chip"
+              type="button"
+              onClick={onConstruction}
+              data-testid="toggle-construction"
+            >
+              {construction === "all" ? "Make normal" : "Construction"}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+      <p className="selection-hint">
+        Shift-click to add · pick a constraint above · Delete removes
+      </p>
     </div>
   );
 }

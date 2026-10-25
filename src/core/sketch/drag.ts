@@ -199,6 +199,96 @@ function buildRows(sketch: Sketch, params: Parameters): Row[] {
         rows.push(new Map([[slot, 2]]));
         break;
       }
+      case "parallel":
+      case "perpendicular": {
+        const a = byId.get(constraint.a);
+        const b = byId.get(constraint.b);
+        if (!a || a.type !== "line" || !b || b.type !== "line") break;
+        const a1 = sketch.points.find((point) => point.id === a.a);
+        const a2 = sketch.points.find((point) => point.id === a.b);
+        const b1 = sketch.points.find((point) => point.id === b.a);
+        const b2 = sketch.points.find((point) => point.id === b.b);
+        if (!a1 || !a2 || !b1 || !b2) break;
+        const dax = a2.x - a1.x;
+        const day = a2.y - a1.y;
+        const dbx = b2.x - b1.x;
+        const dby = b2.y - b1.y;
+        const r = row();
+        if (constraint.type === "parallel") {
+          // d(dax*dby - day*dbx)
+          addPoint(r, a.a, -dby, dbx);
+          addPoint(r, a.b, dby, -dbx);
+          addPoint(r, b.a, day, -dax);
+          addPoint(r, b.b, -day, dax);
+        } else {
+          // d(dax*dbx + day*dby)
+          addPoint(r, a.a, -dbx, -dby);
+          addPoint(r, a.b, dbx, dby);
+          addPoint(r, b.a, -dax, -day);
+          addPoint(r, b.b, dax, day);
+        }
+        if (r.size) rows.push(r);
+        break;
+      }
+      case "equal": {
+        const a = byId.get(constraint.a);
+        const b = byId.get(constraint.b);
+        if (!a || !b) break;
+        if (a.type === "line" && b.type === "line") {
+          const a1 = sketch.points.find((point) => point.id === a.a);
+          const a2 = sketch.points.find((point) => point.id === a.b);
+          const b1 = sketch.points.find((point) => point.id === b.a);
+          const b2 = sketch.points.find((point) => point.id === b.b);
+          if (!a1 || !a2 || !b1 || !b2) break;
+          const dax = a2.x - a1.x;
+          const day = a2.y - a1.y;
+          const dbx = b2.x - b1.x;
+          const dby = b2.y - b1.y;
+          const lenA = Math.hypot(dax, day);
+          const lenB = Math.hypot(dbx, dby);
+          if (lenA < 1e-9 || lenB < 1e-9) break;
+          const uax = dax / lenA;
+          const uay = day / lenA;
+          const ubx = dbx / lenB;
+          const uby = dby / lenB;
+          const r = row();
+          addPoint(r, a.a, -uax, -uay);
+          addPoint(r, a.b, uax, uay);
+          addPoint(r, b.a, ubx, uby);
+          addPoint(r, b.b, -ubx, -uby);
+          if (r.size) rows.push(r);
+        } else if (a.type === "circle" && b.type === "circle") {
+          const ra = params.radiusIndex.get(a.id);
+          const rb = params.radiusIndex.get(b.id);
+          if (ra !== undefined && rb !== undefined) {
+            rows.push(
+              new Map([
+                [ra, 1],
+                [rb, -1],
+              ]),
+            );
+          }
+        }
+        break;
+      }
+      case "pointOnLine": {
+        const p = sketch.points.find((point) => point.id === constraint.point);
+        const line = byId.get(constraint.line);
+        if (!p || !line || line.type !== "line") break;
+        const a = sketch.points.find((point) => point.id === line.a);
+        const b = sketch.points.find((point) => point.id === line.b);
+        if (!a || !b) break;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const ex = p.x - a.x;
+        const ey = p.y - a.y;
+        const r = row();
+        addPoint(r, constraint.point, -dy, dx);
+        addPoint(r, line.a, dy - ey, ex - dx);
+        addPoint(r, line.b, ey, -ex);
+        if (r.size) rows.push(r);
+        break;
+      }
       case "midpoint": {
         const line = byId.get(constraint.line);
         if (!line || line.type !== "line") break;

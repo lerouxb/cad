@@ -130,6 +130,10 @@ type SketchConstraint =
   | { id: Id; type: "symmetric"; a: Id; b: Id; about: Id };
 ```
 
+Implemented today: coincident, horizontal, vertical, parallel, perpendicular, equal,
+point-on-line, midpoint, distance and diameter. Planned: tangent, angle, radius,
+symmetric.
+
 Placement is deliberately separate from geometry:
 
 ```ts
@@ -179,6 +183,9 @@ slot is `slvs.E_NONE`):
 | coincident | `coincident(g, entityA, entityB, wp)` |
 | point–point distance | `distance(g, ptA, ptB, mm, wp)` |
 | horizontal / vertical | `horizontal(g, line, wp, E_NONE)` / `vertical(...)` |
+| parallel / perpendicular | `parallel(g, a, b, wp)` / `perpendicular(g, a, b, wp, false)` |
+| equal (lines or circles) | `equal(g, a, b, wp)` — picks length or radius by entity type |
+| point on line | `addConstraint(g, C_PT_ON_LINE, wp, 0, point, E_NONE, line, ...)` |
 | parallel / perpendicular | `parallel(g, a, b, wp)` / `perpendicular(g, a, b, wp, inverse)` |
 | tangent | `tangent(g, a, b, wp)` |
 | equal | `equal(g, a, b, wp)` |
@@ -488,7 +495,7 @@ the honest map, so nobody assumes a layer exists because it is described above.
 | `core/rebuild` | Not started. One sketch and one feature, rebuilt by a debounce. |
 | `core/kernel` | Real: typed protocol, worker client, OCCT worker, hole validation, exact stats. |
 | `viewer` | Real: Z-up scene, framing, meshing, edges. Picking and highlight are not implemented. |
-| `sketch` UI | Real: full-stage sketch editor toggled from the timeline, with a floating tool strip, DOF pill, and selection/dimension inspector. Select/drag, line/rectangle/circle, dimension tool with inline editing, snapping, auto H/V, undo/redo. |
+| `sketch` UI | Real: full-stage sketch editor toggled from the timeline, with a floating tool strip, DOF pill, and selection/dimension/constraint inspector. Select/drag, line/rectangle/circle, dimension tool with inline editing, constraint bar, construction toggle, snapping, auto H/V, undo/redo. |
 | Feature tree | Static markup that communicates the intended product. |
 | Persistence | None yet. |
 
