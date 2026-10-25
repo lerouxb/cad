@@ -1,23 +1,41 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import type { Vec2 } from "../core/types";
+import type { DraftVertex } from "../core/sketch/create";
 import type { Sketch, SketchCircle, SketchLine } from "../core/sketch/types";
 import { useElementSize } from "../ui/useElementSize";
 
+export type SketchTool = "select" | "line" | "rect" | "circle";
 export type SketchTone = "under" | "full" | "conflict";
+
+export interface SketchDimensions {
+  width: { from: Vec2; to: Vec2; value: number };
+  height: { from: Vec2; to: Vec2; value: number };
+}
 
 export interface SketchCanvasProps {
   sketch: Sketch;
-  /** Point ids of the outer loop, in order. */
-  loop: string[];
   points: Record<string, Vec2>;
   radii: Record<string, number>;
   tone: SketchTone;
-  /** Draw driving dimensions (they only exist when the sketch is constrained). */
-  showDimensions: boolean;
-  /** Increment to re-fit the view (after non-drag edits like a slider change). */
+  /** Largest closed loop, used for the translucent fill. */
+  outerLoop?: Vec2[];
+  dimensions?: SketchDimensions | null;
+  tool: SketchTool;
+  /** Bump to cancel an in-progress draft (Escape). */
+  cancelToken: number;
+  /** Increment to re-fit the view. */
   fitToken: number;
   onDragPoint: (pointId: string, x: number, y: number) => void;
   onDragEnd: () => void;
+  onCreatePolyline: (vertices: DraftVertex[], closed: boolean) => void;
+  onCreateRectangle: (a: Vec2, b: Vec2) => void;
+  onCreateCircle: (center: DraftVertex, radius: number) => void;
 }
 
 interface ViewBox {
@@ -25,6 +43,12 @@ interface ViewBox {
   y: number;
   w: number;
   h: number;
+}
+
+interface Snap {
+  point: Vec2;
+  existingPointId?: string;
+  kind: "point" | "axis" | "grid";
 }
 
 const TONE_COLOR: Record<SketchTone, string> = {
@@ -35,39 +59,65 @@ const TONE_COLOR: Record<SketchTone, string> = {
 
 const GRID_STEP = 10;
 const MAJOR_EVERY = 5;
+const DRAW_GRID = 5;
 
 export function SketchCanvas({
   sketch,
-  loop,
   points,
   radii,
   tone,
-  showDimensions,
+  outerLoop,
+  dimensions,
+  tool,
+  cancelToken,
   fitToken,
   onDragPoint,
   onDragEnd,
+  onCreatePolyline,
+  onCreateRectangle,
+  onCreateCircle,
 }: SketchCanvasProps) {
   const [svgRef, size] = useElementSize<SVGSVGElement>();
   const [viewBox, setViewBox] = useState<ViewBox>(() => fitView(sketch, radii));
   const viewBoxRef = useRef(viewBox);
   const dragRef = useRef<string | null>(null);
   const panRef = useRef<{ clientX: number; clientY: number; box: ViewBox } | null>(null);
+  const [rectStart, setRectStart] = useState<Vec2 | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
+  const [draft, setDraft] = useState<DraftVertex[]>([]);
+  const [hover, setHover] = useState<Snap | null>(null);
+  const [rect, setRect] = useState<{ a: Vec2; b: Vec2 } | null>(null);
+  const [circleCenter, setCircleCenter] = useState<DraftVertex | null>(null);
+  const lastFitToken = useRef(fitToken);
+
+  const scale = Math.min(size.width / viewBox.w, size.height / viewBox.h) || 1;
+  const px = 1 / scale;
+  const color = TONE_COLOR[tone];
+  const snapTolerance = 11 * px;
 
   useEffect(() => {
     viewBoxRef.current = viewBox;
   }, [viewBox]);
 
-  const lastFitToken = useRef(fitToken);
   useEffect(() => {
-    // Re-frame after deliberate edits (slider / constrain), never mid-drag.
     if (lastFitToken.current === fitToken) return;
     lastFitToken.current = fitToken;
     setViewBox(fitView(sketch, radii));
   }, [fitToken, sketch, radii]);
-  const scale = Math.min(size.width / viewBox.w, size.height / viewBox.h) || 1;
-  const px = 1 / scale; // one screen pixel in sketch millimetres
-  const color = TONE_COLOR[tone];
+
+  // Any tool change or explicit cancel abandons the current draft. This is a
+  // deliberate render-time reset (the React "adjust state on prop change"
+  // pattern), not an effect: an effect would render the stale draft once.
+  const interactionKey = `${tool}:${cancelToken}`;
+  const [lastInteractionKey, setLastInteractionKey] = useState(interactionKey);
+  if (lastInteractionKey !== interactionKey) {
+    setLastInteractionKey(interactionKey);
+    setDraft([]);
+    setRect(null);
+    setRectStart(null);
+    setCircleCenter(null);
+    setHover(null);
+  }
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -82,7 +132,7 @@ export function SketchCanvas({
       );
       const box = viewBoxRef.current;
       const factor = Math.exp(event.deltaY * 0.0015);
-      const w = clamp(box.w * factor, 8, 600);
+      const w = clamp(box.w * factor, 5, 600);
       const h = box.h * (w / box.w);
       setViewBox({
         x: cursor.x - ((cursor.x - box.x) * w) / box.w,
@@ -104,34 +154,161 @@ export function SketchCanvas({
     return [local.x, local.y];
   };
 
-  const onPointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
-    if (event.button !== 0 && event.button !== 1) return;
+  const snapPoint = (raw: Vec2, axisFrom?: Vec2): Snap => {
+    let best: { snap: Snap; distance: number } | null = null;
+    for (const point of sketch.points) {
+      if (point.construction) continue;
+      const position = points[point.id];
+      if (!position) continue;
+      const distance = Math.hypot(position[0] - raw[0], position[1] - raw[1]);
+      if (distance <= snapTolerance && (!best || distance < best.distance)) {
+        best = {
+          snap: { point: position, existingPointId: point.id, kind: "point" },
+          distance,
+        };
+      }
+    }
+    if (best) return best.snap;
+
+    let x = Math.round(raw[0] / DRAW_GRID) * DRAW_GRID;
+    let y = Math.round(raw[1] / DRAW_GRID) * DRAW_GRID;
+    let kind: Snap["kind"] = "grid";
+    if (axisFrom) {
+      if (Math.abs(raw[1] - axisFrom[1]) < 9 * px) {
+        y = axisFrom[1];
+        kind = "axis";
+      } else if (Math.abs(raw[0] - axisFrom[0]) < 9 * px) {
+        x = axisFrom[0];
+        kind = "axis";
+      }
+    }
+    return { point: [x, y], kind };
+  };
+
+  const snapGrid = (raw: Vec2): Vec2 => [
+    Math.round(raw[0] / DRAW_GRID) * DRAW_GRID,
+    Math.round(raw[1] / DRAW_GRID) * DRAW_GRID,
+  ];
+
+  const startPan = (event: ReactPointerEvent<SVGSVGElement>) => {
     svgRef.current?.setPointerCapture(event.pointerId);
-    panRef.current = {
-      clientX: event.clientX,
-      clientY: event.clientY,
-      box: viewBox,
-    };
+    panRef.current = { clientX: event.clientX, clientY: event.clientY, box: viewBox };
+  };
+
+  const placeLineVertex = (raw: Vec2) => {
+    const last = draft[draft.length - 1];
+    const snap = snapPoint(raw, last?.point);
+
+    if (draft.length === 0) {
+      setDraft([{ point: snap.point, existingPointId: snap.existingPointId }]);
+      return;
+    }
+
+    const first = draft[0]!;
+    const closes =
+      draft.length >= 3 &&
+      Math.hypot(snap.point[0] - first.point[0], snap.point[1] - first.point[1]) <
+        snapTolerance;
+    if (closes) {
+      onCreatePolyline(draft, true);
+      setDraft([]);
+      return;
+    }
+
+    if (
+      last &&
+      Math.hypot(snap.point[0] - last.point[0], snap.point[1] - last.point[1]) < 1e-6
+    ) {
+      return;
+    }
+    setDraft([...draft, { point: snap.point, existingPointId: snap.existingPointId }]);
+  };
+
+  const onPointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
+    if (event.button === 1 || event.button === 2) {
+      startPan(event);
+      return;
+    }
+    if (event.button !== 0) return;
+
+    const raw = toSketch(event);
+
+    if (tool === "select") {
+      startPan(event);
+      return;
+    }
+    if (tool === "line") {
+      placeLineVertex(raw);
+      return;
+    }
+    if (tool === "rect") {
+      const start = snapGrid(raw);
+      setRectStart(start);
+      setRect({ a: start, b: start });
+      svgRef.current?.setPointerCapture(event.pointerId);
+      return;
+    }
+    if (tool === "circle") {
+      if (!circleCenter) {
+        const snap = snapPoint(raw);
+        setCircleCenter({ point: snap.point, existingPointId: snap.existingPointId });
+      } else {
+        const snap = snapPoint(raw);
+        const radius = Math.hypot(
+          snap.point[0] - circleCenter.point[0],
+          snap.point[1] - circleCenter.point[1],
+        );
+        if (radius >= 0.5) onCreateCircle(circleCenter, roundTo(radius, 0.5));
+        setCircleCenter(null);
+      }
+    }
   };
 
   const onPointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
+    const raw = toSketch(event);
+
     if (dragRef.current) {
-      const [x, y] = toSketch(event);
-      onDragPoint(dragRef.current, x, y);
+      onDragPoint(dragRef.current, raw[0], raw[1]);
       return;
     }
-    const pan = panRef.current;
-    if (pan) {
+
+    if (panRef.current) {
+      const pan = panRef.current;
       const dx = (event.clientX - pan.clientX) / scale;
       const dy = (event.clientY - pan.clientY) / scale;
       setViewBox({ ...pan.box, x: pan.box.x - dx, y: pan.box.y - dy });
+      return;
+    }
+
+    if (tool === "select") return;
+
+    const axisFrom = tool === "line" ? draft[draft.length - 1]?.point : undefined;
+    const snap =
+      tool === "rect"
+        ? { point: snapGrid(raw), kind: "grid" as const }
+        : snapPoint(raw, axisFrom);
+    setHover(snap);
+
+    if (rectStart) {
+      setRect({ a: rectStart, b: snap.point });
     }
   };
 
-  const endInteraction = (event: ReactPointerEvent<SVGSVGElement>) => {
+  const finishInteraction = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (svgRef.current?.hasPointerCapture(event.pointerId)) {
       svgRef.current.releasePointerCapture(event.pointerId);
     }
+
+    if (rectStart) {
+      const start = rectStart;
+      setRectStart(null);
+      const end = tool === "rect" ? snapGrid(toSketch(event)) : start;
+      setRect(null);
+      if (Math.abs(end[0] - start[0]) >= 1 && Math.abs(end[1] - start[1]) >= 1) {
+        onCreateRectangle(start, end);
+      }
+    }
+
     if (dragRef.current) {
       dragRef.current = null;
       setDragging(null);
@@ -141,6 +318,7 @@ export function SketchCanvas({
   };
 
   const startPointDrag = (event: ReactPointerEvent, pointId: string) => {
+    if (tool !== "select") return;
     event.stopPropagation();
     event.preventDefault();
     svgRef.current?.setPointerCapture(event.pointerId);
@@ -148,36 +326,49 @@ export function SketchCanvas({
     setDragging(pointId);
   };
 
+  const onDoubleClick = () => {
+    if (tool === "line" && draft.length >= 2) {
+      onCreatePolyline(draft, false);
+      setDraft([]);
+    }
+  };
+
   const grid = useMemo(() => makeGrid(viewBox), [viewBox]);
-  const loopPoints = loop.map((id) => points[id]).filter((p): p is Vec2 => Boolean(p));
-  const geometryPath = loopPoints.map((p) => `${p[0]},${p[1]}`).join(" ");
   const circles = sketch.curves.filter(
     (curve): curve is SketchCircle => curve.type === "circle",
   );
   const pointRadius = 3.4 * px;
   const hitRadius = 11 * px;
   const fontSize = 11 * px;
-
-  const width =
-    loopPoints.length >= 2 && loopPoints[0] && loopPoints[1]
-      ? Math.hypot(loopPoints[1][0] - loopPoints[0][0], loopPoints[1][1] - loopPoints[0][1])
-      : 0;
-  const height =
-    loopPoints.length >= 3 && loopPoints[1] && loopPoints[2]
-      ? Math.hypot(loopPoints[2][0] - loopPoints[1][0], loopPoints[2][1] - loopPoints[1][1])
+  const draftPolygon = [...draft.map((vertex) => vertex.point), ...(hover ? [hover.point] : [])]
+    .map((point) => `${point[0]},${point[1]}`)
+    .join(" ");
+  const rectGeometry = rect ? normalizeRect(rect.a, rect.b) : null;
+  const circleRadius =
+    circleCenter && hover
+      ? Math.hypot(
+          hover.point[0] - circleCenter.point[0],
+          hover.point[1] - circleCenter.point[1],
+        )
       : 0;
 
   return (
     <svg
       ref={svgRef}
       className="sketch-canvas"
+      data-tool={tool}
+      style={{ cursor: tool === "select" ? "default" : "crosshair" }}
       viewBox={`${viewBox.x} ${viewBox.y} ${viewBox.w} ${viewBox.h}`}
       preserveAspectRatio="xMidYMid meet"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
-      onPointerUp={endInteraction}
-      onPointerCancel={endInteraction}
-      onDoubleClick={() => setViewBox(fitView(sketch, radii))}
+      onPointerUp={finishInteraction}
+      onPointerCancel={finishInteraction}
+      onPointerLeave={() => {
+        if (!dragRef.current && !panRef.current) setHover(null);
+      }}
+      onDoubleClick={onDoubleClick}
+      onContextMenu={(event) => event.preventDefault()}
       role="img"
       aria-label="Sketch editor"
     >
@@ -211,6 +402,14 @@ export function SketchCanvas({
         />
       </g>
 
+      {outerLoop && outerLoop.length >= 3 ? (
+        <polygon
+          points={outerLoop.map((point) => `${point[0]},${point[1]}`).join(" ")}
+          fill={tone === "conflict" ? "rgba(255,123,114,0.07)" : "rgba(116,169,255,0.06)"}
+          stroke="none"
+        />
+      ) : null}
+
       {circles.map((circle) => {
         const center = points[circle.center];
         if (!center) return null;
@@ -228,17 +427,8 @@ export function SketchCanvas({
         );
       })}
 
-      <polygon
-        points={geometryPath}
-        fill={tone === "conflict" ? "rgba(255,123,114,0.06)" : "rgba(116,169,255,0.05)"}
-        stroke={color}
-        strokeWidth={1.6}
-        strokeLinejoin="round"
-        vectorEffect="non-scaling-stroke"
-      />
-
       {sketch.curves.map((curve) => {
-        if (curve.type !== "line" || !curve.construction) return null;
+        if (curve.type !== "line") return null;
         const a = points[curve.a];
         const b = points[curve.b];
         if (!a || !b) return null;
@@ -249,68 +439,37 @@ export function SketchCanvas({
             y1={a[1]}
             x2={b[0]}
             y2={b[1]}
-            stroke="#4c5b6f"
-            strokeWidth={1}
-            strokeDasharray="5 4"
+            stroke={curve.construction ? "#4c5b6f" : color}
+            strokeWidth={1.6}
+            strokeDasharray={curve.construction ? "5 4" : undefined}
+            strokeLinecap="round"
             vectorEffect="non-scaling-stroke"
           />
         );
       })}
 
-      {showDimensions && loopPoints.length >= 4 ? (
+      {dimensions ? (
         <>
           <Dimension
-            from={loopPoints[0]!}
-            to={loopPoints[1]!}
+            from={dimensions.width.from}
+            to={dimensions.width.to}
             offset={[0, -16]}
-            value={width}
+            value={dimensions.width.value}
             px={px}
             fontSize={fontSize}
           />
           <Dimension
-            from={loopPoints[1]!}
-            to={loopPoints[2]!}
+            from={dimensions.height.from}
+            to={dimensions.height.to}
             offset={[16, 0]}
-            value={height}
+            value={dimensions.height.value}
             px={px}
             fontSize={fontSize}
           />
         </>
       ) : null}
 
-      {circles.map((circle) => {
-        const center = points[circle.center];
-        const radius = radii[circle.id] ?? circle.radius;
-        if (!center) return null;
-        const diagonal = Math.SQRT1_2;
-        const start: Vec2 = [
-          center[0] + radius * diagonal,
-          center[1] + radius * diagonal,
-        ];
-        const end: Vec2 = [start[0] + 10, start[1] + 10];
-        return (
-          <g key={`leader-${circle.id}`} stroke="#c8b06a" fill="#c8b06a">
-            <line
-              x1={start[0]}
-              y1={start[1]}
-              x2={end[0]}
-              y2={end[1]}
-              strokeWidth={1}
-              vectorEffect="non-scaling-stroke"
-            />
-            <text
-              x={end[0] + 1.5 * px}
-              y={end[1] + 3 * px}
-              fontSize={fontSize}
-              stroke="#171b21"
-              strokeWidth={3 * px}
-              paintOrder="stroke"
-            >
-              ⌀ {radius * 2}
-            </text>
-          </g>
-        );
-      })}
+      {circles[0] ? <CircleLeader circle={circles[0]} points={points} radii={radii} px={px} fontSize={fontSize} /> : null}
 
       <ConstraintBadges sketch={sketch} points={points} px={px} />
 
@@ -336,14 +495,14 @@ export function SketchCanvas({
         <circle cx={0} cy={0} r={2.2 * px} fill="#171b21" stroke="#7f8b9c" />
       </g>
 
-      {sketch.points
-        .filter((point) => !point.fixed && loop.includes(point.id))
-        .map((point) => {
-          const position = points[point.id];
-          if (!position) return null;
-          const active = dragging === point.id;
-          return (
-            <g key={point.id}>
+      {sketch.points.map((point) => {
+        if (point.fixed || point.construction) return null;
+        const position = points[point.id];
+        if (!position) return null;
+        const active = dragging === point.id;
+        return (
+          <g key={point.id}>
+            {tool === "select" ? (
               <circle
                 cx={position[0]}
                 cy={position[1]}
@@ -353,20 +512,140 @@ export function SketchCanvas({
                 data-point-id={point.id}
                 onPointerDown={(event) => startPointDrag(event, point.id)}
               />
-              <circle
-                cx={position[0]}
-                cy={position[1]}
-                r={active ? pointRadius * 1.35 : pointRadius}
-                fill={active ? color : "#101317"}
-                stroke={color}
-                strokeWidth={1.6}
-                vectorEffect="non-scaling-stroke"
-                pointerEvents="none"
-              />
-            </g>
-          );
-        })}
+            ) : null}
+            <circle
+              cx={position[0]}
+              cy={position[1]}
+              r={active ? pointRadius * 1.35 : pointRadius}
+              fill={active ? color : "#101317"}
+              stroke={color}
+              strokeWidth={1.6}
+              vectorEffect="non-scaling-stroke"
+              pointerEvents="none"
+            />
+          </g>
+        );
+      })}
+
+      {tool === "line" && draft.length > 0 ? (
+        <g>
+          <polyline
+            points={draftPolygon}
+            fill="none"
+            stroke={color}
+            strokeWidth={1.5}
+            strokeDasharray="6 4"
+            vectorEffect="non-scaling-stroke"
+          />
+          {draft.map((vertex, index) => (
+            <circle
+              key={index}
+              cx={vertex.point[0]}
+              cy={vertex.point[1]}
+              r={pointRadius * 0.8}
+              fill={color}
+              pointerEvents="none"
+            />
+          ))}
+        </g>
+      ) : null}
+
+      {tool === "rect" && rectGeometry ? (
+        <rect
+          x={rectGeometry.x}
+          y={rectGeometry.y}
+          width={rectGeometry.w}
+          height={rectGeometry.h}
+          fill="rgba(116,169,255,0.05)"
+          stroke={color}
+          strokeWidth={1.4}
+          strokeDasharray="6 4"
+          vectorEffect="non-scaling-stroke"
+        />
+      ) : null}
+
+      {tool === "circle" && circleCenter && hover ? (
+        <g>
+          <circle
+            cx={circleCenter.point[0]}
+            cy={circleCenter.point[1]}
+            r={circleRadius}
+            fill="none"
+            stroke={color}
+            strokeWidth={1.4}
+            strokeDasharray="6 4"
+            vectorEffect="non-scaling-stroke"
+          />
+          <line
+            x1={circleCenter.point[0]}
+            y1={circleCenter.point[1]}
+            x2={hover.point[0]}
+            y2={hover.point[1]}
+            stroke={color}
+            strokeWidth={1}
+            strokeDasharray="3 3"
+            vectorEffect="non-scaling-stroke"
+          />
+        </g>
+      ) : null}
+
+      {hover && tool !== "select" ? (
+        <circle
+          cx={hover.point[0]}
+          cy={hover.point[1]}
+          r={(hover.kind === "point" ? 6 : 4) * px}
+          fill={hover.kind === "point" ? "rgba(226,180,92,0.18)" : "none"}
+          stroke={hover.kind === "point" ? "#e2b45c" : "#5c7699"}
+          strokeWidth={1.2}
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      ) : null}
     </svg>
+  );
+}
+
+function CircleLeader({
+  circle,
+  points,
+  radii,
+  px,
+  fontSize,
+}: {
+  circle: SketchCircle;
+  points: Record<string, Vec2>;
+  radii: Record<string, number>;
+  px: number;
+  fontSize: number;
+}) {
+  const center = points[circle.center];
+  if (!center) return null;
+  const radius = radii[circle.id] ?? circle.radius;
+  const diagonal = Math.SQRT1_2;
+  const start: Vec2 = [center[0] + radius * diagonal, center[1] + radius * diagonal];
+  const end: Vec2 = [start[0] + 10, start[1] + 10];
+
+  return (
+    <g stroke="#c8b06a" fill="#c8b06a">
+      <line
+        x1={start[0]}
+        y1={start[1]}
+        x2={end[0]}
+        y2={end[1]}
+        strokeWidth={1}
+        vectorEffect="non-scaling-stroke"
+      />
+      <text
+        x={end[0] + 1.5 * px}
+        y={end[1] + 3 * px}
+        fontSize={fontSize}
+        stroke="#171b21"
+        strokeWidth={3 * px}
+        paintOrder="stroke"
+      >
+        ⌀ {roundTo(radius * 2, 0.1)}
+      </text>
+    </g>
   );
 }
 
@@ -420,13 +699,13 @@ function Dimension({
         strokeWidth={1}
         vectorEffect="non-scaling-stroke"
       />
-      {[a, b].map((p, index) => (
+      {[a, b].map((point, index) => (
         <line
           key={index}
-          x1={p[0] - normal[0] * tick}
-          y1={p[1] - normal[1] * tick}
-          x2={p[0] + normal[0] * tick}
-          y2={p[1] + normal[1] * tick}
+          x1={point[0] - normal[0] * tick}
+          y1={point[1] - normal[1] * tick}
+          x2={point[0] + normal[0] * tick}
+          y2={point[1] + normal[1] * tick}
           strokeWidth={1.4}
           vectorEffect="non-scaling-stroke"
         />
@@ -469,7 +748,6 @@ function ConstraintBadges({
         const a = points[line.a];
         const b = points[line.b];
         if (!a || !b) return null;
-        const label = constraint.type === "horizontal" ? "H" : "V";
         return (
           <text
             key={constraint.id}
@@ -479,7 +757,7 @@ function ConstraintBadges({
             strokeWidth={2.5 * px}
             paintOrder="stroke"
           >
-            {label}
+            {constraint.type === "horizontal" ? "H" : "V"}
           </text>
         );
       })}
@@ -507,6 +785,10 @@ function makeGrid(box: ViewBox) {
 }
 
 function fitView(sketch: Sketch, radii: Record<string, number>): ViewBox {
+  if (sketch.points.length === 0) {
+    return { x: -50, y: -50, w: 100, h: 100 };
+  }
+
   const xs = sketch.points.map((point) => point.x);
   const ys = sketch.points.map((point) => point.y);
   for (const curve of sketch.curves) {
@@ -523,13 +805,22 @@ function fitView(sketch: Sketch, radii: Record<string, number>): ViewBox {
   const minY = Math.min(...ys);
   const maxY = Math.max(...ys);
   const span = Math.max(maxX - minX, maxY - minY, 20);
-  const pad = span * 0.45;
+  const pad = span * 0.45 + 10;
 
   return {
     x: minX - pad,
     y: minY - pad,
     w: span + pad * 2,
     h: span + pad * 2,
+  };
+}
+
+function normalizeRect(a: Vec2, b: Vec2) {
+  return {
+    x: Math.min(a[0], b[0]),
+    y: Math.min(a[1], b[1]),
+    w: Math.abs(b[0] - a[0]),
+    h: Math.abs(b[1] - a[1]),
   };
 }
 
@@ -540,6 +831,10 @@ function normalize(v: Vec2): Vec2 {
 
 function formatLength(value: number): string {
   return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+}
+
+function roundTo(value: number, step: number): number {
+  return Math.round(value / step) * step;
 }
 
 function clamp(value: number, min: number, max: number): number {

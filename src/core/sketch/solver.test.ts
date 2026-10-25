@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { DEMO_DEFAULTS, createDemoModel } from "./demo";
 import { updateConstraintValue } from "./geometry";
 import { initSolver, solveDrag, solveSketch, type SolveOutcome } from "./solver";
+import type { Sketch } from "./types";
 import type { Vec2 } from "../types";
 
 function at(outcome: SolveOutcome, id: string): Vec2 {
@@ -80,5 +81,35 @@ describe("slvs adapter", () => {
   it("refuses to move a fully constrained sketch", () => {
     const { sketch } = createDemoModel({ ...DEMO_DEFAULTS, constrained: true });
     expect(solveDrag(sketch, { pointId: "p1", x: 100, y: 25 })).toBeNull();
+  });
+
+  it("slides a point along a circular constraint instead of rejecting the drag", () => {
+    // A rod of length 50 anchored at the origin: the free end can only move on
+    // a circle. A diagonal drag must become a tangential one.
+    const pendulum: Sketch = {
+      points: [
+        { id: "origin", x: 0, y: 0, fixed: true },
+        { id: "b", x: 50, y: 0 },
+      ],
+      curves: [],
+      constraints: [{ id: "rod", type: "distance", a: "origin", b: "b", value: 50 }],
+    };
+
+    const outcome = solveDrag(pendulum, { pointId: "b", x: 60, y: 10 });
+
+    expect(outcome).not.toBeNull();
+    const b = at(outcome!, "b");
+    expect(Math.hypot(b[0], b[1])).toBeCloseTo(50, 4);
+    expect(b[1]).toBeGreaterThan(5);
+    expect(b[0]).toBeLessThan(55);
+  });
+
+  it("does not drag fixed reference geometry", () => {
+    const pendulum: Sketch = {
+      points: [{ id: "origin", x: 0, y: 0, fixed: true }],
+      curves: [],
+      constraints: [],
+    };
+    expect(solveDrag(pendulum, { pointId: "origin", x: 10, y: 10 })).toBeNull();
   });
 });

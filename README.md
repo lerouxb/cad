@@ -26,14 +26,20 @@ npm run build
 
 ## What works today
 
-- A constrained sketch (rectangle + centred hole) solved by SolveSpace's `slvs`.
-- Drag a corner; add width/height dimensions to make it fully constrained; drive the
-  dimensions with sliders.
-- Extrude in OCCT inside a Web Worker, rendered with three.js (Z-up, mm).
-- Exact volume/face/triangle stats, and an e2e test that checks them numerically.
+- Draw with the **line**, **rectangle**, and **circle** tools. Grid and point snapping;
+  axis inference adds horizontal/vertical constraints; chains close on their first point.
+- Drag points: the cursor delta is projected onto the constraint tangent space, so points
+  slide along lines and circles. Fully constrained geometry refuses to move.
+- Closed profiles are extracted from the sketch graph and extruded in OCCT inside a Web
+  Worker, rendered with three.js (Z-up, mm). Circles inside the loop become holes.
+- **Undo/redo** with gesture grouping (`Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`), `Esc` to cancel a
+  draft, `V/L/R/C` for tools.
+- Exact volume/face/triangle stats, and an e2e test that checks them numerically while
+  dragging, dimensioning, drawing, and undoing.
 
-It is intentionally narrow: the sketch is currently hard-coded, the feature tree is a
-preview, and nothing is persisted yet. See `docs/PLAN.md` for what comes next.
+It is intentionally narrow: profile selection is "largest closed loop", dimensions only
+exist on the example, there is no entity selection/delete, the feature tree is a preview,
+and nothing is persisted yet. See `docs/PLAN.md` for what comes next.
 
 ## The stack in one line
 

@@ -11,21 +11,28 @@ then sketches on faces, then more features.
 
 ## Where we are (2026-10-25)
 
-**M0 + the vertical slice are done.** The app runs a real, if narrow, pipeline:
+**M0 and the M1 core are done.** The app is an editable parametric sketcher:
 
-- `slvs` loads lazily and solves the built-in sketch; dragging, DOF and diagnostics work.
-- The solved profile (rectangle + exact circular hole) is extruded by OCCT in a worker.
-- three.js renders the tessellated solid and its B-rep edges, Z-up.
-- The e2e test asserts the *exact* volume, then drives a dimension and the extrude height
-  and asserts the new volumes. `npm run verify` and `npm run e2e` are green.
+- `slvs` loads lazily and solves real sketches. Dragging projects the cursor delta onto
+  the constraint tangent space, so points slide along lines and circles instead of the
+  drag being rejected.
+- Draw with line (chain, closes on first point), rectangle (drag), and circle
+  (centre + radius). Grid and point snapping; automatic horizontal/vertical constraints;
+  coincident endpoints come from shared points.
+- Closed profiles are extracted from the graph (largest loop + circles inside it) and
+  extruded by OCCT in a worker; three.js renders the solid and its B-rep edges, Z-up.
+- Undo/redo with gesture grouping (`Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`); one drag or slider
+  gesture is one step. `Esc` cancels a draft.
+- The example sketch can be loaded, cleared, edited, or replaced by drawing.
+- `npm run verify` (24 unit tests) and `npm run e2e` are green. The e2e asserts exact
+  volumes, drags, dimensions, draws a rectangle, and undoes it.
 
-Numbers from the running app: ~520 triangles, 7 faces, 26 387.3 mm³ for a 60×40×12 plate
-with a Ø16 hole; ~47 ms rebuild round-trip after warm-up.
+Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
+95 017.7 mm³ and rebuilds in ~35 ms after warm-up.
 
-**Deliberately fake in the spike** (all scheduled below): the sketch is hard-coded
-(`core/sketch/demo.ts`), the profile loop order is explicit, the feature tree is static,
-there is no persistence or undo, no picking, and drags only follow axis-aligned
-constraints.
+**Still temporary** (all scheduled below): profile selection is "largest loop"; line
+loops cannot be holes; dimensions exist only on the example and are edited with sliders;
+there is no entity selection/delete; the feature tree is static; nothing is persisted.
 
 ---
 
@@ -51,29 +58,36 @@ constraints.
 
 ---
 
-## M1 — The real sketcher (6–9 days)
+## M1 — The real sketcher (core done, ~4–6 days left)
 
-The most UX-sensitive milestone, and the biggest. The spike has the solver plumbing; this
-milestone turns it into a tool.
+The most UX-sensitive milestone. The solver plumbing and the drawing loop work; what is
+left is the constraint *editing* experience.
 
-- [ ] `core/doc`: document + feature types, commands, immutable updates, undo/redo
-- [ ] Move sketch state into the document; node/feature ids; a real sketch feature
-- [ ] Tools: line, polyline, rectangle, circle, arc, select, delete, construction toggle
-- [ ] Auto-constraints while drawing: coincident endpoints, horizontal/vertical snap,
-      tangent continuation, point snapping, grid snap
-- [ ] Constraints UI: coincident, horizontal, vertical, parallel, perpendicular, tangent,
-      equal, distance, radius/diameter, angle, point-on-line, symmetric, midpoint
-- [ ] Dimension labels: draggable placement, inline editing, driving vs reference
-- [ ] **Drag projection**: project the cursor delta onto the constraint tangent space
-      (numeric Jacobian null space). Required for circles and angled lines; the axis-only
-      fallback in `solveDrag` is not enough. This is the main solver task of M1.
-- [ ] DOF readout, fully-constrained colouring, conflicting/redundant constraint highlights
-- [ ] Sketch origin + projected reference geometry as group-0 fixed entities
-- [ ] Zoom/fit affordances, snapping feedback, keyboard shortcuts
+- [x] Tools: line (chain), rectangle, circle; select mode; grid + point snapping;
+      automatic coincident endpoints (shared points) and horizontal/vertical constraints
+- [x] **Drag projection**: cursor delta projected onto the constraint tangent space
+      (analytic Jacobian + weighted Kaczmarz), so points slide along circles and angled
+      lines. A fully constrained sketch refuses to move.
+- [x] Undo/redo with gesture grouping; DOF readout and fully-constrained colouring;
+      conflict display
+- [x] Sketch origin as a group-0 fixed entity; construction geometry
+- [x] Zoom (wheel), pan (middle/right, or select-drag on empty space), double-click fit
+- [x] Keyboard: `V/L/R/C`, `Esc`, `Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`
+- [ ] **Selection + deletion**: click curves/points, delete, multi-select, then entity
+      property panel
+- [ ] **Dimension tool**: pick two entities → place a dimension; inline editing; driving
+      vs reference. The example's slider dimensions are a placeholder.
+- [ ] **Constraint tool**: apply the remaining solver constraints (parallel, perpendicular,
+      tangent, equal, angle, point-on-line, symmetric, radius) and show their badges
+- [ ] Endpoint *coincident constraints* for points that are near but not identical
+      (currently only shared points)
+- [ ] Arc tool (three-point + tangent), plus arc loops in profile extraction
+- [ ] `core/doc`: feature/document schema, ids, migrations — before history lands
+- [ ] Move the sketch out of component state into the document store
 
-**Done when:** you can draw a rectangle from scratch, dimension it, drag it, see it become
-fully constrained, break a constraint and see the exact conflict highlighted, then undo
-everything back to empty — without touching the demo model.
+**Done when:** you can draw a rectangle from scratch, dimension it with real dimension
+annotations, drag it, see it become fully constrained, break a constraint and see the
+exact conflict highlighted, delete an entity, then undo everything back to empty.
 
 ## M2 — Profiles and solids (the spike covers ~70%)
 
@@ -81,15 +95,18 @@ everything back to empty — without touching the demo model.
 - [x] Extrude evaluator: polygon/circle loops → wire → face → solid, with validation
 - [x] Tessellation via `toBufferGeometryData` / `meshEdges`, transferred to the main thread
 - [x] Shaded solid + dark B-rep edges, Z-up, auto-framing
-- [ ] `core/sketch/loop.ts`: planar graph → minimal cycles → nesting (outer + holes) with
-      property tests; replaces the explicit demo loop
-- [ ] Region picking in the sketch UI (click an enclosed area; `isInside2D`-style test)
-- [ ] Multiple regions per sketch; holes derived from nesting, not from a magic id
+- [x] `core/sketch/loops.ts`: graph → simple cycles → largest loop → circles inside it
+      as holes, with tests
+- [ ] Region picking in the sketch UI (click an enclosed area)
+- [ ] Multiple regions per sketch; line loops as holes (nesting), not just circles
+- [ ] Replace cycle enumeration with planar face traversal (intersecting segments, nested
+      loops, disjoint regions)
 - [ ] Rebuild goldens: several profiles → volume/bbox/face-count assertions
 - [ ] Face/edge picking + hover/selection highlight (`faceGroups`/`edgeGroups` are already
       in the mesh payload but unused)
 
-**Done when:** an arbitrary multi-loop sketch can be extruded without hard-coded ids.
+**Done when:** an arbitrary multi-loop sketch can be extruded, with holes, without the
+"largest loop" rule.
 
 ## M3 — History (4–6 days)
 

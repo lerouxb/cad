@@ -21,6 +21,26 @@ export function sketchGeometry(sketch: Sketch): SolvedGeometry {
   };
 }
 
+export interface Bounds2 {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+  width: number;
+  height: number;
+}
+
+export function polygonBounds(points: readonly Vec2[]): Bounds2 | null {
+  if (points.length === 0) return null;
+  const xs = points.map((point) => point[0]);
+  const ys = points.map((point) => point[1]);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  return { minX, minY, maxX, maxY, width: maxX - minX, height: maxY - minY };
+}
+
 export function distance(a: Vec2, b: Vec2): number {
   return Math.hypot(b[0] - a[0], b[1] - a[1]);
 }

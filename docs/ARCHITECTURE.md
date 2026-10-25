@@ -227,32 +227,38 @@ Rules:
 - **Circle/arc normals also go in group 0.** A 2D circle needs an `E_NORMAL_IN_3D`
   argument (`addNormal2D` is rejected), and if that normal lives in the solved group it
   contributes 3 meaningless rotational DOF. Create one fixed group-0 normal and share it.
-- **Dragging:** seed the dragged point at the cursor and add `dragged()`. Pinning a point
-  at an infeasible position (e.g. dragging a horizontally-constrained point diagonally)
-  returns `INCONSISTENT`, and the solver will happily violate the other constraints, so
-  never apply a failed drag. `solveDrag()` retries x-only then y-only, which makes points
-  slide along axis-aligned constraints. Points on angled lines and circles need the drag
-  projected onto the constraint tangent space (numeric Jacobian null space) — that is an
-  M1 task, and it is the main reason the current drag is a spike, not a sketcher.
+- **Dragging uses tangent-space projection.** Pinning the dragged point at the cursor
+  makes the system inconsistent as soon as the cursor leaves the feasible set: a point on
+  a circle can only move along the circle. Instead `core/sketch/drag.ts` linearises the
+  constraints at the current solution (an analytic Jacobian for every supported
+  constraint), then projects the cursor delta onto its null space with weighted cyclic
+  orthogonal projections (von Neumann/Kaczmarz). The dragged point gets a tiny mobility
+  (1e-9) so it is the thing that follows the cursor, while the rest of the sketch absorbs
+  the correction. The projected positions are applied to *all* points and the solver
+  removes the second-order error; if it rejects the step, shorter steps are tried. A
+  full-rank sketch projects to zero and `solveDrag()` returns `null`, so a fully
+  constrained sketch simply does not move. This is also why `dragged()` is **not** used:
+  it pins, and pinning is the bug.
 
 ### Loop finding and profiles
 
-For extrude we need closed profiles. After solving:
+For extrude we need closed profiles. `core/sketch/loops.ts` currently does this:
 
-1. Build a planar graph over points and curves, extract minimal cycles, discard
-   non-simple cycles.
-2. Determine nesting by point-in-polygon to get outer loops + holes.
-3. Convert each loop to brepjs 2D curves (`make2dSegmentCurve`, `make2dCircle`,
-   `make2dArcFromCenter`), then `createBlueprint` (and `createCompoundBlueprint` for
-   holes). `stitchCurves` closes tiny numeric gaps.
-4. `sketchOnPlane2D(bp, frame)` → `sketchExtrude(...)` (or build a wire from the
-   blueprint's `SketchData`).
+1. Build an undirected graph over non-construction line segments and enumerate simple
+   cycles by DFS (capped, deduplicated by curve set).
+2. Sort by absolute polygon area; the largest cycle is the outer profile.
+3. Every circle whose centre is inside that polygon becomes a hole. Clearance is the
+   kernel worker's job: a crossing hole is a reported error, not silently dropped.
 
-Steps 1–2 are pure TypeScript and unit-testable. Step 3 is where `brepjs`'s 2D layer
-earns its keep: the same `Blueprint` gives us `isInside2D` for region picking and
-`toSVGPathD` for drawing the sketch.
+This is exact for the shapes the sketcher can draw today and is easy to test. It is not
+a general planar arrangement: nested line loops (a rectangular pocket), disjoint regions,
+and intersecting segments are not handled yet. M2 replaces it with face traversal plus
+explicit region picking, at which point "largest loop" disappears.
 
-Every cycle becomes a `Region`.
+The kernel side is already simpler than the original plan: solved loops are converted
+straight to brepjs edges (`line`, `circle`) → `wireLoop` → `face(outer, holes)` →
+`extrude`. No blueprints needed for straight segments and full circles. Arcs will use
+`threePointArc` or the blueprint layer when they land.
 
 Auto-constraints while drawing (snap to horizontal/vertical, coincident to nearby
 endpoints, tangent continuation) are what make the sketcher feel good. They are part of
@@ -399,12 +405,16 @@ edits and show stale geometry with a spinner rather than blocking.
 
 ## 11. Undo / redo, persistence
 
-- **Undo:** immutable `Doc` snapshots with a cap (100). Every committed command pushes
-  one. Drags push exactly one entry on pointer-up. Simple, and documents are a few kB.
-- **Persistence:** `localStorage` autosave (debounced 1 s) + explicit `.cad.json`
-  download/upload. IndexedDB later if documents grow.
-- `schemaVersion` + migrations on load. Reject nothing silently: an unparseable document
-  must produce a readable error, not a blank screen.
+- **Undo:** snapshot history (`ui/useHistory.ts`) over the sketch document state
+  (`{ sketch, solved, kind }`), capped at 100 entries. The mutable store is the source of
+  truth for event handlers; a shallow view is mirrored into React state for rendering.
+- **Grouping:** a gesture is one undo entry. Drags and sliders pass a `mergeKey`
+  (`drag:p1`, `demo-size`, `hole`) so consecutive commits replace the top entry; the
+  canvas calls `endMerge()` on pointer-up (sliders do the same on pointer-up/blur).
+  Drawing a shape is a single commit.
+- **Persistence:** not implemented. The intended design is `localStorage` autosave
+  (debounced) + `.cad.json` export/import, with `schemaVersion` and migrations. An
+  unparseable document must produce a readable error, never a blank screen.
 
 ## 12. Errors and diagnostics
 
@@ -454,19 +464,18 @@ the honest map, so nobody assumes a layer exists because it is described above.
 
 | Layer | Status |
 | --- | --- |
-| `core/doc` | Not started. The sketch lives in React state; no document, undo or persistence. |
-| `core/sketch` | Real: types, `slvs` adapter, `solveDrag`, geometry helpers, golden tests. `demo.ts` is a hand-authored fixture that M1 deletes. |
-| `core/features` | Real but narrow: one extrude from an explicit loop. No regions, cuts or history. |
+| `core/doc` | Not started. The sketch + solve summary live in `useHistory`; no schema, feature list or persistence yet. |
+| `core/sketch` | Real: types, `slvs` adapter, tangent-space `solveDrag`, pure drawing edits, loop extraction, geometry helpers, tests. `demo.ts` is the loadable example. |
+| `core/features` | Real but narrow: one extrude. No cuts, fillets or history replay. |
 | `core/rebuild` | Not started. One sketch and one feature, rebuilt by a debounce. |
-| `core/kernel` | Real: typed protocol, worker client, OCCT worker, profile validation, exact stats. |
+| `core/kernel` | Real: typed protocol, worker client, OCCT worker, hole validation, exact stats. |
 | `viewer` | Real: Z-up scene, framing, meshing, edges. Picking and highlight are not implemented. |
-| `sketch` UI | Real but a sidebar, not an in-canvas orthographic sketch mode. Select/drag/dimension display only; no drawing tools yet. |
+| `sketch` UI | Real, in a sidebar rather than a full-canvas sketch mode: select/drag, line/rectangle/circle tools, grid + point snapping, auto H/V, dimension display (demo only), undo/redo. |
 | Feature tree | Static markup that communicates the intended product. |
 | Persistence | None yet. |
 
-Known shortcuts, all scheduled: the profile loop is `model.loop` instead of detected
-cycles; dragging only follows axis-aligned constraints and is clamped by
-`clampDemoDrag` so the hole cannot leave the plate; dimensions are edited with sliders
-rather than inline; the hole position is pinned with a midpoint constraint on a
-construction diagonal (that part is real, and worth keeping).
+Known shortcuts, all scheduled: profile selection is "largest loop"; line loops cannot be
+holes yet; no selection or per-entity delete; dimensions are edited with sliders and only
+exist on the example; the example is cleared the first time you draw; `clampDemoDrag`
+keeps the example's hole inside its plate.
 

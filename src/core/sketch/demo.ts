@@ -65,7 +65,7 @@ export function createDemoModel(options: DemoOptions = DEMO_DEFAULTS): DemoModel
         { id: "origin", x: 0, y: 0, fixed: true },
         // Hole centre: held at the midpoint of the p0–p2 diagonal, so it stays
         // centred when the rectangle is resized or dragged.
-        { id: "hole-center", x: width / 2, y: height / 2 },
+        { id: "hole-center", x: width / 2, y: height / 2, construction: true },
       ],
       curves: [
         { id: "l-bottom", type: "line", a: "p0", b: "p1" },

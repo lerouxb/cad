@@ -79,6 +79,32 @@ test("a constrained sketch drives an exact solid", async ({ page }) => {
   await expect
     .poll(async () => Number(await stats.getAttribute("data-volume")))
     .toBeCloseTo(expectedTaller, -1);
+  const parametricVolume = Number(await stats.getAttribute("data-volume"));
+
+  // Draw a new rectangle with the tool. Drawing replaces the example.
+  await page.getByTestId("tool-rect").click();
+  const frame = await page.getByLabel("Sketch editor").boundingBox();
+  if (!frame) throw new Error("Could not locate the sketch canvas");
+  const startX = frame.x + 60;
+  const startY = frame.y + 60;
+  const endX = frame.x + 250;
+  const endY = frame.y + 180;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(endX, endY, { steps: 8 });
+  await page.mouse.up();
+
+  await expect
+    .poll(async () => Number(await stats.getAttribute("data-volume")))
+    .not.toBeCloseTo(parametricVolume, 0);
+  const drawnVolume = Number(await stats.getAttribute("data-volume"));
+  expect(drawnVolume).toBeGreaterThan(0);
+
+  // One undo removes the whole drawn shape and restores the example.
+  await page.keyboard.press("Control+z");
+  await expect
+    .poll(async () => Number(await stats.getAttribute("data-volume")))
+    .toBeCloseTo(parametricVolume, -1);
 
   expect(errors).toEqual([]);
 });

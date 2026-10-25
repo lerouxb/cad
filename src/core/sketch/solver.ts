@@ -1,6 +1,6 @@
 import type { Entity, SlvsModule } from "slvs";
+import { projectDrag } from "./drag";
 import type { Vec2 } from "../types";
-import { applySolution } from "./geometry";
 import type { Sketch } from "./types";
 
 /**
@@ -102,51 +102,50 @@ export function solveSketch(sketch: Sketch, drag?: DragTarget): SolveOutcome {
 /**
  * Drag a point towards a cursor position, following the constraints.
  *
- * Pinning the point at an infeasible cursor position makes the system
- * inconsistent, so a diagonal drag of a horizontally-constrained point would
- * simply fail. Instead, retry along each axis, and the point then slides along
- * the constraint, which is what a sketcher should do.
- *
- * Limitation (M1): a point on a circle or an angled line needs the drag
- * projected onto the constraint tangent space (numeric Jacobian null space);
- * axis retries are not enough there.
+ * The cursor delta is projected onto the constraint tangent space (see
+ * `drag.ts`), then the solver cleans up the second-order error. This makes a
+ * point slide along a line, a circle or an arbitrary constrained path instead
+ * of the drag simply being rejected.
  */
 export function solveDrag(sketch: Sketch, drag: DragTarget): SolveOutcome | null {
-  const direct = solveSketch(sketch, drag);
-  if (direct.ok) return withRealDof(sketch, direct);
+  const origin = sketch.points.find((point) => point.id === drag.pointId);
+  if (!origin) return null;
 
-  const current = sketch.points.find((point) => point.id === drag.pointId);
-  if (!current) return null;
+  const projected = projectDrag(sketch, drag);
+  if (!projected) return null;
 
-  const candidates: DragTarget[] = [];
-  if (Math.abs(drag.x - current.x) > 1e-9) {
-    candidates.push({ pointId: drag.pointId, x: drag.x, y: current.y });
+  // The tangent projection is first-order. A curved constraint leaves a
+  // second-order error, so fall back to shorter steps if the kernel rejects
+  // the full one.
+  for (const scale of [1, 0.5, 0.25, 0.1]) {
+    const seeded =
+      scale === 1 ? projected.sketch : interpolateSketch(sketch, projected.sketch, scale);
+    const outcome = solveSketch(seeded);
+    if (!outcome.ok) continue;
+
+    // A full-rank sketch projects to zero, but floating point can leave a
+    // residue. If the dragged point did not actually move, this is a no-op.
+    const solved = outcome.points[drag.pointId];
+    if (!solved) return null;
+    if (Math.hypot(solved[0] - origin.x, solved[1] - origin.y) < 1e-4) return null;
+    return outcome;
   }
-  if (Math.abs(drag.y - current.y) > 1e-9) {
-    candidates.push({ pointId: drag.pointId, x: current.x, y: drag.y });
-  }
-
-  for (const candidate of candidates) {
-    const outcome = solveSketch(sketch, candidate);
-    if (outcome.ok) return withRealDof(sketch, outcome);
-  }
-
   return null;
 }
 
-/**
- * The temporary `dragged` constraint participates in the rank calculation, so
- * a drag solve reports fewer DOF than the sketch really has. Re-solve the
- * settled geometry without it to get an honest number.
- */
-function withRealDof(sketch: Sketch, outcome: SolveOutcome): SolveOutcome {
-  const settled = solveSketch(applySolution(sketch, outcome));
-  if (!settled.ok) return outcome;
+function interpolateSketch(from: Sketch, to: Sketch, scale: number): Sketch {
+  const target = new Map(to.points.map((point) => [point.id, point]));
   return {
-    ...outcome,
-    status: settled.status,
-    dof: settled.dof,
-    conflicting: settled.conflicting,
+    ...to,
+    points: from.points.map((point) => {
+      const end = target.get(point.id);
+      if (!end) return point;
+      return {
+        ...point,
+        x: point.x + (end.x - point.x) * scale,
+        y: point.y + (end.y - point.y) * scale,
+      };
+    }),
   };
 }
 

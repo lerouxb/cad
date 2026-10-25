@@ -102,6 +102,11 @@ export class Viewport {
     }
   }
 
+  clearMesh(): void {
+    this.clearBody();
+    this.framed = false;
+  }
+
   frameAll(): void {
     const box = new THREE.Box3().setFromObject(this.body);
     if (box.isEmpty()) return;

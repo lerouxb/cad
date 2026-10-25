@@ -10,6 +10,9 @@ export interface SketchPoint {
   id: string;
   x: number;
   y: number;
+  /** Reference geometry: not a handle the user can drag. */
+  construction?: boolean;
+  /** Lives in solver group 0: an immutable anchor (origin, projected edges). */
   fixed?: boolean;
 }
 

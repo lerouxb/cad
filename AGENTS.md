@@ -18,16 +18,19 @@ engine matters more than feature count.
 
 ## Status
 
-**M0 complete + vertical-slice spike.** The app runs: a constrained sketch drives an
-extrude through OCCT in a worker. What is real vs. deliberately fake:
+**M1 core is in.** The app is an editable sketcher driving an exact extrude:
 
-- Real: `slvs` adapter, constrained dragging, DOF/diagnostics, sketch→profile→extrude,
-  worker protocol, three.js viewport, exact volume/face counts, e2e test.
-- Fake/temporary: one hard-coded sketch (`core/sketch/demo.ts`), explicit loop order,
-  static feature tree, no persistence, no undo, no picking, no history replay.
+- Real: `slvs` adapter, tangent-space constrained dragging, line/rectangle/circle tools,
+  grid + point snapping, automatic horizontal/vertical constraints, loop extraction,
+  undo/redo, DOF/diagnostics, worker protocol, three.js viewport, exact volume/face
+  counts, unit + e2e tests.
+- Temporary: profile selection is "largest closed loop" (`core/sketch/loops.ts`), the
+  example sketch is hand-authored (`core/sketch/demo.ts`), dimensions are demo-only,
+  there is no entity selection/delete, the feature tree is static, and nothing is
+  persisted.
 
-Next milestone: **M1, the real sketcher**. Read `docs/PLAN.md` before starting work.
-`docs/PLAN.md` is the source of truth for what is done.
+Next: **finish M1** (dimension tools, constraint UI, selection) then **M2** (explicit
+region selection, picking). Read `docs/PLAN.md`; it is the source of truth for done.
 
 ## Stack (decided)
 
@@ -67,14 +70,14 @@ src/
   viewer/         three.js: scene, camera, grid, meshing, framing
   sketch/         sketch-mode UI: SVG overlay, tools, dimension labels
   core/
-    doc/          (M3) document types, schema version, migrations, undo/redo
-    sketch/       sketch types, slvs adapter, geometry helpers, demo model
+    doc/          (M3) document types, schema version, migrations
+    sketch/       types, slvs adapter, drag projection, pure edits, loop extraction
     features/     feature evaluators (extrude today)
     rebuild/      (M3) rebuild pipeline, caching, topological references
     kernel/       brepjs worker client + protocol
   workers/
     kernel.worker.ts
-  ui/             shared UI primitives (hooks)
+  ui/             useElementSize, useHistory (snapshot undo/redo)
 e2e/              Playwright smoke tests
 docs/
   ARCHITECTURE.md
@@ -115,7 +118,12 @@ docs/
 - Feature/entity/constraint IDs are opaque strings (nanoid), generated at creation.
   They are stable for the life of the document. Renaming/reordering never changes them.
 - All user-visible lengths in mm, angles in degrees (convert at the solver boundary).
-- Pure model logic lives in `core/` and has no React or three.js imports.
+- Pure model logic lives in `core/` and has no React or three.js imports. Drawing
+  operations are pure functions in `core/sketch/create.ts`; the canvas only reports
+  gestures.
+- All sketch mutations go through `useHistory` (`ui/useHistory.ts`). One gesture = one
+  undo entry: pass a `mergeKey` while dragging a point or slider and call `endMerge()`
+  on pointer-up. Never push one entry per pointer-move.
 - The worker protocol is a discriminated union in `core/kernel/protocol.ts`. Both
   sides import the same types.
 - Prefer small, explicit functions over clever abstractions. This domain is already
@@ -137,9 +145,16 @@ docs/
 - `solveSketch().dof` includes **6** DOF from the base workplane's rigid-body frame.
   Subtract 6 for the sketch's in-plane DOF. Measured: empty = 6, one free point = 8,
   rectangle (h/v + anchored corner) = 8 → 2 (width + height).
-- Pinning a point at an infeasible cursor position makes the system **inconsistent**, so
-  drags must be retried along feasible directions. `solveDrag()` does x-only/y-only
-  fallback; angled lines and circles need a real tangent-space projection (M1).
+- **Never pin the dragged point at the cursor.** Any off-manifold target (a circle, an
+  angled line) makes the constraint system `INCONSISTENT`. `solveDrag()` instead projects
+  the cursor delta onto the constraint tangent space (`core/sketch/drag.ts`), applies it
+  to all points, and lets the solver clean up the second-order error. A fully constrained
+  sketch legitimately returns `null` (no movement).
+- Loop extraction is currently "the largest closed cycle, plus every circle whose centre
+  is inside it". Construction lines are excluded. Two disjoint loops → the larger wins.
+  Explicit region selection is M2; do not pretend this is general.
+- The kernel validates hole clearances. A circle that crosses the boundary is reported as
+  an error (and the last good mesh stays visible), not silently dropped.
 - The `slvs` npm package has no `latest` dist-tag. Use `slvs@stable`.
 - The solver chunk is ~8 MB (~1.6 MB gzip) because the WASM is inlined. It is lazy-loaded
   by `core/sketch/solver.ts`; never import it from the entry chunk.
