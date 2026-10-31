@@ -355,21 +355,24 @@ placed at the visible arc's midpoint, not at the default 45° point on its full 
 3. Drop a cycle when a smaller cycle that shares one of its curves lies inside it. That
    is a **subdivision**, not a face: a rectangle with a real diagonal yields two
    triangles, not the rectangle plus two holes.
-4. Build a containment tree from the remaining faces and circles. Even depth is material;
-   odd depth is a hole of its parent. A region is an even-depth face plus its **direct**
-   odd-depth children as holes. This handles:
-   - rectangle + circle → one region with a circular hole,
-   - two disjoint rectangles → two regions,
-   - concentric circles → one tube,
-   - an island inside a hole → a separate depth-2 region.
+4. Build a containment tree from the remaining faces and circles. **Every face is a
+   selectable profile**: even depth is material, odd depth is the negative space of its
+   parent, and each region uses its **direct** children as holes. This yields both sides
+   of every boundary:
+   - rectangle + circle → the plate with a hole, plus a void disk,
+   - two disjoint rectangles → two material regions,
+   - concentric circles → a tube, plus the inner void disk,
+   - an island inside a hole → outer plate, void annulus, and island.
 5. `regionId = hash(sorted outer + direct-hole curve ids)`. It is stable across dimension
    and constraint edits and invalidates when a boundary changes. The selected ids live in
    UI state (not the document) until M3 stores them on an extrude feature.
 
-The app defaults to the largest region when no explicit selection exists; clicking a
-filled region replaces the selection, Shift toggles, and **All/Auto** select every region
-or return to the largest. Regions are drawn as even-odd SVG paths, so holes are not
-clickable.
+The app defaults to the largest **material** region when no explicit selection exists;
+clicking any filled face (including a hole, which is its own void profile) replaces the
+selection, Shift toggles, **All** selects all material faces, **Voids** selects all
+negative-space faces, and **Auto** returns to the largest material face. Void fills stay
+transparent until selected but remain hit-testable, so a hole is both the parent's cutout
+and a positive profile of its own. Regions are drawn as even-odd SVG paths.
 
 `ExtrudeParams` carries `regions: { outer, holes }[]`; the worker builds one solid per
 region and fuses them with `fuseAll`, so multiple selected profiles produce one body.
@@ -664,11 +667,11 @@ the honest map, so nobody assumes a layer exists because it is described above.
 | `core/rebuild` | Not started. One sketch and one feature, rebuilt by a debounce. |
 | `core/kernel` | Real: typed protocol, worker client, OCCT worker, hole validation, exact stats. |
 | `viewer` | Real: Z-up scene, framing, meshing, edges. Picking and highlight are not implemented. |
-| `sketch` UI | Real: full-stage sketch editor toggled from the timeline, with a floating tool strip, DOF pill, and selection/dimension/constraint inspector. Select/drag, line/rectangle/circle/arc, fillet, explicit region fills with All/Auto, dimension tool with inline editing, constraint bar, construction toggle, snapping, auto H/V, undo/redo. |
+| `sketch` UI | Real: full-stage sketch editor toggled from the timeline, with a floating tool strip, DOF pill, and selection/dimension/constraint inspector. Select/drag, line/rectangle/circle/arc, fillet, explicit region fills (material and void, with All/Voids/Auto), dimension tool with inline editing, constraint bar, construction toggle, snapping, auto H/V, undo/redo. |
 | Feature tree | Static markup that communicates the intended product. |
 | Persistence | None yet. |
 
-Known shortcuts, all scheduled: auto region selection defaults to the largest region
+Known shortcuts, all scheduled: auto region selection defaults to the largest material region
 until a fill is clicked; intersecting segments are not split, so crossing diagonals are
 ambiguous; face/edge picking is not implemented; datum planes and sketch-on-face are not
 implemented yet (M4); history, persistence and the feature tree are M3. Unsupported

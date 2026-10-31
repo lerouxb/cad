@@ -29,8 +29,8 @@ extrude:
   arcs extrude as OCCT arc edges, not tessellated), click/shift-click selection,
   cascading delete, a non-destructive planar arrangement for profile faces (crossings and
   T-junctions split into real regions), trim by clicking a line/arc segment with undo,
-  explicit region selection (click a filled region, Shift adds, All/Auto; multiple
-  selected regions are extruded and fused), dimensions (point-point, point-line,
+  explicit region selection (click a filled region or a hole, Shift adds, All/Voids/Auto;
+  multiple selected regions are extruded and fused), dimensions (point-point, point-line,
   angle, diameter, radius, driving or reference, inline edit/delete and draggable labels),
   a floating constraint bar
   (horizontal/vertical, parallel, perpendicular, equal, point-on-line, point-on-circle,
@@ -45,7 +45,8 @@ extrude:
   dimension inspector. No permanent sidebar. The paper/ink theme has day/night modes and
   one highlighter colour (yellow/pink/blue/green), persisted in `localStorage`; the
   static studies in `docs/mockups/` are the design target and are never imported.
-- Temporary: auto mode still defaults to the largest region until a region is clicked;
+- Temporary: auto mode still defaults to the largest material region until a region is
+  clicked;
   trim supports lines and arcs but not turning a circle into an arc; face/edge picking is
   not implemented; the example sketch is hand-authored (`core/sketch/demo.ts`);
   **datum planes and sketch-on-face are not implemented (M4)**; the timeline is still the
@@ -230,8 +231,14 @@ docs/
   crossings, T-junctions and circle crossings without touching the document. `findLoops`
   enumerates cycles on that split graph, `regionsFromSketch` drops a cycle when a smaller
   cycle sharing one of its curves sits inside it (rectangle + diagonal → two triangles),
-  then builds a containment tree: even depth is material, odd depth is a hole. Region ids
-  hash the outer + direct-hole curve ids; a split piece gets `${sourceId}~${index}`.
+  then builds a containment tree. **Every depth is a selectable profile**: even depth is
+  material, odd depth is the negative space of its parent, and each region's direct
+  children are its holes. A circle inside a rectangle is therefore both the rectangle's
+  hole and a disk-shaped void profile. Auto falls back to the largest *material* region;
+  **All** selects material regions, **Voids** selects the negative-space profiles, and
+  clicking inside a hole selects it. Region ids hash the outer + direct-hole curve ids; a
+  split piece gets `${sourceId}~${index}`. Void fills are transparent until selected;
+  `data-region-kind` exposes the parity for tests.
   `profileFromSketch` is the legacy "largest loop" helper used by old tests; the app uses
   regions.
 - **Trim materializes only the cuts it keeps.** `trimCurveAt` uses the arrangement to pick

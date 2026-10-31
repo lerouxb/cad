@@ -20,9 +20,10 @@ then sketches on faces, then more features.
   (centre + radius). Grid and point snapping; automatic horizontal/vertical constraints;
   coincident endpoints come from shared points.
 - Closed profiles are extracted as **selectable regions** (faces with holes). Click a
-  filled region to choose the extrude profile, Shift to add, All/Auto for all or the
-  largest; multiple regions are extruded and fused. Holes and islands follow the
-  containment tree. Extruded by OCCT in a worker; three.js renders the solid and its B-rep
+  filled region (including a hole's void profile) to choose the extrude profile; Shift
+  adds, All selects material, Voids selects negative space, and Auto returns to the
+  largest material face. Multiple regions are extruded and fused. Holes and islands
+  follow the containment tree. Extruded by OCCT in a worker; three.js renders the solid and its B-rep
   edges, Z-up.
 - Dimension tool: distance (point-to-point, point-to-line, line), angle, diameter and
   radius, driving or reference, with inline edit/delete and draggable labels. Floating
@@ -42,7 +43,7 @@ then sketches on faces, then more features.
   migrate-on-load, autosave to `localStorage`, undoable extrude height and region
   selection, and the feature names drive the timeline.
 - The example sketch can be loaded, cleared, edited, or replaced by drawing.
-- `npm run verify` (110 unit tests) and `npm run e2e` (19 tests) are green. The e2e asserts
+- `npm run verify` (110 unit tests) and `npm run e2e` (20 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -51,8 +52,9 @@ then sketches on faces, then more features.
 Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
 95 017.7 mm³ and rebuilds in ~35 ms after warm-up.
 
-**Still temporary** (all scheduled below): auto mode defaults to the largest region until
-you click one; trim handles lines/arcs but not circles; face/edge picking is pending;
+**Still temporary** (all scheduled below): auto mode defaults to the largest material
+region until you click one; trim handles lines/arcs but not circles; face/edge picking is
+pending;
 **datum planes and sketch-on-face are M4**; the feature tree is still the fixed two-step
 timeline (rename/reorder/suppress are the next M3 slices); the rebuild engine still runs
 one sketch + one extrude, without prefix caching or per-feature diagnostics. Free 3D
@@ -247,7 +249,7 @@ rebuild exist; they are tracked at the top of M3.
 
 **Done when:** you can draw an arbitrary multi-region sketch, click one or more regions
 (including holes and islands), and extrude/fuse them with exact volume. Auto mode still
-defaults to the largest region until you click; M2.6 adds split/trim.
+defaults to the largest material region until you click; M2.6 adds split/trim.
 
 ## M2.5 — UI foundations: paper/ink visual system (2–3 days)
 

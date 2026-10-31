@@ -22,7 +22,15 @@ export interface SketchProfile {
   outerCircleId?: string;
 }
 
-/** A selectable solid region: an outer boundary plus its direct hole loops. */
+/**
+ * A selectable profile: an outer boundary plus its direct hole loops.
+ *
+ * Every containment face is selectable, not just the even-depth "material"
+ * ones. A circle nested in a rectangle is both a hole of the rectangle and a
+ * valid disk-shaped profile; which one the user wants is an operation choice,
+ * not a property of the sketch. `kind` records the containment parity so the
+ * UI can default to material and style/label voids, but both are extrusions.
+ */
 export interface SketchRegion {
   id: string;
   outer: ProfileLoop;
@@ -31,6 +39,8 @@ export interface SketchRegion {
   loop: SketchLoop | null;
   outerCircleId?: string;
   depth: number;
+  /** Even depth is material; odd depth is negative space of its parent. */
+  kind: "material" | "void";
   /** Net area: outer minus direct holes. */
   area: number;
 }
@@ -221,11 +231,13 @@ interface RegionCandidate {
  * minimal cycles. Circles are independent face candidates.
  *
  * The remaining faces are nested into a containment tree. Even depths are
- * material; odd depths are holes of their parent. This gives:
- *   - a rectangle + circle -> one region with a circular hole
- *   - two disjoint rectangles -> two regions
- *   - concentric circles -> one tube
- *   - an island inside a hole -> a separate region at depth 2
+ * material; odd depths are negative space. *All* faces are returned, because
+ * the user may extrude either side of the boundary. Each region's direct
+ * children are its holes, so:
+ *   - a rectangle + circle -> the plate with a hole AND a void disk
+ *   - two disjoint rectangles -> two material regions
+ *   - concentric circles -> a tube AND the inner void disk
+ *   - an island inside a hole -> outer plate, void annulus, and island
  *
  * Region ids hash the outer and direct-hole curve ids, so a selection survives
  * dimension/constraint edits and invalidates when the boundary itself changes.
@@ -300,7 +312,6 @@ export function regionsFromSketch(sketch: Sketch): SketchRegion[] {
   const regions: SketchRegion[] = [];
   for (let i = 0; i < candidates.length; i++) {
     const candidate = candidates[i]!;
-    if (candidate.depth % 2 !== 0) continue;
     const children = candidates.filter(
       (child) => child.parent === i && child.depth === candidate.depth + 1,
     );
@@ -315,6 +326,7 @@ export function regionsFromSketch(sketch: Sketch): SketchRegion[] {
       loop: candidate.loop,
       ...(candidate.circleId ? { outerCircleId: candidate.circleId } : {}),
       depth: candidate.depth,
+      kind: candidate.depth % 2 === 0 ? "material" : "void",
       area: Math.max(
         0,
         candidate.area - children.reduce((sum, child) => sum + child.area, 0),

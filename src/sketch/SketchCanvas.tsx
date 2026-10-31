@@ -1053,11 +1053,18 @@ export function SketchCanvas({
             key={region.id}
             d={d}
             fillRule="evenodd"
-            fill={active ? palette.markerSoft : palette.grid}
+            fill={
+              active
+                ? palette.markerSoft
+                : region.kind === "void"
+                  ? "transparent"
+                  : palette.grid
+            }
             stroke={active ? (conflict ? palette.danger : palette.ink) : "none"}
             strokeWidth={1}
             vectorEffect="non-scaling-stroke"
             data-region-id={region.id}
+            data-region-kind={region.kind}
             data-region-bounds={`${bounds.minX},${bounds.minY},${bounds.maxX},${bounds.maxY}`}
             pointerEvents={tool === "select" ? "fill" : "none"}
             style={{ cursor: tool === "select" ? "pointer" : "default" }}

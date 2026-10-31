@@ -196,6 +196,36 @@ test("the dimensioned example drives an exact solid", async ({ app: page }) => {
   expect(errors).toEqual([]);
 });
 
+test("selects a hole as its own extrusion profile", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+
+  // The demo is a 60x40 plate with a centered Ø16 hole: both faces are profiles.
+  await expect(page.locator("[data-region-id]")).toHaveCount(2);
+  await expect(page.locator('[data-region-kind="void"]')).toHaveCount(1);
+
+  await page.getByTestId("tool-select").click();
+  // Inside the hole but clear of its rim and the construction diagonal.
+  await clickSketch(page, 30, 25);
+  await expect(page.getByTestId("region-panel")).toContainText(
+    "1 of 2 regions · void",
+  );
+
+  await page.getByTestId("timeline-extrude").click();
+  await expect.poll(() => volume(page)).toBeCloseTo(Math.PI * 8 * 8 * 12, -1);
+
+  // Auto returns to the largest material face, i.e. the plate with its hole.
+  await page.getByTestId("timeline-sketch").click();
+  await page.getByTestId("auto-region").click();
+  await page.getByTestId("timeline-extrude").click();
+  await expect.poll(() => volume(page)).toBeCloseTo(
+    60 * 40 * 12 - Math.PI * 8 * 8 * 12,
+    -1,
+  );
+
+  expect(errors).toEqual([]);
+});
+
 test("selects, multi-selects, and deletes sketch geometry", async ({ app: page }) => {
   const errors = collectErrors(page);
 

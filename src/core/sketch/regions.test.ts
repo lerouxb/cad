@@ -21,7 +21,7 @@ describe("sketch regions", () => {
   it("turns a rectangle into one region", () => {
     const regions = regionsFromSketch(addRectangle(emptySketch(), [0, 0], [60, 40]));
     expect(regions).toHaveLength(1);
-    expect(regions[0]).toMatchObject({ depth: 0, area: 2400 });
+    expect(regions[0]).toMatchObject({ depth: 0, kind: "material", area: 2400 });
     expect(regions[0]!.outer.kind).toBe("polygon");
     expect(regions[0]!.holes).toHaveLength(0);
   });
@@ -34,25 +34,36 @@ describe("sketch regions", () => {
     expect(regions.map((region) => region.area)).toEqual([2400, 2400]);
   });
 
-  it("uses a nested circle as a hole, not a separate region", () => {
+  it("exposes a nested circle as both a hole and a void profile", () => {
     const rectangle = addRectangle(emptySketch(), [0, 0], [100, 60]);
     const withHole = addCircle(rectangle, { point: [50, 30] }, 10);
     const regions = regionsFromSketch(withHole);
 
-    expect(regions).toHaveLength(1);
-    expect(regions[0]!.holes).toHaveLength(1);
-    expect(regions[0]!.holes[0]).toMatchObject({ kind: "circle", radius: 10 });
-    expect(regions[0]!.area).toBeCloseTo(6000 - Math.PI * 100, 4);
+    expect(regions).toHaveLength(2);
+    const [plate, voidDisk] = regions;
+    expect(plate!.kind).toBe("material");
+    expect(plate!.holes).toHaveLength(1);
+    expect(plate!.holes[0]).toMatchObject({ kind: "circle", radius: 10 });
+    expect(plate!.area).toBeCloseTo(6000 - Math.PI * 100, 4);
+    expect(voidDisk!.kind).toBe("void");
+    expect(voidDisk!.depth).toBe(1);
+    expect(voidDisk!.holes).toHaveLength(0);
+    expect(voidDisk!.outer).toMatchObject({ kind: "circle", radius: 10 });
+    expect(voidDisk!.area).toBeCloseTo(Math.PI * 100, 4);
   });
 
-  it("makes concentric circles a tube", () => {
+  it("makes concentric circles a tube and an inner void profile", () => {
     const outer = addCircle(emptySketch(), { point: [0, 0] }, 20);
     const tube = addCircle(outer, { point: [0, 0] }, 8);
     const regions = regionsFromSketch(tube);
 
-    expect(regions).toHaveLength(1);
-    expect(regions[0]!.holes).toHaveLength(1);
-    expect(regions[0]!.area).toBeCloseTo(Math.PI * (20 * 20 - 8 * 8), 4);
+    expect(regions).toHaveLength(2);
+    const [ring, voidDisk] = regions;
+    expect(ring!.kind).toBe("material");
+    expect(ring!.holes).toHaveLength(1);
+    expect(ring!.area).toBeCloseTo(Math.PI * (20 * 20 - 8 * 8), 4);
+    expect(voidDisk!.kind).toBe("void");
+    expect(voidDisk!.area).toBeCloseTo(Math.PI * 8 * 8, 4);
   });
 
   it("makes a lone circle a solid region", () => {
@@ -71,18 +82,28 @@ describe("sketch regions", () => {
     expect(regions.every((region) => region.holes.length === 0)).toBe(true);
   });
 
-  it("keeps an island inside a hole as a separate region", () => {
+  it("exposes every depth of an island-in-a-hole nesting", () => {
     const outer = addRectangle(emptySketch(), [0, 0], [100, 60]);
     const withHole = addRectangle(outer, [10, 10], [90, 50]);
     const withIsland = addRectangle(withHole, [40, 25], [60, 35]);
     const regions = regionsFromSketch(withIsland);
 
-    expect(regions).toHaveLength(2);
-    const [parent, island] = regions;
-    expect(parent!.holes).toHaveLength(1);
-    expect(parent!.area).toBeCloseTo(6000 - 3200, 4);
-    expect(island!.depth).toBe(2);
-    expect(island!.area).toBeCloseTo(200, 4);
+    expect(regions).toHaveLength(3);
+    const plate = regions.find((region) => region.depth === 0)!;
+    const voidRing = regions.find((region) => region.depth === 1)!;
+    const island = regions.find((region) => region.depth === 2)!;
+
+    expect(plate.kind).toBe("material");
+    expect(plate.holes).toHaveLength(1);
+    expect(plate.area).toBeCloseTo(6000 - 3200, 4);
+
+    expect(voidRing.kind).toBe("void");
+    expect(voidRing.holes).toHaveLength(1);
+    expect(voidRing.area).toBeCloseTo(3200 - 200, 4);
+
+    expect(island.kind).toBe("material");
+    expect(island.holes).toHaveLength(0);
+    expect(island.area).toBeCloseTo(200, 4);
   });
 
   it("gives regions stable ids", () => {

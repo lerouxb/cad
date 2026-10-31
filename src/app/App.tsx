@@ -140,13 +140,13 @@ export function App() {
       ),
     [storedRegionIds, regions],
   );
-  const activeRegionIds = useMemo(
-    () =>
-      validRegionIds.length > 0
-        ? validRegionIds
-        : regions.slice(0, 1).map((region) => region.id),
-    [validRegionIds, regions],
-  );
+  const activeRegionIds = useMemo(() => {
+    if (validRegionIds.length > 0) return validRegionIds;
+    // Auto defaults to the largest *material* face, not whichever void happens
+    // to have the bigger area (a thin frame around a huge hole is still a frame).
+    const fallback = regions.find((region) => region.kind === "material") ?? regions[0];
+    return fallback ? [fallback.id] : [];
+  }, [validRegionIds, regions]);
   const activeRegions = useMemo(
     () => regions.filter((region) => activeRegionIds.includes(region.id)),
     [regions, activeRegionIds],
@@ -154,6 +154,14 @@ export function App() {
   const selectedRegions = useMemo(
     () => new Set(activeRegionIds),
     [activeRegionIds],
+  );
+  const activeVoidCount = useMemo(
+    () => activeRegions.filter((region) => region.kind === "void").length,
+    [activeRegions],
+  );
+  const hasVoids = useMemo(
+    () => regions.some((region) => region.kind === "void"),
+    [regions],
   );
   const params = useMemo(
     () => (activeRegions.length > 0 ? extrudeParams(activeRegions, extrudeHeight) : null),
@@ -568,7 +576,20 @@ export function App() {
 
   const selectAllRegions = (): void => {
     setSelection([]);
-    commitRegions(regions.map((region) => region.id));
+    commitRegions(
+      regions
+        .filter((region) => region.kind === "material")
+        .map((region) => region.id),
+    );
+  };
+
+  const selectAllVoids = (): void => {
+    setSelection([]);
+    commitRegions(
+      regions
+        .filter((region) => region.kind === "void")
+        .map((region) => region.id),
+    );
   };
 
   const autoSelectRegion = (): void => {
@@ -1045,8 +1066,14 @@ export function App() {
               <div className="region-panel" data-testid="region-panel">
                 <span>
                   {validRegionIds.length > 0
-                    ? `${activeRegionIds.length} of ${regions.length} regions`
-                    : "auto: largest region"}
+                    ? `${activeRegionIds.length} of ${regions.length} regions${
+                        activeVoidCount > 0
+                          ? activeVoidCount === activeRegionIds.length
+                            ? " · void"
+                            : " · includes void"
+                          : ""
+                      }`
+                    : "auto: largest material"}
                 </span>
                 <button
                   className="constraint-chip"
@@ -1056,6 +1083,16 @@ export function App() {
                 >
                   All
                 </button>
+                {hasVoids ? (
+                  <button
+                    className="constraint-chip"
+                    type="button"
+                    onClick={selectAllVoids}
+                    data-testid="all-voids"
+                  >
+                    Voids
+                  </button>
+                ) : null}
                 {validRegionIds.length > 0 ? (
                   <button
                     className="constraint-chip"

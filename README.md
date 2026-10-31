@@ -47,9 +47,10 @@ selection/dimension inspector; there is no permanent sidebar.
   projection as dragging applies.
 - Extrude any closed region: a plate, a cylinder from a lone circle, a tube from two
   concentric circles, an arbitrary face with nested cutouts, or a mixed line/arc profile.
-  Click filled regions to choose one or more profiles (Shift adds, All/Auto are in the
-  corner panel); selected regions are fused into one body. Arc edges stay exact through
-  the kernel. OCCT runs in a Web Worker; three.js renders the solid with its B-rep edges
+  Click filled regions to choose one or more profiles (Shift adds; All, Voids and Auto are
+  in the corner panel); selected regions are fused into one body. A hole is selectable
+  too: it is the parent's cutout and, when clicked, a positive disk/void profile of its
+  own. Arc edges stay exact through the kernel. OCCT runs in a Web Worker; three.js renders the solid with its B-rep edges
   (Z-up, mm).
 - **Select and delete**: click a curve or point, Shift-click to multi-select, Delete to
   remove. Deletion cascades through dependent curves/constraints; undo restores it.
