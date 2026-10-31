@@ -307,6 +307,30 @@ body {
   z-index: 4;
 }
 
+.sketch-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 42px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(640px, 80%);
+  padding: 8px 10px 8px 12px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(226, 180, 92, 0.4);
+  border-radius: 8px;
+  background: rgba(19, 24, 31, 0.96);
+  color: #e2b45c;
+  font-size: 11px;
+  line-height: 1.35;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.sketch-notice span {
+  flex: 1;
+}
+
 .sketch-hint {
   position: absolute;
   left: 50%;
@@ -609,6 +633,30 @@ body {
   right: 18px;
   bottom: 54px;
   z-index: 4;
+}
+
+.sketch-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 42px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(640px, 80%);
+  padding: 8px 10px 8px 12px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(226, 180, 92, 0.4);
+  border-radius: 8px;
+  background: rgba(19, 24, 31, 0.96);
+  color: #e2b45c;
+  font-size: 11px;
+  line-height: 1.35;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+.sketch-notice span {
+  flex: 1;
 }
 
 .sketch-hint {

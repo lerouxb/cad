@@ -8,9 +8,11 @@ import {
   arcPointAt,
   curveRadius,
   distance,
+  normalizeAngle,
   updateConstraintValue,
 } from "./geometry";
 import { profileFromSketch } from "./loops";
+import { createExampleModel } from "./demo";
 import { initSolver, solveDrag, solveSketch } from "./solver";
 import type { Sketch } from "./types";
 
@@ -159,6 +161,21 @@ describe("sketch fillet", () => {
     const applied = applySolution(filleted, solved);
     expect(radius(applied, geometry.id)).toBeCloseTo(10, 4);
     expect(tangentDot(applied, geometry.id)).toBeCloseTo(0, 3);
+
+    // The auto-created diameter label points at the visible arc midpoint, not
+    // at an arbitrary point on the full circle.
+    const dimension = filleted.constraints.find(
+      (c) => c.type === "diameter" && c.circle === geometry.id,
+    );
+    if (!dimension || dimension.type !== "diameter") {
+      throw new Error("expected a diameter dimension");
+    }
+    const arcValue = arcGeometry(geometry, solutionPoints(applied));
+    expect(arcValue).not.toBeNull();
+    const leader = normalizeAngle(((dimension.angle ?? 0) * Math.PI) / 180);
+    const offset = normalizeAngle(leader - arcValue!.startAngle);
+    expect(offset).toBeLessThanOrEqual(arcValue!.sweep + 1e-6);
+    expect(offset).toBeCloseTo(arcValue!.sweep / 2, 4);
   });
 
   it("drives the fillet radius with its diameter dimension", () => {
@@ -190,6 +207,45 @@ describe("sketch fillet", () => {
     expect(deleted.constraints.filter((c) => c.type === "tangent")).toHaveLength(0);
     expect(deleted.constraints.filter((c) => c.type === "diameter")).toHaveLength(0);
     expect(deleted.curves.filter((curve) => curve.type === "line")).toHaveLength(2);
+  });
+
+  it("reattaches a diagonal at the demo's origin corner to the arc", () => {
+    const { sketch } = createExampleModel();
+    const bottom = sketch.curves.find((curve) => curve.id === "l-bottom");
+    const left = sketch.curves.find((curve) => curve.id === "l-left");
+    if (!bottom || bottom.type !== "line" || !left || left.type !== "line") {
+      throw new Error("expected the demo's bottom and left lines");
+    }
+    const filleted = addFillet(sketch, bottom.id, left.id, 5);
+    // The old corner is still there because the diagonal uses it; it is now
+    // constrained to the new arc instead of the origin.
+    const diagonal = filleted.curves.find(
+      (curve): curve is Extract<typeof curve, { type: "line" }> =>
+        curve.id === "diagonal" && curve.type === "line",
+    );
+    expect(diagonal).toBeDefined();
+    expect([diagonal!.a, diagonal!.b]).toContain("p0");
+    expect(
+      filleted.constraints.some(
+        (c) => c.type === "pointOnCircle" && c.point === "p0",
+      ),
+    ).toBe(true);
+    expect(
+      filleted.constraints.some(
+        (c) =>
+          c.type === "coincident" &&
+          (c.a === "p0" || c.b === "p0"),
+      ),
+    ).toBe(false);
+
+    const solved = solveSketch(filleted);
+    expect(solved.ok).toBe(true);
+    const arcCurve = filleted.curves.find((curve) => curve.type === "arc");
+    if (!arcCurve || arcCurve.type !== "arc") throw new Error("expected an arc");
+    const center = solved.points[arcCurve.center]!;
+    const corner = solved.points.p0!;
+    const radius = distance(center, solved.points[arcCurve.start]!);
+    expect(distance(center, corner)).toBeCloseTo(radius, 3);
   });
 
   it("extracts a mixed line/arc profile for the kernel", () => {

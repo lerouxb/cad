@@ -559,3 +559,33 @@ test("extrudes a filleted profile with a circular hole", async ({ page }) => {
 
   expect(errors).toEqual([]);
 });
+
+test("filleting the demo's origin corner reattaches the diagonal and offers to re-anchor", async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto("/");
+  await expect(page.getByTestId("kernel-status")).toContainText("ready");
+  await enterSketch(page);
+
+  // The demo starts with the origin at its top-left corner. Filleting that
+  // corner is the interesting case: the construction diagonal uses that point.
+  await clickSketch(page, 30, 0);
+  await page.keyboard.down("Shift");
+  await clickSketch(page, 0, 20);
+  await page.keyboard.up("Shift");
+  await expect(page.getByTestId("selection-panel")).toHaveAttribute("data-count", "2");
+
+  await page.getByTestId("fillet-radius").fill("5");
+  await page.getByTestId("constraint-fillet").click();
+
+  await expect(page.getByTestId("sketch-notice")).toBeVisible();
+  await expect(page.getByTestId("sketch-notice")).toContainText("anchor");
+  await expect(page.locator('[data-geometry-id="diagonal"]')).toHaveCount(1);
+
+  const before = await page.getByTestId("dof").textContent();
+  await page.getByTestId("fix-fillet-centre").click();
+  await expect(page.getByTestId("sketch-notice")).toHaveCount(0);
+  const after = await page.getByTestId("dof").textContent();
+  expect(after).not.toBe(before);
+
+  expect(errors).toEqual([]);
+});

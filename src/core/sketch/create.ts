@@ -286,13 +286,9 @@ export function addFillet(
     end: swap ? t1Id : t2Id,
   });
 
-  const constraints: SketchConstraint[] = [
-    ...sketch.constraints.filter((constraint) => !referencesPoint(constraint, shared)),
-    { id: newId("c"), type: "tangent", a: arcId, b: lineA.id },
-    { id: newId("c"), type: "tangent", a: arcId, b: lineB.id },
-    { id: newId("c"), type: "diameter", circle: arcId, value: filletRadius * 2 },
-  ];
-
+  // Put the dimension leader on the visible arc: the midpoint of the stored
+  // (near) arc, not the default 45° point on the full circle.
+  const arcMidAngle = normalizeAngle(swap ? midAngle + Math.PI : midAngle);
   const used = new Set<string>();
   for (const curve of curves) {
     if (curve.type === "line") {
@@ -306,7 +302,47 @@ export function addFillet(
       used.add(curve.end);
     }
   }
-  const keptPoints = points.filter((point) => point.id !== shared || used.has(shared));
+  const cornerUsed = used.has(shared);
+
+  // If another curve (e.g. the demo's construction diagonal) still uses the
+  // old corner, do not leave it stranded at the sharp corner. Keep the point
+  // and put it on the new arc, so attached geometry follows the rounded
+  // boundary. Constraints that would contradict that move (a fix, or
+  // point-on-line against either trimmed line) are dropped.
+  const constraints: SketchConstraint[] = sketch.constraints.filter((constraint) => {
+    if (!referencesPoint(constraint, shared)) return true;
+    if (!cornerUsed) return false;
+    if (constraint.type === "fix") return false;
+    if (constraint.type === "pointOnLine") {
+      return constraint.line !== lineA.id && constraint.line !== lineB.id;
+    }
+    if (constraint.type === "coincident") {
+      const other = constraint.a === shared ? constraint.b : constraint.a;
+      return !byId.get(other)?.fixed;
+    }
+    return true;
+  });
+  if (cornerUsed) {
+    constraints.push({
+      id: newId("c"),
+      type: "pointOnCircle",
+      point: shared,
+      circle: arcId,
+    });
+  }
+  constraints.push(
+    { id: newId("c"), type: "tangent", a: arcId, b: lineA.id },
+    { id: newId("c"), type: "tangent", a: arcId, b: lineB.id },
+    {
+      id: newId("c"),
+      type: "diameter",
+      circle: arcId,
+      value: filletRadius * 2,
+      angle: (arcMidAngle * 180) / Math.PI,
+    },
+  );
+
+  const keptPoints = points.filter((point) => point.id !== shared || cornerUsed);
 
   return { points: keptPoints, curves, constraints };
 }

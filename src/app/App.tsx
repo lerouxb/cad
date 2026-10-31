@@ -80,6 +80,10 @@ export function App() {
   const [dimensionMode, setDimensionMode] = useState<DimensionMode>("distance");
   const [radiusDimensions, setRadiusDimensions] = useState(false);
   const [filletRadius, setFilletRadius] = useState(5);
+  const [filletNotice, setFilletNotice] = useState<{
+    message: string;
+    pointId: string;
+  } | null>(null);
   const [selection, setSelection] = useState<string[]>([]);
   const [cancelToken, setCancelToken] = useState(0);
   const [fitToken, setFitToken] = useState(0);
@@ -140,14 +144,15 @@ export function App() {
   };
 
   /** Solve, then commit both the geometry and its diagnostics. */
-  const solveAndCommit = (next: Sketch, mergeKey?: string): void => {
-    if (!isSolverReady()) return;
+  const solveAndCommit = (next: Sketch, mergeKey?: string): boolean => {
+    if (!isSolverReady()) return false;
     const outcome = solveSketch(next);
     if (!outcome.ok) {
       setSolveError(outcome);
-      return;
+      return false;
     }
     commitDoc(applySolution(next, outcome), outcome, mergeKey);
+    return true;
   };
 
   const changeTool = (next: SketchTool): void => {
@@ -179,6 +184,7 @@ export function App() {
     );
     if (next === current.sketch) return;
     setSelection([]);
+    setFilletNotice(null);
     solveAndCommit(next);
   };
 
@@ -399,6 +405,12 @@ export function App() {
   const handleFillet = (): void => {
     if (!filletSelection) return;
     const current = getState();
+    const shared = [filletSelection.a.a, filletSelection.a.b].find(
+      (id) => id === filletSelection.b.a || id === filletSelection.b.b,
+    );
+    const anchorDropped = shared
+      ? hasFixedAnchor(current.sketch, shared)
+      : false;
     const next = addFillet(
       current.sketch,
       filletSelection.a.id,
@@ -407,7 +419,35 @@ export function App() {
     );
     if (next === current.sketch) return;
     setSelection([]);
-    solveAndCommit(next);
+    if (!solveAndCommit(next)) return;
+    if (!anchorDropped) {
+      setFilletNotice(null);
+      return;
+    }
+    const addedArc = next.curves.find(
+      (curve) =>
+        curve.type === "arc" &&
+        !current.sketch.curves.some((previous) => previous.id === curve.id),
+    );
+    setFilletNotice(
+      addedArc?.type === "arc"
+        ? {
+            message:
+              "Fillet removed the corner's origin/Fix anchor; attached geometry now follows the arc and the sketch is under-constrained. Fix the arc centre or add dimensions to re-anchor.",
+            pointId: addedArc.center,
+          }
+        : null,
+    );
+  };
+
+  const handleFixFilletCentre = (): void => {
+    if (!filletNotice) return;
+    const current = getState();
+    const next = applyConstraint(current.sketch, "fix", [filletNotice.pointId]);
+    if (next === current.sketch) return;
+    if (!solveAndCommit(next)) return;
+    setSelection([filletNotice.pointId]);
+    setFilletNotice(null);
   };
 
   const handleMoveDimension = (
@@ -444,6 +484,7 @@ export function App() {
     const current = getState();
     const next = applyConstraint(current.sketch, type, selection);
     if (next === current.sketch) return;
+    if (type === "fix") setFilletNotice(null);
     solveAndCommit(next);
   };
 
@@ -459,6 +500,7 @@ export function App() {
     const outcome = isSolverReady() ? solveSketch(empty) : null;
     commit({ sketch: empty, solved: outcome });
     setSolveError(null);
+    setFilletNotice(null);
     setTool("select");
     setFitToken((token) => token + 1);
   };
@@ -469,17 +511,20 @@ export function App() {
     const applied = outcome?.ok ? applySolution(fresh.sketch, outcome) : fresh.sketch;
     commit({ sketch: applied, solved: outcome });
     setSolveError(null);
+    setFilletNotice(null);
     setTool("select");
     setFitToken((token) => token + 1);
   };
 
   const goBack = (): void => {
     undo();
+    setFilletNotice(null);
     setFitToken((token) => token + 1);
   };
 
   const goForward = (): void => {
     redo();
+    setFilletNotice(null);
     setFitToken((token) => token + 1);
   };
 
@@ -789,6 +834,20 @@ export function App() {
               </div>
             ) : null}
 
+            {filletNotice ? (
+              <div className="sketch-notice" data-testid="sketch-notice">
+                <span>{filletNotice.message}</span>
+                <button
+                  className="button button-small"
+                  type="button"
+                  onClick={handleFixFilletCentre}
+                  data-testid="fix-fillet-centre"
+                >
+                  Fix arc centre
+                </button>
+              </div>
+            ) : null}
+
             <div className="sketch-hint">{hint}</div>
           </div>
         </section>
@@ -832,6 +891,19 @@ interface SelectedEntity {
   kind: "line" | "circle" | "arc" | "point";
   label: string;
   detail: string;
+}
+
+function hasFixedAnchor(sketch: Sketch, pointId: string): boolean {
+  const fixed = new Set(
+    sketch.points.filter((point) => point.fixed).map((point) => point.id),
+  );
+  return sketch.constraints.some(
+    (constraint) =>
+      (constraint.type === "fix" && constraint.point === pointId) ||
+      (constraint.type === "coincident" &&
+        ((constraint.a === pointId && fixed.has(constraint.b)) ||
+          (constraint.b === pointId && fixed.has(constraint.a)))),
+  );
 }
 
 function describeSelection(

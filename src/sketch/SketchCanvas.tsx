@@ -20,6 +20,7 @@ import type {
 import {
   arcGeometry,
   arcPointAt,
+  clampAngleToArc,
   circumcenter,
   curveRadius,
   normalizeAngle,
@@ -325,7 +326,14 @@ export function SketchCanvas({
     setEditor(null);
   };
 
-  const circleLike = (id: string): { center: Vec2; radius: number } | null => {
+  const circleLike = (
+    id: string,
+  ): {
+    center: Vec2;
+    radius: number;
+    startAngle?: number;
+    sweep?: number;
+  } | null => {
     const curve = sketch.curves.find((candidate) => candidate.id === id);
     if (!curve) return null;
     if (curve.type === "circle") {
@@ -334,9 +342,29 @@ export function SketchCanvas({
     }
     if (curve.type === "arc") {
       const geometry = arcGeometry(curve, points);
-      return geometry ? { center: geometry.center, radius: geometry.radius } : null;
+      return geometry
+        ? {
+            center: geometry.center,
+            radius: geometry.radius,
+            startAngle: geometry.startAngle,
+            sweep: geometry.sweep,
+          }
+        : null;
     }
     return null;
+  };
+
+  /** Radial direction for a diameter/radius leader, clamped to an arc. */
+  const circleAngle = (
+    circle: { center: Vec2; startAngle?: number; sweep?: number },
+    cursor: Vec2,
+  ): number => {
+    const raw = Math.atan2(cursor[1] - circle.center[1], cursor[0] - circle.center[0]);
+    const clamped =
+      circle.startAngle !== undefined && circle.sweep !== undefined
+        ? clampAngleToArc(raw, circle.startAngle, circle.sweep)
+        : raw;
+    return (clamped * 180) / Math.PI;
   };
 
   const pickDimensionPoint = (event: ReactPointerEvent, pointId: string) => {
@@ -475,14 +503,7 @@ export function SketchCanvas({
       };
     }
     const circle = circleLike(target.circle);
-    return circle
-      ? {
-          angle:
-            (Math.atan2(cursor[1] - circle.center[1], cursor[0] - circle.center[0]) *
-              180) /
-            Math.PI,
-        }
-      : null;
+    return circle ? { angle: circleAngle(circle, cursor) } : null;
   };
 
   const placementAtCursor = (
@@ -503,14 +524,7 @@ export function SketchCanvas({
     }
     if (constraint.type === "diameter") {
       const circle = circleLike(constraint.circle);
-      return circle
-        ? {
-            angle:
-              (Math.atan2(cursor[1] - circle.center[1], cursor[0] - circle.center[0]) *
-                180) /
-              Math.PI,
-          }
-        : null;
+      return circle ? { angle: circleAngle(circle, cursor) } : null;
     }
     if (constraint.type === "angle") {
       const a = lineThrough(constraint.a);
@@ -1185,6 +1199,8 @@ export function SketchCanvas({
                 center={circle.center}
                 radius={circle.radius}
                 angle={constraint.angle ?? 45}
+                arcStartAngle={circle.startAngle}
+                arcSweep={circle.sweep}
                 value={constraint.radius ? circle.radius : circle.radius * 2}
                 asRadius={constraint.radius}
                 reference={constraint.driving === false}
@@ -1264,6 +1280,8 @@ export function SketchCanvas({
                 center={circle.center}
                 radius={circle.radius}
                 angle={dimPlacement.angle ?? 45}
+                arcStartAngle={circle.startAngle}
+                arcSweep={circle.sweep}
                 value={
                   dimTarget.kind === "radius" ? circle.radius : circle.radius * 2
                 }
@@ -1662,8 +1680,21 @@ function DiameterDimension({
   onEdit,
   onDrag,
   asRadius,
-}: DimensionHandlers & { center: Vec2; radius: number; angle: number; asRadius?: boolean }) {
-  const theta = (angle * Math.PI) / 180;
+  arcStartAngle,
+  arcSweep,
+}: DimensionHandlers & {
+  center: Vec2;
+  radius: number;
+  angle: number;
+  asRadius?: boolean;
+  arcStartAngle?: number;
+  arcSweep?: number;
+}) {
+  const rawTheta = (angle * Math.PI) / 180;
+  const theta =
+    arcStartAngle !== undefined && arcSweep !== undefined
+      ? clampAngleToArc(rawTheta, arcStartAngle, arcSweep)
+      : rawTheta;
   const dx = Math.cos(theta);
   const dy = Math.sin(theta);
   const start: Vec2 = [center[0] + dx * radius, center[1] + dy * radius];

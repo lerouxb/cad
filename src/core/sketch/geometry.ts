@@ -143,6 +143,25 @@ export function curveRadius(
   return null;
 }
 
+/**
+ * Clamp an angle to an arc's visible CCW sweep. Used so a diameter/radius
+ * leader always lands on the arc, not on the empty part of its circle.
+ */
+export function clampAngleToArc(
+  angle: number,
+  startAngle: number,
+  sweep: number,
+): number {
+  const twoPi = Math.PI * 2;
+  if (sweep >= twoPi - 1e-9) return normalizeAngle(angle);
+  const start = normalizeAngle(startAngle);
+  const offset = normalizeAngle(angle - start);
+  if (offset <= sweep + 1e-9) return normalizeAngle(angle);
+  const toStart = twoPi - offset;
+  const toEnd = offset - sweep;
+  return normalizeAngle(toStart <= toEnd ? start : start + sweep);
+}
+
 export function normalizeAngle(angle: number): number {
   const twoPi = Math.PI * 2;
   const wrapped = angle % twoPi;
