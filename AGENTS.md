@@ -192,11 +192,14 @@ docs/
   signature from its `.d.ts`.
 - The fillet creates two new tangent points that are shared by the arc and the two lines,
   then adds tangent constraints and a driving **diameter** dimension. If no other curve
-  uses the old corner, it is removed. If another curve still uses it (the demo's
-  construction diagonal), the point is kept and constrained **onto the new arc**, so
-  attached geometry follows the rounded boundary. Conflicting constraints (a Fix, a
-  coincidence with a fixed point, point-on-line against either trimmed line) are dropped;
-  if that removes an anchor, the UI shows a notice and offers to Fix the arc centre.
+  uses the old corner, it is removed. If another curve, dimension or anchor still uses it
+  (the demo's construction diagonal and origin coincidence), the point is kept at the
+  sharp intersection as a **construction point** and constrained with point-on-line to
+  both trimmed lines. The diagonal and the origin coincidence stay exactly where they
+  were; the boundary uses the arc. The old corner is marked construction when every
+  remaining curve that uses it is construction. Constraints that referred to the
+  pre-trim segments are replaced; all other constraints, including Fix and fixed-point
+  coincidences, are preserved.
 - `ProfileLoop.kind = "path"` carries exact line/arc segments plus a sampled polygon for
   containment/validation. The kernel assembles `threePointArc` edges; the sampled points
   are never used to extrude. `ensureCounterClockwise` must reverse the segments, not just

@@ -324,14 +324,15 @@ lines to those points, inserts a CCW arc between them, and adds two `tangent` co
 plus a driving diameter. The tangent points are shared point ids across the line and the
 arc, which is what makes `C_ARC_LINE_TANGENT` applicable.
 
-If another curve still uses the old corner point (for example the demo's construction
-diagonal), the point is kept and constrained **onto the new arc** rather than left at the
-sharp corner. Constraints that contradict that move are dropped: a Fix, a coincidence
-with a fixed point, or point-on-line against either trimmed line. Dropping a fixed anchor
-is unavoidable when the sharp corner becomes round; the UI surfaces it and offers to Fix
-the arc centre (or the user can add dimensions to re-anchor). The corner's diameter
-label is placed at the visible arc's midpoint, not at the default 45° point on its full
-circle.
+If another curve, dimension or anchor still uses the old corner point (for example the
+demo's construction diagonal and origin coincidence), the point is kept at the sharp
+intersection and constrained with **point-on-line against both trimmed lines**. The
+solver treats a line as infinite, so this is exactly the intersection of the two
+supporting lines: the diagonal and any origin/Fix anchor stay put, while the visible
+boundary uses the arc. The point is marked construction when every remaining curve that
+uses it is construction. Constraints that referred to the pre-trim segments are
+replaced; Fix and fixed-point coincidences are preserved. The corner's diameter label is
+placed at the visible arc's midpoint, not at the default 45° point on its full circle.
 
 ### Loop finding and profiles
 

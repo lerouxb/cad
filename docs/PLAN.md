@@ -180,9 +180,10 @@ the full constraint set.
 - [x] Coincident constraint action for points that are near but not identical (drawing
       still snaps exact/shared points)
 - [x] Arc tool (three-point) + a parametric corner fillet, plus exact line/arc loops in
-      profile extraction (`ProfileLoop.kind = "path"`, OCCT `threePointArc` edges).
-      Attached construction geometry follows the new arc; a lost origin/Fix anchor is
-      surfaced with a one-click "Fix arc centre" remedy
+      profile extraction (`ProfileLoop.kind = "path"`, OCCT `threePointArc` edges). A corner
+      still used by construction geometry or an anchor is kept as a construction point
+      on both trimmed lines' infinite lines, so the diagonal and origin coincidence
+      survive the fillet
 - [x] Selectable fixed **origin and X/Y axes**; constrain/dimension to them (coincident,
       point-on-line, parallel/perpendicular, point-line distance, angle)
 - [x] Exact X/Y coordinate editing for a selected point (same constrained projection as
