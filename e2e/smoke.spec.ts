@@ -369,3 +369,35 @@ test("applies constraints and construction from the floating bar", async ({ page
 
   expect(errors).toEqual([]);
 });
+
+test("drags a line as a whole", async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto("/");
+  await expect(page.getByTestId("kernel-status")).toContainText("ready");
+  await enterSketch(page);
+
+  await page.getByTestId("clear-sketch").click();
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, -40, -20);
+  await dblclickSketch(page, 40, 20);
+  await page.keyboard.press("Escape");
+
+  const readLine = () =>
+    page.locator("[data-geometry-id]").evaluate((element) => ({
+      x1: Number(element.getAttribute("x1")),
+      y1: Number(element.getAttribute("y1")),
+      x2: Number(element.getAttribute("x2")),
+      y2: Number(element.getAttribute("y2")),
+    }));
+
+  const before = await readLine();
+  await dragSketch(page, [0, 0], [20, 10]);
+  const after = await readLine();
+
+  expect(after.x1 - before.x1).toBeCloseTo(20, 0);
+  expect(after.y1 - before.y1).toBeCloseTo(10, 0);
+  expect(after.x2 - before.x2).toBeCloseTo(20, 0);
+  expect(after.y2 - before.y2).toBeCloseTo(10, 0);
+
+  expect(errors).toEqual([]);
+});

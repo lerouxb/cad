@@ -77,6 +77,8 @@ dimensions and the common constraints work; what is left is refinement.
       conflict display
 - [x] Sketch origin as a group-0 fixed entity; construction geometry
 - [x] Zoom (wheel), pan (middle/right, or select-drag on empty space), double-click fit
+- [x] Drag primitives: points, whole lines (both endpoints), circles (grab offset, radius
+      fixed); 3 px threshold so a click does not nudge them
 - [x] Keyboard: `V/L/R/C`, `Esc`, `Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`
 - [x] **Selection + deletion**: click curves/points, delete, multi-select, then entity
       property panel. Selection is ephemeral UI state; deletion is a pure sketch edit in

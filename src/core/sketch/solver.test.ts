@@ -3,7 +3,13 @@ import { addPolyline, emptySketch } from "./create";
 import { applyConstraint } from "./constraints";
 import { DEMO_DEFAULTS, createDemoModel } from "./demo";
 import { applySolution, updateConstraintValue } from "./geometry";
-import { initSolver, solveDrag, solveSketch, type SolveOutcome } from "./solver";
+import {
+  initSolver,
+  solveDrag,
+  solveDragTargets,
+  solveSketch,
+  type SolveOutcome,
+} from "./solver";
 import type { Sketch } from "./types";
 import type { Vec2 } from "../types";
 
@@ -228,6 +234,49 @@ describe("slvs adapter", () => {
     const p = at(dragged!, b.a);
     const q = at(dragged!, b.b);
     expect(q[1] - p[1]).toBeCloseTo(0, 3);
+  });
+
+  it("translates a line when both endpoints are dragged", () => {
+    const sketch = addPolyline(
+      emptySketch(),
+      [{ point: [0, 0] }, { point: [40, 20] }],
+      false,
+    );
+    const line = sketch.curves[0]!;
+    if (line.type !== "line") throw new Error("expected a line");
+
+    const outcome = solveDragTargets(sketch, [
+      { pointId: line.a, x: 20, y: 10 },
+      { pointId: line.b, x: 60, y: 30 },
+    ]);
+
+    expect(outcome).not.toBeNull();
+    expect(at(outcome!, line.a)[0]).toBeCloseTo(20, 3);
+    expect(at(outcome!, line.a)[1]).toBeCloseTo(10, 3);
+    expect(at(outcome!, line.b)[0]).toBeCloseTo(60, 3);
+    expect(at(outcome!, line.b)[1]).toBeCloseTo(30, 3);
+  });
+
+  it("translates a horizontal line without losing horizontality", () => {
+    // addPolyline adds the horizontal constraint automatically.
+    const sketch = addPolyline(
+      emptySketch(),
+      [{ point: [0, 0] }, { point: [40, 0] }],
+      false,
+    );
+    const line = sketch.curves[0]!;
+    if (line.type !== "line") throw new Error("expected a line");
+
+    const outcome = solveDragTargets(sketch, [
+      { pointId: line.a, x: 10, y: 15 },
+      { pointId: line.b, x: 50, y: 15 },
+    ]);
+
+    expect(outcome).not.toBeNull();
+    expect(at(outcome!, line.a)[0]).toBeCloseTo(10, 3);
+    expect(at(outcome!, line.a)[1]).toBeCloseTo(15, 3);
+    expect(at(outcome!, line.b)[0]).toBeCloseTo(50, 3);
+    expect(at(outcome!, line.b)[1]).toBeCloseTo(15, 3);
   });
 
   it("does not drag fixed reference geometry", () => {

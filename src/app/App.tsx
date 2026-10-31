@@ -42,7 +42,9 @@ import {
   initSolver,
   isSolverReady,
   solveDrag,
+  solveDragTargets,
   solveSketch,
+  type DragTarget,
   type SolveOutcome,
 } from "../core/sketch/solver";
 import type { Sketch } from "../core/sketch/types";
@@ -319,6 +321,14 @@ export function App() {
     commitDoc(applySolution(current.sketch, outcome), outcome, `drag:${pointId}`);
   };
 
+  const handleDragLine = (lineId: string, targets: DragTarget[]): void => {
+    if (!isSolverReady()) return;
+    const current = getState();
+    const outcome = solveDragTargets(current.sketch, targets);
+    if (!outcome) return;
+    commitDoc(applySolution(current.sketch, outcome), outcome, `drag:${lineId}`);
+  };
+
   const drawAndCommit = (base: Sketch, next: Sketch): void => {
     if (next === base) return;
     solveAndCommit(next);
@@ -570,6 +580,7 @@ export function App() {
                 selected={selectedSet}
                 onSelect={handleSelect}
                 onDragPoint={handleDragPoint}
+                onDragLine={handleDragLine}
                 onDragEnd={endMerge}
                 onCreatePolyline={handlePolyline}
                 onCreateRectangle={handleRectangle}

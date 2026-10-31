@@ -32,8 +32,10 @@ selection/dimension inspector; there is no permanent sidebar.
 
 - Draw with the **line**, **rectangle**, and **circle** tools. Grid and point snapping;
   axis inference adds horizontal/vertical constraints; chains close on their first point.
-- Drag points: the cursor delta is projected onto the constraint tangent space, so points
-  slide along lines and circles. Fully constrained geometry refuses to move.
+- Drag points, whole lines, and circles: the cursor delta is projected onto the constraint
+  tangent space, so points slide along lines and circles and lines translate (or stretch,
+  if their endpoints are constrained differently). Fully constrained geometry refuses to
+  move.
 - Extrude any closed region: a plate, a cylinder from a lone circle, a tube from two
   concentric circles, or an arbitrary face with nested line/circle cutouts. OCCT runs in
   a Web Worker; three.js renders the solid with its B-rep edges (Z-up, mm).

@@ -9,6 +9,7 @@ import {
 import type { ProfileLoop, Vec2 } from "../core/types";
 import type { DraftVertex } from "../core/sketch/create";
 import type { DimensionPlacement, DimensionTarget } from "../core/sketch/dimensions";
+import type { DragTarget } from "../core/sketch/solver";
 import type { Sketch, SketchCircle, SketchCurve } from "../core/sketch/types";
 import { useElementSize } from "../ui/useElementSize";
 
@@ -32,6 +33,7 @@ export interface SketchCanvasProps {
   /** Select one entity, clear the selection, or add/toggle with `additive`. */
   onSelect: (entityId: string | null, additive: boolean) => void;
   onDragPoint: (pointId: string, x: number, y: number) => void;
+  onDragLine: (lineId: string, targets: DragTarget[]) => void;
   onDragEnd: () => void;
   onCreatePolyline: (vertices: DraftVertex[], closed: boolean) => void;
   onCreateRectangle: (a: Vec2, b: Vec2) => void;
@@ -79,6 +81,7 @@ export function SketchCanvas({
   selected,
   onSelect,
   onDragPoint,
+  onDragLine,
   onDragEnd,
   onCreatePolyline,
   onCreateRectangle,
@@ -91,6 +94,19 @@ export function SketchCanvas({
   const [viewBox, setViewBox] = useState<ViewBox>(() => fitView(sketch, radii));
   const viewBoxRef = useRef(viewBox);
   const dragRef = useRef<string | null>(null);
+  const lineDragRef = useRef<{
+    lineId: string;
+    start: Vec2;
+    a: { id: string; point: Vec2 };
+    b: { id: string; point: Vec2 };
+    active: boolean;
+  } | null>(null);
+  const circleDragRef = useRef<{
+    centerId: string;
+    start: Vec2;
+    center: Vec2;
+    active: boolean;
+  } | null>(null);
   const panRef = useRef<{ clientX: number; clientY: number; box: ViewBox } | null>(null);
   const [rectStart, setRectStart] = useState<Vec2 | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -142,6 +158,11 @@ export function SketchCanvas({
     setDimPlacement(null);
     setEditor(null);
   }
+
+  useEffect(() => {
+    lineDragRef.current = null;
+    circleDragRef.current = null;
+  }, [interactionKey]);
 
   useEffect(() => {
     const svg = svgRef.current;
@@ -397,6 +418,35 @@ export function SketchCanvas({
   const onPointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
     const raw = toSketch(event);
 
+    if (lineDragRef.current) {
+      const drag = lineDragRef.current;
+      const dx = raw[0] - drag.start[0];
+      const dy = raw[1] - drag.start[1];
+      // A click or shift-click must not nudge the line; wait for a small
+      // screen-space threshold before treating this as a drag.
+      if (!drag.active) {
+        if (Math.hypot(dx, dy) * scale < 3) return;
+        drag.active = true;
+      }
+      onDragLine(drag.lineId, [
+        { pointId: drag.a.id, x: drag.a.point[0] + dx, y: drag.a.point[1] + dy },
+        { pointId: drag.b.id, x: drag.b.point[0] + dx, y: drag.b.point[1] + dy },
+      ]);
+      return;
+    }
+
+    if (circleDragRef.current) {
+      const drag = circleDragRef.current;
+      const dx = raw[0] - drag.start[0];
+      const dy = raw[1] - drag.start[1];
+      if (!drag.active) {
+        if (Math.hypot(dx, dy) * scale < 3) return;
+        drag.active = true;
+      }
+      onDragPoint(drag.centerId, drag.center[0] + dx, drag.center[1] + dy);
+      return;
+    }
+
     if (dragRef.current) {
       onDragPoint(dragRef.current, raw[0], raw[1]);
       return;
@@ -462,6 +512,18 @@ export function SketchCanvas({
       }
     }
 
+    if (lineDragRef.current) {
+      const active = lineDragRef.current.active;
+      lineDragRef.current = null;
+      if (active) onDragEnd();
+    }
+
+    if (circleDragRef.current) {
+      const active = circleDragRef.current.active;
+      circleDragRef.current = null;
+      if (active) onDragEnd();
+    }
+
     if (dragRef.current) {
       dragRef.current = null;
       setDragging(null);
@@ -483,10 +545,45 @@ export function SketchCanvas({
     setDragging(pointId);
   };
 
-  const selectCurve = (event: ReactPointerEvent, curveId: string) => {
+  const onCurvePointerDown = (event: ReactPointerEvent, curve: SketchCurve) => {
     event.stopPropagation();
     event.preventDefault();
-    onSelect(curveId, additiveSelection(event));
+
+    if (tool === "dimension") {
+      pickDimensionCurve(event, curve);
+      return;
+    }
+
+    onSelect(curve.id, additiveSelection(event));
+
+    if (curve.type === "line") {
+      const a = points[curve.a];
+      const b = points[curve.b];
+      if (!a || !b) return;
+      lineDragRef.current = {
+        lineId: curve.id,
+        start: toSketch(event),
+        a: { id: curve.a, point: a },
+        b: { id: curve.b, point: b },
+        active: false,
+      };
+      svgRef.current?.setPointerCapture(event.pointerId);
+      return;
+    }
+
+    // Dragging a circle moves it by its centre, preserving the grab offset so
+    // it does not jump under the pointer. Reference circles (e.g. the example's
+    // centred hole) are select-only.
+    const center = sketch.points.find((point) => point.id === curve.center);
+    const position = points[curve.center];
+    if (!center || center.construction || !position) return;
+    circleDragRef.current = {
+      centerId: curve.center,
+      start: toSketch(event),
+      center: position,
+      active: false,
+    };
+    svgRef.current?.setPointerCapture(event.pointerId);
   };
 
   const onDoubleClick = () => {
@@ -590,6 +687,7 @@ export function SketchCanvas({
         return (
           <circle
             key={circle.id}
+            data-geometry-id={circle.id}
             cx={center[0]}
             cy={center[1]}
             r={radii[circle.id] ?? circle.radius}
@@ -610,6 +708,7 @@ export function SketchCanvas({
         return (
           <line
             key={curve.id}
+            data-geometry-id={curve.id}
             x1={a[0]}
             y1={a[1]}
             x2={b[0]}
@@ -642,13 +741,9 @@ export function SketchCanvas({
                   strokeLinecap="round"
                   vectorEffect="non-scaling-stroke"
                   pointerEvents="stroke"
-                  style={{ cursor: "pointer" }}
+                  style={{ cursor: tool === "select" ? "grab" : "pointer" }}
                   data-curve-id={curve.id}
-                  onPointerDown={(event) =>
-                    tool === "dimension"
-                      ? pickDimensionCurve(event, curve)
-                      : selectCurve(event, curve.id)
-                  }
+                  onPointerDown={(event) => onCurvePointerDown(event, curve)}
                 />
               );
             }
@@ -665,13 +760,9 @@ export function SketchCanvas({
                 strokeWidth={12}
                 vectorEffect="non-scaling-stroke"
                 pointerEvents="stroke"
-                style={{ cursor: "pointer" }}
+                style={{ cursor: tool === "select" ? "grab" : "pointer" }}
                 data-curve-id={curve.id}
-                onPointerDown={(event) =>
-                  tool === "dimension"
-                    ? pickDimensionCurve(event, curve)
-                    : selectCurve(event, curve.id)
-                }
+                onPointerDown={(event) => onCurvePointerDown(event, curve)}
               />
             );
           })}
@@ -786,7 +877,7 @@ export function SketchCanvas({
 
       <ConstraintBadges sketch={sketch} points={points} px={px} />
 
-      <g>
+      <g pointerEvents="none">
         <line
           x1={-5 * px}
           y1={0}

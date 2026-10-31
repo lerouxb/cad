@@ -20,7 +20,8 @@ engine matters more than feature count.
 
 **M1 core is in.** The app is an editable sketcher driving an exact extrude:
 
-- Real: `slvs` adapter, tangent-space constrained dragging, line/rectangle/circle tools,
+- Real: `slvs` adapter, tangent-space constrained dragging of points, whole lines and
+  circles, line/rectangle/circle tools,
   grid + point snapping, automatic horizontal/vertical constraints, profile extraction
   (line loops or circles as the body, nested loops/circles as holes), click/shift-click
   selection, cascading delete, a dimension tool (distance/diameter, driving or reference,
@@ -160,6 +161,11 @@ docs/
   solver *and* by the drag Jacobian (`core/sketch/drag.ts`); otherwise a reference
   measurement silently constrains the geometry or lies about the DOF. Every new
   constraint type needs a residual/gradient there.
+- Line drags pass **both endpoints as targets** (`solveDragTargets`); the projection may
+  turn a translation into a stretch. A line/circle drag waits for a 3 px movement before
+  applying, so click and shift-click do not nudge geometry. The origin marker must stay
+  `pointerEvents="none"` — it is drawn above the curve hit targets and otherwise eats the
+  grab.
 - Dimension labels stop `pointerdown` propagation. Without that the SVG's pan handler
   captures the pointer on press and the label never receives a `dblclick`; this is subtle
   and easy to regress.

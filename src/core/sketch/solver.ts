@@ -1,5 +1,7 @@
 import type { Entity, SlvsModule } from "slvs";
-import { projectDrag } from "./drag";
+import { projectDrag, type DragTarget } from "./drag";
+
+export type { DragTarget };
 import type { Vec2 } from "../types";
 import type { Sketch } from "./types";
 
@@ -33,12 +35,6 @@ export interface SolveOutcome {
   /** Ids of the constraints the solver could not satisfy. */
   conflicting: string[];
   message?: string;
-}
-
-export interface DragTarget {
-  pointId: string;
-  x: number;
-  y: number;
 }
 
 /** Everything we create lives in this group, except fixed reference geometry. */
@@ -108,10 +104,28 @@ export function solveSketch(sketch: Sketch, drag?: DragTarget): SolveOutcome {
  * of the drag simply being rejected.
  */
 export function solveDrag(sketch: Sketch, drag: DragTarget): SolveOutcome | null {
-  const origin = sketch.points.find((point) => point.id === drag.pointId);
-  if (!origin) return null;
+  return solveDragTargets(sketch, [drag]);
+}
 
-  const projected = projectDrag(sketch, drag);
+/**
+ * Drag several points at once (a line moves both endpoints). Each target is an
+ * absolute position; the projection handles constraints across the group, so a
+ * line can translate, stretch or rotate to stay feasible.
+ */
+export function solveDragTargets(
+  sketch: Sketch,
+  targets: readonly DragTarget[],
+): SolveOutcome | null {
+  if (targets.length === 0) return null;
+
+  const origins = new Map<string, { x: number; y: number }>();
+  for (const target of targets) {
+    const point = sketch.points.find((candidate) => candidate.id === target.pointId);
+    if (point) origins.set(target.pointId, { x: point.x, y: point.y });
+  }
+  if (origins.size === 0) return null;
+
+  const projected = projectDrag(sketch, targets);
   if (!projected) return null;
 
   // The tangent projection is first-order. A curved constraint leaves a
@@ -124,10 +138,14 @@ export function solveDrag(sketch: Sketch, drag: DragTarget): SolveOutcome | null
     if (!outcome.ok) continue;
 
     // A full-rank sketch projects to zero, but floating point can leave a
-    // residue. If the dragged point did not actually move, this is a no-op.
-    const solved = outcome.points[drag.pointId];
-    if (!solved) return null;
-    if (Math.hypot(solved[0] - origin.x, solved[1] - origin.y) < 1e-4) return null;
+    // residue. If nothing actually moved, this is a no-op.
+    let moved = 0;
+    for (const [id, origin] of origins) {
+      const solved = outcome.points[id];
+      if (!solved) continue;
+      moved = Math.max(moved, Math.hypot(solved[0] - origin.x, solved[1] - origin.y));
+    }
+    if (moved < 1e-4) return null;
     return outcome;
   }
   return null;

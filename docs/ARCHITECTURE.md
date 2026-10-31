@@ -252,6 +252,10 @@ Rules:
   full-rank sketch projects to zero and `solveDrag()` returns `null`, so a fully
   constrained sketch simply does not move. This is also why `dragged()` is **not** used:
   it pins, and pinning is the bug.
+- **Multi-target drags:** `solveDragTargets` accepts a set of target positions. A line
+  supplies both endpoints with the same delta, which translates it; because each endpoint
+  is projected independently, constraints can turn that translation into a stretch or a
+  rotation. Circles drag by their centre with the grab offset preserved.
 
 ### Loop finding and profiles
 

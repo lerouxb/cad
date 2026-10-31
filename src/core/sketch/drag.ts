@@ -27,9 +27,9 @@ interface Parameters {
 
 type Row = Map<number, number>;
 
-export interface DragRequest {
+export interface DragTarget {
   pointId: string;
-  /** Cursor position in sketch coordinates. */
+  /** Target position in sketch coordinates. */
   x: number;
   y: number;
 }
@@ -42,31 +42,48 @@ export interface ProjectedDrag {
   moved: number;
 }
 
+/**
+ * Project a set of target positions onto the constraint tangent space. A
+ * single point is the usual case; a line supplies both endpoints with the same
+ * delta, which translates the line. The endpoints may be constrained
+ * differently, so the projection can turn a translation into a stretch.
+ */
 export function projectDrag(
   sketch: Sketch,
-  request: DragRequest,
+  targets: readonly DragTarget[],
 ): ProjectedDrag | null {
-  const dragged = sketch.points.find((point) => point.id === request.pointId);
-  if (!dragged || dragged.fixed) return null;
-
   const params = buildParameters(sketch);
-  const index = params.pointIndex.get(request.pointId);
-  if (!index) return null;
+  const delta = params.values.map(() => 0);
+  const mobility = params.values.map(() => 1);
+  const dragged: [number, number][] = [];
+  const seen = new Set<string>();
+  let requested = 0;
+
+  for (const target of targets) {
+    if (seen.has(target.pointId)) continue;
+    seen.add(target.pointId);
+    const point = sketch.points.find((candidate) => candidate.id === target.pointId);
+    if (!point || point.fixed) continue;
+    const index = params.pointIndex.get(target.pointId);
+    if (!index) continue;
+
+    const dx = target.x - point.x;
+    const dy = target.y - point.y;
+    delta[index[0]] = dx;
+    delta[index[1]] = dy;
+    // The dragged points are almost rigid: we want *them* to follow the cursor,
+    // and the rest of the sketch to absorb the constraint correction. A tiny
+    // mobility (not zero, so rows that only involve the dragged points still
+    // project them) gives that behaviour.
+    mobility[index[0]] = 1e-9;
+    mobility[index[1]] = 1e-9;
+    dragged.push([index[0], index[1]]);
+    requested = Math.max(requested, Math.hypot(dx, dy));
+  }
+
+  if (dragged.length === 0) return null;
 
   const rows = buildRows(sketch, params);
-  const delta = params.values.map(() => 0);
-  const dx = request.x - dragged.x;
-  const dy = request.y - dragged.y;
-  delta[index[0]] = dx;
-  delta[index[1]] = dy;
-
-  // The dragged point is almost rigid: we want *it* to follow the cursor, and
-  // the rest of the sketch to absorb the constraint correction. A tiny
-  // mobility (not zero, so rows that only involve the dragged point still
-  // project it) gives that behaviour.
-  const mobility = params.values.map(() => 1);
-  mobility[index[0]] = 1e-9;
-  mobility[index[1]] = 1e-9;
 
   // A handful of weighted Kaczmarz sweeps is plenty for a sketch-sized system.
   for (let sweep = 0; sweep < 32; sweep++) {
@@ -86,10 +103,10 @@ export function projectDrag(
     }
   }
 
-  const movedX = delta[index[0]] ?? 0;
-  const movedY = delta[index[1]] ?? 0;
-  const moved = Math.hypot(movedX, movedY);
-  const requested = Math.hypot(dx, dy);
+  let moved = 0;
+  for (const [xIndex, yIndex] of dragged) {
+    moved = Math.max(moved, Math.hypot(delta[xIndex] ?? 0, delta[yIndex] ?? 0));
+  }
   if (moved < 1e-5) return null;
 
   const points = sketch.points.map((point) => {
