@@ -19,9 +19,11 @@ then sketches on faces, then more features.
 - Draw with line (chain, closes on first point), rectangle (drag), and circle
   (centre + radius). Grid and point snapping; automatic horizontal/vertical constraints;
   coincident endpoints come from shared points.
-- Closed profiles are extracted from the graph: the largest region (a line loop or a
-  circle) becomes the body, nested loops/circles become holes. Extruded by OCCT in a
-  worker; three.js renders the solid and its B-rep edges, Z-up.
+- Closed profiles are extracted as **selectable regions** (faces with holes). Click a
+  filled region to choose the extrude profile, Shift to add, All/Auto for all or the
+  largest; multiple regions are extruded and fused. Holes and islands follow the
+  containment tree. Extruded by OCCT in a worker; three.js renders the solid and its B-rep
+  edges, Z-up.
 - Dimension tool: distance (point-to-point, point-to-line, line), angle, diameter and
   radius, driving or reference, with inline edit/delete and draggable labels. Floating
   constraint bar: parallel, perpendicular, equal, point-on-line, point-on-circle,
@@ -34,7 +36,7 @@ then sketches on faces, then more features.
   remove. Deletion cascades to dependent curves and constraints, and leaves no orphaned
   references. A selection card reports length/diameter/position.
 - The example sketch can be loaded, cleared, edited, or replaced by drawing.
-- `npm run verify` (82 unit tests) and `npm run e2e` (14 tests) are green. The e2e asserts
+- `npm run verify` (90 unit tests) and `npm run e2e` (15 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -43,9 +45,10 @@ then sketches on faces, then more features.
 Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
 95 017.7 mm³ and rebuilds in ~35 ms after warm-up.
 
-**Still temporary** (all scheduled below): profile selection is "largest loop"; **datum
-planes and sketch-on-face are M4**; the feature tree is static; nothing is persisted.
-Free 3D sketches, splines/text/images and drawing exports remain out of scope.
+**Still temporary** (all scheduled below): auto mode defaults to the largest region until
+you click one; intersecting segments are not split into faces; face/edge picking is
+pending; **datum planes and sketch-on-face are M4**; the feature tree is static; nothing is
+persisted. Free 3D sketches, splines/text/images and drawing exports remain out of scope.
 
 ---
 
@@ -206,27 +209,27 @@ rebuild exist; they are tracked at the top of M3.
 - [x] Extrude evaluator: polygon/circle loops → wire → face → solid, with validation
 - [x] Tessellation via `toBufferGeometryData` / `meshEdges`, transferred to the main thread
 - [x] Shaded solid + dark B-rep edges, Z-up, auto-framing
-- [x] `core/sketch/loops.ts`: graph → simple cycles → largest region (line loop or
-      circle) → nested loops and circles as holes, with tests
-- [ ] Region picking in the sketch UI (click an enclosed area). A **region** is a face of
-      the sketch: an outer loop plus the holes directly inside it. Build the containment
-      tree, treat even depth as solid and odd depth as holes, and let the user pick one or
-      more. Highlight the picked regions and preview the extrude.
-- [ ] `regionId = hash(sorted curve ids)` so a selection survives edits and can be stored
-      in a feature (same idea as `TopoRef`, one level down). A region that disappears marks
-      the feature as errored instead of silently changing the profile.
-- [ ] Multiple regions per extrude (Fusion extrudes each selected profile), and prepare for
-      one sketch feeding several features in M3.
+- [x] `core/sketch/loops.ts`: graph → simple cycles → face filtering (a cycle containing
+      a smaller cycle that shares an edge is a subdivision, not a face) → containment tree
+      (even depth material, odd depth holes) → selectable regions, with tests
+- [x] Region picking in the sketch UI: translucent fills with holes, click/Shift-click,
+      and an **All / Auto** panel. The active regions are highlighted and previewed in 3D
+- [x] `regionId = hash(sorted outer + direct-hole curve ids)`; stable across dimension
+      edits and invalidated when a boundary changes
+- [x] Multiple regions per extrude. The worker extrudes each region and fuses the solids
+      (`fuseAll`), so disjoint regions become one body
+- [x] Deeper nesting: a hole can contain an island, which is a separate depth-2 region
 - [ ] Split curves at intersections / trim while sketching (SolveSpace's split)
-- [ ] Deeper nesting (islands inside holes); currently one level
-- [ ] Replace cycle enumeration with planar face traversal (intersecting segments, nested
-      loops, disjoint regions)
-- [ ] Rebuild goldens: several profiles → volume/bbox/face-count assertions
+- [ ] Full planar face traversal: intersecting segments without a shared endpoint are not
+      yet split, so crossing diagonals are still ambiguous
+- [ ] Rebuild goldens: several profiles → bbox/face-count assertions (volume is covered by
+      the multi-region e2e)
 - [ ] Face/edge picking + hover/selection highlight (`faceGroups`/`edgeGroups` are already
       in the mesh payload but unused)
 
-**Done when:** an arbitrary multi-region sketch can be extruded, with holes, without the
-"largest region" rule.
+**Done when:** you can draw an arbitrary multi-region sketch, click one or more regions
+(including holes and islands), and extrude/fuse them with exact volume. Auto mode still
+defaults to the largest region until you click; intersections are not split yet.
 
 ## M3 — History (4–6 days)
 
@@ -320,7 +323,6 @@ size and the fillets survive.
 - [ ] Loft / sweep (profile + path)
 - [ ] Linear and circular patterns
 - [ ] Mirror (feature and body)
-- [ ] Multi-region extrude (multiple disjoint profiles, holes)
 - [ ] Datum axes and points (revolve axes, through-point planes, sweep paths)
 - [ ] Helix (threads, springs) — optional
 - [ ] General body booleans (beyond extrude join/cut)

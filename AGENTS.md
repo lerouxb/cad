@@ -18,15 +18,17 @@ engine matters more than feature count.
 
 ## Status
 
-**M1 is done.** The app is an editable sketcher driving an exact extrude:
+**M1 is done and M2 region selection is in.** The app is an editable sketcher driving an exact extrude:
 
 - Real: `slvs` adapter, tangent-space constrained dragging of points, whole lines, circles
   and arcs, line/rectangle/circle/three-point-arc tools and a parametric corner fillet,
   grid + point snapping, automatic horizontal/vertical constraints, exact profile
   extraction (line/arc loops or circles as the body, nested loops/circles as holes;
   arcs extrude as OCCT arc edges, not tessellated), click/shift-click selection,
-  cascading delete, dimensions (point-point, point-line, angle, diameter, radius, driving
-  or reference, inline edit/delete and draggable labels), a floating constraint bar
+  cascading delete, explicit region selection (click a filled region, Shift adds, All/Auto;
+  multiple selected regions are extruded and fused), dimensions (point-point, point-line,
+  angle, diameter, radius, driving or reference, inline edit/delete and draggable labels),
+  a floating constraint bar
   (horizontal/vertical, parallel, perpendicular, equal, point-on-line, point-on-circle,
   tangent, symmetric, midpoint, coincident, fix) with construction geometry, a selectable
   fixed origin + X/Y axis reference frame, exact X/Y editing for a selected point,
@@ -35,18 +37,19 @@ engine matters more than feature count.
 - UI: one main stage. The bottom timeline switches between the full-stage sketch editor
   and the 3D model; the sketch has floating tools, a DOF pill, and a floating selection /
   dimension inspector. No permanent sidebar.
-- Temporary: profile selection is "largest closed loop" (`core/sketch/loops.ts`), the
-  example sketch is hand-authored (`core/sketch/demo.ts`), **datum planes and
-  sketch-on-face are not implemented (M4)**, the feature tree is static, and nothing is
+- Temporary: auto mode still defaults to the largest region until a region is clicked;
+  intersecting segments are not split into faces; face/edge picking is not implemented;
+  the example sketch is hand-authored (`core/sketch/demo.ts`); **datum planes and
+  sketch-on-face are not implemented (M4)**; the feature tree is static; nothing is
   persisted. Free 3D sketches, splines/text/images and drawing exports are out of scope.
 
-Next: **M2** (explicit region selection, picking), **M3** (document schema + history),
-then **M4** (datum planes + face supports). Read `docs/PLAN.md`; it is the source of
-truth for done.
+Next: **finish M2** (split at intersections, face/edge picking), **M3** (document schema +
+history), then **M4** (datum planes + face supports). Read `docs/PLAN.md`; it is the
+source of truth for done.
 
 **E2E**: tests reuse one worker-scoped page per worker and reset the app through its UI;
 do not add `page.goto()` per test. The WASM stays warm, which takes the suite from ~1 min
-to ~25 s locally (2 workers; 1 in CI). Reset modes, the demo and the height slider in the
+to ~30 s locally (2 workers; 1 in CI). Reset modes, the demo and the height slider in the
 shared `beforeEach`; if state leaks between tests, extend that reset.
 
 ## Stack (decided)
@@ -204,6 +207,14 @@ docs/
   containment/validation. The kernel assembles `threePointArc` edges; the sampled points
   are never used to extrude. `ensureCounterClockwise` must reverse the segments, not just
   the points.
+- **Regions are faces, not every cycle.** `regionsFromSketch` drops a cycle when a smaller
+  cycle sharing one of its curves sits inside it (rectangle + diagonal → two triangles),
+  then builds a containment tree: even depth is material, odd depth is a hole. Region ids
+  hash the outer + direct-hole curve ids. `profileFromSketch` is the legacy "largest loop"
+  helper used by old tests; the app uses regions.
+- **`ExtrudeParams` is `{ regions, height }`**, not one outer + holes. The worker extrudes
+  each region and `fuseAll`s multiple solids. Region fills use `data-region-id` and
+  `data-region-bounds` (the latter replaces the old outer polygon for e2e bounds).
 - **Reference geometry is separate from user geometry.** `Sketch.references` holds the
   fixed origin and the X/Y axes; they are not in `sketch.points/curves`, so profiles,
   point indices and deletion stay clean. Use `allPoints(sketch)` / `allCurves(sketch)`

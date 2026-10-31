@@ -47,8 +47,10 @@ selection/dimension inspector; there is no permanent sidebar.
   projection as dragging applies.
 - Extrude any closed region: a plate, a cylinder from a lone circle, a tube from two
   concentric circles, an arbitrary face with nested cutouts, or a mixed line/arc profile.
-  Arc edges stay exact through the kernel. OCCT runs in a Web Worker; three.js renders the
-  solid with its B-rep edges (Z-up, mm).
+  Click filled regions to choose one or more profiles (Shift adds, All/Auto are in the
+  corner panel); selected regions are fused into one body. Arc edges stay exact through
+  the kernel. OCCT runs in a Web Worker; three.js renders the solid with its B-rep edges
+  (Z-up, mm).
 - **Select and delete**: click a curve or point, Shift-click to multi-select, Delete to
   remove. Deletion cascades through dependent curves/constraints; undo restores it.
 - **Undo/redo** with gesture grouping (`Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`), `Esc` to cancel a
@@ -56,9 +58,10 @@ selection/dimension inspector; there is no permanent sidebar.
 - Exact volume/face/triangle stats, and e2e tests that check them numerically while
   dragging, dimensioning, drawing, selecting/deleting, and undoing.
 
-It is intentionally narrow: profile selection is still "largest closed loop", datum planes
-and sketches on faces are M4, the feature tree is a preview, and nothing is persisted yet.
-See `docs/PLAN.md` for what comes next.
+It is intentionally narrow: auto mode defaults to the largest region until you click one,
+intersecting sketch segments are not split into faces yet, face/edge picking is pending,
+datum planes and sketches on faces are M4, the feature tree is a preview, and nothing is
+persisted yet. See `docs/PLAN.md` for what comes next.
 
 ## The stack in one line
 

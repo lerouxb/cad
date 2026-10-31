@@ -334,54 +334,39 @@ uses it is construction. Constraints that referred to the pre-trim segments are
 replaced; Fix and fixed-point coincidences are preserved. The corner's diameter label is
 placed at the visible arc's midpoint, not at the default 45° point on its full circle.
 
-### Loop finding and profiles
+### Regions and profiles
 
-For extrude we need closed profiles. `core/sketch/loops.ts` currently does this:
+`core/sketch/loops.ts` extracts selectable **regions**, not one "largest loop":
 
-1. Collect **regions**: simple cycles over non-construction line **and arc** segments
-   (DFS, capped, deduplicated by curve set) and every non-construction circle. Each has an
-   area.
-2. The largest region is the outer profile. It can be a polygon, a closed line/arc path,
-   or a circle, so a lone circle extrudes to a cylinder.
-3. Every other region strictly inside the outer becomes a hole: circles, line loops and
-   mixed paths alike. Loops that share an edge with the outer are subdivisions (rectangle
-   + diagonal), not holes, and are excluded. Only one nesting level is supported: an
-   island inside a hole is ignored rather than double-subtracted.
-4. A path loop carries **exact** line/arc segments for the kernel plus a sampled polygon
-   for containment/area. The kernel assembles `threePointArc` edges, so the extruded arc
-   is an OCCT arc, not a chord approximation. The sampled polygon is only for validation.
-5. The kernel worker validates clearances and reports a crossing hole as an error.
+1. Enumerate simple cycles over non-construction line/arc segments and treat each
+   non-construction circle as a closed loop.
+2. Drop a cycle when a smaller cycle that shares one of its curves lies inside it. That
+   is a **subdivision**, not a face: a rectangle with a real diagonal yields two
+   triangles, not the rectangle plus two holes.
+3. Build a containment tree from the remaining faces and circles. Even depth is material;
+   odd depth is a hole of its parent. A region is an even-depth face plus its **direct**
+   odd-depth children as holes. This handles:
+   - rectangle + circle → one region with a circular hole,
+   - two disjoint rectangles → two regions,
+   - concentric circles → one tube,
+   - an island inside a hole → a separate depth-2 region.
+4. `regionId = hash(sorted outer + direct-hole curve ids)`. It is stable across dimension
+   and constraint edits and invalidates when a boundary changes. The selected ids live in
+   UI state (not the document) until M3 stores them on an extrude feature.
 
-This is exact for the shapes the sketcher can draw today and is easy to test. It is not a
-general planar arrangement: multiple disjoint bodies/regions, deeper nesting, arcs, and
-intersecting segments are not handled. M2 replaces it with face traversal plus explicit
-region picking, at which point "largest region" disappears.
+The app defaults to the largest region when no explicit selection exists; clicking a
+filled region replaces the selection, Shift toggles, and **All/Auto** select every region
+or return to the largest. Regions are drawn as even-odd SVG paths, so holes are not
+clickable.
 
-Kernel side: solved loops become brepjs edges (`line`, `circle`) → `wireLoop`, then
-`face(outer)` followed by `addHoles(face, holes)` and `extrude`. Use `addHoles` rather
-than `face(outer, holes)`: the latter silently returns the wrong solid when a circular
-outer has a polygonal hole. No blueprints are needed for straight segments and full
-circles; arcs will use `threePointArc` or the blueprint layer when they land.
+`ExtrudeParams` carries `regions: { outer, holes }[]`; the worker builds one solid per
+region and fuses them with `fuseAll`, so multiple selected profiles produce one body.
+`ProfileLoop.kind = "path"` still carries exact line/arc edges for the kernel; the sampled
+polygon is only for containment/validation. `profileFromSketch` remains as the legacy
+single-largest-loop helper used by older tests.
 
-Auto-constraints while drawing (snap to horizontal/vertical, coincident to nearby
-endpoints, tangent continuation) are what make the sketcher feel good. They are part of
-M1, not a polish item.
-
-### Dimensions
-
-Dimensions are constraints with a `driving` flag. The supported measurements are:
-
-| Type | Stored | Display/edit |
-| --- | --- | --- |
-| `distance` | two point ids, mm, label offset | linear dimension |
-| `pointLineDistance` | point + line, mm, label offset | projection + linear dimension |
-| `angle` | two line ids, degrees, arc radius | arc + `90°` label |
-| `diameter` | circle/arc id, **diameter**, leader angle, `radius?` | `⌀ 20` or `R 10` |
-
-The radius display is only a presentation flag; the solver constraint is always the
-diameter. The editor converts back to diameter on commit. `setDimensionPlacement` changes
-only the offset/leader/arc radius, never the value, and label drags are merged into one
-undo entry per gesture.
+Known M2 boundary: intersecting segments without a shared endpoint are not split, so two
+crossing diagonals are not decomposed into their four faces. Split/trim is still pending.
 
 ## 6. Rebuild engine
 
@@ -640,12 +625,12 @@ the honest map, so nobody assumes a layer exists because it is described above.
 | `core/rebuild` | Not started. One sketch and one feature, rebuilt by a debounce. |
 | `core/kernel` | Real: typed protocol, worker client, OCCT worker, hole validation, exact stats. |
 | `viewer` | Real: Z-up scene, framing, meshing, edges. Picking and highlight are not implemented. |
-| `sketch` UI | Real: full-stage sketch editor toggled from the timeline, with a floating tool strip, DOF pill, and selection/dimension/constraint inspector. Select/drag, line/rectangle/circle, dimension tool with inline editing, constraint bar, construction toggle, snapping, auto H/V, undo/redo. |
+| `sketch` UI | Real: full-stage sketch editor toggled from the timeline, with a floating tool strip, DOF pill, and selection/dimension/constraint inspector. Select/drag, line/rectangle/circle/arc, fillet, explicit region fills with All/Auto, dimension tool with inline editing, constraint bar, construction toggle, snapping, auto H/V, undo/redo. |
 | Feature tree | Static markup that communicates the intended product. |
 | Persistence | None yet. |
 
-Known shortcuts, all scheduled: profile selection is "largest region"; datum planes and
-sketch-on-face are not implemented yet (M4); dimension labels cannot be dragged after
-placement; angular/point-to-line dimensions are missing; the remaining solver constraint
-types (angle/tangent/symmetric) have no UI.
+Known shortcuts, all scheduled: auto region selection defaults to the largest region
+until a fill is clicked; intersecting segments are not split, so crossing diagonals are
+ambiguous; face/edge picking is not implemented; datum planes and sketch-on-face are not
+implemented yet (M4); history, persistence and the feature tree are M3.
 
