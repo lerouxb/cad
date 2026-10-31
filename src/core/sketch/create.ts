@@ -1,6 +1,6 @@
 import type { Vec2 } from "../types";
 import { circumcenter, normalizeAngle, updateConstraintValue } from "./geometry";
-import type { Sketch, SketchConstraint, SketchPoint } from "./types";
+import { allPoints, type Sketch, type SketchConstraint, type SketchPoint, type SketchReferences } from "./types";
 
 /**
  * Pure sketch edits used by the drawing tools. Keeping them here (instead of
@@ -61,7 +61,9 @@ export function addPolyline(
     segments.push([ids[ids.length - 1]!, ids[0]!]);
   }
 
-  const byId = new Map(points.map((point) => [point.id, point]));
+  const byId = new Map(
+    [...allPoints(sketch), ...points].map((point) => [point.id, point]),
+  );
   for (const [a, b] of segments) {
     if (a === b) continue;
     const pa = byId.get(a)!;
@@ -127,12 +129,16 @@ export function addArc(
   through: Vec2,
 ): Sketch {
   const points = [...sketch.points];
-  const startId = resolveDraftPoint(points, startVertex);
-  const endId = resolveDraftPoint(points, endVertex);
+  const startId = resolveDraftPoint(sketch, points, startVertex);
+  const endId = resolveDraftPoint(sketch, points, endVertex);
   if (startId === endId) return sketch;
 
-  const start = points.find((point) => point.id === startId)!;
-  const end = points.find((point) => point.id === endId)!;
+  const byId = new Map(
+    [...allPoints(sketch), ...points].map((point) => [point.id, point]),
+  );
+  const start = byId.get(startId);
+  const end = byId.get(endId);
+  if (!start || !end) return sketch;
   const center = circumcenter([start.x, start.y], [end.x, end.y], through);
   if (!center) return sketch;
 
@@ -191,7 +197,7 @@ export function addFillet(
   const shared = [lineA.a, lineA.b].find((id) => id === lineB.a || id === lineB.b);
   if (!shared) return sketch;
 
-  const byId = new Map(sketch.points.map((point) => [point.id, point]));
+  const byId = new Map(allPoints(sketch).map((point) => [point.id, point]));
   const corner = byId.get(shared);
   const farA = byId.get(lineA.a === shared ? lineA.b : lineA.a);
   const farB = byId.get(lineB.a === shared ? lineB.b : lineB.a);
@@ -302,7 +308,8 @@ export function addFillet(
       used.add(curve.end);
     }
   }
-  const cornerUsed = used.has(shared);
+  const referenceCorner = corner.reference === true;
+  const cornerUsed = used.has(shared) || referenceCorner;
 
   // If another curve (e.g. the demo's construction diagonal) still uses the
   // old corner, do not leave it stranded at the sharp corner. Keep the point
@@ -322,7 +329,7 @@ export function addFillet(
     }
     return true;
   });
-  if (cornerUsed) {
+  if (cornerUsed && !referenceCorner) {
     constraints.push({
       id: newId("c"),
       type: "pointOnCircle",
@@ -379,8 +386,71 @@ export function addCircle(
   };
 }
 
+/**
+ * The sketch coordinate frame. The origin and axis endpoints are fixed
+ * (solver group 0), and the axes are construction lines, so they never become
+ * part of a profile. They are stored separately from user geometry so point
+ * and curve indices, profiles, and editing stay clean.
+ */
+export function referenceGeometry(): SketchReferences {
+  const origin: SketchPoint = {
+    id: "origin",
+    x: 0,
+    y: 0,
+    fixed: true,
+    reference: true,
+  };
+  const points: SketchPoint[] = [
+    origin,
+    { id: "axis-x-min", x: -1000, y: 0, fixed: true, reference: true },
+    { id: "axis-x-max", x: 1000, y: 0, fixed: true, reference: true },
+    { id: "axis-y-min", x: 0, y: -1000, fixed: true, reference: true },
+    { id: "axis-y-max", x: 0, y: 1000, fixed: true, reference: true },
+  ];
+  return {
+    origin,
+    points,
+    lines: [
+      {
+        id: "axis-x",
+        type: "line",
+        a: "axis-x-min",
+        b: "axis-x-max",
+        construction: true,
+        reference: true,
+      },
+      {
+        id: "axis-y",
+        type: "line",
+        a: "axis-y-min",
+        b: "axis-y-max",
+        construction: true,
+        reference: true,
+      },
+    ],
+  };
+}
+
+/** Attach (or replace) the fixed origin/axes, removing any authored copy. */
+export function withReferences(sketch: Sketch): Sketch {
+  const references = referenceGeometry();
+  const ids = new Set(references.points.map((point) => point.id));
+  const lineIds = new Set(references.lines.map((line) => line.id));
+  return {
+    ...sketch,
+    points: sketch.points.filter((point) => !ids.has(point.id)),
+    curves: sketch.curves.filter((curve) => !lineIds.has(curve.id)),
+    references,
+  };
+}
+
 export function emptySketch(): Sketch {
-  return { points: [], curves: [], constraints: [] };
+  return {
+    points: [],
+    curves: [],
+    constraints: [],
+    references: referenceGeometry(),
+  };
 }
 
 export function isSketchEmpty(sketch: Sketch): boolean {
@@ -408,8 +478,15 @@ export function setCircleDiameter(
 }
 
 /** Reuse a snapped point, an existing point at the same place, or make one. */
-function resolveDraftPoint(points: SketchPoint[], vertex: DraftVertex): string {
-  if (vertex.existingPointId && points.some((point) => point.id === vertex.existingPointId)) {
+function resolveDraftPoint(
+  sketch: Sketch,
+  points: SketchPoint[],
+  vertex: DraftVertex,
+): string {
+  if (
+    vertex.existingPointId &&
+    allPoints(sketch).some((point) => point.id === vertex.existingPointId)
+  ) {
     return vertex.existingPointId;
   }
   const existing = points.find(

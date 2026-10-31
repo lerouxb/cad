@@ -1,4 +1,5 @@
 import type { Vec2 } from "../types";
+import { withReferences } from "./create";
 import { sketchGeometry } from "./geometry";
 import type { Sketch, SketchConstraint } from "./types";
 
@@ -68,13 +69,12 @@ export function createDemoModel(options: DemoOptions = DEMO_DEFAULTS): DemoModel
   return {
     loop: ["p0", "p1", "p2", "p3"],
     hole: "hole",
-    sketch: {
+    sketch: withReferences({
       points: [
         { id: "p0", x: 0, y: 0 },
         { id: "p1", x: width, y: 0 },
         { id: "p2", x: width, y: height },
         { id: "p3", x: 0, y: height },
-        { id: "origin", x: 0, y: 0, fixed: true },
         // Hole centre: held at the midpoint of the p0–p2 diagonal, so it stays
         // centred when the rectangle is resized or dragged.
         { id: "hole-center", x: width / 2, y: height / 2, construction: true },
@@ -88,7 +88,7 @@ export function createDemoModel(options: DemoOptions = DEMO_DEFAULTS): DemoModel
         { id: "hole", type: "circle", center: "hole-center", radius: half },
       ],
       constraints,
-    },
+    }),
   };
 }
 

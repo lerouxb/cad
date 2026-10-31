@@ -1,5 +1,5 @@
 import { newId } from "./create";
-import type { Sketch, SketchArc, SketchConstraint, SketchCurve, SketchPoint } from "./types";
+import { allCurves, allPoints, type Sketch, type SketchArc, type SketchConstraint, type SketchCurve, type SketchPoint } from "./types";
 
 export type ConstraintType =
   | "horizontal"
@@ -45,11 +45,20 @@ interface Selection {
   points: SketchPoint[];
 }
 
+function isFreePoint(point: SketchPoint): boolean {
+  return !point.fixed && !point.reference;
+}
+
+function isReferenceCurve(curve: SketchCurve): boolean {
+  return curve.type === "line" && curve.reference === true;
+}
+
 function inspect(sketch: Sketch, ids: readonly string[]): Selection {
   const wanted = new Set(ids);
-  const curves = sketch.curves.filter((curve) => wanted.has(curve.id));
-  const points = sketch.points.filter(
-    (point) => wanted.has(point.id) && !point.fixed && !point.construction,
+  const curves = allCurves(sketch).filter((curve) => wanted.has(curve.id));
+  const points = allPoints(sketch).filter(
+    (point) =>
+      wanted.has(point.id) && !point.construction && (!point.fixed || point.reference),
   );
   return {
     curves,
@@ -77,10 +86,13 @@ export function applicableConstraints(
     }
   };
 
+  const line = selection.lines[0];
+  const point = selection.points[0];
   if (
     selection.curves.length === 1 &&
     selection.lines.length === 1 &&
-    selection.points.length === 0
+    selection.points.length === 0 &&
+    !line?.reference
   ) {
     push("horizontal");
     push("vertical");
@@ -88,11 +100,12 @@ export function applicableConstraints(
   if (
     selection.curves.length === 2 &&
     selection.points.length === 0 &&
-    selection.lines.length === 2
+    selection.lines.length === 2 &&
+    selection.lines.some((candidate) => !candidate.reference)
   ) {
     push("parallel");
     push("perpendicular");
-    push("equal");
+    if (selection.lines.every((candidate) => !candidate.reference)) push("equal");
   }
   if (
     selection.curves.length === 2 &&
@@ -104,12 +117,20 @@ export function applicableConstraints(
   if (
     selection.curves.length === 1 &&
     selection.lines.length === 1 &&
-    selection.points.length === 1
+    selection.points.length === 1 &&
+    !(point?.fixed && line?.reference)
   ) {
     push("pointOnLine");
-    const point = selection.points[0]!;
-    const line = selection.lines[0]!;
-    if (point.id !== line.a && point.id !== line.b) push("midpoint");
+    if (
+      point &&
+      line &&
+      isFreePoint(point) &&
+      !line.reference &&
+      point.id !== line.a &&
+      point.id !== line.b
+    ) {
+      push("midpoint");
+    }
   }
   if (
     selection.curves.length === 1 &&
@@ -118,10 +139,18 @@ export function applicableConstraints(
   ) {
     push("pointOnCircle");
   }
-  if (selection.curves.length === 0 && selection.points.length === 1) {
+  if (
+    selection.curves.length === 0 &&
+    selection.points.length === 1 &&
+    isFreePoint(selection.points[0]!)
+  ) {
     push("fix");
   }
-  if (selection.curves.length === 0 && selection.points.length === 2) {
+  if (
+    selection.curves.length === 0 &&
+    selection.points.length === 2 &&
+    selection.points.some(isFreePoint)
+  ) {
     push("coincident");
   }
   if (
@@ -135,7 +164,8 @@ export function applicableConstraints(
     selection.curves.length === 2 &&
     selection.lines.length === 1 &&
     selection.arcs.length === 1 &&
-    selection.points.length === 0
+    selection.points.length === 0 &&
+    !selection.lines[0]?.reference
   ) {
     push("tangent");
   }
@@ -153,6 +183,7 @@ export function applyConstraint(
 
   let constraint: SketchConstraint | null = null;
   if (type === "horizontal" || type === "vertical") {
+    if (selection.lines[0]!.reference) return sketch;
     constraint = { id: newId("c"), type, line: selection.lines[0]!.id };
   } else if (type === "parallel" || type === "perpendicular" || type === "equal") {
     constraint = {
@@ -215,7 +246,9 @@ export function constructionState(
   ids: readonly string[],
 ): ConstructionState {
   const wanted = new Set(ids);
-  const curves = sketch.curves.filter((curve) => wanted.has(curve.id));
+  const curves = allCurves(sketch).filter(
+    (curve) => wanted.has(curve.id) && !isReferenceCurve(curve),
+  );
   if (curves.length === 0) return null;
   const count = curves.filter((curve) => curve.construction).length;
   if (count === 0) return "none";
@@ -231,7 +264,9 @@ export function toggleConstruction(sketch: Sketch, ids: readonly string[]): Sket
   return {
     ...sketch,
     curves: sketch.curves.map((curve) =>
-      wanted.has(curve.id) ? { ...curve, construction: makeConstruction } : curve,
+      wanted.has(curve.id) && !isReferenceCurve(curve)
+        ? { ...curve, construction: makeConstruction }
+        : curve,
     ),
   };
 }
@@ -240,21 +275,35 @@ function isApplicable(selection: Selection, type: ConstraintType): boolean {
   switch (type) {
     case "horizontal":
     case "vertical":
-      return selection.curves.length === 1 && selection.lines.length === 1;
-    case "parallel":
-    case "perpendicular":
-      return selection.curves.length === 2 && selection.lines.length === 2;
-    case "equal":
-      return (
-        selection.curves.length === 2 &&
-        (selection.lines.length === 2 || selection.circles.length === 2)
-      );
-    case "pointOnLine":
       return (
         selection.curves.length === 1 &&
         selection.lines.length === 1 &&
-        selection.points.length === 1
+        !selection.lines[0]?.reference
       );
+    case "parallel":
+    case "perpendicular":
+      return (
+        selection.curves.length === 2 &&
+        selection.lines.length === 2 &&
+        selection.lines.some((candidate) => !candidate.reference)
+      );
+    case "equal":
+      return (
+        selection.curves.length === 2 &&
+        ((selection.lines.length === 2 &&
+          selection.lines.every((candidate) => !candidate.reference)) ||
+          selection.circles.length === 2)
+      );
+    case "pointOnLine": {
+      const line = selection.lines[0];
+      const point = selection.points[0];
+      return (
+        selection.curves.length === 1 &&
+        selection.lines.length === 1 &&
+        selection.points.length === 1 &&
+        !(point?.fixed && line?.reference)
+      );
+    }
     case "pointOnCircle":
       return (
         selection.curves.length === 1 &&
@@ -268,13 +317,28 @@ function isApplicable(selection: Selection, type: ConstraintType): boolean {
         selection.curves.length === 1 &&
         selection.lines.length === 1 &&
         selection.points.length === 1 &&
-        Boolean(point && line && point.id !== line.a && point.id !== line.b)
+        Boolean(
+          point &&
+            line &&
+            isFreePoint(point) &&
+            !line.reference &&
+            point.id !== line.a &&
+            point.id !== line.b,
+        )
       );
     }
     case "coincident":
-      return selection.curves.length === 0 && selection.points.length === 2;
+      return (
+        selection.curves.length === 0 &&
+        selection.points.length === 2 &&
+        selection.points.some(isFreePoint)
+      );
     case "fix":
-      return selection.curves.length === 0 && selection.points.length === 1;
+      return (
+        selection.curves.length === 0 &&
+        selection.points.length === 1 &&
+        isFreePoint(selection.points[0]!)
+      );
     case "symmetric":
       return (
         selection.curves.length === 1 &&
@@ -286,7 +350,8 @@ function isApplicable(selection: Selection, type: ConstraintType): boolean {
         selection.curves.length === 2 &&
         selection.lines.length === 1 &&
         selection.arcs.length === 1 &&
-        selection.points.length === 0
+        selection.points.length === 0 &&
+        !selection.lines[0]?.reference
       );
   }
 }

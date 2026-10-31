@@ -246,7 +246,10 @@ export function SketchCanvas({
 
   const snapPoint = (raw: Vec2, axisFrom?: Vec2): Snap => {
     let best: { snap: Snap; distance: number } | null = null;
-    for (const point of sketch.points) {
+    const snapCandidates = sketch.references
+      ? [...sketch.points, sketch.references.origin]
+      : sketch.points;
+    for (const point of snapCandidates) {
       if (point.construction) continue;
       const position = points[point.id];
       if (!position) continue;
@@ -370,7 +373,11 @@ export function SketchCanvas({
   const pickDimensionPoint = (event: ReactPointerEvent, pointId: string) => {
     event.stopPropagation();
     event.preventDefault();
-    if (dimTarget || dimensionMode !== "distance") return;
+    if (dimTarget) {
+      placeDimension(toSketch(event));
+      return;
+    }
+    if (dimensionMode !== "distance") return;
     if (!dimPoint) {
       setDimPoint(pointId);
       return;
@@ -386,7 +393,10 @@ export function SketchCanvas({
   const pickDimensionCurve = (event: ReactPointerEvent, curve: SketchCurve) => {
     event.stopPropagation();
     event.preventDefault();
-    if (dimTarget) return;
+    if (dimTarget) {
+      placeDimension(toSketch(event));
+      return;
+    }
 
     if (dimensionMode === "angle") {
       if (curve.type !== "line") return;
@@ -421,7 +431,9 @@ export function SketchCanvas({
   };
 
   const lineThrough = (id: string): { a: Vec2; b: Vec2 } | null => {
-    const curve = sketch.curves.find((candidate) => candidate.id === id);
+    const curve =
+      sketch.curves.find((candidate) => candidate.id === id) ??
+      sketch.references?.lines.find((candidate) => candidate.id === id);
     if (curve?.type !== "line") return null;
     const a = points[curve.a];
     const b = points[curve.b];
@@ -872,6 +884,8 @@ export function SketchCanvas({
     onSelect(curve.id, additiveSelection(event));
 
     if (curve.type === "line") {
+      // Reference axes are fixed; select them but never drag them.
+      if (curve.reference) return;
       const a = points[curve.a];
       const b = points[curve.b];
       if (!a || !b) return;
@@ -937,6 +951,12 @@ export function SketchCanvas({
   const draftPolygon = [...draft.map((vertex) => vertex.point), ...(hover ? [hover.point] : [])]
     .map((point) => `${point[0]},${point[1]}`)
     .join(" ");
+  const origin = sketch.references
+    ? points[sketch.references.origin.id] ?? [0, 0]
+    : null;
+  const originSelected = sketch.references
+    ? selected.has(sketch.references.origin.id)
+    : false;
   const rectGeometry = rect ? normalizeRect(rect.a, rect.b) : null;
   const circleRadius =
     circleCenter && hover
@@ -979,23 +999,27 @@ export function SketchCanvas({
             vectorEffect="non-scaling-stroke"
           />
         ))}
-        <line
-          x1={viewBox.x}
-          y1={0}
-          x2={viewBox.x + viewBox.w}
-          y2={0}
-          stroke="#394453"
-          vectorEffect="non-scaling-stroke"
-        />
-        <line
-          x1={0}
-          y1={viewBox.y}
-          x2={0}
-          y2={viewBox.y + viewBox.h}
-          stroke="#394453"
-          vectorEffect="non-scaling-stroke"
-        />
       </g>
+
+      {sketch.references?.lines.map((axis) => {
+        const a = points[axis.a];
+        const b = points[axis.b];
+        if (!a || !b) return null;
+        const isSelected = selected.has(axis.id);
+        return (
+          <line
+            key={axis.id}
+            data-reference-id={axis.id}
+            x1={a[0]}
+            y1={a[1]}
+            x2={b[0]}
+            y2={b[1]}
+            stroke={isSelected ? SELECT_COLOR : "#394453"}
+            strokeWidth={isSelected ? 1.6 : 1}
+            vectorEffect="non-scaling-stroke"
+          />
+        );
+      })}
 
       {outer?.kind === "polygon" && outer.points.length >= 3 ? (
         <polygon
@@ -1085,6 +1109,50 @@ export function SketchCanvas({
 
       {tool === "select" || tool === "dimension" ? (
         <g>
+          {sketch.references?.lines.map((axis) => {
+            const a = points[axis.a];
+            const b = points[axis.b];
+            if (!a || !b) return null;
+            return (
+              <line
+                key={axis.id}
+                x1={a[0]}
+                y1={a[1]}
+                x2={b[0]}
+                y2={b[1]}
+                stroke="transparent"
+                strokeWidth={12}
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="stroke"
+                style={{ cursor: tool === "select" ? "pointer" : "pointer" }}
+                data-curve-id={axis.id}
+                onPointerDown={(event) => onCurvePointerDown(event, axis)}
+              />
+            );
+          })}
+          {sketch.references && origin ? (
+            <circle
+              cx={origin[0]}
+              cy={origin[1]}
+              r={hitRadius}
+              fill="transparent"
+              style={{ cursor: tool === "select" ? "pointer" : "crosshair" }}
+              data-point-id={sketch.references.origin.id}
+              onPointerDown={(event) => {
+                event.stopPropagation();
+                event.preventDefault();
+                if (!sketch.references) return;
+                if (tool === "dimension") {
+                  pickDimensionPoint(event, sketch.references.origin.id);
+                } else {
+                  onSelect(
+                    sketch.references.origin.id,
+                    additiveSelection(event),
+                  );
+                }
+              }}
+            />
+          ) : null}
           {sketch.curves.map((curve) => {
             if (curve.type === "line") {
               const a = points[curve.a];
@@ -1318,25 +1386,31 @@ export function SketchCanvas({
       <ConstraintBadges sketch={sketch} points={points} px={px} />
 
       <g pointerEvents="none">
-        <line
-          x1={-5 * px}
-          y1={0}
-          x2={5 * px}
-          y2={0}
-          stroke="#7f8b9c"
-          strokeWidth={1.2}
-          vectorEffect="non-scaling-stroke"
-        />
-        <line
-          x1={0}
-          y1={-5 * px}
-          x2={0}
-          y2={5 * px}
-          stroke="#7f8b9c"
-          strokeWidth={1.2}
-          vectorEffect="non-scaling-stroke"
-        />
-        <circle cx={0} cy={0} r={2.2 * px} fill="#171b21" stroke="#7f8b9c" />
+          <line
+            x1={-5 * px}
+            y1={0}
+            x2={5 * px}
+            y2={0}
+            stroke={originSelected ? SELECT_COLOR : "#7f8b9c"}
+            strokeWidth={1.2}
+            vectorEffect="non-scaling-stroke"
+          />
+          <line
+            x1={0}
+            y1={-5 * px}
+            x2={0}
+            y2={5 * px}
+            stroke={originSelected ? SELECT_COLOR : "#7f8b9c"}
+            strokeWidth={1.2}
+            vectorEffect="non-scaling-stroke"
+          />
+          <circle
+            cx={0}
+            cy={0}
+            r={2.2 * px}
+            fill="#171b21"
+            stroke={originSelected ? SELECT_COLOR : "#7f8b9c"}
+          />
       </g>
 
       {sketch.points.map((point) => {
@@ -2018,6 +2092,11 @@ function fitView(sketch: Sketch, radii: Record<string, number>): ViewBox {
 
   const xs = sketch.points.map((point) => point.x);
   const ys = sketch.points.map((point) => point.y);
+  const origin = sketch.references?.origin;
+  if (origin) {
+    xs.push(origin.x);
+    ys.push(origin.y);
+  }
   for (const curve of sketch.curves) {
     if (curve.type === "circle") {
       const center = sketch.points.find((point) => point.id === curve.center);

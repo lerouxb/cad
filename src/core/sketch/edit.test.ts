@@ -57,9 +57,13 @@ describe("deleteEntities", () => {
     expect(next.points.map((point) => point.id)).not.toContain("p2");
   });
 
-  it("keeps fixed reference points even when nothing uses them", () => {
+  it("keeps the fixed reference frame when nothing uses it", () => {
     const next = deleteEntities(sketch, ["l-bottom", "l-right", "l-top", "l-left"]);
-    expect(next.points.map((point) => point.id)).toContain("origin");
+    expect(next.references?.origin.id).toBe("origin");
+    expect(next.references?.lines.map((line) => line.id)).toEqual([
+      "axis-x",
+      "axis-y",
+    ]);
   });
 
   it("is a no-op for empty selections and unknown ids", () => {

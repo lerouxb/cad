@@ -1,4 +1,4 @@
-import type { Sketch, SketchConstraint } from "./types";
+import { allCurves, allPoints, findSketchPoint, type Sketch, type SketchConstraint } from "./types";
 
 /**
  * Constrained dragging by tangent-space projection.
@@ -179,8 +179,8 @@ function buildRows(sketch: Sketch, params: Parameters): Row[] {
     target.set(slot[1], (target.get(slot[1]) ?? 0) + coefficientY);
   };
 
-  const byId = new Map(sketch.curves.map((curve) => [curve.id, curve]));
-  const pointById = new Map(sketch.points.map((point) => [point.id, point]));
+  const byId = new Map(allCurves(sketch).map((curve) => [curve.id, curve]));
+  const pointById = new Map(allPoints(sketch).map((point) => [point.id, point]));
   const addCoefficient = (
     target: Row,
     slot: [number, number] | null | undefined,
@@ -594,8 +594,8 @@ function distanceRow(
   params: Parameters,
   constraint: Extract<SketchConstraint, { type: "distance" }>,
 ): Row | null {
-  const a = sketch.points.find((point) => point.id === constraint.a);
-  const b = sketch.points.find((point) => point.id === constraint.b);
+  const a = findSketchPoint(sketch, constraint.a);
+  const b = findSketchPoint(sketch, constraint.b);
   if (!a || !b) return null;
 
   const dx = a.x - b.x;

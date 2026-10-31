@@ -1,12 +1,14 @@
 import { newId } from "./create";
 import { distance, updateConstraintValue } from "./geometry";
 import type { Vec2 } from "../types";
-import type {
-  Sketch,
-  SketchArc,
-  SketchCircle,
-  SketchConstraint,
-  SketchLine,
+import {
+  findSketchCurve,
+  findSketchPoint,
+  type Sketch,
+  type SketchArc,
+  type SketchCircle,
+  type SketchConstraint,
+  type SketchLine,
 } from "./types";
 
 /**
@@ -42,8 +44,8 @@ export function addDimension(
   const existing = findDimension(sketch, target);
 
   if (target.kind === "distance") {
-    const a = sketch.points.find((point) => point.id === target.a);
-    const b = sketch.points.find((point) => point.id === target.b);
+    const a = findSketchPoint(sketch, target.a);
+    const b = findSketchPoint(sketch, target.b);
     if (!a || !b) return sketch;
 
     return upsert(sketch, existing, {
@@ -58,7 +60,7 @@ export function addDimension(
   }
 
   if (target.kind === "pointLineDistance") {
-    const point = sketch.points.find((candidate) => candidate.id === target.point);
+    const point = findSketchPoint(sketch, target.point);
     const line = lineById(sketch, target.line);
     if (!point || !line) return sketch;
     const value = pointLineDistance(sketch, target.point, target.line);
@@ -231,7 +233,7 @@ function upsert(
 }
 
 function lineById(sketch: Sketch, id: string): SketchLine | null {
-  const line = sketch.curves.find((curve) => curve.id === id);
+  const line = findSketchCurve(sketch, id);
   return line?.type === "line" ? line : null;
 }
 
@@ -239,8 +241,8 @@ function linePoints(
   sketch: Sketch,
   line: SketchLine,
 ): { a: Vec2; b: Vec2 } | null {
-  const a = sketch.points.find((point) => point.id === line.a);
-  const b = sketch.points.find((point) => point.id === line.b);
+  const a = findSketchPoint(sketch, line.a);
+  const b = findSketchPoint(sketch, line.b);
   return a && b ? { a: [a.x, a.y], b: [b.x, b.y] } : null;
 }
 
@@ -250,7 +252,7 @@ export function pointLineDistance(
   pointId: string,
   lineId: string,
 ): number | null {
-  const point = sketch.points.find((candidate) => candidate.id === pointId);
+  const point = findSketchPoint(sketch, pointId);
   const line = lineById(sketch, lineId);
   const points = line ? linePoints(sketch, line) : null;
   if (!point || !points) return null;

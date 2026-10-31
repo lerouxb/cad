@@ -1,6 +1,6 @@
 import type { ProfileLoop, ProfileSegment, Vec2 } from "../types";
 import { arcGeometry, arcPointAt } from "./geometry";
-import type { Sketch } from "./types";
+import { allPoints, type Sketch } from "./types";
 
 /**
  * Extract closed loops from a sketch's line segments.
@@ -38,9 +38,10 @@ const MAX_DEPTH = 24;
 const MAX_LOOPS = 500;
 
 export function findLoops(sketch: Sketch): SketchLoop[] {
-  const position = new Map(sketch.points.map((point) => [point.id, point]));
+  const all = allPoints(sketch);
+  const position = new Map(all.map((point) => [point.id, point]));
   const pointRecord: Record<string, Vec2> = Object.fromEntries(
-    sketch.points.map((point) => [point.id, [point.x, point.y] as Vec2]),
+    all.map((point) => [point.id, [point.x, point.y] as Vec2]),
   );
   const curvesById = new Map(
     sketch.curves.map((curve) => [curve.id, curve] as const),
@@ -128,7 +129,7 @@ export function profileFromSketch(sketch: Sketch): SketchProfile | null {
   );
   const circleCenters = new Map<string, Vec2>();
   for (const circle of circles) {
-    const center = sketch.points.find((point) => point.id === circle.center);
+    const center = allPoints(sketch).find((point) => point.id === circle.center);
     if (center) circleCenters.set(circle.id, [center.x, center.y]);
   }
 

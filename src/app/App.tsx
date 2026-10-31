@@ -51,7 +51,11 @@ import {
   type DragTarget,
   type SolveOutcome,
 } from "../core/sketch/solver";
-import type { Sketch } from "../core/sketch/types";
+import {
+  allPoints,
+  findSketchPoint,
+  type Sketch,
+} from "../core/sketch/types";
 import type { Vec2 } from "../core/types";
 import {
   SketchCanvas,
@@ -114,6 +118,14 @@ export function App() {
   );
 
   const selectedSet = useMemo(() => new Set(selectedInfo.map((info) => info.id)), [selectedInfo]);
+  const selectedPoint = useMemo(() => {
+    if (selection.length !== 1) return null;
+    const id = selection[0]!;
+    const point = sketch.points.find((candidate) => candidate.id === id);
+    if (!point || point.fixed) return null;
+    const position = geometry.points[id] ?? [point.x, point.y];
+    return { id, x: position[0], y: position[1] };
+  }, [selection, sketch.points, geometry.points]);
   const constraintActions = useMemo(
     () => applicableConstraints(sketch, selection),
     [sketch, selection],
@@ -176,11 +188,12 @@ export function App() {
   };
 
   const deleteSelection = (): void => {
-    if (selectedInfo.length === 0) return;
+    const deletable = selectedInfo.filter((info) => info.kind !== "reference");
+    if (deletable.length === 0) return;
     const current = getState();
     const next = deleteEntities(
       current.sketch,
-      selectedInfo.map((info) => info.id),
+      deletable.map((info) => info.id),
     );
     if (next === current.sketch) return;
     setSelection([]);
@@ -337,6 +350,14 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [undo, redo]);
 
+  const handleSetPointPosition = (pointId: string, x: number, y: number): void => {
+    if (!isSolverReady()) return;
+    const current = getState();
+    const outcome = solveDrag(current.sketch, { pointId, x, y });
+    if (!outcome) return;
+    commitDoc(applySolution(current.sketch, outcome), outcome, `point:${pointId}`);
+  };
+
   const handleDragPoint = (pointId: string, x: number, y: number): void => {
     if (!isSolverReady()) return;
     const current = getState();
@@ -368,7 +389,7 @@ export function App() {
   const handlePolyline = (vertices: DraftVertex[], closed: boolean): void => {
     const base = getState().sketch;
     const valid = vertices.map((vertex) =>
-      vertex.existingPointId && base.points.some((p) => p.id === vertex.existingPointId)
+      vertex.existingPointId && findSketchPoint(base, vertex.existingPointId)
         ? vertex
         : { point: vertex.point },
     );
@@ -385,7 +406,7 @@ export function App() {
     const valid = center.existingPointId
       ? {
           ...center,
-          existingPointId: base.points.some((p) => p.id === center.existingPointId)
+          existingPointId: findSketchPoint(base, center.existingPointId)
             ? center.existingPointId
             : undefined,
         }
@@ -501,6 +522,7 @@ export function App() {
     commit({ sketch: empty, solved: outcome });
     setSolveError(null);
     setFilletNotice(null);
+    setSelection([]);
     setTool("select");
     setFitToken((token) => token + 1);
   };
@@ -512,6 +534,7 @@ export function App() {
     commit({ sketch: applied, solved: outcome });
     setSolveError(null);
     setFilletNotice(null);
+    setSelection([]);
     setTool("select");
     setFitToken((token) => token + 1);
   };
@@ -782,6 +805,18 @@ export function App() {
                   onConstraint={handleConstraint}
                   onConstruction={handleConstruction}
                   onDelete={deleteSelection}
+                  deletable={selectedInfo.some((info) => info.kind !== "reference")}
+                  pointPosition={
+                    selectedPoint
+                      ? {
+                          id: selectedPoint.id,
+                          x: selectedPoint.x,
+                          y: selectedPoint.y,
+                          onSet: (x, y) =>
+                            handleSetPointPosition(selectedPoint.id, x, y),
+                        }
+                      : null
+                  }
                   fillet={filletSelection ? {
                     radius: filletRadius,
                     onRadius: setFilletRadius,
@@ -888,14 +923,17 @@ export function App() {
 
 interface SelectedEntity {
   id: string;
-  kind: "line" | "circle" | "arc" | "point";
+  kind: "line" | "circle" | "arc" | "point" | "reference";
   label: string;
   detail: string;
 }
 
 function hasFixedAnchor(sketch: Sketch, pointId: string): boolean {
+  if (findSketchPoint(sketch, pointId)?.fixed) return true;
   const fixed = new Set(
-    sketch.points.filter((point) => point.fixed).map((point) => point.id),
+    allPoints(sketch)
+      .filter((point) => point.fixed)
+      .map((point) => point.id),
   );
   return sketch.constraints.some(
     (constraint) =>
@@ -913,6 +951,26 @@ function describeSelection(
 ): SelectedEntity[] {
   const result: SelectedEntity[] = [];
   for (const id of ids) {
+    const referenceLine = sketch.references?.lines.find((line) => line.id === id);
+    if (referenceLine) {
+      result.push({
+        id,
+        kind: "reference",
+        label: referenceLine.id === "axis-x" ? "X axis" : "Y axis",
+        detail: "Fixed reference axis",
+      });
+      continue;
+    }
+    const referencePoint = sketch.references?.points.find((point) => point.id === id);
+    if (referencePoint) {
+      result.push({
+        id,
+        kind: "reference",
+        label: referencePoint.id === "origin" ? "Origin" : "Reference point",
+        detail: `${formatLength(referencePoint.x)}, ${formatLength(referencePoint.y)} mm · fixed`,
+      });
+      continue;
+    }
     const curve = sketch.curves.find((candidate) => candidate.id === id);
     if (curve) {
       if (curve.type === "line") {
@@ -955,6 +1013,79 @@ function describeSelection(
   return result;
 }
 
+function PointPositionEditor({
+  x,
+  y,
+  onSet,
+}: {
+  x: number;
+  y: number;
+  onSet: (x: number, y: number) => void;
+}) {
+  const [xText, setXText] = useState(() => formatEditable(x));
+  const [yText, setYText] = useState(() => formatEditable(y));
+
+  const commit = (): void => {
+    const nextX = Number(xText);
+    const nextY = Number(yText);
+    if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) return;
+    if (nextX !== x || nextY !== y) onSet(nextX, nextY);
+  };
+
+  return (
+    <div
+      className="point-position"
+      data-testid="point-position"
+      onBlur={(event) => {
+        const next = event.relatedTarget as Node | null;
+        if (!next || !event.currentTarget.contains(next)) commit();
+      }}
+    >
+      <label>
+        <span>X</span>
+        <input
+          value={xText}
+          inputMode="decimal"
+          data-testid="point-x"
+          onChange={(event) => setXText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commit();
+            } else if (event.key === "Escape") {
+              setXText(formatEditable(x));
+              setYText(formatEditable(y));
+            }
+          }}
+        />
+      </label>
+      <label>
+        <span>Y</span>
+        <input
+          value={yText}
+          inputMode="decimal"
+          data-testid="point-y"
+          onChange={(event) => setYText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commit();
+            } else if (event.key === "Escape") {
+              setXText(formatEditable(x));
+              setYText(formatEditable(y));
+            }
+          }}
+        />
+      </label>
+      <span className="point-position-unit">mm</span>
+    </div>
+  );
+}
+
+function formatEditable(value: number): string {
+  return String(Math.round(value * 1000) / 1000);
+}
+
 function SelectionPanel({
   info,
   actions,
@@ -962,6 +1093,8 @@ function SelectionPanel({
   onConstraint,
   onConstruction,
   onDelete,
+  deletable,
+  pointPosition,
   fillet,
 }: {
   info: SelectedEntity[];
@@ -970,6 +1103,13 @@ function SelectionPanel({
   onConstraint: (type: ConstraintType) => void;
   onConstruction: () => void;
   onDelete: () => void;
+  deletable: boolean;
+  pointPosition: {
+    id: string;
+    x: number;
+    y: number;
+    onSet: (x: number, y: number) => void;
+  } | null;
   fillet: {
     radius: number;
     onRadius: (value: number) => void;
@@ -982,14 +1122,16 @@ function SelectionPanel({
         <span className="selection-title">
           {info.length === 1 ? "Selection" : `${info.length} selected`}
         </span>
-        <button
-          className="button button-small"
-          type="button"
-          onClick={onDelete}
-          data-testid="delete-selection"
-        >
-          Delete
-        </button>
+        {deletable ? (
+          <button
+            className="button button-small"
+            type="button"
+            onClick={onDelete}
+            data-testid="delete-selection"
+          >
+            Delete
+          </button>
+        ) : null}
       </div>
       <div className="selection-list">
         {info.map((item) => (
@@ -999,6 +1141,12 @@ function SelectionPanel({
           </div>
         ))}
       </div>
+      {pointPosition ? (
+        <PointPositionEditor
+          key={`${pointPosition.id}:${pointPosition.x}:${pointPosition.y}`}
+          {...pointPosition}
+        />
+      ) : null}
       {actions.length > 0 || construction !== null ? (
         <div className="constraint-bar">
           {actions.map((action) => (

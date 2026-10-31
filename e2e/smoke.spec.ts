@@ -1,4 +1,4 @@
-import { expect, test, type Locator, type Page } from "@playwright/test";
+import { test as base, expect, type Locator, type Page } from "@playwright/test";
 
 /** Set a range input the way a user would, through React's onChange. */
 async function setSlider(locator: Locator, value: number): Promise<void> {
@@ -112,11 +112,55 @@ function collectErrors(page: Page): string[] {
   return errors;
 }
 
-test("the dimensioned example drives an exact solid", async ({ page }) => {
+
+/**
+ * Reuse one app page per worker. A fresh page per test re-downloads and
+ * re-instantiates the solver and OCCT WASM, which dominates the suite.
+ */
+const test = base.extend<Record<never, never>, { app: Page }>({
+  app: [
+    async ({ browser }, use) => {
+      const context = await browser.newContext({
+        baseURL: "http://127.0.0.1:4173",
+        viewport: { width: 1280, height: 720 },
+      });
+      const page = await context.newPage();
+      await page.goto("/");
+      await expect(page.getByTestId("solver-status")).toContainText("ready", {
+        timeout: 60_000,
+      });
+      await expect(page.getByTestId("kernel-status")).toContainText("ready", {
+        timeout: 60_000,
+      });
+      await use(page);
+      await context.close();
+    },
+    { scope: "worker" },
+  ],
+});
+
+test.beforeEach(async ({ app: page }) => {
+  // Reset UI modes that are not part of the document, then reload the demo and
+  // wait for a known mesh. No page reload, so the WASM stays warm.
+  await page.getByTestId("timeline-sketch").click();
+  await page.getByTestId("tool-dimension").click();
+  await page.getByTestId("dimension-distance").click();
+  const radius = page.getByTestId("dimension-radius");
+  if (((await radius.getAttribute("class")) ?? "").includes("is-active")) {
+    await radius.click();
+  }
+  const reference = page.getByTestId("reference-toggle");
+  if (await reference.isChecked()) await reference.uncheck();
+  await page.getByTestId("tool-select").click();
+  await page.getByTestId("load-example").click();
+  await setSlider(page.getByTestId("height-slider"), 12);
+  await page.getByTestId("timeline-extrude").click();
+  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
+});
+
+test("the dimensioned example drives an exact solid", async ({ app: page }) => {
   const errors = collectErrors(page);
-  await page.goto("/");
-  await expect(page.getByTestId("solver-status")).toContainText("ready");
-  await expect(page.getByTestId("kernel-status")).toContainText("ready");
 
   const stats = page.getByTestId("mesh-stats");
   await expect(stats).toBeVisible();
@@ -160,11 +204,8 @@ test("the dimensioned example drives an exact solid", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test("selects, multi-selects, and deletes sketch geometry", async ({ page }) => {
+test("selects, multi-selects, and deletes sketch geometry", async ({ app: page }) => {
   const errors = collectErrors(page);
-  await page.goto("/");
-  await expect(page.getByTestId("solver-status")).toContainText("ready");
-  await expect(page.getByTestId("kernel-status")).toContainText("ready");
 
   const stats = page.getByTestId("mesh-stats");
   await expect(stats).toBeVisible();
@@ -207,10 +248,8 @@ test("selects, multi-selects, and deletes sketch geometry", async ({ page }) => 
   expect(errors).toEqual([]);
 });
 
-test("extrudes a lone circle as a cylinder", async ({ page }) => {
+test("extrudes a lone circle as a cylinder", async ({ app: page }) => {
   const errors = collectErrors(page);
-  await page.goto("/");
-  await expect(page.getByTestId("kernel-status")).toContainText("ready");
   await enterSketch(page);
 
   await page.getByTestId("clear-sketch").click();
@@ -233,10 +272,8 @@ test("extrudes a lone circle as a cylinder", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test("uses a drawn inner rectangle as a hole", async ({ page }) => {
+test("uses a drawn inner rectangle as a hole", async ({ app: page }) => {
   const errors = collectErrors(page);
-  await page.goto("/");
-  await expect(page.getByTestId("kernel-status")).toContainText("ready");
   await enterSketch(page);
 
   await page.getByTestId("clear-sketch").click();
@@ -278,11 +315,8 @@ test("uses a drawn inner rectangle as a hole", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test("creates, edits and deletes parametric dimensions", async ({ page }) => {
+test("creates, edits and deletes parametric dimensions", async ({ app: page }) => {
   const errors = collectErrors(page);
-  await page.goto("/");
-  await expect(page.getByTestId("solver-status")).toContainText("ready");
-  await expect(page.getByTestId("kernel-status")).toContainText("ready");
   await enterSketch(page);
 
   await page.getByTestId("clear-sketch").click();
@@ -331,10 +365,8 @@ test("creates, edits and deletes parametric dimensions", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test("applies constraints and construction from the floating bar", async ({ page }) => {
+test("applies constraints and construction from the floating bar", async ({ app: page }) => {
   const errors = collectErrors(page);
-  await page.goto("/");
-  await expect(page.getByTestId("kernel-status")).toContainText("ready");
   await enterSketch(page);
 
   await page.getByTestId("clear-sketch").click();
@@ -370,10 +402,8 @@ test("applies constraints and construction from the floating bar", async ({ page
   expect(errors).toEqual([]);
 });
 
-test("drags a line as a whole", async ({ page }) => {
+test("drags a line as a whole", async ({ app: page }) => {
   const errors = collectErrors(page);
-  await page.goto("/");
-  await expect(page.getByTestId("kernel-status")).toContainText("ready");
   await enterSketch(page);
 
   await page.getByTestId("clear-sketch").click();
@@ -402,10 +432,8 @@ test("drags a line as a whole", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test("draws a three-point arc and drags it", async ({ page }) => {
+test("draws a three-point arc and drags it", async ({ app: page }) => {
   const errors = collectErrors(page);
-  await page.goto("/");
-  await expect(page.getByTestId("kernel-status")).toContainText("ready");
   await enterSketch(page);
 
   await page.getByTestId("clear-sketch").click();
@@ -427,10 +455,8 @@ test("draws a three-point arc and drags it", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test("rounds a rectangle corner with a parametric fillet", async ({ page }) => {
+test("rounds a rectangle corner with a parametric fillet", async ({ app: page }) => {
   const errors = collectErrors(page);
-  await page.goto("/");
-  await expect(page.getByTestId("kernel-status")).toContainText("ready");
   await enterSketch(page);
 
   await page.getByTestId("clear-sketch").click();
@@ -458,10 +484,8 @@ test("rounds a rectangle corner with a parametric fillet", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test("drives an angle dimension and a radius dimension", async ({ page }) => {
+test("drives an angle dimension and a radius dimension", async ({ app: page }) => {
   const errors = collectErrors(page);
-  await page.goto("/");
-  await expect(page.getByTestId("kernel-status")).toContainText("ready");
   await enterSketch(page);
 
   await page.getByTestId("clear-sketch").click();
@@ -529,10 +553,8 @@ test("drives an angle dimension and a radius dimension", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test("extrudes a filleted profile with a circular hole", async ({ page }) => {
+test("extrudes a filleted profile with a circular hole", async ({ app: page }) => {
   const errors = collectErrors(page);
-  await page.goto("/");
-  await expect(page.getByTestId("kernel-status")).toContainText("ready");
   await enterSketch(page);
 
   await page.getByTestId("clear-sketch").click();
@@ -560,10 +582,8 @@ test("extrudes a filleted profile with a circular hole", async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
-test("filleting the demo's origin corner reattaches the diagonal and offers to re-anchor", async ({ page }) => {
+test("filleting the demo's origin corner reattaches the diagonal and offers to re-anchor", async ({ app: page }) => {
   const errors = collectErrors(page);
-  await page.goto("/");
-  await expect(page.getByTestId("kernel-status")).toContainText("ready");
   await enterSketch(page);
 
   // The demo starts with the origin at its top-left corner. Filleting that
@@ -586,6 +606,91 @@ test("filleting the demo's origin corner reattaches the diagonal and offers to r
   await expect(page.getByTestId("sketch-notice")).toHaveCount(0);
   const after = await page.getByTestId("dof").textContent();
   expect(after).not.toBe(before);
+
+  expect(errors).toEqual([]);
+});
+
+test("edits a point's x/y to exact values", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, -40, -20);
+  await dblclickSketch(page, 40, 20);
+  await page.keyboard.press("Escape");
+
+  await clickSketch(page, 40, 20);
+  await expect(page.getByTestId("point-position")).toBeVisible();
+  await page.getByTestId("point-x").fill("60");
+  await page.getByTestId("point-y").fill("30");
+  await page.getByTestId("point-y").press("Enter");
+
+  const ends = await page.locator("[data-geometry-id]").evaluate((element) => [
+    [
+      Number(element.getAttribute("x1")),
+      Number(element.getAttribute("y1")),
+    ],
+    [
+      Number(element.getAttribute("x2")),
+      Number(element.getAttribute("y2")),
+    ],
+  ]);
+  expect(ends).toEqual(
+    expect.arrayContaining([
+      [60, 30],
+      [-40, -20],
+    ]),
+  );
+  expect(errors).toEqual([]);
+});
+
+test("uses the fixed origin and X axis as references", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, 10, 10);
+  await dblclickSketch(page, 50, 10);
+  await page.keyboard.press("Escape");
+
+  // Coincident with the origin.
+  await clickSketch(page, 10, 10);
+  await page.keyboard.down("Shift");
+  await clickSketch(page, 0, 0);
+  await page.keyboard.up("Shift");
+  await expect(page.getByTestId("selection-panel")).toHaveAttribute("data-count", "2");
+  await expect(page.getByTestId("selection-panel")).toContainText("Origin");
+  await page.getByTestId("constraint-coincident").click();
+
+  const afterOrigin = await page.locator("[data-geometry-id]").evaluate((element) => [
+    [Number(element.getAttribute("x1")), Number(element.getAttribute("y1"))],
+    [Number(element.getAttribute("x2")), Number(element.getAttribute("y2"))],
+  ]);
+  expect(
+    afterOrigin.some(([x, y]) => Math.abs(x!) < 1e-6 && Math.abs(y!) < 1e-6),
+  ).toBe(true);
+
+  // Constrain the other endpoint to the X axis. Start from a clean sketch:
+  // undoing only the coincidence would leave the first line behind.
+  await page.getByTestId("clear-sketch").click();
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, 10, 10);
+  await dblclickSketch(page, 50, 10);
+  await page.keyboard.press("Escape");
+  await clickSketch(page, 10, 10);
+  await page.keyboard.down("Shift");
+  await clickSketch(page, 30, 0);
+  await page.keyboard.up("Shift");
+  await expect(page.getByTestId("selection-panel")).toContainText("X axis");
+  await page.getByTestId("constraint-pointOnLine").click();
+
+  const afterAxis = await page.locator("[data-geometry-id]").evaluate((element) => [
+    [Number(element.getAttribute("x1")), Number(element.getAttribute("y1"))],
+    [Number(element.getAttribute("x2")), Number(element.getAttribute("y2"))],
+  ]);
+  expect(afterAxis.every(([, y]) => Math.abs(y!) < 1e-6)).toBe(true);
 
   expect(errors).toEqual([]);
 });

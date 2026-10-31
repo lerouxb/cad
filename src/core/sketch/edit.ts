@@ -105,7 +105,7 @@ export function deleteEntities(sketch: Sketch, ids: readonly string[]): Sketch {
     return sketch;
   }
 
-  return { points, curves, constraints };
+  return { ...sketch, points, curves, constraints };
 }
 
 export function isSketchEntity(sketch: Sketch, id: string): boolean {

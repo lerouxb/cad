@@ -14,6 +14,8 @@ export interface SketchPoint {
   construction?: boolean;
   /** Lives in solver group 0: an immutable anchor (origin, projected edges). */
   fixed?: boolean;
+  /** Part of the sketch coordinate frame (origin/axis endpoints). */
+  reference?: boolean;
 }
 
 export interface SketchLine {
@@ -23,6 +25,8 @@ export interface SketchLine {
   b: string;
   /** Reference/dimension helper; never part of a profile. */
   construction?: boolean;
+  /** X/Y sketch axis (fixed reference line). */
+  reference?: boolean;
 }
 
 export interface SketchCircle {
@@ -106,10 +110,46 @@ export type SketchConstraint =
     }
   | { id: string; type: "midpoint"; point: string; line: string };
 
+/** The fixed coordinate frame drawn behind the sketch. */
+export interface SketchReferences {
+  /** Convenience alias for the origin point; also present in `points`. */
+  origin: SketchPoint;
+  points: SketchPoint[];
+  lines: SketchLine[];
+}
+
 export interface Sketch {
   points: SketchPoint[];
   curves: SketchCurve[];
   constraints: SketchConstraint[];
+  references?: SketchReferences;
+}
+
+/** User geometry plus the fixed origin/axis references. */
+export function allPoints(sketch: Sketch): SketchPoint[] {
+  return sketch.references
+    ? [...sketch.points, ...sketch.references.points]
+    : sketch.points;
+}
+
+export function allCurves(sketch: Sketch): SketchCurve[] {
+  return sketch.references
+    ? [...sketch.curves, ...sketch.references.lines]
+    : sketch.curves;
+}
+
+export function findSketchPoint(
+  sketch: Sketch,
+  id: string,
+): SketchPoint | undefined {
+  return allPoints(sketch).find((point) => point.id === id);
+}
+
+export function findSketchCurve(
+  sketch: Sketch,
+  id: string,
+): SketchCurve | undefined {
+  return allCurves(sketch).find((curve) => curve.id === id);
 }
 
 export interface SketchRef {

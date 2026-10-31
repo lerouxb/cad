@@ -1,5 +1,5 @@
 import type { ProfileLoop, Vec2 } from "../types";
-import type { Sketch, SketchArc, SketchConstraint, SketchCurve } from "./types";
+import { allPoints, type Sketch, type SketchArc, type SketchConstraint, type SketchCurve } from "./types";
 
 /** A solved sketch, in the form the UI and the kernel care about. */
 export interface SolvedGeometry {
@@ -11,7 +11,7 @@ export interface SolvedGeometry {
 export function sketchGeometry(sketch: Sketch): SolvedGeometry {
   return {
     points: Object.fromEntries(
-      sketch.points.map((point) => [point.id, [point.x, point.y] as Vec2]),
+      allPoints(sketch).map((point) => [point.id, [point.x, point.y] as Vec2]),
     ),
     radii: Object.fromEntries(
       sketch.curves.flatMap((curve) =>

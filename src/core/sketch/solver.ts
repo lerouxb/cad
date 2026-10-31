@@ -184,6 +184,19 @@ function solveWithModule(s: SlvsModule, sketch: Sketch, drag?: DragTarget): Solv
     return planeNormal;
   };
 
+  for (const reference of sketch.references?.points ?? []) {
+    entities.set(
+      reference.id,
+      s.addPoint2D(REFERENCE_GROUP, reference.x, reference.y, workplane),
+    );
+  }
+  for (const line of sketch.references?.lines ?? []) {
+    entities.set(
+      line.id,
+      s.addLine2D(group, need(entities, line.a), need(entities, line.b), workplane),
+    );
+  }
+
   for (const point of sketch.points) {
     const dragged = drag?.pointId === point.id && !point.fixed;
     const x = dragged ? drag.x : point.x;
