@@ -384,6 +384,29 @@ the source curve, remaps constraints that still apply, adds collinearity/equal-r
 links between kept pieces, and reports constraints it had to remove. Circles still act as
 whole closed loops; turning one into an arc is tracked in M9.
 
+## 5.5 Document and persistence
+
+`Doc` is the source of truth for a part: `schemaVersion`, an opaque document id, a name,
+and an ordered `features` array. M3 has two feature types, `SketchFeature` (support plane
++ sketch) and `ExtrudeFeature` (source sketch, selected region ids, height, operation,
+symmetric). The sketch is no longer React component state.
+
+- **Plain JSON only.** Solver output (`SolveOutcome`), meshes and kernel handles are
+  derived UI/kernel state. `Doc` must survive `JSON.stringify` -> `JSON.parse` and still
+  rebuild identically.
+- **Migrate on open.** `migrateDoc` accepts the current schema, migrates the legacy
+  `{ sketch, height }` shape, and returns `null` for malformed or newer documents. App
+  falls back to a fresh example rather than opening a corrupt part.
+- **Autosave.** `persistence.ts` writes `cad.doc` on every committed document change.
+  The next load re-solves the active sketch, so derived geometry never enters storage.
+- **Feature parameters are undoable.** Extrude height and selected region ids are
+  feature fields; changing them goes through the same `useHistory` snapshot store as
+  sketch edits. Region ids can invalidate when a boundary changes, so the UI filters
+  stored ids against the current regions and falls back to auto/largest.
+- **Still a two-feature rebuild.** The current kernel call is still
+  sketch -> selected regions -> one extrude. Ordered per-feature evaluation, prefix
+  caching, generation/cancellation and per-feature diagnostics are the next M3 slice.
+
 ## 6. Rebuild engine
 
 Input: `Doc`. Output: the final solid, its tessellation, and per-feature status.

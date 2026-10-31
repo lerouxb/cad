@@ -6,6 +6,17 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { createDocument } from "../core/doc/create";
+import { loadDoc, saveDoc } from "../core/doc/persistence";
+import {
+  primaryExtrudeFeature,
+  primarySketch,
+  primarySketchFeature,
+  updateExtrudeHeight,
+  updateExtrudeRegions,
+  updatePrimarySketch,
+} from "../core/doc/selectors";
+import type { Doc } from "../core/doc/types";
 import { extrudeParams } from "../core/features/extrude";
 import { KernelClient } from "../core/kernel/client";
 import type { BodyMesh } from "../core/kernel/protocol";
@@ -72,16 +83,29 @@ import { Viewport } from "../viewer/Viewport";
 
 type LoadState = "loading" | "ready" | "error";
 
-interface DocState {
-  sketch: Sketch;
+interface EditorState {
+  doc: Doc;
+  /** Solver output for the active sketch. Derived, not persisted. */
   solved: SolveOutcome | null;
 }
 
 export function App() {
-  const [model] = useState(() => createExampleModel());
-  const history = useHistory<DocState>({ sketch: model.sketch, solved: null });
-  const { state: doc, getState, commit, replace, undo, redo, endMerge } = history;
-  const { sketch } = doc;
+  const [initialEditor] = useState<EditorState>(() => {
+    const saved = loadDoc();
+    if (saved) return { doc: saved, solved: null };
+    return {
+      doc: createDocument(createExampleModel().sketch, { name: "Example" }),
+      solved: null,
+    };
+  });
+  const history = useHistory<EditorState>(initialEditor);
+  const { state: editor, getState, commit, replace, undo, redo, endMerge } = history;
+  const doc = editor.doc;
+  const sketch = primarySketch(doc);
+  const sketchFeature = primarySketchFeature(doc);
+  const extrudeFeature = primaryExtrudeFeature(doc);
+  const extrudeHeight = extrudeFeature?.height ?? 12;
+  const storedRegionIds = extrudeFeature?.regions;
 
   const [themeSettings, setThemeSettings] = useState<ThemeSettings>(() => loadTheme());
   const palette = useMemo(() => sketchPalette(themeSettings), [themeSettings]);
@@ -90,11 +114,9 @@ export function App() {
   const [dimensionMode, setDimensionMode] = useState<DimensionMode>("distance");
   const [radiusDimensions, setRadiusDimensions] = useState(false);
   const [filletRadius, setFilletRadius] = useState(5);
-  const [selectedRegionIds, setSelectedRegionIds] = useState<string[]>([]);
   const [selection, setSelection] = useState<string[]>([]);
   const [cancelToken, setCancelToken] = useState(0);
   const [fitToken, setFitToken] = useState(0);
-  const [extrudeHeight, setExtrudeHeight] = useState(12);
   const [referenceDimensions, setReferenceDimensions] = useState(false);
   const [solveError, setSolveError] = useState<SolveOutcome | null>(null);
   const [trimNotice, setTrimNotice] = useState<string | null>(null);
@@ -112,8 +134,11 @@ export function App() {
   const geometry = useMemo(() => sketchGeometry(sketch), [sketch]);
   const regions = useMemo(() => regionsFromSketch(sketch), [sketch]);
   const validRegionIds = useMemo(
-    () => selectedRegionIds.filter((id) => regions.some((region) => region.id === id)),
-    [selectedRegionIds, regions],
+    () =>
+      (storedRegionIds ?? []).filter((id) =>
+        regions.some((region) => region.id === id),
+      ),
+    [storedRegionIds, regions],
   );
   const activeRegionIds = useMemo(
     () =>
@@ -169,12 +194,18 @@ export function App() {
     return shared ? { a, b } : null;
   }, [sketch, selectedSet]);
 
+  const currentSketch = (): Sketch => primarySketch(getState().doc);
+
   const commitDoc = (
     nextSketch: Sketch,
     outcome: SolveOutcome | null,
     mergeKey?: string,
   ): void => {
-    commit({ sketch: nextSketch, solved: outcome }, mergeKey);
+    const current = getState();
+    commit(
+      { doc: updatePrimarySketch(current.doc, nextSketch), solved: outcome },
+      mergeKey,
+    );
     setSolveError(null);
   };
 
@@ -194,6 +225,13 @@ export function App() {
     setTool(next);
     setSelection([]);
     setTrimNotice(null);
+  };
+
+  const handleExtrudeHeight = (height: number): void => {
+    const current = getState();
+    const next = updateExtrudeHeight(current.doc, height);
+    if (next === current.doc) return;
+    commit({ doc: next, solved: current.solved }, "extrude-height");
   };
 
   const handleSelect = (entityId: string | null, additive: boolean): void => {
@@ -216,10 +254,10 @@ export function App() {
     if (deletable.length === 0) return;
     const current = getState();
     const next = deleteEntities(
-      current.sketch,
+      primarySketch(current.doc),
       deletable.map((info) => info.id),
     );
-    if (next === current.sketch) return;
+    if (next === primarySketch(current.doc)) return;
     setSelection([]);
     solveAndCommit(next);
   };
@@ -233,11 +271,17 @@ export function App() {
       .then(() => {
         if (cancelled) return;
         const current = getState();
-        const outcome = solveSketch(current.sketch);
+        const currentSketchValue = primarySketch(current.doc);
+        const outcome = solveSketch(currentSketchValue);
         if (cancelled) return;
         replace({
           ...current,
-          sketch: outcome.ok ? applySolution(current.sketch, outcome) : current.sketch,
+          doc: updatePrimarySketch(
+            current.doc,
+            outcome.ok
+              ? applySolution(currentSketchValue, outcome)
+              : currentSketchValue,
+          ),
           solved: outcome,
         });
         setSolverState("ready");
@@ -309,6 +353,13 @@ export function App() {
     const timer = window.setTimeout(() => setTrimNotice(null), 5000);
     return () => window.clearTimeout(timer);
   }, [trimNotice]);
+
+  // The document is the source of truth; keep a local copy for reopening.
+  // Debounce because a drag commits a new document on every pointer move.
+  useEffect(() => {
+    const timer = window.setTimeout(() => saveDoc(doc), 200);
+    return () => window.clearTimeout(timer);
+  }, [doc]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -395,31 +446,31 @@ export function App() {
   const handleSetPointPosition = (pointId: string, x: number, y: number): void => {
     if (!isSolverReady()) return;
     const current = getState();
-    const outcome = solveDrag(current.sketch, { pointId, x, y });
+    const outcome = solveDrag(primarySketch(current.doc), { pointId, x, y });
     if (!outcome) return;
-    commitDoc(applySolution(current.sketch, outcome), outcome, `point:${pointId}`);
+    commitDoc(applySolution(primarySketch(current.doc), outcome), outcome, `point:${pointId}`);
   };
 
   const handleDragPoint = (pointId: string, x: number, y: number): void => {
     if (!isSolverReady()) return;
     const current = getState();
     const target: Vec2 =
-      isDemoSketch(current.sketch) ? clampDemoDrag(current.sketch, pointId, [x, y]) : [x, y];
-    const outcome = solveDrag(current.sketch, {
+      isDemoSketch(primarySketch(current.doc)) ? clampDemoDrag(primarySketch(current.doc), pointId, [x, y]) : [x, y];
+    const outcome = solveDrag(primarySketch(current.doc), {
       pointId,
       x: target[0],
       y: target[1],
     });
     if (!outcome) return;
-    commitDoc(applySolution(current.sketch, outcome), outcome, `drag:${pointId}`);
+    commitDoc(applySolution(primarySketch(current.doc), outcome), outcome, `drag:${pointId}`);
   };
 
   const handleDragLine = (lineId: string, targets: DragTarget[]): void => {
     if (!isSolverReady()) return;
     const current = getState();
-    const outcome = solveDragTargets(current.sketch, targets);
+    const outcome = solveDragTargets(primarySketch(current.doc), targets);
     if (!outcome) return;
-    commitDoc(applySolution(current.sketch, outcome), outcome, `drag:${lineId}`);
+    commitDoc(applySolution(primarySketch(current.doc), outcome), outcome, `drag:${lineId}`);
   };
 
   const drawAndCommit = (base: Sketch, next: Sketch): void => {
@@ -429,7 +480,7 @@ export function App() {
   };
 
   const handlePolyline = (vertices: DraftVertex[], closed: boolean): void => {
-    const base = getState().sketch;
+    const base = currentSketch();
     const valid = vertices.map((vertex) =>
       vertex.existingPointId && findSketchPoint(base, vertex.existingPointId)
         ? vertex
@@ -439,12 +490,12 @@ export function App() {
   };
 
   const handleRectangle = (a: Vec2, b: Vec2): void => {
-    const base = getState().sketch;
+    const base = currentSketch();
     drawAndCommit(base, addRectangle(base, a, b));
   };
 
   const handleCircle = (center: DraftVertex, radius: number): void => {
-    const base = getState().sketch;
+    const base = currentSketch();
     const valid = center.existingPointId
       ? {
           ...center,
@@ -461,7 +512,7 @@ export function App() {
     end: DraftVertex,
     through: Vec2,
   ): void => {
-    const base = getState().sketch;
+    const base = currentSketch();
     drawAndCommit(base, addArc(base, start, end, through));
   };
 
@@ -469,19 +520,19 @@ export function App() {
     if (!filletSelection) return;
     const current = getState();
     const next = addFillet(
-      current.sketch,
+      primarySketch(current.doc),
       filletSelection.a.id,
       filletSelection.b.id,
       filletRadius,
     );
-    if (next === current.sketch) return;
+    if (next === primarySketch(current.doc)) return;
     setSelection([]);
     solveAndCommit(next);
   };
 
   const handleTrimCurve = (curveId: string, point: Vec2): void => {
     const current = getState();
-    const result = trimCurveAt(current.sketch, curveId, point);
+    const result = trimCurveAt(primarySketch(current.doc), curveId, point);
     if (!result.removed) return;
     setSelection([]);
     if (!solveAndCommit(result.sketch)) return;
@@ -494,24 +545,35 @@ export function App() {
     );
   };
 
+  const commitRegions = (next: readonly string[]): void => {
+    const current = getState();
+    const doc = updateExtrudeRegions(current.doc, next);
+    if (doc === current.doc) return;
+    commit({ doc, solved: current.solved });
+  };
+
   const handleSelectRegion = (regionId: string, additive: boolean): void => {
     setSelection([]);
-    setSelectedRegionIds((current) => {
-      if (!additive) return [regionId];
-      return current.includes(regionId)
+    const current = storedRegionIds ?? [];
+    if (!additive) {
+      commitRegions([regionId]);
+      return;
+    }
+    commitRegions(
+      current.includes(regionId)
         ? current.filter((id) => id !== regionId)
-        : [...current, regionId];
-    });
+        : [...current, regionId],
+    );
   };
 
   const selectAllRegions = (): void => {
     setSelection([]);
-    setSelectedRegionIds(regions.map((region) => region.id));
+    commitRegions(regions.map((region) => region.id));
   };
 
   const autoSelectRegion = (): void => {
     setSelection([]);
-    setSelectedRegionIds([]);
+    commitRegions([]);
   };
 
   const handleMoveDimension = (
@@ -519,8 +581,8 @@ export function App() {
     placement: DimensionPlacement,
   ): void => {
     const current = getState();
-    const next = setDimensionPlacement(current.sketch, id, placement);
-    if (next === current.sketch) return;
+    const next = setDimensionPlacement(primarySketch(current.doc), id, placement);
+    if (next === primarySketch(current.doc)) return;
     // Moving a label does not change geometry; keep the last solution and group
     // the whole pointer gesture into one undo entry.
     commitDoc(next, current.solved, `dim:${id}`);
@@ -531,39 +593,42 @@ export function App() {
     placement: DimensionPlacement,
   ): void => {
     const current = getState();
-    solveAndCommit(addDimension(current.sketch, target, !referenceDimensions, placement));
+    solveAndCommit(addDimension(primarySketch(current.doc), target, !referenceDimensions, placement));
   };
 
   const handleChangeDimension = (id: string, value: number): void => {
     const current = getState();
-    solveAndCommit(updateConstraintValue(current.sketch, id, value));
+    solveAndCommit(updateConstraintValue(primarySketch(current.doc), id, value));
   };
 
   const handleDeleteDimension = (id: string): void => {
     const current = getState();
-    solveAndCommit(removeConstraint(current.sketch, id));
+    solveAndCommit(removeConstraint(primarySketch(current.doc), id));
   };
 
   const handleConstraint = (type: ConstraintType): void => {
     const current = getState();
-    const next = applyConstraint(current.sketch, type, selection);
-    if (next === current.sketch) return;
+    const next = applyConstraint(primarySketch(current.doc), type, selection);
+    if (next === primarySketch(current.doc)) return;
     solveAndCommit(next);
   };
 
   const handleConstruction = (): void => {
     const current = getState();
-    const next = toggleConstruction(current.sketch, selection);
-    if (next === current.sketch) return;
+    const next = toggleConstruction(primarySketch(current.doc), selection);
+    if (next === primarySketch(current.doc)) return;
     solveAndCommit(next);
   };
 
   const clearSketch = (): void => {
     const empty = emptySketch();
     const outcome = isSolverReady() ? solveSketch(empty) : null;
-    commit({ sketch: empty, solved: outcome });
+    const current = getState();
+    commit({
+      doc: updateExtrudeRegions(updatePrimarySketch(current.doc, empty), []),
+      solved: outcome,
+    });
     setSolveError(null);
-    setSelectedRegionIds([]);
     setSelection([]);
     setTool("select");
     setFitToken((token) => token + 1);
@@ -573,9 +638,12 @@ export function App() {
     const fresh = createExampleModel();
     const outcome = isSolverReady() ? solveSketch(fresh.sketch) : null;
     const applied = outcome?.ok ? applySolution(fresh.sketch, outcome) : fresh.sketch;
-    commit({ sketch: applied, solved: outcome });
+    const current = getState();
+    commit({
+      doc: updateExtrudeRegions(updatePrimarySketch(current.doc, applied), []),
+      solved: outcome,
+    });
     setSolveError(null);
-    setSelectedRegionIds([]);
     setSelection([]);
     setTool("select");
     setFitToken((token) => token + 1);
@@ -593,7 +661,7 @@ export function App() {
 
   const shownMesh = params ? mesh : null;
   const shownRoundTrip = params ? roundTripMs : null;
-  const shown = solveError ?? doc.solved;
+  const shown = solveError ?? editor.solved;
   const tone: SketchTone =
     shown?.status === "inconsistent"
       ? "conflict"
@@ -627,7 +695,7 @@ export function App() {
         <div className="brand">
           <LogoMark />
           <span className="brand-name">cad</span>
-          <span className="chip">spike</span>
+          <span className="chip">{doc.name}</span>
         </div>
 
         <div className="toolbar-group">
@@ -639,7 +707,9 @@ export function App() {
             max={40}
             step={1}
             value={extrudeHeight}
-            onChange={(event) => setExtrudeHeight(Number(event.target.value))}
+            onChange={(event) => handleExtrudeHeight(Number(event.target.value))}
+            onPointerUp={endMerge}
+            onKeyUp={endMerge}
             data-testid="height-slider"
             aria-label="Extrude height"
           />
@@ -1014,7 +1084,7 @@ export function App() {
             >
               <SketchIcon />
               <span className="timeline-index">01</span>
-              <span>Sketch 1</span>
+              <span>{sketchFeature?.name ?? "Sketch 1"}</span>
               <span className="tree-meta">XY · {sketch.curves.length} curves</span>
             </button>
             <span className="timeline-arrow" aria-hidden="true">›</span>
@@ -1026,7 +1096,7 @@ export function App() {
             >
               <ExtrudeIcon />
               <span className="timeline-index">02</span>
-              <span>Extrude 1</span>
+              <span>{extrudeFeature?.name ?? "Extrude 1"}</span>
               <span className="tree-meta">
                 {extrudeHeight} mm · {activeRegionIds.length} region
                 {activeRegionIds.length === 1 ? "" : "s"}
@@ -1034,7 +1104,7 @@ export function App() {
             </button>
           </div>
           <div className="timeline-actions">
-            <span className="timeline-note">Static history · M3</span>
+            <span className="timeline-note">Autosaved locally</span>
           </div>
         </footer>
       </main>

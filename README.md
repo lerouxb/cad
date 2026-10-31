@@ -59,6 +59,10 @@ selection/dimension inspector; there is no permanent sidebar.
   sketch, so crossing segments and T-junctions become real faces (two crossing diagonals
   produce four selectable triangles). The trim tool removes the clicked line/arc segment
   between intersections, with undo; constraints that cannot survive a split are reported.
+- **A real document**: the sketch, extrude feature and selected regions live in a
+  plain-JSON `Doc` with a schema version and migrations. The part autosaves to local
+  storage and reopens with the same solid; the extrude height and region selection are
+  undoable feature parameters.
 - Exact volume/face/triangle stats, and e2e tests that check them numerically while
   dragging, dimensioning, drawing, selecting/deleting, and undoing.
 - A typography-first **paper-and-ink** interface with day/night themes and one
@@ -68,8 +72,8 @@ selection/dimension inspector; there is no permanent sidebar.
 
 It is intentionally narrow: auto mode defaults to the largest region until you click one,
 split/trim works on lines and arcs (trimming a circle into an arc is still unsupported),
-face/edge picking is pending, datum planes and sketches on faces are M4, the feature tree
-is a preview, and no document is persisted yet. Ellipses/conics/B-splines, free 3D sketches, 3D fillets, lofts/sweeps,
+face/edge picking is pending, datum planes and sketches on faces are M4, and the timeline
+is still the fixed two-step list while the M3 rebuild engine and feature-tree editing land. Ellipses/conics/B-splines, free 3D sketches, 3D fillets, lofts/sweeps,
 patterns/mirror, drafts, shelling/offsets, expressions and threads are tracked in the
 **M9 TODO/limitations backlog** in `docs/PLAN.md`, with workarounds and the upstream
 SolveSpace/OCCT work each would need.

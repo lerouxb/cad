@@ -790,6 +790,47 @@ test("trims a split segment and rebuilds the profile", async ({ app: page }) => 
   expect(errors).toEqual([]);
 });
 
+test("autosaves the document and reopens it", async ({ app: page }) => {
+  await setSlider(page.getByTestId("height-slider"), 20);
+  const plate = 60 * 40 * 20 - Math.PI * 8 * 8 * 20;
+  await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const raw = localStorage.getItem("cad.doc");
+        if (!raw) return null;
+        const doc = JSON.parse(raw);
+        return doc.features.find(
+          (feature: { type: string }) => feature.type === "extrude",
+        )?.height;
+      }),
+    )
+    .toBe(20);
+
+  const stored = await page.evaluate(() => {
+    const raw = localStorage.getItem("cad.doc");
+    return raw ? JSON.parse(raw) : null;
+  });
+  expect(stored?.schemaVersion).toBe(1);
+
+  // A new document in the same context reads the saved part, migrates it, and
+  // rebuilds the same solid.
+  const second = await page.context().newPage();
+  await second.goto("/");
+  await expect(second.getByTestId("solver-status")).toContainText("ready", {
+    timeout: 60_000,
+  });
+  await expect(second.getByTestId("kernel-status")).toContainText("ready", {
+    timeout: 60_000,
+  });
+  await expect(second.getByTestId("height-slider")).toHaveValue("20");
+  await expect.poll(() => volume(second)).toBeCloseTo(plate, -1);
+  await second.close();
+
+  await setSlider(page.getByTestId("height-slider"), 12);
+});
+
 test("switches and persists the appearance theme", async ({ app: page }) => {
   await page.getByTestId("theme-night").click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "night");

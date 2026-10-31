@@ -38,8 +38,11 @@ then sketches on faces, then more features.
 - Profile faces come from a non-destructive planar arrangement: crossings and
   T-junctions split into real regions, and the trim tool removes the clicked line/arc
   segment between intersections with undo.
+- The part is a plain-JSON document (`Doc` + typed features), not component state:
+  migrate-on-load, autosave to `localStorage`, undoable extrude height and region
+  selection, and the feature names drive the timeline.
 - The example sketch can be loaded, cleared, edited, or replaced by drawing.
-- `npm run verify` (101 unit tests) and `npm run e2e` (18 tests) are green. The e2e asserts
+- `npm run verify` (110 unit tests) and `npm run e2e` (19 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -50,8 +53,10 @@ Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
 
 **Still temporary** (all scheduled below): auto mode defaults to the largest region until
 you click one; trim handles lines/arcs but not circles; face/edge picking is pending;
-**datum planes and sketch-on-face are M4**; the feature tree is static; no document is
-persisted. Free 3D sketches, splines/text/images and drawing exports remain out of scope.
+**datum planes and sketch-on-face are M4**; the feature tree is still the fixed two-step
+timeline (rename/reorder/suppress are the next M3 slices); the rebuild engine still runs
+one sketch + one extrude, without prefix caching or per-feature diagnostics. Free 3D
+sketches, splines/text/images and drawing exports remain out of scope.
 
 ---
 
@@ -296,7 +301,11 @@ candidates rather than being trimmed into arcs.
 
 ## M3 — History (4–6 days)
 
-- [ ] `core/doc`: feature/document schema (`Doc`, `schemaVersion`, ids, migrations) and
+**In progress.** The document store, migrations, autosave, feature names, undoable
+extrude height and region selection are in. The ordered rebuild engine/cache, feature
+tree editing, and multi-feature booleans are next.
+
+- [x] `core/doc`: feature/document schema (`Doc`, `schemaVersion`, ids, migrations) and
       move the sketch out of component state into the document store — prerequisites for
       history, deliberately deferred from M1
 - [ ] `core/rebuild`: ordered evaluation, per-feature status, prefix cache, generation

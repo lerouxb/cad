@@ -18,8 +18,9 @@ engine matters more than feature count.
 
 ## Status
 
-**M1 is done, M2 region selection is in, M2.5 paper/ink UI is in, and M2.6 split/trim
-is in.** The app is an editable sketcher driving an exact extrude:
+**M1 is done, M2 region selection is in, M2.5 paper/ink UI is in, M2.6 split/trim is in,
+and M3's document store is in progress.** The app is an editable sketcher driving an exact
+extrude:
 
 - Real: `slvs` adapter, tangent-space constrained dragging of points, whole lines, circles
   and arcs, line/rectangle/circle/three-point-arc tools and a parametric corner fillet,
@@ -36,7 +37,9 @@ is in.** The app is an editable sketcher driving an exact extrude:
   tangent, symmetric, midpoint, coincident, fix) with construction geometry, a selectable
   fixed origin + X/Y axis reference frame, exact X/Y editing for a selected point,
   undo/redo, DOF/diagnostics, worker protocol, three.js viewport, exact volume/face counts,
-  unit + e2e tests.
+  unit + e2e tests. The part is a plain-JSON `Doc` with sketch/extrude features,
+  schemaVersion + migrations, autosave to `localStorage`, and undoable feature parameters
+  (extrude height and selected regions).
 - UI: one main stage. The bottom timeline switches between the full-stage sketch editor
   and the 3D model; the sketch has floating tools, a DOF pill, and a floating selection /
   dimension inspector. No permanent sidebar. The paper/ink theme has day/night modes and
@@ -45,12 +48,14 @@ is in.** The app is an editable sketcher driving an exact extrude:
 - Temporary: auto mode still defaults to the largest region until a region is clicked;
   trim supports lines and arcs but not turning a circle into an arc; face/edge picking is
   not implemented; the example sketch is hand-authored (`core/sketch/demo.ts`);
-  **datum planes and sketch-on-face are not implemented (M4)**; the feature tree is
-  static; no document is persisted. Free 3D sketches, splines/text/images and drawing
-  exports are out of scope.
+  **datum planes and sketch-on-face are not implemented (M4)**; the timeline is still the
+  fixed two-step list (rename/reorder/suppress and feature dialogs are next); the rebuild
+  engine still evaluates one sketch + one extrude without prefix caching or per-feature
+  diagnostics. Free 3D sketches, splines/text/images and drawing exports are out of scope.
 
-Next: **M3** (document schema + history), then **M4** (datum planes + face supports).
-Read `docs/PLAN.md`; it is the source of truth for done. Unsupported geometry/features (ellipses, conics, B-splines, free
+Next: **finish M3** (ordered rebuild/cache, feature tree editing, multi-feature booleans),
+then **M4** (datum planes + face supports). Read `docs/PLAN.md`; it is the source of truth
+for done. Unsupported geometry/features (ellipses, conics, B-splines, free
 3D sketches, 3D fillets, lofts/sweeps, patterns/mirror, drafts, shelling/offsets,
 expressions, threads) and the upstream SolveSpace/OCCT work are documented in **PLAN M9**.
 
@@ -215,6 +220,12 @@ docs/
   containment/validation. The kernel assembles `threePointArc` edges; the sampled points
   are never used to extrude. `ensureCounterClockwise` must reverse the segments, not just
   the points.
+- **The document is the source of truth.** `Doc` holds only plain JSON: schemaVersion,
+  id/name, and typed `SketchFeature` / `ExtrudeFeature` records. Solver output is derived
+  UI state, never persisted. `core/doc/migrations.ts` migrates on load and rejects
+  malformed or newer documents; `core/doc/persistence.ts` autosaves under `cad.doc`.
+  `primarySketch` / `primaryExtrudeFeature` / `updatePrimarySketch` are the selectors
+  App uses so component state does not become a second document.
 - **Regions are faces, not every cycle.** `planarArrangement` splits line/arc segments at
   crossings, T-junctions and circle crossings without touching the document. `findLoops`
   enumerates cycles on that split graph, `regionsFromSketch` drops a cycle when a smaller
