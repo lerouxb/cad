@@ -85,21 +85,11 @@ async function volume(page: Page): Promise<number> {
 /** Bounds of the extruded outer loop, in sketch millimetres. */
 async function readProfileRect(page: Page) {
   return page.evaluate(() => {
-    const polygon = document.querySelector("svg.sketch-canvas polygon");
-    const raw = polygon?.getAttribute("points");
-    if (!raw) throw new Error("No profile polygon");
-    const points = raw
-      .trim()
-      .split(/\s+/)
-      .map((pair) => pair.split(",").map(Number));
-    const xs = points.map((point) => point[0]!);
-    const ys = points.map((point) => point[1]!);
-    return {
-      minX: Math.min(...xs),
-      maxX: Math.max(...xs),
-      minY: Math.min(...ys),
-      maxY: Math.max(...ys),
-    };
+    const element = document.querySelector("[data-region-bounds]");
+    const raw = element?.getAttribute("data-region-bounds");
+    if (!raw) throw new Error("No region bounds");
+    const [minX, minY, maxX, maxY] = raw.split(",").map(Number);
+    return { minX: minX!, minY: minY!, maxX: maxX!, maxY: maxY! };
   });
 }
 
@@ -696,6 +686,39 @@ test("uses the fixed origin and X axis as references", async ({ app: page }) => 
     [Number(element.getAttribute("x2")), Number(element.getAttribute("y2"))],
   ]);
   expect(afterAxis.every(([, y]) => Math.abs(y!) < 1e-6)).toBe(true);
+
+  expect(errors).toEqual([]);
+});
+
+test("selects and fuses multiple sketch regions", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+
+  await page.getByTestId("tool-rect").click();
+  await dragSketch(page, [-40, -20], [-10, 20]);
+  await dragSketch(page, [10, -20], [40, 20]);
+  await page.keyboard.press("Escape");
+
+  await expect(page.getByTestId("region-panel")).toBeVisible();
+  await clickSketch(page, -25, -10);
+  await expect(page.getByTestId("region-panel")).toContainText("1 of 2 regions");
+
+  await page.getByTestId("timeline-extrude").click();
+  await expect.poll(() => volume(page)).toBeCloseTo(30 * 40 * 12, -1);
+
+  await page.getByTestId("timeline-sketch").click();
+  await page.getByTestId("all-regions").click();
+  await expect(page.getByTestId("region-panel")).toContainText("2 of 2 regions");
+
+  await page.getByTestId("timeline-extrude").click();
+  await expect.poll(() => volume(page)).toBeCloseTo(2 * 30 * 40 * 12, -1);
+
+  await page.getByTestId("timeline-sketch").click();
+  await page.getByTestId("auto-region").click();
+  await expect(page.getByTestId("region-panel")).toContainText("auto");
+  await page.getByTestId("timeline-extrude").click();
+  await expect.poll(() => volume(page)).toBeCloseTo(30 * 40 * 12, -1);
 
   expect(errors).toEqual([]);
 });

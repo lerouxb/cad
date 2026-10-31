@@ -21,6 +21,19 @@ export interface SketchProfile {
   outerCircleId?: string;
 }
 
+/** A selectable solid region: an outer boundary plus its direct hole loops. */
+export interface SketchRegion {
+  id: string;
+  outer: ProfileLoop;
+  holes: ProfileLoop[];
+  /** The line/arc loop, when the outer boundary is not a circle. */
+  loop: SketchLoop | null;
+  outerCircleId?: string;
+  depth: number;
+  /** Net area: outer minus direct holes. */
+  area: number;
+}
+
 export interface SketchLoop {
   /** Curve ids in traversal order. */
   curves: string[];
@@ -184,6 +197,138 @@ export function profileFromSketch(sketch: Sketch): SketchProfile | null {
   };
 }
 
+interface RegionCandidate {
+  outer: ProfileLoop;
+  area: number;
+  loop: SketchLoop | null;
+  circleId?: string;
+  curves: string[];
+  parent: number | null;
+  depth: number;
+}
+
+/**
+ * Extract selectable regions from the sketch.
+ *
+ * The cycle finder returns every simple cycle, so a rectangle with a real
+ * diagonal also returns the rectangle. A cycle that contains a smaller cycle
+ * sharing one of its curves is a subdivision, not a face: drop it and keep the
+ * minimal cycles. Circles are independent face candidates.
+ *
+ * The remaining faces are nested into a containment tree. Even depths are
+ * material; odd depths are holes of their parent. This gives:
+ *   - a rectangle + circle -> one region with a circular hole
+ *   - two disjoint rectangles -> two regions
+ *   - concentric circles -> one tube
+ *   - an island inside a hole -> a separate region at depth 2
+ *
+ * Region ids hash the outer and direct-hole curve ids, so a selection survives
+ * dimension/constraint edits and invalidates when the boundary itself changes.
+ */
+export function regionsFromSketch(sketch: Sketch): SketchRegion[] {
+  const loops = findLoops(sketch);
+  const loopProfiles = new Map<SketchLoop, ProfileLoop>();
+  for (const loop of loops) {
+    loopProfiles.set(
+      loop,
+      loop.segments
+        ? { kind: "path", points: loop.polygon, segments: loop.segments }
+        : { kind: "polygon", points: loop.polygon },
+    );
+  }
+
+  const faces = loops.filter(
+    (loop) =>
+      !loops.some(
+        (other) =>
+          other !== loop &&
+          other.area < loop.area - 1e-9 &&
+          sharesCurve(loop, other) &&
+          loopInsideOrOn(other, loop),
+      ),
+  );
+
+  const candidates: RegionCandidate[] = faces.map((loop) => ({
+    outer: loopProfiles.get(loop)!,
+    area: loop.area,
+    loop,
+    curves: loop.curves,
+    parent: null,
+    depth: 0,
+  }));
+
+  const circles = sketch.curves.flatMap((curve) =>
+    curve.type === "circle" && !curve.construction ? [curve] : [],
+  );
+  for (const circle of circles) {
+    const center = allPoints(sketch).find((point) => point.id === circle.center);
+    if (!center) continue;
+    candidates.push({
+      outer: { kind: "circle", center: [center.x, center.y], radius: circle.radius },
+      area: Math.PI * circle.radius * circle.radius,
+      loop: null,
+      circleId: circle.id,
+      curves: [circle.id],
+      parent: null,
+      depth: 0,
+    });
+  }
+
+  candidates.sort((a, b) => b.area - a.area);
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i]!;
+    let parent: number | null = null;
+    let parentArea = Infinity;
+    for (let j = 0; j < candidates.length; j++) {
+      const container = candidates[j];
+      if (!container || i === j) continue;
+      if (container.area <= candidate.area + 1e-9) continue;
+      if (container.area >= parentArea) continue;
+      if (!regionInside(candidate.outer, container.outer)) continue;
+      parent = j;
+      parentArea = container.area;
+    }
+    candidate.parent = parent;
+    candidate.depth = parent === null ? 0 : candidates[parent]!.depth + 1;
+  }
+
+  const regions: SketchRegion[] = [];
+  for (let i = 0; i < candidates.length; i++) {
+    const candidate = candidates[i]!;
+    if (candidate.depth % 2 !== 0) continue;
+    const children = candidates.filter(
+      (child) => child.parent === i && child.depth === candidate.depth + 1,
+    );
+    const curveIds = [
+      ...candidate.curves,
+      ...children.flatMap((child) => child.curves),
+    ].sort();
+    regions.push({
+      id: `reg-${hashKey(curveIds.join("|"))}`,
+      outer: candidate.outer,
+      holes: children.map((child) => child.outer),
+      loop: candidate.loop,
+      ...(candidate.circleId ? { outerCircleId: candidate.circleId } : {}),
+      depth: candidate.depth,
+      area: Math.max(
+        0,
+        candidate.area - children.reduce((sum, child) => sum + child.area, 0),
+      ),
+    });
+  }
+
+  return regions.sort((a, b) => b.area - a.area);
+}
+
+function hashKey(value: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
 /** Is `inner` strictly contained by `outer`? */
 function regionInside(inner: ProfileLoop, outer: ProfileLoop): boolean {
   if (inner.kind === "polygon" || inner.kind === "path") {
@@ -199,6 +344,33 @@ function regionInside(inner: ProfileLoop, outer: ProfileLoop): boolean {
     return gap + inner.radius < outer.radius - 1e-9;
   }
   return containsPoint(outer, inner.center);
+}
+
+/** Containment for a loop that touches (shares an edge with) its container. */
+function loopInsideOrOn(inner: SketchLoop, outer: SketchLoop): boolean {
+  return inner.polygon.every(
+    (point) =>
+      pointInPolygon(point, outer.polygon) || pointOnPolygon(point, outer.polygon),
+  );
+}
+
+function pointOnPolygon(point: Vec2, polygon: readonly Vec2[]): boolean {
+  for (let i = 0; i < polygon.length; i++) {
+    const a = polygon[i]!;
+    const b = polygon[(i + 1) % polygon.length]!;
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const lengthSquared = dx * dx + dy * dy;
+    if (lengthSquared < 1e-18) continue;
+    const t = Math.max(
+      0,
+      Math.min(1, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / lengthSquared),
+    );
+    const x = a[0] + dx * t;
+    const y = a[1] + dy * t;
+    if (Math.hypot(point[0] - x, point[1] - y) < 1e-7) return true;
+  }
+  return false;
 }
 
 function sharesCurve(a: SketchLoop, b: SketchLoop): boolean {

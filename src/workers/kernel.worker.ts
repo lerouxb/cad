@@ -4,6 +4,7 @@ import {
   circle,
   extrude,
   face,
+  fuseAll,
   line,
   measureVolume,
   registerKernel,
@@ -21,6 +22,7 @@ import type {
   BodyMesh,
   ExtrudeParams,
   KernelRequest,
+  ProfileRegion,
   KernelResponse,
   ProfileLoop,
 } from "../core/kernel/protocol";
@@ -76,15 +78,24 @@ function reply(message: KernelResponse, transfer?: Transferable[]): void {
 
 function buildBody(params: ExtrudeParams): BodyMesh {
   if (params.height <= 0) throw new Error("Extrude height must be greater than zero.");
-  validateProfile(params);
+  if (params.regions.length === 0) {
+    throw new Error("Select at least one profile region.");
+  }
+  for (const region of params.regions) validateRegion(region);
 
   return withScope((scope) => {
-    const outerWire = scope.track(toWire(params.outer));
-    const holeWires = params.holes.map((hole) => scope.track(toWire(hole)));
-    const profile = scope.track(unwrap(face(outerWire)));
-    const withHoles =
-      holeWires.length > 0 ? scope.track(addHoles(profile, holeWires)) : profile;
-    const solid = scope.track(unwrap(extrude(withHoles, [0, 0, params.height])));
+    const solids = params.regions.map((region) => {
+      const outerWire = scope.track(toWire(region.outer));
+      const holeWires = region.holes.map((hole) => scope.track(toWire(hole)));
+      const profile = scope.track(unwrap(face(outerWire)));
+      const withHoles =
+        holeWires.length > 0 ? scope.track(addHoles(profile, holeWires)) : profile;
+      return scope.track(unwrap(extrude(withHoles, [0, 0, params.height])));
+    });
+    const solid =
+      solids.length === 1
+        ? solids[0]!
+        : scope.track(unwrap(fuseAll(solids)));
 
     // Meshing returns plain typed arrays; everything kernel-side stays in scope.
     const mesh = shape(solid).mesh({ tolerance: 0.05 });
@@ -160,10 +171,10 @@ function toWire(loop: ProfileLoop): ClosedWire & PlanarWire {
  * boundary (it keeps the hole's cylinder instead of the plate). Catch that
  * here with a clear message instead of showing broken geometry.
  */
-function validateProfile(params: ExtrudeParams): void {
-  const outer = params.outer;
+function validateRegion(region: ProfileRegion): void {
+  const outer = region.outer;
   if (outer.kind === "circle") {
-    for (const hole of params.holes) {
+    for (const hole of region.holes) {
       if (hole.kind === "circle") {
         const gap = Math.hypot(
           hole.center[0] - outer.center[0],
@@ -189,7 +200,7 @@ function validateProfile(params: ExtrudeParams): void {
     return;
   }
 
-  for (const hole of params.holes) {
+  for (const hole of region.holes) {
     if (hole.kind !== "circle") {
       for (const point of hole.points) {
         if (!pointInPolygon(point, outer.points)) {

@@ -1,17 +1,20 @@
-import type { ExtrudeParams } from "../kernel/protocol";
+import type { ExtrudeParams, ProfileRegion } from "../kernel/protocol";
 import { ensureCounterClockwise, signedArea } from "../sketch/geometry";
-import type { SketchProfile } from "../sketch/loops";
+import type { SketchRegion } from "../sketch/loops";
 import type { ProfileLoop, ProfileSegment } from "../types";
 
-/**
- * Turn a solved sketch profile into kernel input: the outer loop plus holes.
- *
- * M2 replaces "largest loop" with explicit region selection.
- */
-export function extrudeParams(profile: SketchProfile, height: number): ExtrudeParams {
+/** Turn selected sketch regions into kernel input. */
+export function extrudeParams(
+  regions: readonly SketchRegion[],
+  height: number,
+): ExtrudeParams {
   return {
-    outer: counterClockwiseLoop(profile.outer),
-    holes: profile.holes.map(counterClockwiseLoop),
+    regions: regions.map(
+      (region): ProfileRegion => ({
+        outer: counterClockwiseLoop(region.outer),
+        holes: region.holes.map(counterClockwiseLoop),
+      }),
+    ),
     height,
   };
 }

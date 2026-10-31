@@ -41,7 +41,7 @@ import {
   sketchGeometry,
   updateConstraintValue,
 } from "../core/sketch/geometry";
-import { profileFromSketch } from "../core/sketch/loops";
+import { regionsFromSketch } from "../core/sketch/loops";
 import {
   initSolver,
   isSolverReady,
@@ -80,6 +80,7 @@ export function App() {
   const [dimensionMode, setDimensionMode] = useState<DimensionMode>("distance");
   const [radiusDimensions, setRadiusDimensions] = useState(false);
   const [filletRadius, setFilletRadius] = useState(5);
+  const [selectedRegionIds, setSelectedRegionIds] = useState<string[]>([]);
   const [selection, setSelection] = useState<string[]>([]);
   const [cancelToken, setCancelToken] = useState(0);
   const [fitToken, setFitToken] = useState(0);
@@ -98,10 +99,29 @@ export function App() {
   const viewportRef = useRef<Viewport | null>(null);
 
   const geometry = useMemo(() => sketchGeometry(sketch), [sketch]);
-  const profile = useMemo(() => profileFromSketch(sketch), [sketch]);
+  const regions = useMemo(() => regionsFromSketch(sketch), [sketch]);
+  const validRegionIds = useMemo(
+    () => selectedRegionIds.filter((id) => regions.some((region) => region.id === id)),
+    [selectedRegionIds, regions],
+  );
+  const activeRegionIds = useMemo(
+    () =>
+      validRegionIds.length > 0
+        ? validRegionIds
+        : regions.slice(0, 1).map((region) => region.id),
+    [validRegionIds, regions],
+  );
+  const activeRegions = useMemo(
+    () => regions.filter((region) => activeRegionIds.includes(region.id)),
+    [regions, activeRegionIds],
+  );
+  const selectedRegions = useMemo(
+    () => new Set(activeRegionIds),
+    [activeRegionIds],
+  );
   const params = useMemo(
-    () => (profile ? extrudeParams(profile, extrudeHeight) : null),
-    [profile, extrudeHeight],
+    () => (activeRegions.length > 0 ? extrudeParams(activeRegions, extrudeHeight) : null),
+    [activeRegions, extrudeHeight],
   );
 
   const selectedInfo = useMemo(
@@ -428,6 +448,26 @@ export function App() {
     solveAndCommit(next);
   };
 
+  const handleSelectRegion = (regionId: string, additive: boolean): void => {
+    setSelection([]);
+    setSelectedRegionIds((current) => {
+      if (!additive) return [regionId];
+      return current.includes(regionId)
+        ? current.filter((id) => id !== regionId)
+        : [...current, regionId];
+    });
+  };
+
+  const selectAllRegions = (): void => {
+    setSelection([]);
+    setSelectedRegionIds(regions.map((region) => region.id));
+  };
+
+  const autoSelectRegion = (): void => {
+    setSelection([]);
+    setSelectedRegionIds([]);
+  };
+
   const handleMoveDimension = (
     id: string,
     placement: DimensionPlacement,
@@ -477,6 +517,7 @@ export function App() {
     const outcome = isSolverReady() ? solveSketch(empty) : null;
     commit({ sketch: empty, solved: outcome });
     setSolveError(null);
+    setSelectedRegionIds([]);
     setSelection([]);
     setTool("select");
     setFitToken((token) => token + 1);
@@ -488,6 +529,7 @@ export function App() {
     const applied = outcome?.ok ? applySolution(fresh.sketch, outcome) : fresh.sketch;
     commit({ sketch: applied, solved: outcome });
     setSolveError(null);
+    setSelectedRegionIds([]);
     setSelection([]);
     setTool("select");
     setFitToken((token) => token + 1);
@@ -529,7 +571,9 @@ export function App() {
   const hint =
     tool === "dimension"
       ? "Click two points, a line, or a circle, then click to place the dimension. Double-click a value to edit it."
-      : "Select to inspect. L line · R rectangle · C circle · A arc · D dimension · Delete removes. Cmd/Ctrl+Z undoes.";
+      : regions.length > 1
+        ? "Click a filled region to choose the extrude profile; Shift adds. L line · R rectangle · C circle · A arc · D dimension."
+        : "Select to inspect. L line · R rectangle · C circle · A arc · D dimension · Delete removes. Cmd/Ctrl+Z undoes.";
 
   return (
     <div className="app">
@@ -611,8 +655,8 @@ export function App() {
 
             {!params && kernelState !== "loading" ? (
               <div className="viewport-message subtle">
-                <strong>No closed profile</strong>
-                <span>Draw a closed loop in the sketch to extrude it.</span>
+                <strong>No closed region</strong>
+                <span>Draw a closed loop, or select a region in the sketch, to extrude it.</span>
               </div>
             ) : null}
 
@@ -652,7 +696,9 @@ export function App() {
                 points={geometry.points}
                 radii={geometry.radii}
                 tone={tone}
-                outer={profile?.outer}
+                regions={regions}
+                selectedRegions={selectedRegions}
+                onSelectRegion={handleSelectRegion}
                 tool={tool}
                 dimensionMode={dimensionMode}
                 radiusDimensions={radiusDimensions}
@@ -818,6 +864,34 @@ export function App() {
                   />
                   <span>Reference dimension (measure only)</span>
                 </label>
+              </div>
+            ) : null}
+
+            {regions.length > 1 ? (
+              <div className="region-panel" data-testid="region-panel">
+                <span>
+                  {validRegionIds.length > 0
+                    ? `${activeRegionIds.length} of ${regions.length} regions`
+                    : "auto: largest region"}
+                </span>
+                <button
+                  className="constraint-chip"
+                  type="button"
+                  onClick={selectAllRegions}
+                  data-testid="all-regions"
+                >
+                  All
+                </button>
+                {validRegionIds.length > 0 ? (
+                  <button
+                    className="constraint-chip"
+                    type="button"
+                    onClick={autoSelectRegion}
+                    data-testid="auto-region"
+                  >
+                    Auto
+                  </button>
+                ) : null}
               </div>
             ) : null}
 

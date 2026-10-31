@@ -2,9 +2,15 @@ import type { ProfileLoop } from "../types";
 
 export type { ProfileLoop };
 
-export interface ExtrudeParams {
+/** One closed profile: an outer boundary plus its holes. */
+export interface ProfileRegion {
   outer: ProfileLoop;
   holes: ProfileLoop[];
+}
+
+export interface ExtrudeParams {
+  /** Selected regions; each becomes a solid and the solids are fused. */
+  regions: ProfileRegion[];
   height: number;
 }
 

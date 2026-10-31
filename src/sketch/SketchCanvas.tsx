@@ -7,6 +7,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import type { ProfileLoop, Vec2 } from "../core/types";
+import type { SketchRegion } from "../core/sketch/loops";
 import type { DraftVertex } from "../core/sketch/create";
 import type { DimensionPlacement, DimensionTarget } from "../core/sketch/dimensions";
 import type { DragTarget } from "../core/sketch/solver";
@@ -23,6 +24,7 @@ import {
   clampAngleToArc,
   circumcenter,
   curveRadius,
+  loopBounds,
   normalizeAngle,
 } from "../core/sketch/geometry";
 import { useElementSize } from "../ui/useElementSize";
@@ -36,8 +38,11 @@ export interface SketchCanvasProps {
   points: Record<string, Vec2>;
   radii: Record<string, number>;
   tone: SketchTone;
-  /** Largest closed region, used for the translucent fill. */
-  outer?: ProfileLoop;
+  /** All selectable solid regions, with holes. */
+  regions: SketchRegion[];
+  /** The regions currently used by the (single) extrude. */
+  selectedRegions: ReadonlySet<string>;
+  onSelectRegion: (regionId: string, additive: boolean) => void;
   tool: SketchTool;
   dimensionMode: DimensionMode;
   /** Measure circles as a radius instead of a diameter. */
@@ -94,7 +99,9 @@ export function SketchCanvas({
   points,
   radii,
   tone,
-  outer,
+  regions,
+  selectedRegions,
+  onSelectRegion,
   tool,
   dimensionMode,
   radiusDimensions,
@@ -596,7 +603,7 @@ export function SketchCanvas({
     };
   };
 
-  const startPan = (event: ReactPointerEvent<SVGSVGElement>) => {
+  const startPan = (event: ReactPointerEvent<Element>) => {
     svgRef.current?.setPointerCapture(event.pointerId);
     panRef.current = { clientX: event.clientX, clientY: event.clientY, box: viewBox };
   };
@@ -1021,29 +1028,43 @@ export function SketchCanvas({
         );
       })}
 
-      {outer?.kind === "polygon" && outer.points.length >= 3 ? (
-        <polygon
-          points={outer.points.map((point) => `${point[0]},${point[1]}`).join(" ")}
-          fill={tone === "conflict" ? "rgba(255,123,114,0.07)" : "rgba(116,169,255,0.06)"}
-          stroke="none"
-        />
-      ) : null}
-      {outer?.kind === "circle" ? (
-        <circle
-          cx={outer.center[0]}
-          cy={outer.center[1]}
-          r={outer.radius}
-          fill={tone === "conflict" ? "rgba(255,123,114,0.07)" : "rgba(116,169,255,0.06)"}
-          stroke="none"
-        />
-      ) : null}
-      {outer?.kind === "path" && outer.points.length >= 3 ? (
-        <polygon
-          points={outer.points.map((point) => `${point[0]},${point[1]}`).join(" ")}
-          fill={tone === "conflict" ? "rgba(255,123,114,0.07)" : "rgba(116,169,255,0.06)"}
-          stroke="none"
-        />
-      ) : null}
+      {regions.map((region) => {
+        const d = regionPathData(region);
+        if (!d) return null;
+        const active = selectedRegions.has(region.id);
+        const bounds = loopBounds(region.outer);
+        const conflict = tone === "conflict";
+        return (
+          <path
+            key={region.id}
+            d={d}
+            fillRule="evenodd"
+            fill={
+              conflict
+                ? active
+                  ? "rgba(255,123,114,0.18)"
+                  : "rgba(255,123,114,0.04)"
+                : active
+                  ? "rgba(116,169,255,0.14)"
+                  : "rgba(116,169,255,0.035)"
+            }
+            stroke={active ? (conflict ? "#ff7b72" : "rgba(116,169,255,0.5)") : "none"}
+            strokeWidth={1}
+            vectorEffect="non-scaling-stroke"
+            data-region-id={region.id}
+            data-region-bounds={`${bounds.minX},${bounds.minY},${bounds.maxX},${bounds.maxY}`}
+            pointerEvents={tool === "select" ? "fill" : "none"}
+            style={{ cursor: tool === "select" ? "pointer" : "default" }}
+            onPointerDown={(event) => {
+              if (tool !== "select") return;
+              event.stopPropagation();
+              event.preventDefault();
+              onSelectRegion(region.id, additiveSelection(event));
+              startPan(event);
+            }}
+          />
+        );
+      })}
 
       {circles.map((circle) => {
         const center = points[circle.center];
@@ -2208,4 +2229,63 @@ function arcThroughPath(
     center,
     radius,
   };
+}
+
+
+function regionPathData(region: SketchRegion): string {
+  return [region.outer, ...region.holes].map(loopPathData).join("");
+}
+
+function loopPathData(loop: ProfileLoop): string {
+  if (loop.kind === "circle") {
+    const [cx, cy] = loop.center;
+    const r = loop.radius;
+    return [
+      `M ${cx - r} ${cy}`,
+      `A ${r} ${r} 0 1 1 ${cx + r} ${cy}`,
+      `A ${r} ${r} 0 1 1 ${cx - r} ${cy}`,
+      "Z",
+    ].join(" ");
+  }
+  if (loop.kind === "polygon") {
+    if (loop.points.length < 3) return "";
+    return [
+      `M ${loop.points[0]![0]} ${loop.points[0]![1]}`,
+      ...loop.points.slice(1).map((point) => `L ${point[0]} ${point[1]}`),
+      "Z",
+    ].join(" ");
+  }
+  if (loop.segments.length === 0) return "";
+  const first = loop.segments[0]!;
+  const parts: string[] = [];
+  const startPoint = first.kind === "line" ? first.a : first.start;
+  parts.push(`M ${startPoint[0]} ${startPoint[1]}`);
+  for (const segment of loop.segments) {
+    if (segment.kind === "line") {
+      parts.push(`L ${segment.b[0]} ${segment.b[1]}`);
+      continue;
+    }
+    const startAngle = Math.atan2(
+      segment.start[1] - segment.center[1],
+      segment.start[0] - segment.center[0],
+    );
+    const endAngle = Math.atan2(
+      segment.end[1] - segment.center[1],
+      segment.end[0] - segment.center[0],
+    );
+    const midAngle = Math.atan2(
+      segment.mid[1] - segment.center[1],
+      segment.mid[0] - segment.center[0],
+    );
+    const sweep = normalizeAngle(endAngle - startAngle);
+    const through = normalizeAngle(midAngle - startAngle);
+    const ccw = through <= sweep + 1e-9;
+    const usedSweep = ccw ? sweep : Math.PI * 2 - sweep;
+    const large = usedSweep > Math.PI ? 1 : 0;
+    parts.push(
+      `A ${segment.radius} ${segment.radius} 0 ${large} ${ccw ? 1 : 0} ${segment.end[0]} ${segment.end[1]}`,
+    );
+  }
+  parts.push("Z");
+  return parts.join(" ");
 }
