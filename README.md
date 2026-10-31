@@ -55,6 +55,10 @@ selection/dimension inspector; there is no permanent sidebar.
   remove. Deletion cascades through dependent curves/constraints; undo restores it.
 - **Undo/redo** with gesture grouping (`Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`), `Esc` to cancel a
   draft and clear the selection, `V/L/R/C/A/D` for tools.
+- **Split profiles and trim**: region extraction runs on a planar arrangement of the
+  sketch, so crossing segments and T-junctions become real faces (two crossing diagonals
+  produce four selectable triangles). The trim tool removes the clicked line/arc segment
+  between intersections, with undo; constraints that cannot survive a split are reported.
 - Exact volume/face/triangle stats, and e2e tests that check them numerically while
   dragging, dimensioning, drawing, selecting/deleting, and undoing.
 - A typography-first **paper-and-ink** interface with day/night themes and one
@@ -63,9 +67,9 @@ selection/dimension inspector; there is no permanent sidebar.
   which are design targets only and are never imported by `src/`.
 
 It is intentionally narrow: auto mode defaults to the largest region until you click one,
-intersecting sketch segments are not split into faces yet (split/trim is M2.6), face/edge
-picking is pending, datum planes and sketches on faces are M4, the feature tree is a
-preview, and no document is persisted yet. Ellipses/conics/B-splines, free 3D sketches, 3D fillets, lofts/sweeps,
+split/trim works on lines and arcs (trimming a circle into an arc is still unsupported),
+face/edge picking is pending, datum planes and sketches on faces are M4, the feature tree
+is a preview, and no document is persisted yet. Ellipses/conics/B-splines, free 3D sketches, 3D fillets, lofts/sweeps,
 patterns/mirror, drafts, shelling/offsets, expressions and threads are tracked in the
 **M9 TODO/limitations backlog** in `docs/PLAN.md`, with workarounds and the upstream
 SolveSpace/OCCT work each would need.

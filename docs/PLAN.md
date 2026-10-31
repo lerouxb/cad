@@ -35,8 +35,11 @@ then sketches on faces, then more features.
 - Click curves/points to select them, Shift-click to multi-select, and Delete/Backspace to
   remove. Deletion cascades to dependent curves and constraints, and leaves no orphaned
   references. A selection card reports length/diameter/position.
+- Profile faces come from a non-destructive planar arrangement: crossings and
+  T-junctions split into real regions, and the trim tool removes the clicked line/arc
+  segment between intersections with undo.
 - The example sketch can be loaded, cleared, edited, or replaced by drawing.
-- `npm run verify` (90 unit tests) and `npm run e2e` (16 tests) are green. The e2e asserts
+- `npm run verify` (101 unit tests) and `npm run e2e` (18 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -46,8 +49,8 @@ Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
 95 017.7 mm³ and rebuilds in ~35 ms after warm-up.
 
 **Still temporary** (all scheduled below): auto mode defaults to the largest region until
-you click one; intersecting segments are not split into faces (M2.6); face/edge picking is
-pending; **datum planes and sketch-on-face are M4**; the feature tree is static; no document is
+you click one; trim handles lines/arcs but not circles; face/edge picking is pending;
+**datum planes and sketch-on-face are M4**; the feature tree is static; no document is
 persisted. Free 3D sketches, splines/text/images and drawing exports remain out of scope.
 
 ---
@@ -76,7 +79,7 @@ anchored between the inner walls.
 | Ellipses, parabolic/hyperbolic arcs, conic sections | Not in `slvs`; M9 upstream work. Approximate with lines/arcs for now. |
 | Sketch text / images | Not implemented; M9 |
 | Expressions / spreadsheets | M7 (app-level; `slvs` only receives numeric values) |
-| Split curves at intersection / trim | M2.6 (moved from M2) |
+| Split curves at intersection / trim | M2.6 (done) |
 | Distance (point-point, point-line), angle, diameter, radius, reference dimensions | Done |
 | Angle / reference angle | Done (dimension tool) |
 | Horizontal, vertical, parallel, perpendicular, equal, point-on-line | Done |
@@ -229,7 +232,7 @@ rebuild exist; they are tracked at the top of M3.
 - [x] Multiple regions per extrude. The worker extrudes each region and fuses the solids
       (`fuseAll`), so disjoint regions become one body
 - [x] Deeper nesting: a hole can contain an island, which is a separate depth-2 region
-- [ ] Split curves at intersections / trim while sketching — moved to M2.6
+- [x] Split curves at intersections / trim while sketching — implemented in M2.6
 - [ ] Full planar face traversal: intersecting segments without a shared endpoint are not
       yet split, so crossing diagonals are still ambiguous
 - [ ] Rebuild goldens: several profiles → bbox/face-count assertions (volume is covered by
@@ -239,7 +242,7 @@ rebuild exist; they are tracked at the top of M3.
 
 **Done when:** you can draw an arbitrary multi-region sketch, click one or more regions
 (including holes and islands), and extrude/fuse them with exact volume. Auto mode still
-defaults to the largest region until you click; intersections are not split yet.
+defaults to the largest region until you click; M2.6 adds split/trim.
 
 ## M2.5 — UI foundations: paper/ink visual system (2–3 days)
 
@@ -275,19 +278,21 @@ history/support/export UI has been added.
 The biggest remaining profile-correctness gap: intersecting segments without a shared
 endpoint do not yet split the graph.
 
-- [ ] Planar arrangement: split line/arc segments at intersections, create real vertices,
+- [x] Planar arrangement: split line/arc segments at intersections, create real vertices,
       and rebuild adjacency from the split segments
-- [ ] Trim tool: remove the clicked segment between intersections/boundaries, with undo
-- [ ] Region extraction: crossing diagonals become real faces (four faces for two
+- [x] Trim tool: remove the clicked segment between intersections/boundaries, with undo
+- [x] Region extraction: crossing diagonals become real faces (four faces for two
       diagonals), and trim/curve splits invalidate the right regions
-- [ ] Tests: split line/line and line/arc; trim while preserving constraints where
+- [x] Tests: split line/line and line/arc; trim while preserving constraints where
       possible; crossing-diagonal face/area cases; e2e trim + extrude
-- [ ] Keep construction geometry excluded, and do not silently drop constraints: mark
+- [x] Keep construction geometry excluded, and do not silently drop constraints: mark
       or remove them explicitly when a split changes the geometry
 
-**Done when:** two crossing diagonals in a rectangle produce the four actual regions, and
-trimming a segment updates the selectable regions and extrude volume without an invalid
-profile.
+**Done.** `planarArrangement` is non-destructive and region extraction consumes it;
+trim materializes only the cuts it keeps, remaps h/v, parallel/perpendicular, angle,
+point-on-line/circle, tangent and diameter constraints where the kept geometry still
+supports them, and reports any constraint it had to remove. Circles remain whole-region
+candidates rather than being trimmed into arcs.
 
 ## M3 — History (4–6 days)
 

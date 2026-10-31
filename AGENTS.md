@@ -18,16 +18,18 @@ engine matters more than feature count.
 
 ## Status
 
-**M1 is done, M2 region selection is in, and M2.5 paper/ink UI foundations are in.**
-The app is an editable sketcher driving an exact extrude:
+**M1 is done, M2 region selection is in, M2.5 paper/ink UI is in, and M2.6 split/trim
+is in.** The app is an editable sketcher driving an exact extrude:
 
 - Real: `slvs` adapter, tangent-space constrained dragging of points, whole lines, circles
   and arcs, line/rectangle/circle/three-point-arc tools and a parametric corner fillet,
   grid + point snapping, automatic horizontal/vertical constraints, exact profile
   extraction (line/arc loops or circles as the body, nested loops/circles as holes;
   arcs extrude as OCCT arc edges, not tessellated), click/shift-click selection,
-  cascading delete, explicit region selection (click a filled region, Shift adds, All/Auto;
-  multiple selected regions are extruded and fused), dimensions (point-point, point-line,
+  cascading delete, a non-destructive planar arrangement for profile faces (crossings and
+  T-junctions split into real regions), trim by clicking a line/arc segment with undo,
+  explicit region selection (click a filled region, Shift adds, All/Auto; multiple
+  selected regions are extruded and fused), dimensions (point-point, point-line,
   angle, diameter, radius, driving or reference, inline edit/delete and draggable labels),
   a floating constraint bar
   (horizontal/vertical, parallel, perpendicular, equal, point-on-line, point-on-circle,
@@ -41,15 +43,14 @@ The app is an editable sketcher driving an exact extrude:
   one highlighter colour (yellow/pink/blue/green), persisted in `localStorage`; the
   static studies in `docs/mockups/` are the design target and are never imported.
 - Temporary: auto mode still defaults to the largest region until a region is clicked;
-  intersecting segments are not split into faces (split/trim is M2.6); face/edge picking
-  is not implemented; the example sketch is hand-authored (`core/sketch/demo.ts`);
+  trim supports lines and arcs but not turning a circle into an arc; face/edge picking is
+  not implemented; the example sketch is hand-authored (`core/sketch/demo.ts`);
   **datum planes and sketch-on-face are not implemented (M4)**; the feature tree is
   static; no document is persisted. Free 3D sketches, splines/text/images and drawing
   exports are out of scope.
 
-Next: **M2.6** (split at intersections + trim), **M3** (document schema + history), then
-**M4** (datum planes + face supports). Read `docs/PLAN.md`; it is the
-source of truth for done. Unsupported geometry/features (ellipses, conics, B-splines, free
+Next: **M3** (document schema + history), then **M4** (datum planes + face supports).
+Read `docs/PLAN.md`; it is the source of truth for done. Unsupported geometry/features (ellipses, conics, B-splines, free
 3D sketches, 3D fillets, lofts/sweeps, patterns/mirror, drafts, shelling/offsets,
 expressions, threads) and the upstream SolveSpace/OCCT work are documented in **PLAN M9**.
 
@@ -214,11 +215,25 @@ docs/
   containment/validation. The kernel assembles `threePointArc` edges; the sampled points
   are never used to extrude. `ensureCounterClockwise` must reverse the segments, not just
   the points.
-- **Regions are faces, not every cycle.** `regionsFromSketch` drops a cycle when a smaller
+- **Regions are faces, not every cycle.** `planarArrangement` splits line/arc segments at
+  crossings, T-junctions and circle crossings without touching the document. `findLoops`
+  enumerates cycles on that split graph, `regionsFromSketch` drops a cycle when a smaller
   cycle sharing one of its curves sits inside it (rectangle + diagonal → two triangles),
   then builds a containment tree: even depth is material, odd depth is a hole. Region ids
-  hash the outer + direct-hole curve ids. `profileFromSketch` is the legacy "largest loop"
-  helper used by old tests; the app uses regions.
+  hash the outer + direct-hole curve ids; a split piece gets `${sourceId}~${index}`.
+  `profileFromSketch` is the legacy "largest loop" helper used by old tests; the app uses
+  regions.
+- **Trim materializes only the cuts it keeps.** `trimCurveAt` uses the arrangement to pick
+  the clicked piece, creates real points at the kept boundaries, replaces the source curve
+  with the kept pieces, and remaps constraints. Two kept line pieces get a parallel
+  constraint (collinearity); two kept arcs get point-on-circle links from the second
+  piece to the first so the radii stay equal. A constraint that cannot be carried over is
+  removed explicitly and reported in the trim status line.
+- `pruneSketch` removes orphaned points/constraints after structural edits. Both
+  `deleteEntities` and `pruneSketch` must keep `pointOnLine`; missing that case silently
+  drops valid constraints.
+- Reference axes intercept clicks along x = 0 / y = 0 before region fills; e2e region
+  clicks must be off-axis.
 - **`ExtrudeParams` is `{ regions, height }`**, not one outer + holes. The worker extrudes
   each region and `fuseAll`s multiple solids. Region fills use `data-region-id` and
   `data-region-bounds` (the latter replaces the old outer polygon for e2e bounds).

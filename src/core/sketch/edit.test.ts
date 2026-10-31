@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { addPolyline, emptySketch } from "./create";
 import { createDemoModel } from "./demo";
 import { deleteEntities, isSketchEntity } from "./edit";
 
@@ -64,6 +65,98 @@ describe("deleteEntities", () => {
       "axis-x",
       "axis-y",
     ]);
+  });
+
+  it("keeps point-on-line constraints when unrelated geometry is deleted", () => {
+    let sketch = addPolyline(
+      emptySketch(),
+      [
+        { point: [-20, 0] },
+        { point: [20, 0] },
+      ],
+      false,
+    );
+    const lineId = sketch.curves[0]!.id;
+    sketch = addPolyline(
+      sketch,
+      [
+        { point: [-10, 0] },
+        { point: [-10, 10] },
+      ],
+      false,
+    );
+    const second = sketch.curves.find(
+      (curve) => curve.type === "line" && curve.id !== lineId,
+    );
+    if (second?.type !== "line") throw new Error("Expected a line");
+    const pointId = second.a;
+    sketch = {
+      ...sketch,
+      constraints: [
+        ...sketch.constraints,
+        { id: "ptl", type: "pointOnLine", point: pointId, line: lineId },
+      ],
+    };
+
+    // Delete a different, unrelated line.
+    const unrelated = addPolyline(
+      sketch,
+      [
+        { point: [40, 40] },
+        { point: [50, 50] },
+      ],
+      false,
+    );
+    const unrelatedId = unrelated.curves[unrelated.curves.length - 1]!.id;
+    const next = deleteEntities(unrelated, [unrelatedId]);
+
+    expect(next.constraints.some((constraint) => constraint.id === "ptl")).toBe(
+      true,
+    );
+  });
+
+  it("keeps constraints that reference the fixed origin and axes", () => {
+    let sketch = addPolyline(
+      emptySketch(),
+      [
+        { point: [10, 10] },
+        { point: [20, 10] },
+      ],
+      false,
+    );
+    const line = sketch.curves[0]!;
+    if (line.type !== "line") throw new Error("Expected a line");
+    sketch = {
+      ...sketch,
+      constraints: [
+        ...sketch.constraints,
+        { id: "on-axis", type: "pointOnLine", point: line.a, line: "axis-x" },
+        {
+          id: "from-origin",
+          type: "distance",
+          a: "origin",
+          b: line.a,
+          value: 10,
+        },
+      ],
+    };
+    const unrelated = addPolyline(
+      sketch,
+      [
+        { point: [40, 40] },
+        { point: [50, 50] },
+      ],
+      false,
+    );
+    const unrelatedId = unrelated.curves[unrelated.curves.length - 1]!.id;
+    const next = deleteEntities(unrelated, [unrelatedId]);
+
+    expect(next.constraints.some((constraint) => constraint.id === "on-axis")).toBe(
+      true,
+    );
+    expect(
+      next.constraints.some((constraint) => constraint.id === "from-origin"),
+    ).toBe(true);
   });
 
   it("is a no-op for empty selections and unknown ids", () => {

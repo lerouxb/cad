@@ -347,19 +347,22 @@ placed at the visible arc's midpoint, not at the default 45° point on its full 
 
 `core/sketch/loops.ts` extracts selectable **regions**, not one "largest loop":
 
-1. Enumerate simple cycles over non-construction line/arc segments and treat each
-   non-construction circle as a closed loop.
-2. Drop a cycle when a smaller cycle that shares one of its curves lies inside it. That
+1. Build a planar arrangement of non-construction line/arc segments: split at
+   line/line, line/arc and arc/arc crossings, at T-junctions, and where a line/arc meets
+   a circle. This is derived geometry; the document keeps the curves the user drew.
+2. Enumerate simple cycles over the split segments and treat each non-construction
+   circle as a closed loop.
+3. Drop a cycle when a smaller cycle that shares one of its curves lies inside it. That
    is a **subdivision**, not a face: a rectangle with a real diagonal yields two
    triangles, not the rectangle plus two holes.
-3. Build a containment tree from the remaining faces and circles. Even depth is material;
+4. Build a containment tree from the remaining faces and circles. Even depth is material;
    odd depth is a hole of its parent. A region is an even-depth face plus its **direct**
    odd-depth children as holes. This handles:
    - rectangle + circle → one region with a circular hole,
    - two disjoint rectangles → two regions,
    - concentric circles → one tube,
    - an island inside a hole → a separate depth-2 region.
-4. `regionId = hash(sorted outer + direct-hole curve ids)`. It is stable across dimension
+5. `regionId = hash(sorted outer + direct-hole curve ids)`. It is stable across dimension
    and constraint edits and invalidates when a boundary changes. The selected ids live in
    UI state (not the document) until M3 stores them on an extrude feature.
 
@@ -374,9 +377,12 @@ region and fuses them with `fuseAll`, so multiple selected profiles produce one 
 polygon is only for containment/validation. `profileFromSketch` remains as the legacy
 single-largest-loop helper used by older tests.
 
-Known M2 boundary: intersecting segments without a shared endpoint are not split, so two
-crossing diagonals are not decomposed into their four faces. **M2.6** adds the planar
-arrangement, split vertices and trim tool before history lands.
+**M2.6 split/trim** closes the old M2 boundary. Region extraction runs on the planar
+arrangement, so two crossing diagonals become four faces. `trimCurveAt` uses the same
+pieces to remove the clicked segment; it materializes only the kept boundaries, replaces
+the source curve, remaps constraints that still apply, adds collinearity/equal-radius
+links between kept pieces, and reports constraints it had to remove. Circles still act as
+whole closed loops; turning one into an arc is tracked in M9.
 
 ## 6. Rebuild engine
 

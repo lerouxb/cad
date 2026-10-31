@@ -1,6 +1,7 @@
 import type { ProfileLoop, ProfileSegment, Vec2 } from "../types";
 import { arcGeometry, arcPointAt } from "./geometry";
 import { allPoints, type Sketch } from "./types";
+import { planarArrangement } from "./arrangement";
 
 /**
  * Extract closed loops from a sketch's line segments.
@@ -51,19 +52,23 @@ const MAX_DEPTH = 24;
 const MAX_LOOPS = 500;
 
 export function findLoops(sketch: Sketch): SketchLoop[] {
-  const all = allPoints(sketch);
+  // Region extraction runs on the planar arrangement, not the raw drawing:
+  // crossing segments are split into real graph edges first. The document is
+  // untouched; trim materializes cuts only when the user keeps them.
+  const arranged = planarArrangement(sketch).sketch;
+  const all = arranged.points;
   const position = new Map(all.map((point) => [point.id, point]));
   const pointRecord: Record<string, Vec2> = Object.fromEntries(
     all.map((point) => [point.id, [point.x, point.y] as Vec2]),
   );
   const curvesById = new Map(
-    sketch.curves.map((curve) => [curve.id, curve] as const),
+    arranged.curves.map((curve) => [curve.id, curve] as const),
   );
 
   // Undirected adjacency over profile lines and arcs. Construction geometry and
   // circles are not part of a path loop.
   const adjacency = new Map<string, { curve: string; other: string }[]>();
-  for (const curve of sketch.curves) {
+  for (const curve of arranged.curves) {
     if (curve.construction) continue;
     if (curve.type === "line") {
       if (!position.has(curve.a) || !position.has(curve.b)) continue;

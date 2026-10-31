@@ -725,6 +725,71 @@ test("selects and fuses multiple sketch regions", async ({ app: page }) => {
   expect(errors).toEqual([]);
 });
 
+test("splits crossing diagonals into four selectable regions", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+
+  await page.getByTestId("tool-rect").click();
+  await dragSketch(page, [-40, -20], [40, 20]);
+  await page.keyboard.press("Escape");
+
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, -40, -20);
+  await dblclickSketch(page, 40, 20);
+  await clickSketch(page, -40, 20);
+  await dblclickSketch(page, 40, -20);
+  await page.keyboard.press("Escape");
+
+  await expect(page.locator("[data-region-id]")).toHaveCount(4);
+
+  await page.getByTestId("tool-select").click();
+  await clickSketch(page, 20, -15);
+  await expect(page.getByTestId("region-panel")).toContainText("1 of 4 regions");
+
+  await page.getByTestId("timeline-extrude").click();
+  // Each triangle is half of an 80x40 half-rectangle.
+  await expect.poll(() => volume(page)).toBeCloseTo((80 * 40 * 12) / 4, -1);
+
+  expect(errors).toEqual([]);
+});
+
+test("trims a split segment and rebuilds the profile", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+
+  await page.getByTestId("tool-rect").click();
+  await dragSketch(page, [-40, -20], [40, 20]);
+  await page.keyboard.press("Escape");
+
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, 0, -20);
+  await dblclickSketch(page, 0, 20);
+  await page.keyboard.press("Escape");
+
+  await expect(page.locator("[data-region-id]")).toHaveCount(2);
+
+  await page.getByTestId("tool-select").click();
+  await clickSketch(page, 20, 10);
+  await expect(page.getByTestId("region-panel")).toContainText("1 of 2 regions");
+  await page.getByTestId("timeline-extrude").click();
+  await expect.poll(() => volume(page)).toBeCloseTo(40 * 40 * 12, -1);
+
+  await page.getByTestId("timeline-sketch").click();
+  await page.getByTestId("tool-trim").click();
+  await clickSketch(page, 0, 10);
+  await expect(page.locator("[data-region-id]")).toHaveCount(1);
+
+  await page.getByTestId("timeline-extrude").click();
+  await expect.poll(() => volume(page)).toBeCloseTo(80 * 40 * 12, -1);
+
+  await page.keyboard.press("Control+z");
+  await expect.poll(() => volume(page)).toBeCloseTo(40 * 40 * 12, -1);
+
+  expect(errors).toEqual([]);
+});
+
 test("switches and persists the appearance theme", async ({ app: page }) => {
   await page.getByTestId("theme-night").click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "night");

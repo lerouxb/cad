@@ -51,6 +51,7 @@ import {
   type DragTarget,
   type SolveOutcome,
 } from "../core/sketch/solver";
+import { trimCurveAt } from "../core/sketch/trim";
 import { findSketchPoint, type Sketch } from "../core/sketch/types";
 import type { Vec2 } from "../core/types";
 import {
@@ -96,6 +97,7 @@ export function App() {
   const [extrudeHeight, setExtrudeHeight] = useState(12);
   const [referenceDimensions, setReferenceDimensions] = useState(false);
   const [solveError, setSolveError] = useState<SolveOutcome | null>(null);
+  const [trimNotice, setTrimNotice] = useState<string | null>(null);
   const [solverState, setSolverState] = useState<LoadState>("loading");
   const [solverError, setSolverError] = useState<string | null>(null);
   const [mesh, setMesh] = useState<BodyMesh | null>(null);
@@ -191,6 +193,7 @@ export function App() {
   const changeTool = (next: SketchTool): void => {
     setTool(next);
     setSelection([]);
+    setTrimNotice(null);
   };
 
   const handleSelect = (entityId: string | null, additive: boolean): void => {
@@ -302,6 +305,12 @@ export function App() {
   }, [themeSettings.mode]);
 
   useEffect(() => {
+    if (!trimNotice) return;
+    const timer = window.setTimeout(() => setTrimNotice(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [trimNotice]);
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (
@@ -369,6 +378,11 @@ export function App() {
         case "d":
           setMode("sketch");
           setTool("dimension");
+          setSelection([]);
+          break;
+        case "t":
+          setMode("sketch");
+          setTool("trim");
           setSelection([]);
           break;
       }
@@ -463,6 +477,21 @@ export function App() {
     if (next === current.sketch) return;
     setSelection([]);
     solveAndCommit(next);
+  };
+
+  const handleTrimCurve = (curveId: string, point: Vec2): void => {
+    const current = getState();
+    const result = trimCurveAt(current.sketch, curveId, point);
+    if (!result.removed) return;
+    setSelection([]);
+    if (!solveAndCommit(result.sketch)) return;
+    setTrimNotice(
+      result.droppedConstraints > 0
+        ? `Trim removed ${result.droppedConstraints} constraint${
+            result.droppedConstraints === 1 ? "" : "s"
+          } that could not be kept`
+        : null,
+    );
   };
 
   const handleSelectRegion = (regionId: string, additive: boolean): void => {
@@ -589,8 +618,8 @@ export function App() {
     tool === "dimension"
       ? "Click two points, a line, or a circle, then click to place the dimension. Double-click a value to edit it."
       : regions.length > 1
-        ? "Click a filled region to choose the extrude profile; Shift adds. L line · R rectangle · C circle · A arc · D dimension."
-        : "Select to inspect. L line · R rectangle · C circle · A arc · D dimension · Delete removes. Cmd/Ctrl+Z undoes.";
+        ? "Click a filled region to choose the extrude profile; Shift adds. L line · R rectangle · C circle · A arc · D dimension · T trim."
+        : "Select to inspect. L line · R rectangle · C circle · A arc · D dimension · T trim · Delete removes. Cmd/Ctrl+Z undoes.";
 
   return (
     <div className="app">
@@ -773,6 +802,7 @@ export function App() {
                 onCreateRectangle={handleRectangle}
                 onCreateCircle={handleCircle}
                 onCreateArc={handleArc}
+                onTrimCurve={handleTrimCurve}
                 onCreateDimension={handleCreateDimension}
                 onChangeDimension={handleChangeDimension}
                 onMoveDimension={handleMoveDimension}
@@ -830,6 +860,14 @@ export function App() {
                 >
                   <DimensionIcon />
                 </ToolButton>
+                <ToolButton
+                  label="Trim (T)"
+                  active={tool === "trim"}
+                  onClick={() => changeTool("trim")}
+                  testId="tool-trim"
+                >
+                  <TrimIcon />
+                </ToolButton>
 
                 <span className="tool-separator" />
 
@@ -853,6 +891,12 @@ export function App() {
                 <span className="mono conflict-list">{shown.conflicting.join(", ")}</span>
               ) : null}
             </div>
+
+            {trimNotice ? (
+              <div className="sketch-notice" data-testid="trim-notice" role="status">
+                {trimNotice}
+              </div>
+            ) : null}
 
             {selectedInfo.length > 0 ? (
               <div className="selection-float">
@@ -1441,6 +1485,16 @@ function ArcIcon() {
       <path d="M4 18A10 10 0 0 1 18 4" />
       <circle cx="4" cy="18" r="1.4" fill="currentColor" />
       <circle cx="18" cy="4" r="1.4" fill="currentColor" />
+    </svg>
+  );
+}
+
+function TrimIcon() {
+  return (
+    <svg {...svgProps()} viewBox="0 0 24 24">
+      <circle cx="6" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <path d="M8.1 8.1 20 20M8.1 15.9 20 4" />
     </svg>
   );
 }

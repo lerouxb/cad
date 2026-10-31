@@ -417,6 +417,23 @@ body {
   pointer-events: none;
 }
 
+.sketch-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 36px;
+  z-index: 5;
+  max-width: 60%;
+  padding: 5px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: var(--overlay-strong);
+  color: var(--ink-2);
+  font-size: 11px;
+  text-align: center;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
 .sketch-surface {
   position: relative;
   width: 100%;
@@ -721,6 +738,23 @@ body {
   background: var(--overlay);
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
   backdrop-filter: blur(6px);
+}
+
+.sketch-notice {
+  position: absolute;
+  left: 50%;
+  bottom: 36px;
+  z-index: 5;
+  max-width: 60%;
+  padding: 5px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: var(--overlay-strong);
+  color: var(--ink-2);
+  font-size: 11px;
+  text-align: center;
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 .sketch-surface {

@@ -61,7 +61,10 @@ export function deleteEntities(sketch: Sketch, ids: readonly string[]): Sketch {
     if (selectedPoints.has(point.id)) return false;
     return point.fixed === true || usedPoints.has(point.id);
   });
-  const keptPoints = new Set(points.map((point) => point.id));
+  const keptPoints = new Set([
+    ...points.map((point) => point.id),
+    ...(sketch.references?.points.map((point) => point.id) ?? []),
+  ]);
 
   const constraints = sketch.constraints.filter((constraint) => {
     switch (constraint.type) {
@@ -78,6 +81,8 @@ export function deleteEntities(sketch: Sketch, ids: readonly string[]): Sketch {
         return (
           keptPoints.has(constraint.point) && !doomedCurves.has(constraint.circle)
         );
+      case "pointOnLine":
+        return keptPoints.has(constraint.point) && !doomedCurves.has(constraint.line);
       case "pointLineDistance":
         return keptPoints.has(constraint.point) && !doomedCurves.has(constraint.line);
       case "angle":
@@ -106,6 +111,84 @@ export function deleteEntities(sketch: Sketch, ids: readonly string[]): Sketch {
   }
 
   return { ...sketch, points, curves, constraints };
+}
+
+/**
+ * Remove points and constraints that no longer refer to surviving geometry.
+ * Unlike `deleteEntities`, this does not start from a selection: it is the
+ * cleanup step after an edit (such as trim) has already replaced the curves.
+ */
+export function pruneSketch(sketch: Sketch): Sketch {
+  const usedPoints = new Set<string>();
+  for (const curve of sketch.curves) {
+    if (curve.type === "line") {
+      usedPoints.add(curve.a);
+      usedPoints.add(curve.b);
+    } else if (curve.type === "circle") {
+      usedPoints.add(curve.center);
+    } else {
+      usedPoints.add(curve.center);
+      usedPoints.add(curve.start);
+      usedPoints.add(curve.end);
+    }
+  }
+
+  const points = sketch.points.filter(
+    (point) => point.fixed === true || usedPoints.has(point.id),
+  );
+  const pointIds = new Set([
+    ...points.map((point) => point.id),
+    ...(sketch.references?.points.map((point) => point.id) ?? []),
+  ]);
+  const curveIds = new Set([
+    ...sketch.curves.map((curve) => curve.id),
+    ...(sketch.references?.lines.map((line) => line.id) ?? []),
+  ]);
+  const constraints = sketch.constraints.filter((constraint) => {
+    switch (constraint.type) {
+      case "coincident":
+        return pointIds.has(constraint.a) && pointIds.has(constraint.b);
+      case "horizontal":
+      case "vertical":
+        return curveIds.has(constraint.line);
+      case "parallel":
+      case "perpendicular":
+      case "equal":
+        return curveIds.has(constraint.a) && curveIds.has(constraint.b);
+      case "distance":
+        return pointIds.has(constraint.a) && pointIds.has(constraint.b);
+      case "diameter":
+        return curveIds.has(constraint.circle);
+      case "pointOnCircle":
+        return pointIds.has(constraint.point) && curveIds.has(constraint.circle);
+      case "pointOnLine":
+        return pointIds.has(constraint.point) && curveIds.has(constraint.line);
+      case "pointLineDistance":
+        return pointIds.has(constraint.point) && curveIds.has(constraint.line);
+      case "angle":
+        return curveIds.has(constraint.a) && curveIds.has(constraint.b);
+      case "tangent":
+        return curveIds.has(constraint.a) && curveIds.has(constraint.b);
+      case "symmetric":
+        return (
+          pointIds.has(constraint.a) &&
+          pointIds.has(constraint.b) &&
+          curveIds.has(constraint.about)
+        );
+      case "fix":
+        return pointIds.has(constraint.point);
+      case "midpoint":
+        return pointIds.has(constraint.point) && curveIds.has(constraint.line);
+    }
+  });
+
+  if (
+    points.length === sketch.points.length &&
+    constraints.length === sketch.constraints.length
+  ) {
+    return sketch;
+  }
+  return { ...sketch, points, constraints };
 }
 
 export function isSketchEntity(sketch: Sketch, id: string): boolean {

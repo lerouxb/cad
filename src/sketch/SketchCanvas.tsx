@@ -30,7 +30,14 @@ import {
 } from "../core/sketch/geometry";
 import { useElementSize } from "../ui/useElementSize";
 
-export type SketchTool = "select" | "line" | "rect" | "circle" | "arc" | "dimension";
+export type SketchTool =
+  | "select"
+  | "line"
+  | "rect"
+  | "circle"
+  | "arc"
+  | "dimension"
+  | "trim";
 export type DimensionMode = "distance" | "angle";
 export type SketchTone = "under" | "full" | "conflict";
 
@@ -64,6 +71,7 @@ export interface SketchCanvasProps {
   onCreateRectangle: (a: Vec2, b: Vec2) => void;
   onCreateCircle: (center: DraftVertex, radius: number) => void;
   onCreateArc: (start: DraftVertex, end: DraftVertex, through: Vec2) => void;
+  onTrimCurve: (curveId: string, point: Vec2) => void;
   onCreateDimension: (target: DimensionTarget, placement: DimensionPlacement) => void;
   onChangeDimension: (id: string, value: number) => void;
   onMoveDimension: (id: string, placement: DimensionPlacement) => void;
@@ -111,6 +119,7 @@ export function SketchCanvas({
   onCreateRectangle,
   onCreateCircle,
   onCreateArc,
+  onTrimCurve,
   onCreateDimension,
   onChangeDimension,
   onMoveDimension,
@@ -651,6 +660,10 @@ export function SketchCanvas({
       }
       return;
     }
+    if (tool === "trim") {
+      startPan(event);
+      return;
+    }
     if (tool === "select") {
       // Empty space clears the selection; modifiers keep it (and still pan).
       if (!event.shiftKey && !event.metaKey && !event.ctrlKey) {
@@ -796,7 +809,7 @@ export function SketchCanvas({
       }
       return;
     }
-    if (tool === "select") return;
+    if (tool === "select" || tool === "trim") return;
 
     const axisFrom =
       tool === "line"
@@ -881,6 +894,11 @@ export function SketchCanvas({
 
     if (tool === "dimension") {
       pickDimensionCurve(event, curve);
+      return;
+    }
+
+    if (tool === "trim") {
+      if (!curve.construction) onTrimCurve(curve.id, toSketch(event));
       return;
     }
 
@@ -1116,10 +1134,12 @@ export function SketchCanvas({
         );
       })}
 
-      {tool === "select" || tool === "dimension" ? (
+      {tool === "select" || tool === "dimension" || tool === "trim" ? (
         <g>
-          {sketch.references?.lines.map((axis) => {
-            const a = points[axis.a];
+          {tool === "trim"
+            ? null
+            : sketch.references?.lines.map((axis) => {
+                const a = points[axis.a];
             const b = points[axis.b];
             if (!a || !b) return null;
             return (
@@ -1138,8 +1158,8 @@ export function SketchCanvas({
                 onPointerDown={(event) => onCurvePointerDown(event, axis)}
               />
             );
-          })}
-          {sketch.references && origin ? (
+              })}
+          {sketch.references && origin && tool !== "trim" ? (
             <circle
               cx={origin[0]}
               cy={origin[1]}
@@ -1179,7 +1199,14 @@ export function SketchCanvas({
                   strokeLinecap="round"
                   vectorEffect="non-scaling-stroke"
                   pointerEvents="stroke"
-                  style={{ cursor: tool === "select" ? "grab" : "pointer" }}
+                  style={{
+                    cursor:
+                      tool === "select"
+                        ? "grab"
+                        : tool === "trim"
+                          ? "crosshair"
+                          : "pointer",
+                  }}
                   data-curve-id={curve.id}
                   onPointerDown={(event) => onCurvePointerDown(event, curve)}
                 />
@@ -1197,12 +1224,20 @@ export function SketchCanvas({
                   strokeWidth={12}
                   vectorEffect="non-scaling-stroke"
                   pointerEvents="stroke"
-                  style={{ cursor: tool === "select" ? "grab" : "pointer" }}
+                  style={{
+                    cursor:
+                      tool === "select"
+                        ? "grab"
+                        : tool === "trim"
+                          ? "crosshair"
+                          : "pointer",
+                  }}
                   data-curve-id={curve.id}
                   onPointerDown={(event) => onCurvePointerDown(event, curve)}
                 />
               );
             }
+            if (tool === "trim") return null;
             const center = points[curve.center];
             if (!center) return null;
             return (
