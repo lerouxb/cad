@@ -42,6 +42,9 @@ selection/dimension inspector; there is no permanent sidebar.
   reference; double-click to edit and drag the label to reposition it. The floating
   constraint bar adds perpendicular/parallel/equal/tangent/symmetric/midpoint/point-on-
   line/point-on-circle/coincident/fix and toggles construction geometry.
+- A selectable fixed **origin and X/Y axes** are always available for constraints and
+  dimensions. Select a point to type exact **X/Y** coordinates; the same constraint
+  projection as dragging applies.
 - Extrude any closed region: a plate, a cylinder from a lone circle, a tube from two
   concentric circles, an arbitrary face with nested cutouts, or a mixed line/arc profile.
   Arc edges stay exact through the kernel. OCCT runs in a Web Worker; three.js renders the

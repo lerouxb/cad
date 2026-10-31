@@ -227,6 +227,27 @@ points, and a diameter dimension on an arc constrains through `C_DIAMETER`.
 The adapter lives in `core/sketch/solver.ts` and is the **only** file that imports
 `slvs`. Everything else speaks our types.
 
+### Sketch coordinate frame
+
+Every sketch owns a `references` block: a fixed origin point and two construction axis
+lines (X and Y). They are **separate** from `points`/`curves` so point indices, profiles,
+entities and deletion stay free of reference geometry. `allPoints()` / `allCurves()`
+resolve either kind by id.
+
+- Solver: reference points are group-0 anchors; axis lines are added with fixed endpoints
+  and contribute no DOF. A user line/circle/arc may use `origin` as an endpoint/centre.
+- Selection: the origin and axes are selectable in select and dimension modes. The axis
+  hit targets sit below user geometry, and the origin sits between the axes and user
+  geometry, so a curve/point at the same place still wins.
+- Constraints/dimensions: a free point can be coincident with the origin, on an axis, or
+  measured from an axis. A line can be parallel/perpendicular to an axis. Reference
+  geometry itself cannot be deleted or have its construction state toggled.
+- Profiles: `findLoops`/`sketchGeometry` include reference points for coordinates, but
+  reference lines are construction and never part of a loop.
+- Exact point editing: the X/Y fields in the selection card call the same `solveDrag`
+  target used by pointer dragging, so the result respects every constraint (and a fully
+  constrained point is a no-op).
+
 ### Solving
 
 ```ts

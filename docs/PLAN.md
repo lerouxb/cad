@@ -34,9 +34,11 @@ then sketches on faces, then more features.
   remove. Deletion cascades to dependent curves and constraints, and leaves no orphaned
   references. A selection card reports length/diameter/position.
 - The example sketch can be loaded, cleared, edited, or replaced by drawing.
-- `npm run verify` (76 unit tests) and `npm run e2e` (12 tests) are green. The e2e asserts
+- `npm run verify` (82 unit tests) and `npm run e2e` (14 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
-  draws, selects/deletes, and undoes.
+  reference-frame constraints, exact point coordinates, draws, selects/deletes, and
+  undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
+  instead of once per test.
 
 Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
 95 017.7 mm³ and rebuilds in ~35 ms after warm-up.
@@ -181,6 +183,10 @@ the full constraint set.
       profile extraction (`ProfileLoop.kind = "path"`, OCCT `threePointArc` edges).
       Attached construction geometry follows the new arc; a lost origin/Fix anchor is
       surfaced with a one-click "Fix arc centre" remedy
+- [x] Selectable fixed **origin and X/Y axes**; constrain/dimension to them (coincident,
+      point-on-line, parallel/perpendicular, point-line distance, angle)
+- [x] Exact X/Y coordinate editing for a selected point (same constrained projection as
+      dragging); a fully constrained point refuses the edit
 
 **Done when:** you can draw a rectangle from scratch, dimension it with real dimension
 annotations, drag it, see it become fully constrained, delete an entity, then undo

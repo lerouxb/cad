@@ -28,9 +28,10 @@ engine matters more than feature count.
   cascading delete, dimensions (point-point, point-line, angle, diameter, radius, driving
   or reference, inline edit/delete and draggable labels), a floating constraint bar
   (horizontal/vertical, parallel, perpendicular, equal, point-on-line, point-on-circle,
-  tangent, symmetric, midpoint, coincident, fix) with construction geometry, undo/redo,
-  DOF/diagnostics, worker protocol, three.js viewport, exact volume/face counts, unit +
-  e2e tests.
+  tangent, symmetric, midpoint, coincident, fix) with construction geometry, a selectable
+  fixed origin + X/Y axis reference frame, exact X/Y editing for a selected point,
+  undo/redo, DOF/diagnostics, worker protocol, three.js viewport, exact volume/face counts,
+  unit + e2e tests.
 - UI: one main stage. The bottom timeline switches between the full-stage sketch editor
   and the 3D model; the sketch has floating tools, a DOF pill, and a floating selection /
   dimension inspector. No permanent sidebar.
@@ -42,6 +43,11 @@ engine matters more than feature count.
 Next: **M2** (explicit region selection, picking), **M3** (document schema + history),
 then **M4** (datum planes + face supports). Read `docs/PLAN.md`; it is the source of
 truth for done.
+
+**E2E**: tests reuse one worker-scoped page per worker and reset the app through its UI;
+do not add `page.goto()` per test. The WASM stays warm, which takes the suite from ~1 min
+to ~25 s locally (2 workers; 1 in CI). Reset modes, the demo and the height slider in the
+shared `beforeEach`; if state leaks between tests, extend that reset.
 
 ## Stack (decided)
 
@@ -195,6 +201,19 @@ docs/
   containment/validation. The kernel assembles `threePointArc` edges; the sampled points
   are never used to extrude. `ensureCounterClockwise` must reverse the segments, not just
   the points.
+- **Reference geometry is separate from user geometry.** `Sketch.references` holds the
+  fixed origin and the X/Y axes; they are not in `sketch.points/curves`, so profiles,
+  point indices and deletion stay clean. Use `allPoints(sketch)` / `allCurves(sketch)`
+  whenever code may need to resolve an id that can be the origin or an axis. The solver
+  adds reference points as group-0 anchors and reference lines with fixed endpoints; they
+  contribute no DOF.
+- Reference axes use `data-reference-id`, not `data-geometry-id`, so e2e geometry
+  locators do not count them. The origin hit target sits above the axes but below user
+  geometry, so grabbing a curve/point at (0,0) still wins; select the origin where no user
+  geometry overlaps it.
+- The point coordinate editor calls `solveDrag` with the typed X/Y, exactly like dropping
+  the cursor there. An unconstrained point moves exactly; a constrained point projects
+  onto its feasible set; a fully constrained point returns `null` and stays put.
 - Every new constraint type also needs a row in `core/sketch/drag.ts`: arc equal-radius,
   point-on-circle, point-line distance, angle, tangent, symmetric, and fixed points (which
   are omitted from the parameter vector). If it is missing, the solver still cleans up,
