@@ -16,6 +16,10 @@ Assemblies, drawings, sheet metal, surfacing/NURBS patch modeling, CAM, simulati
 collaboration, mobile, curved-face sketches, multi-body documents, expressions/parameters
 (coming in M7, but the model is designed for it).
 
+Also explicitly out of scope: free 3D sketch entities (SolveSpace's "sketch in 3D") — the
+solver and document are 2D-plane; cubic Bezier/spline profiles and sketch text/images;
+DXF/SVG/PDF drawing export; trace/step-dimension analysis. Arcs come before splines.
+
 ## 2. Stack and why
 
 **2D constraint solver: SolveSpace `slvs`.** SolveSpace's solver is the best
@@ -93,12 +97,23 @@ interface FeatureBase {
 }
 
 type Feature =
+  | DatumPlaneFeature
   | SketchFeature
   | ExtrudeFeature
   | RevolveFeature
   | FilletFeature
   | ChamferFeature
   | ShellFeature;
+
+/** A construction/datum plane. A history step, but it has no body. */
+interface DatumPlaneFeature extends FeatureBase {
+  type: "plane";
+  definition:
+    | { kind: "offset"; base: PlaneRef; distance: Expr }
+    | { kind: "midplane"; a: PlaneRef; b: PlaneRef };
+  /** Last successfully resolved frame, for recovery when a base reference dies. */
+  frame?: Frame;
+}
 
 interface SketchFeature extends FeatureBase {
   type: "sketch";
@@ -139,7 +154,8 @@ Placement is deliberately separate from geometry:
 ```ts
 type PlaneRef =
   | { kind: "world"; plane: "XY" | "XZ" | "YZ" }
-  | { kind: "face"; ref: TopoRef; frame: Frame }; // frame is a cached last-known placement
+  | { kind: "face"; ref: TopoRef; frame: Frame } // frame is a cached last-known placement
+  | { kind: "datum"; feature: Id; frame: Frame }; // a DatumPlaneFeature, cached frame
 
 interface Frame {
   origin: [number, number, number];
@@ -354,24 +370,53 @@ Rules:
 This is the part to test hardest. Every kernel test that edits an upstream feature and
 re-runs a downstream fillet is a topological-naming regression test.
 
-## 8. Sketching on a face
+## 8. Sketch supports: faces and datum planes
 
-`PlaneRef.kind = "face"` stores both the ref and the last-known frame:
+A sketch is not "on XY" or "on a face"; it has a `PlaneRef` that resolves to a `Frame`
+(origin + x + y, normal = x × y). The same machinery serves world planes, planar faces,
+and datum planes.
 
-1. On rebuild, resolve the face ref. If found, derive the frame from the face's plane
-   (origin = a deterministic point on the face, e.g. the projection of the previous
-   origin; x-axis = deterministic in-plane axis).
-2. If the face is gone, fall back to the cached frame and mark the sketch with a warning.
-   Geometry stays visible, history keeps working.
-3. Choosing the x-axis: take the face normal `n`, pick the world axis least parallel to
-   `n`, project it into the plane, normalize. Deterministic and stable under small edits.
-   A tie-break on axis order makes it fully deterministic.
+### Resolution and recovery
 
-Sketch-on-face also needs **projected reference geometry**: edges of the supporting face
-(or of other faces) projected into the sketch as fixed construction curves. Users need
-this to line new features up with existing geometry. `brepjs` provides `drawProjection`,
-`drawFaceOutline` and `makeProjectedEdges`; v1 projects the supporting face's boundary,
-and arbitrary edge projection lands with the rest of M4.
+1. Resolve the ref in history order. A face ref resolves through `TopoRef`/`resolveRef`;
+   a datum ref resolves through its `DatumPlaneFeature`, whose bases are themselves refs.
+2. A resolved datum plane reports a deterministic frame; the sketch and the plane feature
+   both keep a last-known frame. If the reference dies, use the cached frame, mark the
+   feature errored, and keep the geometry visible so the user can reselect.
+3. Frame determinism on a bare plane: take the normal `n`, pick the world axis least
+   parallel to `n`, project it into the plane, normalize, and tie-break on axis order.
+   A datum plane inherits its base frame's x/y, so offset planes are stable under small
+   model changes (and do not spin).
+4. A planar face is the only face type that can be a support in v1. A curved face produces
+   a clear "unsupported support" error, not a broken sketch.
+
+### Datum planes
+
+- **Offset**: `origin = base.origin + base.normal * distance`, axes copied from the base.
+  The base can be a world plane, a face, or another datum plane, so chains and
+  "sketch in thin air" at `XY + 25 mm` work. Distance is an `Expr` (M7 parameters).
+- **Midplane**: resolve both bases; they must be parallel. Use the first normal `n`, and
+  `origin = originA + n * dot(originB - originA, n) / 2`, axes from A. Non-parallel bases
+  are a feature error.
+- Planes are features in the timeline: they can be edited, suppressed, and reused by
+  several sketches. They do not produce a body; a rebuild records their frame and errors.
+- Render them as translucent quads with axes, pickable in 3D. While sketching, show only
+  the active support (and the model, dimmed) to keep the sketch readable.
+- A lost base face/plane errors the plane feature; every dependent sketch/feature shows
+  "support lost" and uses its cached frame until reselected.
+
+### Projected reference geometry
+
+Sketch-on-face and sketch-on-datum-plane need edges projected into the sketch as fixed
+construction curves, so new geometry can be aligned with existing geometry. `brepjs`
+provides `drawProjection`, `drawFaceOutline` and `makeProjectedEdges`; v1 projects the
+supporting face's boundary, and arbitrary edge projection lands with the rest of M4.
+
+### Sketches in empty space
+
+"Thin air" sketches are the offset-of-a-world-plane case (`XY` at +25 mm) and the
+midplane case. Free 3D sketch entities are a different feature and are out of scope; the
+solver has no 3D sketch representation.
 
 ## 9. Rendering and picking
 
@@ -495,7 +540,7 @@ the honest map, so nobody assumes a layer exists because it is described above.
 | --- | --- |
 | `core/doc` | Not started. The sketch + solve summary live in `useHistory`; no schema, feature list or persistence yet. |
 | `core/sketch` | Real: types, `slvs` adapter, tangent-space `solveDrag`, pure drawing edits, loop extraction, geometry helpers, tests. `demo.ts` is the loadable example. |
-| `core/features` | Real but narrow: one extrude. No cuts, fillets or history replay. |
+| `core/features` | Real but narrow: one extrude. No datum planes, cuts, fillets or history replay. |
 | `core/rebuild` | Not started. One sketch and one feature, rebuilt by a debounce. |
 | `core/kernel` | Real: typed protocol, worker client, OCCT worker, hole validation, exact stats. |
 | `viewer` | Real: Z-up scene, framing, meshing, edges. Picking and highlight are not implemented. |
@@ -503,8 +548,8 @@ the honest map, so nobody assumes a layer exists because it is described above.
 | Feature tree | Static markup that communicates the intended product. |
 | Persistence | None yet. |
 
-Known shortcuts, all scheduled: profile selection is "largest region"; dimension labels
-cannot be dragged after placement; angular/point-to-line dimensions are missing; the
-example is cleared the first time you draw; there is no constraint tool for the remaining
-solver constraint types.
+Known shortcuts, all scheduled: profile selection is "largest region"; datum planes and
+sketch-on-face are not implemented yet (M4); dimension labels cannot be dragged after
+placement; angular/point-to-line dimensions are missing; the remaining solver constraint
+types (angle/tangent/symmetric) have no UI.
 

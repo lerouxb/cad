@@ -41,6 +41,40 @@ persisted.
 
 ---
 
+## Feature coverage vs SolveSpace (sanity check)
+
+Checked against SolveSpace's actual menu/group inventory (not the demo transcript —
+that share requires a Google sign-in). The headline gap was **sketch supports**: a
+sketch is currently always on XY. Datum planes now move into M4 and become a history
+feature, not a sketch property.
+
+| SolveSpace feature | Our status |
+| --- | --- |
+| New group: sketch in workplane | **Gap → M4**: datum planes (offset, midplane) |
+| Sketch anywhere in 3D (3D lines) | Out of scope: the solver/model is 2D-plane. Revisit if sweep paths need it. |
+| Datum point / workplane | Planes M4; datum points/axes M6 (needed for through-3-point planes and revolve axes) |
+| Line, construction line, rectangle, circle | Done |
+| Arc (3-point, tangent at point) | M1 |
+| Bezier cubic / text / image | Out of scope for now (arcs first; profile extraction is line+circle only) |
+| Split curves at intersection / trim | M2 sketch editing |
+| Distance/diameter + reference dimensions | Done |
+| Angle / reference angle | M1 |
+| Horizontal, vertical, parallel, perpendicular, equal, point-on-line | Done |
+| Midpoint, symmetric, tangent | M1 (midpoint solver exists; UI missing) |
+| Lock point where dragged / fix | M1 (a real "fixed point" constraint) |
+| Extrude | Done |
+| Revolve / lathe | M6 |
+| Helix | M6 optional (threads/springs) |
+| Link / assemble | M8 |
+| Measure volume / area / perimeter / centre of mass | Volume in stats; the rest M5 |
+| Interference / naked edges | M5/M8 optional |
+| STEP / STL export | M5 |
+| DXF / SVG / PDF, trace, step-dimension | Deferred / out of scope |
+
+Two workflow points from the demo are already explicit in the plan: one sketch reused by
+several operations (M2 regions + M3 feature references) and reading dimensions without
+driving (reference dimensions, done).
+
 ## Done: M0 — Skeleton
 
 - [x] Vite + React + TS (`strict`, `noUncheckedIndexedAccess`), ESLint, Prettier
@@ -92,6 +126,8 @@ dimensions and the common constraints work; what is left is refinement.
       horizontal/vertical, plus construction geometry, applied from the floating selection
       card and shown as badges
 - [ ] Angle, tangent and symmetric constraints; radius (as opposed to diameter)
+- [ ] Midpoint constraint UI (point + line → at midpoint); point-on-circle/plane
+- [ ] A real "fix points" constraint (SolveSpace's lock-where-dragged)
 - [ ] Endpoint *coincident constraints* for points that are near but not identical
       (currently only shared points)
 - [ ] Arc tool (three-point + tangent), plus arc loops in profile extraction
@@ -121,6 +157,7 @@ edits, not through a "break this constraint" interaction.)
       the feature as errored instead of silently changing the profile.
 - [ ] Multiple regions per extrude (Fusion extrudes each selected profile), and prepare for
       one sketch feeding several features in M3.
+- [ ] Split curves at intersections / trim while sketching (SolveSpace's split)
 - [ ] Deeper nesting (islands inside holes); currently one level
 - [ ] Replace cycle enumeration with planar face traversal (intersecting segments, nested
       loops, disjoint regions)
@@ -148,7 +185,32 @@ edits, not through a "break this constraint" interaction.)
 **Done when:** a two-feature part survives an edit to the first sketch, save/reload, and
 undo/redo — with correct geometry every time.
 
-## M4 — Sketches on faces (5–7 days)
+## M4 — Sketch supports: datum planes and faces (7–9 days)
+
+A sketch support is resolved from references, then given a stable frame. Datum planes
+come first: they cover "sketch in thin air" and share the resolution/recovery machinery
+with face sketches.
+
+### Datum planes
+
+- [ ] `DatumPlaneFeature` in the document (a history step, no body):
+      `offset(base: PlaneRef, distance: Expr)` and `midplane(a: PlaneRef, b: PlaneRef)`
+- [ ] Resolve offset: origin = base origin + base normal × distance; keep the base frame's
+      axes. `base` can be a world plane, a face, or another datum plane (chains).
+- [ ] Resolve midplane: both bases must be parallel; origin = midpoint, axes from the
+      first. Non-parallel bases produce a visible feature error.
+- [ ] Offset from XY is the "thin air" case; a midplane between two parallel faces is the
+      other one. Both follow their bases when history changes.
+- [ ] Timeline rows for planes; edit distance / swap midplane bases; suppress/delete with
+      dependent-feature errors.
+- [ ] Render planes in 3D (translucent quad + axes), pick them to start a sketch, and hide
+      inactive ones while sketching.
+- [ ] Sketch-support picker: world plane / planar face / datum plane. The sketch stores
+      `PlaneRef` + last-known frame; a lost reference errors the sketch visibly.
+- [ ] Through-3-points and angled planes after datum points/axes land (M6), unless needed
+      sooner.
+
+### Sketches on faces
 
 - [ ] Face → `TopoRef` on selection; `PlaneRef.kind = "face"`
 - [ ] Deterministic face frame (origin, x-axis) + cached frame fallback
@@ -160,8 +222,9 @@ undo/redo — with correct geometry every time.
 - [ ] Topological-naming regression test: change base height, boss on top face follows
 - [ ] UI: unsupported (curved) face → clear explanation, no broken state
 
-**Done when:** extrude a plate, sketch on its top face, extrude a boss, edit the plate
-height in history, and the boss stays on top and keeps its constraints.
+**Done when:** sketch on an offset plane in empty space; sketch on a midplane between two
+faces; change the offset or the base plate height and every dependent sketch/feature
+follows; deleting a base face produces a visible, recoverable error.
 
 ## M5 — Refinement features (4–5 days)
 
@@ -170,7 +233,7 @@ height in history, and the boss stays on top and keeps its constraints.
 - [ ] Chamfer
 - [ ] Shell (open faces) — maybe defer
 - [ ] Selection UX: edge chain selection, box select where sensible, hover prehighlight
-- [ ] Measure tool (distance, angle, radius) — small, high value
+- [ ] Measure tool (distance, angle, radius, area, perimeter, centre of mass)
 - [ ] Export STL + STEP from the worker
 
 **Done when:** you can fillet the four vertical edges of a plate, then change the plate
@@ -183,7 +246,9 @@ size and the fillets survive.
 - [ ] Linear and circular patterns
 - [ ] Mirror (feature and body)
 - [ ] Multi-region extrude (multiple disjoint profiles, holes)
-- [ ] Construction geometry + reference planes/axes
+- [ ] Datum axes and points (revolve axes, through-point planes, sweep paths)
+- [ ] Helix (threads, springs) — optional
+- [ ] General body booleans (beyond extrude join/cut)
 
 ## M7 — Parameters (3–4 days)
 

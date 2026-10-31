@@ -35,10 +35,12 @@ engine matters more than feature count.
 - Temporary: profile selection is "largest closed loop" (`core/sketch/loops.ts`), the
   example sketch is hand-authored (`core/sketch/demo.ts`), dimension labels cannot be
   repositioned after placement, angle/tangent/symmetric constraints have no UI yet, there
-  is no arc tool, the feature tree is static, and nothing is persisted.
+  is no arc tool, **datum planes and sketch-on-face are not implemented (M4)**, the
+  feature tree is static, and nothing is persisted.
 
-Next: **finish M1** (angle/tangent, arcs, label dragging) then **M2** (explicit region
-selection, picking). Read `docs/PLAN.md`; it is the source of truth for done.
+Next: **finish M1** (angle/tangent, arcs, label dragging), **M2** (explicit region
+selection, picking), **M3** (history), then **M4** (datum planes + face supports).
+Read `docs/PLAN.md`; it is the source of truth for done.
 
 ## Stack (decided)
 
