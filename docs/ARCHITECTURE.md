@@ -16,9 +16,18 @@ Assemblies, drawings, sheet metal, surfacing/NURBS patch modeling, CAM, simulati
 collaboration, mobile, curved-face sketches, multi-body documents, expressions/parameters
 (coming in M7, but the model is designed for it).
 
-Also explicitly out of scope: free 3D sketch entities (SolveSpace's "sketch in 3D") — the
-solver and document are 2D-plane; cubic Bezier/spline profiles and sketch text/images;
-DXF/SVG/PDF drawing export; trace/step-dimension analysis. Arcs come before splines.
+Also deferred or unsupported (see `docs/PLAN.md` M9 for the split between `slvs` gaps and
+OCCT/kernel gaps):
+
+- free 3D sketch entities/constraints — the document and solver are 2D-plane;
+- ellipses, parabolic/hyperbolic conics and general B-splines/NURBS — not in `slvs`;
+- cubic Bézier exposure — `slvs` has `E_CUBIC`, but our document/tool/profile/kernel path
+  does not;
+- sketch text/images and drawing exports (DXF/SVG/PDF, trace, step-dimension).
+
+3D fillet/chamfer, loft, sweep, draft, shell/thickness/offset, patterns/mirror and
+threads are **OCCT/`brepjs` features**, not `slvs` gaps; they are scheduled in M5/M6 or
+tracked in M9. Expressions are app-level (M7) and are evaluated before calling `slvs`.
 
 ## 2. Stack and why
 
@@ -632,5 +641,7 @@ the honest map, so nobody assumes a layer exists because it is described above.
 Known shortcuts, all scheduled: auto region selection defaults to the largest region
 until a fill is clicked; intersecting segments are not split, so crossing diagonals are
 ambiguous; face/edge picking is not implemented; datum planes and sketch-on-face are not
-implemented yet (M4); history, persistence and the feature tree are M3.
+implemented yet (M4); history, persistence and the feature tree are M3. Unsupported
+geometry and kernel features are collected in PLAN M9 with current workarounds and the
+upstream SolveSpace/OCCT work each would need.
 

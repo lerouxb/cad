@@ -67,11 +67,15 @@ anchored between the inner walls.
 | Sketch on a planar face | **Gap → M4**: `PlaneRef.kind = "face"` |
 | Sketch in a midplane / symmetry plane between faces | **Gap → M4**: `midplane` datum plane (or reuse the original plane of a symmetric extrude) |
 | Constrain a point to a solid face/edge ("On Plane", "On Line") | **Gap → M4**: live projected reference edges/points as fixed construction geometry, then point-on-line/coincident |
-| Sketch anywhere in 3D (3D lines) | Out of scope: the solver/model is 2D-plane. Revisit if sweep paths need it. |
+| Sketch anywhere in 3D (3D lines/constraints) | Not implemented: the document/solver are 2D-plane. See M9; needed for 3D sweep paths and free 3D sketches. |
 | Datum point / workplane | Planes M4; datum points/axes M6 (needed for through-3-point planes and revolve axes) |
 | Line, construction line, rectangle, circle | Done |
 | Arc (3-point, tangent at point) | Done — three-point arcs + a parametric corner fillet |
-| Bezier cubic / text / image | Out of scope for now (arcs first; profile extraction is line+circle only) |
+| Cubic Bézier | `slvs` has `E_CUBIC`; our app does not expose it yet. See M9. |
+| General B-splines / NURBS | Not in `slvs`; M9 upstream work (kernel side is easy, solver side is not) |
+| Ellipses, parabolic/hyperbolic arcs, conic sections | Not in `slvs`; M9 upstream work. Approximate with lines/arcs for now. |
+| Sketch text / images | Not implemented; M9 |
+| Expressions / spreadsheets | M7 (app-level; `slvs` only receives numeric values) |
 | Split curves at intersection / trim | M2 sketch editing |
 | Distance (point-point, point-line), angle, diameter, radius, reference dimensions | Done |
 | Angle / reference angle | Done (dimension tool) |
@@ -83,7 +87,13 @@ anchored between the inner walls.
 | Through-all / up-to-face extrude end condition | M3 blind + through-all; up-to-face in M4 (needs `TopoRef`) |
 | Boolean union / difference (join / cut) | M3 |
 | Revolve / lathe | M6 |
-| Helix | M6 optional (threads/springs) |
+| 3D fillet / chamfer | M5 (OCCT/`brepjs`, not a `slvs` gap) |
+| Loft / sweep | M6 (OCCT; a 3D sweep path also needs the M9 3D-curve work) |
+| Draft | Not planned yet; M9 |
+| Shell / thickness / offset | M5 shell; offset/thicken M9 |
+| Linear/circular patterns, feature/body mirror | M6; sketch symmetry constraint is done. Mirror is high priority. |
+| Hole/thread feature | Circle + cut extrude now; M6/M9 |
+| Helix (threads/springs) | M6 optional |
 | Link / assemble | M8 |
 | Measure volume / area / perimeter / centre of mass | Volume in stats; the rest M5 |
 | Interference / naked edges | M5/M8 optional |
@@ -338,6 +348,87 @@ size and the fillets survive.
 
 Assemblies and joints, drawings, STEP import, curved-face sketches, sheet metal,
 collaboration, plugin API.
+
+## M9 — TODO: unsupported features and upstream SolveSpace work (unscheduled)
+
+This is the honest limitations list, not a delivery milestone. It separates three kinds of
+gap:
+
+- **solver/entity gaps** — need `slvs` (or a different sketch solver); good upstream
+  SolveSpace contributions;
+- **kernel/feature gaps** — OCCT/`brepjs` can already do these, but our feature layer does
+  not expose them yet;
+- **app-level gaps** — expressions, document/feature support, text/images.
+
+Based on the FreeCAD/SolveSpace comparison supplied with the demo transcript and the demo
+itself. Nothing here is promised for v1; promote an item only when it moves into a real
+milestone.
+
+### Solver/sketch entity gaps
+
+| Feature | Limitation today | Workaround today | What it needs | Target |
+| --- | --- | --- | --- | --- |
+| Ellipse | No entity in `slvs` (only lines, arcs, circles, cubic Béziers) | Circle/arc approximation | Ellipse entity + constraints; profile extraction; OCCT ellipse wire | M9 **upstream** |
+| Parabolic/hyperbolic arcs, general conics | No conic entity/constraints | Line/arc approximation | Conic entity + constraints; profile/kernel wire | M9 **upstream** |
+| General B-spline / NURBS | `slvs` has cubic Bézier, not general B-splines | Line/arc chain | B-spline entity + constraints; profile/kernel NURBS wire | M9 **upstream** |
+| Cubic Bézier | `slvs` has `E_CUBIC`; our document, tool, profile extraction and kernel path do not | Line/arc chain | Adapter + tool + profile/path + kernel `bezier` wire | M9 **app** (solver already has it) |
+| Free 3D sketch entities and 3D constraints | Document/solver are 2D-plane | Use a planar workplane (M4) | 3D document representation, solver plumbing, 3D picking/plane inference | M9 **upstream + app** |
+| Expression-driven dimensions | Numeric values only in `slvs` | Fixed numbers | App-level `Expr` evaluation before solving; M7 | M7 (no solver change) |
+| Ellipse/conic/spline tangency and curvature constraints | Not available | Approximate with arcs/lines | Upstream constraint equations | M9 **upstream** |
+| Sketch text/images | No entity or profile handling | None | Text/image entities + profile extraction | M9 **app** |
+| Offset/trim sketch curves | Trim is M2; offset is not planned | Manual construction | Curve trimming/offset + profile rebuild | M2/M9 |
+| 3D assembly constraints/joints | No assembly model | M8 | Assembly solver/joints | M8 |
+
+### Kernel/feature gaps (not blocked on `slvs`)
+
+| Feature | Limitation today | Workaround today | What it needs | Target |
+| --- | --- | --- | --- | --- |
+| 3D edge fillet/chamfer | Only 2D sketch fillets before extrude | Draw the fillet into the sketch | `brepjs`/OCCT fillet/chamfer with evolution, feature UI | M5 |
+| Loft | Not implemented | Multiple extrudes/manual blends | OCCT loft between sections | M6 |
+| Sweep along a path | Not implemented | Planar sweep not yet; 3D path impossible | OCCT pipe/sweep; 3D path needs the M9 3D-curve work | M6 (planar) / M9 (3D) |
+| Feature/body mirror, linear/polar patterns | Sketch symmetry constraint exists; no feature transforms | Duplicate/rotate sketches/features manually | Feature transforms + history pattern feature | M6 — **mirror is high priority** |
+| Draft for moulds/castings | Not implemented | None | OCCT draft on selected faces + neutral plane | M9 (promote to M5 if needed) |
+| Shell / thickness / offset | Shell is planned M5; offset/thicken not | Nested sketches and holes | `brepjs` shell/offset/thicken, open-face selection | M5/M9 |
+| Hole/thread feature | Circle + cut extrude | Manual circle/cut | Hole profiles, standard sizes, helix/thread | M6/M9 |
+| Text/images in sketches | Not implemented | None | Text/image entities and profiles | M9 |
+| 3D curves for sweeps | Solver/document gap (above) | Planar path only | 3D curve entity + constraints | M9 |
+| Drawings, assemblies | Not implemented | M8 | Separate modules | M8 |
+
+### Upstream SolveSpace wishlist (give back)
+
+`slvs` is GPLv3, and our adapter (`core/sketch/solver.ts`) is deliberately the only file
+that imports it. That makes it practical to contribute upstream without spreading the API
+through the app.
+
+1. **Entity/constraint coverage:** ellipse, parabolic/hyperbolic conic, general B-spline
+   (or NURBS), 3D curves; corresponding tangency/curvature/position constraints. This is
+   the largest piece and would let us drop the line/arc approximations.
+2. **Safer JS/WASM bindings:** the `.d.ts` has wrong signatures for `symmetric` and
+   `midpoint`; `tangent` calls `Platform::FatalError` and kills the whole WASM instance if
+   the arc/line do not share an endpoint. Expose validation/errors, correct the typings,
+   and add binding tests.
+3. **Cubic Bézier first:** `E_CUBIC` already exists. Exposing it in our adapter, tool,
+   profile extraction and OCCT path is lower risk than waiting for B-splines.
+4. **Docs/tests:** add a small JS binding test suite and examples for arc normals, group-0
+   reference geometry, 3D constraints and constraint failure reporting.
+5. **Coordinate with upstream:** file issues before large PRs; keep changes GPLv3
+   compatible; do not add a second solver without an ADR.
+
+### Priority notes
+
+- **Mirror/symmetry** is high-use; pull the M6 feature/body Mirror forward into M5 if M6
+  slips. The sketch **symmetric** constraint already covers 2D symmetry about a line.
+- **3D fillet/chamfer and shell** are M5; they are OCCT features, not solver gaps.
+- **Expressions** are M7 and app-level; they do not require touching `slvs`.
+- **Ellipses/conics/B-splines** are research/upstream work. Use line/arc approximations
+  until they are promoted; do not pretend they are exact.
+- If **3D sweeps** become a requirement, prioritize free 3D curves and 3D constraints
+  before loft/sweep; otherwise plan only planar sweeps.
+- **Draft, threads, text/images and drawings** are later. Promote one at a time with an
+  ADR, a milestone, and numeric tests.
+
+**Done when:** an item is promoted out of M9 into a real milestone or ADR with tests. M9
+itself stays documentation-only.
 
 ---
 

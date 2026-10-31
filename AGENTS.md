@@ -45,7 +45,9 @@ engine matters more than feature count.
 
 Next: **finish M2** (split at intersections, face/edge picking), **M3** (document schema +
 history), then **M4** (datum planes + face supports). Read `docs/PLAN.md`; it is the
-source of truth for done.
+source of truth for done. Unsupported geometry/features (ellipses, conics, B-splines, free
+3D sketches, 3D fillets, lofts/sweeps, patterns/mirror, drafts, shelling/offsets,
+expressions, threads) and the upstream SolveSpace/OCCT work are documented in **PLAN M9**.
 
 **E2E**: tests reuse one worker-scoped page per worker and reset the app through its UI;
 do not add `page.goto()` per test. The WASM stays warm, which takes the suite from ~1 min

@@ -61,7 +61,10 @@ selection/dimension inspector; there is no permanent sidebar.
 It is intentionally narrow: auto mode defaults to the largest region until you click one,
 intersecting sketch segments are not split into faces yet, face/edge picking is pending,
 datum planes and sketches on faces are M4, the feature tree is a preview, and nothing is
-persisted yet. See `docs/PLAN.md` for what comes next.
+persisted yet. Ellipses/conics/B-splines, free 3D sketches, 3D fillets, lofts/sweeps,
+patterns/mirror, drafts, shelling/offsets, expressions and threads are tracked in the
+**M9 TODO/limitations backlog** in `docs/PLAN.md`, with workarounds and the upstream
+SolveSpace/OCCT work each would need.
 
 ## The stack in one line
 
