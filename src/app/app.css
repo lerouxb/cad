@@ -828,6 +828,30 @@ body {
   border-color: #3a4657;
 }
 
+.constraint-chip.is-active {
+  background: #2b3442;
+  border-color: #e2b45c;
+  color: #ffe3a8;
+}
+
+.fillet-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.fillet-control input {
+  width: 52px;
+  height: 24px;
+  padding: 0 5px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: #10151b;
+  color: var(--text);
+  font: inherit;
+  font-size: 10.5px;
+}
+
 /* ---------- sliders ---------- */
 
 .slider {

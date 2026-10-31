@@ -202,6 +202,20 @@ function solveWithModule(s: SlvsModule, sketch: Sketch, drag?: DragTarget): Solv
       );
       continue;
     }
+    if (curve.type === "arc") {
+      entities.set(
+        curve.id,
+        s.addArc(
+          group,
+          planeNormalEntity(),
+          need(entities, curve.center),
+          need(entities, curve.start),
+          need(entities, curve.end),
+          workplane,
+        ),
+      );
+      continue;
+    }
     const radius = s.addDistance(group, curve.radius, workplane);
     radiusEntities.set(curve.id, radius);
     entities.set(
@@ -273,7 +287,102 @@ function solveWithModule(s: SlvsModule, sketch: Sketch, drag?: DragTarget): Solv
           false,
         );
         break;
+      case "pointOnCircle":
+        added = s.addConstraint(
+          group,
+          s.C_PT_ON_CIRCLE,
+          workplane,
+          0,
+          need(entities, constraint.point),
+          none,
+          need(entities, constraint.circle),
+          none,
+          none,
+          none,
+          false,
+          false,
+        );
+        break;
+      case "pointLineDistance":
+        added = s.addConstraint(
+          group,
+          s.C_PT_LINE_DISTANCE,
+          workplane,
+          constraint.value,
+          need(entities, constraint.point),
+          none,
+          need(entities, constraint.line),
+          none,
+          none,
+          none,
+          false,
+          false,
+        );
+        break;
+      case "angle": {
+        const lineA = sketch.curves.find((curve) => curve.id === constraint.a);
+        const lineB = sketch.curves.find((curve) => curve.id === constraint.b);
+        if (lineA?.type !== "line" || lineB?.type !== "line") break;
+        added = s.angle(
+          group,
+          need(entities, constraint.a),
+          need(entities, constraint.b),
+          constraint.value,
+          workplane,
+          false,
+        );
+        break;
+      }
+      case "tangent": {
+        const a = sketch.curves.find((curve) => curve.id === constraint.a);
+        const b = sketch.curves.find((curve) => curve.id === constraint.b);
+        const arc = a?.type === "arc" ? a : b?.type === "arc" ? b : null;
+        const line =
+          a?.type === "line" ? a : b?.type === "line" ? b : null;
+        if (!arc || !line) break;
+        const shared = [arc.start, arc.end].find(
+          (id) => id === line.a || id === line.b,
+        );
+        // SolveSpace's tangent helper only accepts an arc and a line that
+        // share an endpoint; `other` says which arc endpoint is shared.
+        if (!shared) break;
+        added = s.addConstraint(
+          group,
+          s.C_ARC_LINE_TANGENT,
+          workplane,
+          0,
+          none,
+          none,
+          need(entities, arc.id),
+          need(entities, line.id),
+          none,
+          none,
+          shared === arc.end,
+          false,
+        );
+        break;
+      }
+      case "symmetric":
+        added = s.addConstraint(
+          group,
+          s.C_SYMMETRIC_LINE,
+          workplane,
+          0,
+          need(entities, constraint.a),
+          need(entities, constraint.b),
+          need(entities, constraint.about),
+          none,
+          none,
+          none,
+          false,
+          false,
+        );
+        break;
+      case "fix":
+        added = s.dragged(group, need(entities, constraint.point), workplane);
+        break;
       case "midpoint":
+        // The npm wrapper takes (point, line), not the two line endpoints.
         added = s.midpoint(
           group,
           need(entities, constraint.point),
@@ -282,7 +391,7 @@ function solveWithModule(s: SlvsModule, sketch: Sketch, drag?: DragTarget): Solv
         );
         break;
     }
-    constraintIds.set(added.h, constraint.id);
+    if (added) constraintIds.set(added.h, constraint.id);
   }
 
   if (drag) {

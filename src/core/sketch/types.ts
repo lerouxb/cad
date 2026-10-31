@@ -34,13 +34,32 @@ export interface SketchCircle {
   construction?: boolean;
 }
 
-export type SketchCurve = SketchLine | SketchCircle;
+/**
+ * A circular arc. The arc is the counter-clockwise sweep from `start` to `end`
+ * around `center` (the sketch plane's +Z normal). `start` and `end` are shared
+ * with adjacent line segments.
+ */
+export interface SketchArc {
+  id: string;
+  type: "arc";
+  center: string;
+  start: string;
+  end: string;
+  /** Reference/dimension helper; never part of a profile. */
+  construction?: boolean;
+}
+
+export type SketchCurve = SketchLine | SketchCircle | SketchArc;
 
 export type SketchConstraint =
   | { id: string; type: "coincident"; a: string; b: string }
   | { id: string; type: "horizontal" | "vertical"; line: string }
   | { id: string; type: "parallel" | "perpendicular" | "equal"; a: string; b: string }
   | { id: string; type: "pointOnLine"; point: string; line: string }
+  | { id: string; type: "pointOnCircle"; point: string; circle: string }
+  | { id: string; type: "tangent"; a: string; b: string }
+  | { id: string; type: "symmetric"; a: string; b: string; about: string }
+  | { id: string; type: "fix"; point: string }
   | {
       id: string;
       type: "distance";
@@ -54,12 +73,36 @@ export type SketchConstraint =
     }
   | {
       id: string;
+      type: "pointLineDistance";
+      point: string;
+      line: string;
+      value: number;
+      driving?: boolean;
+      /** Signed perpendicular offset of the dimension line, mm. */
+      offset?: number;
+    }
+  | {
+      id: string;
       type: "diameter";
       circle: string;
       value: number;
       driving?: boolean;
       /** Leader angle in degrees. */
       angle?: number;
+      /** Display as a radius (the solver still constrains the diameter). */
+      radius?: boolean;
+    }
+  | {
+      id: string;
+      type: "angle";
+      /** Two lines. */
+      a: string;
+      b: string;
+      /** Degrees. */
+      value: number;
+      driving?: boolean;
+      /** Radius of the dimension arc, in millimetres. */
+      offset?: number;
     }
   | { id: string; type: "midpoint"; point: string; line: string };
 

@@ -69,7 +69,7 @@ describe("constraint applicability", () => {
 
     expect(
       applicableConstraints(sketch, ["p", "l"]).map((action) => action.type),
-    ).toEqual(["pointOnLine"]);
+    ).toEqual(["pointOnLine", "midpoint"]);
   });
 
   it("hides constraints that are already applied", () => {

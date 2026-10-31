@@ -63,7 +63,7 @@ export function projectDrag(
     if (seen.has(target.pointId)) continue;
     seen.add(target.pointId);
     const point = sketch.points.find((candidate) => candidate.id === target.pointId);
-    if (!point || point.fixed) continue;
+    if (!point || point.fixed || params.fixed.has(point.id)) continue;
     const index = params.pointIndex.get(target.pointId);
     if (!index) continue;
 
@@ -140,8 +140,13 @@ function buildParameters(sketch: Sketch): Parameters {
   const radiusIndex = new Map<string, number>();
   const fixed = new Set<string>();
 
+  const fixedByConstraint = new Set<string>();
+  for (const constraint of sketch.constraints) {
+    if (constraint.type === "fix") fixedByConstraint.add(constraint.point);
+  }
+
   for (const point of sketch.points) {
-    if (point.fixed) {
+    if (point.fixed || fixedByConstraint.has(point.id)) {
       fixed.add(point.id);
       continue;
     }
@@ -175,6 +180,38 @@ function buildRows(sketch: Sketch, params: Parameters): Row[] {
   };
 
   const byId = new Map(sketch.curves.map((curve) => [curve.id, curve]));
+  const pointById = new Map(sketch.points.map((point) => [point.id, point]));
+  const addCoefficient = (
+    target: Row,
+    slot: [number, number] | null | undefined,
+    coefficientX: number,
+    coefficientY: number,
+  ): void => {
+    if (!slot) return;
+    target.set(slot[0], (target.get(slot[0]) ?? 0) + coefficientX);
+    target.set(slot[1], (target.get(slot[1]) ?? 0) + coefficientY);
+  };
+
+  // An arc's centre and its two endpoints are constrained to one circle. The
+  // solver entity enforces this internally; the drag projection needs the same
+  // first-order relationship.
+  for (const curve of sketch.curves) {
+    if (curve.type !== "arc") continue;
+    const center = pointById.get(curve.center);
+    const start = pointById.get(curve.start);
+    const end = pointById.get(curve.end);
+    if (!center || !start || !end) continue;
+    const r = row();
+    addCoefficient(r, pointSlot(curve.start), 2 * (start.x - center.x), 2 * (start.y - center.y));
+    addCoefficient(r, pointSlot(curve.end), -2 * (end.x - center.x), -2 * (end.y - center.y));
+    addCoefficient(
+      r,
+      pointSlot(curve.center),
+      -2 * (start.x - center.x) + 2 * (end.x - center.x),
+      -2 * (start.y - center.y) + 2 * (end.y - center.y),
+    );
+    if (r.size) rows.push(r);
+  }
 
   for (const constraint of sketch.constraints) {
     if ("driving" in constraint && constraint.driving === false) continue;
@@ -212,8 +249,32 @@ function buildRows(sketch: Sketch, params: Parameters): Row[] {
       }
       case "diameter": {
         const slot = params.radiusIndex.get(constraint.circle);
-        if (slot === undefined) break;
-        rows.push(new Map([[slot, 2]]));
+        if (slot !== undefined) {
+          rows.push(new Map([[slot, 2]]));
+          break;
+        }
+        // An arc has no radius parameter: its radius is |start - centre|.
+        const arc = byId.get(constraint.circle);
+        if (!arc || arc.type !== "arc") break;
+        const center = pointById.get(arc.center);
+        const start = pointById.get(arc.start);
+        if (!center || !start) break;
+        const radius = Math.hypot(start.x - center.x, start.y - center.y);
+        if (radius < 1e-9) break;
+        const r = row();
+        addCoefficient(
+          r,
+          pointSlot(arc.start),
+          (2 * (start.x - center.x)) / radius,
+          (2 * (start.y - center.y)) / radius,
+        );
+        addCoefficient(
+          r,
+          pointSlot(arc.center),
+          (-2 * (start.x - center.x)) / radius,
+          (-2 * (start.y - center.y)) / radius,
+        );
+        if (r.size) rows.push(r);
         break;
       }
       case "parallel":
@@ -321,6 +382,207 @@ function buildRows(sketch: Sketch, params: Parameters): Row[] {
         if (y.size) rows.push(y);
         break;
       }
+      case "pointOnCircle": {
+        const p = pointById.get(constraint.point);
+        const curve = byId.get(constraint.circle);
+        if (!p) break;
+        if (curve?.type === "circle") {
+          const center = pointById.get(curve.center);
+          if (!center) break;
+          const r = row();
+          addCoefficient(
+            r,
+            pointSlot(constraint.point),
+            2 * (p.x - center.x),
+            2 * (p.y - center.y),
+          );
+          addCoefficient(
+            r,
+            pointSlot(curve.center),
+            -2 * (p.x - center.x),
+            -2 * (p.y - center.y),
+          );
+          const radiusSlot = params.radiusIndex.get(curve.id);
+          if (radiusSlot !== undefined) {
+            r.set(radiusSlot, r.get(radiusSlot) ?? -2 * curve.radius);
+          }
+          if (r.size) rows.push(r);
+        } else if (curve?.type === "arc") {
+          const center = pointById.get(curve.center);
+          const start = pointById.get(curve.start);
+          if (!center || !start) break;
+          const r = row();
+          addCoefficient(
+            r,
+            pointSlot(constraint.point),
+            2 * (p.x - center.x),
+            2 * (p.y - center.y),
+          );
+          addCoefficient(
+            r,
+            pointSlot(curve.start),
+            -2 * (start.x - center.x),
+            -2 * (start.y - center.y),
+          );
+          addCoefficient(
+            r,
+            pointSlot(curve.center),
+            -2 * (p.x - center.x) + 2 * (start.x - center.x),
+            -2 * (p.y - center.y) + 2 * (start.y - center.y),
+          );
+          if (r.size) rows.push(r);
+        }
+        break;
+      }
+      case "pointLineDistance": {
+        const p = pointById.get(constraint.point);
+        const line = byId.get(constraint.line);
+        if (!p || !line || line.type !== "line") break;
+        const a = pointById.get(line.a);
+        const b = pointById.get(line.b);
+        if (!a || !b) break;
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const length = Math.hypot(dx, dy);
+        if (length < 1e-9) break;
+        const nx = -dy / length;
+        const ny = dx / length;
+        // First-order form: (P - A) . n = value, with n frozen at the current
+        // configuration. The solver corrects the second-order error.
+        const signed = (p.x - a.x) * nx + (p.y - a.y) * ny - constraint.value;
+        const r = row();
+        addCoefficient(r, pointSlot(constraint.point), nx, ny);
+        addCoefficient(
+          r,
+          pointSlot(line.a),
+          -nx - (signed * dy) / (length * length),
+          -ny + (signed * dx) / (length * length),
+        );
+        addCoefficient(
+          r,
+          pointSlot(line.b),
+          (signed * dy) / (length * length),
+          -(signed * dx) / (length * length),
+        );
+        if (r.size) rows.push(r);
+        break;
+      }
+      case "angle": {
+        const lineA = byId.get(constraint.a);
+        const lineB = byId.get(constraint.b);
+        if (!lineA || lineA.type !== "line" || !lineB || lineB.type !== "line") break;
+        const a1 = pointById.get(lineA.a);
+        const a2 = pointById.get(lineA.b);
+        const b1 = pointById.get(lineB.a);
+        const b2 = pointById.get(lineB.b);
+        if (!a1 || !a2 || !b1 || !b2) break;
+        const dax = a2.x - a1.x;
+        const day = a2.y - a1.y;
+        const dbx = b2.x - b1.x;
+        const dby = b2.y - b1.y;
+        const cross = dax * dby - day * dbx;
+        const dot = dax * dbx + day * dby;
+        const denominator = cross * cross + dot * dot;
+        if (denominator < 1e-15) break;
+        const theta = Math.atan2(cross, dot);
+        const target = (constraint.value * Math.PI) / 180;
+        const residual = theta - target;
+        // d(theta) = (dot * d(cross) - cross * d(dot)) / denominator
+        const factor = 1 / denominator;
+        const r = row();
+        addCoefficient(
+          r,
+          pointSlot(lineA.a),
+          factor * (dot * -dby - cross * -dbx),
+          factor * (dot * dbx - cross * -dby),
+        );
+        addCoefficient(
+          r,
+          pointSlot(lineA.b),
+          factor * (dot * dby - cross * dbx),
+          factor * (dot * -dbx - cross * dby),
+        );
+        addCoefficient(
+          r,
+          pointSlot(lineB.a),
+          factor * (dot * day - cross * -dax),
+          factor * (dot * -dax - cross * day),
+        );
+        addCoefficient(
+          r,
+          pointSlot(lineB.b),
+          factor * (dot * -day - cross * dax),
+          factor * (dot * dax - cross * -day),
+        );
+        // If the measured angle is on the other branch, the projection should
+        // still move towards the requested magnitude.
+        if (Math.abs(residual) > Math.PI / 2) {
+          for (const [slot, value] of r) r.set(slot, -value);
+        }
+        if (r.size) rows.push(r);
+        break;
+      }
+      case "tangent": {
+        const a = byId.get(constraint.a);
+        const b = byId.get(constraint.b);
+        const arc = a?.type === "arc" ? a : b?.type === "arc" ? b : null;
+        const line = a?.type === "line" ? a : b?.type === "line" ? b : null;
+        if (!arc || !line) break;
+        const center = pointById.get(arc.center);
+        const lineA = pointById.get(line.a);
+        const lineB = pointById.get(line.b);
+        if (!center || !lineA || !lineB) break;
+        const shared =
+          arc.start === line.a || arc.start === line.b
+            ? arc.start
+            : arc.end === line.a || arc.end === line.b
+              ? arc.end
+              : null;
+        if (!shared) break;
+        const endpoint = pointById.get(shared);
+        if (!endpoint) break;
+        // (line direction) . (center - shared endpoint) = 0
+        const dx = lineB.x - lineA.x;
+        const dy = lineB.y - lineA.y;
+        const r = row();
+        addCoefficient(r, pointSlot(arc.center), dx, dy);
+        addCoefficient(r, pointSlot(shared), -dx, -dy);
+        addCoefficient(r, pointSlot(line.a), -(center.x - endpoint.x), -(center.y - endpoint.y));
+        addCoefficient(r, pointSlot(line.b), center.x - endpoint.x, center.y - endpoint.y);
+        if (r.size) rows.push(r);
+        break;
+      }
+      case "symmetric": {
+        const a = pointById.get(constraint.a);
+        const b = pointById.get(constraint.b);
+        const axis = byId.get(constraint.about);
+        if (!a || !b || !axis || axis.type !== "line") break;
+        const p = pointById.get(axis.a);
+        const q = pointById.get(axis.b);
+        if (!p || !q) break;
+        const dx = q.x - p.x;
+        const dy = q.y - p.y;
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        // Midpoint on the axis.
+        const row1 = row();
+        addCoefficient(row1, pointSlot(constraint.a), 0.5 * dy, -0.5 * dx);
+        addCoefficient(row1, pointSlot(constraint.b), 0.5 * dy, -0.5 * dx);
+        addCoefficient(row1, pointSlot(axis.a), -dy + (my - p.y), dx - (mx - p.x));
+        addCoefficient(row1, pointSlot(axis.b), -(my - p.y), mx - p.x);
+        if (row1.size) rows.push(row1);
+        // Segment AB perpendicular to the axis.
+        const row2 = row();
+        addCoefficient(row2, pointSlot(constraint.a), -dx, -dy);
+        addCoefficient(row2, pointSlot(constraint.b), dx, dy);
+        addCoefficient(row2, pointSlot(axis.a), -(b.x - a.x), -(b.y - a.y));
+        addCoefficient(row2, pointSlot(axis.b), b.x - a.x, b.y - a.y);
+        if (row2.size) rows.push(row2);
+        break;
+      }
+      case "fix":
+        // A fixed point has no parameters; nothing to project.
+        break;
     }
   }
 

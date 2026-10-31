@@ -25,8 +25,16 @@ export function deleteEntities(sketch: Sketch, ids: readonly string[]): Sketch {
       if (selectedPoints.has(curve.a) || selectedPoints.has(curve.b)) {
         doomedCurves.add(curve.id);
       }
-    } else if (selectedPoints.has(curve.center)) {
-      doomedCurves.add(curve.id);
+    } else if (curve.type === "circle") {
+      if (selectedPoints.has(curve.center)) doomedCurves.add(curve.id);
+    } else {
+      if (
+        selectedPoints.has(curve.center) ||
+        selectedPoints.has(curve.start) ||
+        selectedPoints.has(curve.end)
+      ) {
+        doomedCurves.add(curve.id);
+      }
     }
   }
 
@@ -37,8 +45,12 @@ export function deleteEntities(sketch: Sketch, ids: readonly string[]): Sketch {
     if (curve.type === "line") {
       usedPoints.add(curve.a);
       usedPoints.add(curve.b);
+    } else if (curve.type === "circle") {
+      usedPoints.add(curve.center);
     } else {
       usedPoints.add(curve.center);
+      usedPoints.add(curve.start);
+      usedPoints.add(curve.end);
     }
   }
 
@@ -62,6 +74,24 @@ export function deleteEntities(sketch: Sketch, ids: readonly string[]): Sketch {
         return keptPoints.has(constraint.a) && keptPoints.has(constraint.b);
       case "diameter":
         return !doomedCurves.has(constraint.circle);
+      case "pointOnCircle":
+        return (
+          keptPoints.has(constraint.point) && !doomedCurves.has(constraint.circle)
+        );
+      case "pointLineDistance":
+        return keptPoints.has(constraint.point) && !doomedCurves.has(constraint.line);
+      case "angle":
+        return !doomedCurves.has(constraint.a) && !doomedCurves.has(constraint.b);
+      case "tangent":
+        return !doomedCurves.has(constraint.a) && !doomedCurves.has(constraint.b);
+      case "symmetric":
+        return (
+          keptPoints.has(constraint.a) &&
+          keptPoints.has(constraint.b) &&
+          !doomedCurves.has(constraint.about)
+        );
+      case "fix":
+        return keptPoints.has(constraint.point);
       case "midpoint":
         return keptPoints.has(constraint.point) && !doomedCurves.has(constraint.line);
     }

@@ -401,3 +401,130 @@ test("drags a line as a whole", async ({ page }) => {
 
   expect(errors).toEqual([]);
 });
+
+test("draws a three-point arc and drags it", async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto("/");
+  await expect(page.getByTestId("kernel-status")).toContainText("ready");
+  await enterSketch(page);
+
+  await page.getByTestId("clear-sketch").click();
+  await page.getByTestId("tool-arc").click();
+  await clickSketch(page, 0, 0);
+  await clickSketch(page, 40, 0);
+  await clickSketch(page, 20, 20);
+  await page.keyboard.press("Escape");
+
+  const path = page.locator("[data-geometry-id]");
+  await expect(path).toHaveCount(1);
+  const before = await path.getAttribute("d");
+  expect(before).toContain("A");
+
+  await dragSketch(page, [20, 20], [30, 25]);
+  const after = await page.locator("[data-geometry-id]").getAttribute("d");
+  expect(after).not.toBe(before);
+
+  expect(errors).toEqual([]);
+});
+
+test("rounds a rectangle corner with a parametric fillet", async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto("/");
+  await expect(page.getByTestId("kernel-status")).toContainText("ready");
+  await enterSketch(page);
+
+  await page.getByTestId("clear-sketch").click();
+  await page.getByTestId("tool-rect").click();
+  await dragSketch(page, [-40, -30], [40, 30]);
+  await page.keyboard.press("Escape");
+
+  // Select the left and bottom edges: they share the bottom-left corner.
+  await clickSketch(page, -40, 0);
+  await page.keyboard.down("Shift");
+  await clickSketch(page, 0, -30);
+  await page.keyboard.up("Shift");
+  await expect(page.getByTestId("selection-panel")).toHaveAttribute("data-count", "2");
+
+  await page.getByTestId("fillet-radius").fill("10");
+  await page.getByTestId("constraint-fillet").click();
+
+  await expect(page.locator("[data-geometry-id]")).toHaveCount(5);
+  await expect(page.locator('[data-constraint-type="tangent"]')).toHaveCount(4);
+
+  await page.getByTestId("timeline-extrude").click();
+  const cut = 10 * 10 - Math.PI * 10 * 10 / 4;
+  await expect.poll(() => volume(page)).toBeCloseTo((80 * 60 - cut) * 12, -1);
+
+  expect(errors).toEqual([]);
+});
+
+test("drives an angle dimension and a radius dimension", async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto("/");
+  await expect(page.getByTestId("kernel-status")).toContainText("ready");
+  await enterSketch(page);
+
+  await page.getByTestId("clear-sketch").click();
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, 0, 0);
+  await dblclickSketch(page, 60, 0);
+  await clickSketch(page, 0, 0);
+  await dblclickSketch(page, 50, 30);
+  await page.keyboard.press("Escape");
+
+  await page.getByTestId("tool-dimension").click();
+  await page.getByTestId("dimension-angle").click();
+  await clickSketch(page, 30, 0);
+  await clickSketch(page, 25, 15);
+  await clickSketch(page, 20, 45);
+
+  const angleLabel = page.locator("[data-dimension-id]").filter({ hasText: "°" });
+  await expect(angleLabel).toHaveCount(1);
+  await angleLabel.dblclick();
+  await page.getByTestId("dimension-input").fill("45");
+  await page.getByTestId("dimension-input").press("Enter");
+  await expect(page.locator("[data-dimension-id]").filter({ hasText: "45°" })).toHaveCount(1);
+
+  // Moving the label does not change the measurement.
+  const box = await page.locator("[data-dimension-id]").first().boundingBox();
+  expect(box).not.toBeNull();
+  if (box) {
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(box.x + box.width / 2 + 30, box.y + box.height / 2 + 30, {
+      steps: 6,
+    });
+    await page.mouse.up();
+  }
+  const movedBox = await page.locator("[data-dimension-id]").first().boundingBox();
+  expect(movedBox).not.toBeNull();
+  if (box && movedBox) {
+    expect(
+      Math.hypot(movedBox.x - box.x, movedBox.y - box.y),
+    ).toBeGreaterThan(5);
+  }
+  await expect(page.locator("[data-dimension-id]").filter({ hasText: "45°" })).toHaveCount(1);
+
+  // Radius dimensions display and edit the radius, not the diameter.
+  await page.getByTestId("clear-sketch").click();
+  await page.getByTestId("tool-circle").click();
+  await clickSketch(page, 0, 0);
+  await clickSketch(page, 20, 0);
+  await page.keyboard.press("Escape");
+
+  await page.getByTestId("tool-dimension").click();
+  await page.getByTestId("dimension-radius").click();
+  await clickSketch(page, 20, 0);
+  await clickSketch(page, 40, 0);
+  const radiusLabel = page.locator("[data-dimension-id]").filter({ hasText: "R" });
+  await expect(radiusLabel).toHaveCount(1);
+  await radiusLabel.dblclick();
+  await page.getByTestId("dimension-input").fill("25");
+  await page.getByTestId("dimension-input").press("Enter");
+  await expect(page.locator("[data-dimension-id]").filter({ hasText: "R 25" })).toHaveCount(1);
+
+  await page.getByTestId("timeline-extrude").click();
+  await expect.poll(() => volume(page)).toBeCloseTo(Math.PI * 25 * 25 * 12, -1);
+
+  expect(errors).toEqual([]);
+});

@@ -10,7 +10,9 @@ import { extrudeParams } from "../core/features/extrude";
 import { KernelClient } from "../core/kernel/client";
 import type { BodyMesh } from "../core/kernel/protocol";
 import {
+  addArc,
   addCircle,
+  addFillet,
   addPolyline,
   addRectangle,
   emptySketch,
@@ -26,6 +28,7 @@ import {
 import {
   addDimension,
   removeConstraint,
+  setDimensionPlacement,
   type DimensionPlacement,
   type DimensionTarget,
 } from "../core/sketch/dimensions";
@@ -33,6 +36,7 @@ import { clampDemoDrag, createExampleModel, isDemoSketch } from "../core/sketch/
 import { deleteEntities } from "../core/sketch/edit";
 import {
   applySolution,
+  curveRadius,
   distance,
   sketchGeometry,
   updateConstraintValue,
@@ -51,6 +55,7 @@ import type { Sketch } from "../core/sketch/types";
 import type { Vec2 } from "../core/types";
 import {
   SketchCanvas,
+  type DimensionMode,
   type SketchTool,
   type SketchTone,
 } from "../sketch/SketchCanvas";
@@ -72,6 +77,9 @@ export function App() {
 
   const [mode, setMode] = useState<"model" | "sketch">("model");
   const [tool, setTool] = useState<SketchTool>("select");
+  const [dimensionMode, setDimensionMode] = useState<DimensionMode>("distance");
+  const [radiusDimensions, setRadiusDimensions] = useState(false);
+  const [filletRadius, setFilletRadius] = useState(5);
   const [selection, setSelection] = useState<string[]>([]);
   const [cancelToken, setCancelToken] = useState(0);
   const [fitToken, setFitToken] = useState(0);
@@ -110,6 +118,17 @@ export function App() {
     () => constructionState(sketch, selection),
     [sketch, selection],
   );
+  const filletSelection = useMemo(() => {
+    const lines = sketch.curves.filter(
+      (curve): curve is Extract<typeof curve, { type: "line" }> =>
+        curve.type === "line" && selectedSet.has(curve.id),
+    );
+    if (lines.length !== 2) return null;
+    const [a, b] = lines;
+    if (!a || !b) return null;
+    const shared = [a.a, a.b].find((id) => id === b.a || id === b.b);
+    return shared ? { a, b } : null;
+  }, [sketch, selectedSet]);
 
   const commitDoc = (
     nextSketch: Sketch,
@@ -295,6 +314,11 @@ export function App() {
           setTool("circle");
           setSelection([]);
           break;
+        case "a":
+          setMode("sketch");
+          setTool("arc");
+          setSelection([]);
+          break;
         case "d":
           setMode("sketch");
           setTool("dimension");
@@ -361,6 +385,41 @@ export function App() {
         }
       : center;
     drawAndCommit(base, addCircle(base, valid, radius));
+  };
+
+  const handleArc = (
+    start: DraftVertex,
+    end: DraftVertex,
+    through: Vec2,
+  ): void => {
+    const base = getState().sketch;
+    drawAndCommit(base, addArc(base, start, end, through));
+  };
+
+  const handleFillet = (): void => {
+    if (!filletSelection) return;
+    const current = getState();
+    const next = addFillet(
+      current.sketch,
+      filletSelection.a.id,
+      filletSelection.b.id,
+      filletRadius,
+    );
+    if (next === current.sketch) return;
+    setSelection([]);
+    solveAndCommit(next);
+  };
+
+  const handleMoveDimension = (
+    id: string,
+    placement: DimensionPlacement,
+  ): void => {
+    const current = getState();
+    const next = setDimensionPlacement(current.sketch, id, placement);
+    if (next === current.sketch) return;
+    // Moving a label does not change geometry; keep the last solution and group
+    // the whole pointer gesture into one undo entry.
+    commitDoc(next, current.solved, `dim:${id}`);
   };
 
   const handleCreateDimension = (
@@ -450,7 +509,7 @@ export function App() {
   const hint =
     tool === "dimension"
       ? "Click two points, a line, or a circle, then click to place the dimension. Double-click a value to edit it."
-      : "Select to inspect. L line · R rectangle · C circle · D dimension · Delete removes. Cmd/Ctrl+Z undoes.";
+      : "Select to inspect. L line · R rectangle · C circle · A arc · D dimension · Delete removes. Cmd/Ctrl+Z undoes.";
 
   return (
     <div className="app">
@@ -575,6 +634,8 @@ export function App() {
                 tone={tone}
                 outer={profile?.outer}
                 tool={tool}
+                dimensionMode={dimensionMode}
+                radiusDimensions={radiusDimensions}
                 cancelToken={cancelToken}
                 fitToken={fitToken}
                 selected={selectedSet}
@@ -585,8 +646,10 @@ export function App() {
                 onCreatePolyline={handlePolyline}
                 onCreateRectangle={handleRectangle}
                 onCreateCircle={handleCircle}
+                onCreateArc={handleArc}
                 onCreateDimension={handleCreateDimension}
                 onChangeDimension={handleChangeDimension}
+                onMoveDimension={handleMoveDimension}
                 onDeleteDimension={handleDeleteDimension}
               />
             </div>
@@ -624,6 +687,14 @@ export function App() {
                   testId="tool-circle"
                 >
                   <CircleIcon />
+                </ToolButton>
+                <ToolButton
+                  label="Arc (A)"
+                  active={tool === "arc"}
+                  onClick={() => changeTool("arc")}
+                  testId="tool-arc"
+                >
+                  <ArcIcon />
                 </ToolButton>
                 <ToolButton
                   label="Dimension (D)"
@@ -666,12 +737,46 @@ export function App() {
                   onConstraint={handleConstraint}
                   onConstruction={handleConstruction}
                   onDelete={deleteSelection}
+                  fillet={filletSelection ? {
+                    radius: filletRadius,
+                    onRadius: setFilletRadius,
+                    onApply: handleFillet,
+                  } : null}
                 />
               </div>
             ) : null}
 
             {tool === "dimension" ? (
               <div className="sketch-flyout">
+                <div className="toggle-field" role="group" aria-label="Dimension mode">
+                  <button
+                    className={`constraint-chip${dimensionMode === "distance" ? " is-active" : ""}`}
+                    type="button"
+                    onClick={() => setDimensionMode("distance")}
+                    data-testid="dimension-distance"
+                  >
+                    Distance
+                  </button>
+                  <button
+                    className={`constraint-chip${dimensionMode === "angle" ? " is-active" : ""}`}
+                    type="button"
+                    onClick={() => setDimensionMode("angle")}
+                    data-testid="dimension-angle"
+                  >
+                    Angle
+                  </button>
+                  <button
+                    className={`constraint-chip${radiusDimensions ? " is-active" : ""}`}
+                    type="button"
+                    onClick={() => {
+                      setDimensionMode("distance");
+                      setRadiusDimensions((value) => !value);
+                    }}
+                    data-testid="dimension-radius"
+                  >
+                    Radius
+                  </button>
+                </div>
                 <label className="toggle-field">
                   <input
                     type="checkbox"
@@ -724,7 +829,7 @@ export function App() {
 
 interface SelectedEntity {
   id: string;
-  kind: "line" | "circle" | "point";
+  kind: "line" | "circle" | "arc" | "point";
   label: string;
   detail: string;
 }
@@ -748,12 +853,17 @@ function describeSelection(
           detail: a && b ? `${formatLength(distance(a, b))} mm` : "—",
         });
       } else {
-        const radius = geometry.radii[curve.id] ?? curve.radius;
+        const radius = curveRadius(curve, geometry.points, geometry.radii);
         result.push({
           id,
-          kind: "circle",
-          label: "Circle",
-          detail: `⌀ ${formatLength(radius * 2)} mm`,
+          kind: curve.type === "arc" ? "arc" : "circle",
+          label: curve.type === "arc" ? "Arc" : "Circle",
+          detail:
+            radius === null
+              ? "—"
+              : curve.type === "arc"
+                ? `R ${formatLength(radius)} mm`
+                : `⌀ ${formatLength(radius * 2)} mm`,
         });
       }
       continue;
@@ -780,6 +890,7 @@ function SelectionPanel({
   onConstraint,
   onConstruction,
   onDelete,
+  fillet,
 }: {
   info: SelectedEntity[];
   actions: { type: ConstraintType; label: string }[];
@@ -787,6 +898,11 @@ function SelectionPanel({
   onConstraint: (type: ConstraintType) => void;
   onConstruction: () => void;
   onDelete: () => void;
+  fillet: {
+    radius: number;
+    onRadius: (value: number) => void;
+    onApply: () => void;
+  } | null;
 }) {
   return (
     <div className="selection-card" data-testid="selection-panel" data-count={info.length}>
@@ -833,6 +949,30 @@ function SelectionPanel({
             >
               {construction === "all" ? "Make normal" : "Construction"}
             </button>
+          ) : null}
+          {fillet ? (
+            <span className="fillet-control">
+              <input
+                type="number"
+                min={0.5}
+                step={1}
+                value={fillet.radius}
+                onChange={(event) => {
+                  const value = Number(event.target.value);
+                  if (Number.isFinite(value) && value > 0) fillet.onRadius(value);
+                }}
+                aria-label="Fillet radius"
+                data-testid="fillet-radius"
+              />
+              <button
+                className="constraint-chip"
+                type="button"
+                onClick={fillet.onApply}
+                data-testid="constraint-fillet"
+              >
+                Fillet
+              </button>
+            </span>
           ) : null}
         </div>
       ) : null}
@@ -993,6 +1133,16 @@ function CircleIcon() {
     <svg {...svgProps()}>
       <circle cx="12" cy="12" r="8" />
       <circle cx="12" cy="12" r="1.4" fill="currentColor" />
+    </svg>
+  );
+}
+
+function ArcIcon() {
+  return (
+    <svg {...svgProps()}>
+      <path d="M4 18A10 10 0 0 1 18 4" />
+      <circle cx="4" cy="18" r="1.4" fill="currentColor" />
+      <circle cx="18" cy="4" r="1.4" fill="currentColor" />
     </svg>
   );
 }

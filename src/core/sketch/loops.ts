@@ -1,4 +1,5 @@
-import type { ProfileLoop, Vec2 } from "../types";
+import type { ProfileLoop, ProfileSegment, Vec2 } from "../types";
+import { arcGeometry, arcPointAt } from "./geometry";
 import type { Sketch } from "./types";
 
 /**
@@ -23,11 +24,13 @@ export interface SketchProfile {
 export interface SketchLoop {
   /** Curve ids in traversal order. */
   curves: string[];
-  /** Point ids in traversal order. */
+  /** Point ids at curve junctions, in traversal order. */
   points: string[];
-  /** Closed polygon, in sketch coordinates. */
+  /** Closed polygon (arcs sampled), in sketch coordinates. */
   polygon: Vec2[];
-  /** Absolute area in mm². */
+  /** Exact line/arc edges when the loop contains arcs. */
+  segments: ProfileSegment[] | null;
+  /** Absolute area in mm² (approximate for arcs). */
   area: number;
 }
 
@@ -36,15 +39,27 @@ const MAX_LOOPS = 500;
 
 export function findLoops(sketch: Sketch): SketchLoop[] {
   const position = new Map(sketch.points.map((point) => [point.id, point]));
+  const pointRecord: Record<string, Vec2> = Object.fromEntries(
+    sketch.points.map((point) => [point.id, [point.x, point.y] as Vec2]),
+  );
+  const curvesById = new Map(
+    sketch.curves.map((curve) => [curve.id, curve] as const),
+  );
 
-  // Undirected adjacency over profile lines. Construction geometry and circles
-  // are not part of a polyline loop.
+  // Undirected adjacency over profile lines and arcs. Construction geometry and
+  // circles are not part of a path loop.
   const adjacency = new Map<string, { curve: string; other: string }[]>();
   for (const curve of sketch.curves) {
-    if (curve.type !== "line" || curve.construction) continue;
-    if (!position.has(curve.a) || !position.has(curve.b)) continue;
-    addEdge(adjacency, curve.id, curve.a, curve.b);
-    addEdge(adjacency, curve.id, curve.b, curve.a);
+    if (curve.construction) continue;
+    if (curve.type === "line") {
+      if (!position.has(curve.a) || !position.has(curve.b)) continue;
+      addEdge(adjacency, curve.id, curve.a, curve.b);
+      addEdge(adjacency, curve.id, curve.b, curve.a);
+    } else if (curve.type === "arc") {
+      if (!position.has(curve.start) || !position.has(curve.end)) continue;
+      addEdge(adjacency, curve.id, curve.start, curve.end);
+      addEdge(adjacency, curve.id, curve.end, curve.start);
+    }
   }
 
   const loops = new Map<string, SketchLoop>();
@@ -63,7 +78,14 @@ export function findLoops(sketch: Sketch): SketchLoop[] {
 
       if (edge.other === start) {
         if (curvePath.length + 1 < 3) continue;
-        recordLoop(loops, pointPath, [...curvePath, edge.curve], position);
+        recordLoop(
+          loops,
+          pointPath,
+          [...curvePath, edge.curve],
+          position,
+          pointRecord,
+          curvesById,
+        );
         continue;
       }
 
@@ -111,7 +133,9 @@ export function profileFromSketch(sketch: Sketch): SketchProfile | null {
   }
 
   const candidates: Candidate[] = findLoops(sketch).map((loop) => ({
-    outer: { kind: "polygon", points: loop.polygon },
+    outer: loop.segments
+      ? { kind: "path", points: loop.polygon, segments: loop.segments }
+      : { kind: "polygon", points: loop.polygon },
     area: loop.area,
     loop,
   }));
@@ -161,7 +185,7 @@ export function profileFromSketch(sketch: Sketch): SketchProfile | null {
 
 /** Is `inner` strictly contained by `outer`? */
 function regionInside(inner: ProfileLoop, outer: ProfileLoop): boolean {
-  if (inner.kind === "polygon") {
+  if (inner.kind === "polygon" || inner.kind === "path") {
     if (inner.points.length < 3) return false;
     return inner.points.every((point) => containsPoint(outer, point));
   }
@@ -181,7 +205,9 @@ function sharesCurve(a: SketchLoop, b: SketchLoop): boolean {
 }
 
 function containsPoint(loop: ProfileLoop, point: Vec2): boolean {
-  if (loop.kind === "polygon") return pointInPolygon(point, loop.points);
+  if (loop.kind === "polygon" || loop.kind === "path") {
+    return pointInPolygon(point, loop.points);
+  }
   return (
     Math.hypot(point[0] - loop.center[0], point[1] - loop.center[1]) < loop.radius
   );
@@ -203,20 +229,69 @@ function recordLoop(
   pointPath: string[],
   curvePath: string[],
   position: Map<string, { x: number; y: number }>,
+  pointRecord: Record<string, Vec2>,
+  curvesById: Map<string, Sketch["curves"][number]>,
 ): void {
   const key = [...curvePath].sort().join("|");
   if (loops.has(key)) return;
 
-  const polygon = pointPath.flatMap((id) => {
-    const point = position.get(id);
-    return point ? ([[point.x, point.y] as Vec2] satisfies Vec2[]) : [];
-  });
-  if (polygon.length < 3) return;
+  const polygon: Vec2[] = [];
+  const segments: ProfileSegment[] = [];
+  let hasArc = false;
 
+  for (let i = 0; i < curvePath.length; i++) {
+    const from = pointPath[i];
+    const to = i + 1 < pointPath.length ? pointPath[i + 1] : pointPath[0];
+    if (!from || !to) return;
+    const start = position.get(from);
+    const end = position.get(to);
+    if (!start || !end) return;
+    const curve = curvePath[i];
+    if (!curve) return;
+    const definition = curvesById.get(curve);
+    if (!definition) return;
+
+    if (definition.type === "line") {
+      polygon.push([start.x, start.y]);
+      segments.push({
+        kind: "line",
+        a: [start.x, start.y],
+        b: [end.x, end.y],
+      });
+      continue;
+    }
+
+    if (definition.type === "arc") {
+      hasArc = true;
+      const geometry = arcGeometry(definition, pointRecord);
+      if (!geometry) return;
+      const forward = from === definition.start && to === definition.end;
+      const backward = from === definition.end && to === definition.start;
+      if (!forward && !backward) return;
+      const steps = Math.max(4, Math.ceil(geometry.sweep / (Math.PI / 36)));
+      polygon.push([start.x, start.y]);
+      for (let step = 1; step < steps; step++) {
+        const t = forward ? step / steps : 1 - step / steps;
+        polygon.push(arcPointAt(geometry, t));
+      }
+      const mid = arcPointAt(geometry, 0.5);
+      segments.push({
+        kind: "arc",
+        center: geometry.center,
+        radius: geometry.radius,
+        start: [start.x, start.y],
+        end: [end.x, end.y],
+        mid,
+      });
+    }
+  }
+
+  if (polygon.length < 3) return;
   loops.set(key, {
     curves: [...curvePath],
     points: [...pointPath],
     polygon,
+    segments: hasArc ? segments : null,
     area: Math.abs(signedArea(polygon)),
   });
 }

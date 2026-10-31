@@ -8,6 +8,7 @@ import {
   measureVolume,
   registerKernel,
   shape,
+  threePointArc,
   toBufferGeometryData,
   unwrap,
   wireLoop,
@@ -123,6 +124,23 @@ function toWire(loop: ProfileLoop): ClosedWire & PlanarWire {
     const [cx, cy] = loop.center;
     const wire = unwrap(wireLoop([circle(loop.radius, { at: [cx, cy, 0] })]));
     return asPlanar(wire);
+  }
+
+  if (loop.kind === "path") {
+    const edges = loop.segments.map((segment) => {
+      if (segment.kind === "line") {
+        return line([segment.a[0], segment.a[1], 0], [segment.b[0], segment.b[1], 0]);
+      }
+      return threePointArc(
+        [segment.start[0], segment.start[1], 0],
+        [segment.mid[0], segment.mid[1], 0],
+        [segment.end[0], segment.end[1], 0],
+      );
+    });
+    if (edges.length < 2) {
+      throw new Error("A profile loop needs at least two edges.");
+    }
+    return asPlanar(unwrap(wireLoop(edges)));
   }
 
   if (loop.points.length < 3) {

@@ -10,10 +10,24 @@ import type { ProfileLoop, Vec2 } from "../core/types";
 import type { DraftVertex } from "../core/sketch/create";
 import type { DimensionPlacement, DimensionTarget } from "../core/sketch/dimensions";
 import type { DragTarget } from "../core/sketch/solver";
-import type { Sketch, SketchCircle, SketchCurve } from "../core/sketch/types";
+import type {
+  Sketch,
+  SketchArc,
+  SketchCircle,
+  SketchConstraint,
+  SketchCurve,
+} from "../core/sketch/types";
+import {
+  arcGeometry,
+  arcPointAt,
+  circumcenter,
+  curveRadius,
+  normalizeAngle,
+} from "../core/sketch/geometry";
 import { useElementSize } from "../ui/useElementSize";
 
-export type SketchTool = "select" | "line" | "rect" | "circle" | "dimension";
+export type SketchTool = "select" | "line" | "rect" | "circle" | "arc" | "dimension";
+export type DimensionMode = "distance" | "angle";
 export type SketchTone = "under" | "full" | "conflict";
 
 export interface SketchCanvasProps {
@@ -24,6 +38,9 @@ export interface SketchCanvasProps {
   /** Largest closed region, used for the translucent fill. */
   outer?: ProfileLoop;
   tool: SketchTool;
+  dimensionMode: DimensionMode;
+  /** Measure circles as a radius instead of a diameter. */
+  radiusDimensions: boolean;
   /** Bump to cancel an in-progress draft (Escape). */
   cancelToken: number;
   /** Increment to re-fit the view. */
@@ -38,8 +55,10 @@ export interface SketchCanvasProps {
   onCreatePolyline: (vertices: DraftVertex[], closed: boolean) => void;
   onCreateRectangle: (a: Vec2, b: Vec2) => void;
   onCreateCircle: (center: DraftVertex, radius: number) => void;
+  onCreateArc: (start: DraftVertex, end: DraftVertex, through: Vec2) => void;
   onCreateDimension: (target: DimensionTarget, placement: DimensionPlacement) => void;
   onChangeDimension: (id: string, value: number) => void;
+  onMoveDimension: (id: string, placement: DimensionPlacement) => void;
   onDeleteDimension: (id: string) => void;
 }
 
@@ -76,6 +95,8 @@ export function SketchCanvas({
   tone,
   outer,
   tool,
+  dimensionMode,
+  radiusDimensions,
   cancelToken,
   fitToken,
   selected,
@@ -86,8 +107,10 @@ export function SketchCanvas({
   onCreatePolyline,
   onCreateRectangle,
   onCreateCircle,
+  onCreateArc,
   onCreateDimension,
   onChangeDimension,
+  onMoveDimension,
   onDeleteDimension,
 }: SketchCanvasProps) {
   const [svgRef, size] = useElementSize<SVGSVGElement>();
@@ -107,6 +130,18 @@ export function SketchCanvas({
     center: Vec2;
     active: boolean;
   } | null>(null);
+  const arcDragRef = useRef<{
+    arcId: string;
+    start: Vec2;
+    points: { id: string; point: Vec2 }[];
+    active: boolean;
+  } | null>(null);
+  const dimensionDragRef = useRef<{
+    id: string;
+    start: Vec2;
+    constraint: SketchConstraint;
+    active: boolean;
+  } | null>(null);
   const panRef = useRef<{ clientX: number; clientY: number; box: ViewBox } | null>(null);
   const [rectStart, setRectStart] = useState<Vec2 | null>(null);
   const [dragging, setDragging] = useState<string | null>(null);
@@ -114,13 +149,17 @@ export function SketchCanvas({
   const [hover, setHover] = useState<Snap | null>(null);
   const [rect, setRect] = useState<{ a: Vec2; b: Vec2 } | null>(null);
   const [circleCenter, setCircleCenter] = useState<DraftVertex | null>(null);
-  const [dimStart, setDimStart] = useState<string | null>(null);
+  const [arcStart, setArcStart] = useState<DraftVertex | null>(null);
+  const [arcEnd, setArcEnd] = useState<DraftVertex | null>(null);
+  const [dimPoint, setDimPoint] = useState<string | null>(null);
+  const [dimLine, setDimLine] = useState<string | null>(null);
   const [dimTarget, setDimTarget] = useState<DimensionTarget | null>(null);
   const [dimPlacement, setDimPlacement] = useState<DimensionPlacement | null>(null);
   const [editor, setEditor] = useState<{
     id: string;
     value: string;
     reference: boolean;
+    asRadius?: boolean;
     x: number;
     y: number;
   } | null>(null);
@@ -152,8 +191,11 @@ export function SketchCanvas({
     setRect(null);
     setRectStart(null);
     setCircleCenter(null);
+    setArcStart(null);
+    setArcEnd(null);
     setHover(null);
-    setDimStart(null);
+    setDimPoint(null);
+    setDimLine(null);
     setDimTarget(null);
     setDimPlacement(null);
     setEditor(null);
@@ -162,6 +204,8 @@ export function SketchCanvas({
   useEffect(() => {
     lineDragRef.current = null;
     circleDragRef.current = null;
+    arcDragRef.current = null;
+    dimensionDragRef.current = null;
   }, [interactionKey]);
 
   useEffect(() => {
@@ -255,14 +299,16 @@ export function SketchCanvas({
     id: string,
     value: number,
     reference: boolean,
+    asRadius = false,
   ) => {
     event.stopPropagation();
     event.preventDefault();
     const rect = svgRef.current?.getBoundingClientRect();
     setEditor({
       id,
-      value: formatEditable(value),
+      value: formatEditable(asRadius ? value / 2 : value),
       reference,
+      asRadius,
       x: event.clientX - (rect?.left ?? 0),
       y: event.clientY - (rect?.top ?? 0),
     });
@@ -272,36 +318,86 @@ export function SketchCanvas({
     if (!editor) return;
     if (!editor.reference) {
       const value = Number(editor.value);
-      if (Number.isFinite(value) && value > 0) onChangeDimension(editor.id, value);
+      if (Number.isFinite(value) && value > 0) {
+        onChangeDimension(editor.id, editor.asRadius ? value * 2 : value);
+      }
     }
     setEditor(null);
+  };
+
+  const circleLike = (id: string): { center: Vec2; radius: number } | null => {
+    const curve = sketch.curves.find((candidate) => candidate.id === id);
+    if (!curve) return null;
+    if (curve.type === "circle") {
+      const center = points[curve.center];
+      return center ? { center, radius: radii[curve.id] ?? curve.radius } : null;
+    }
+    if (curve.type === "arc") {
+      const geometry = arcGeometry(curve, points);
+      return geometry ? { center: geometry.center, radius: geometry.radius } : null;
+    }
+    return null;
   };
 
   const pickDimensionPoint = (event: ReactPointerEvent, pointId: string) => {
     event.stopPropagation();
     event.preventDefault();
-    if (dimTarget) return;
-    if (!dimStart) {
-      setDimStart(pointId);
+    if (dimTarget || dimensionMode !== "distance") return;
+    if (!dimPoint) {
+      setDimPoint(pointId);
       return;
     }
-    if (dimStart === pointId) {
-      setDimStart(null);
+    if (dimPoint === pointId) {
+      setDimPoint(null);
       return;
     }
-    setDimTarget({ kind: "distance", a: dimStart, b: pointId });
-    setDimStart(null);
+    setDimTarget({ kind: "distance", a: dimPoint, b: pointId });
+    setDimPoint(null);
   };
 
   const pickDimensionCurve = (event: ReactPointerEvent, curve: SketchCurve) => {
     event.stopPropagation();
     event.preventDefault();
-    if (dimStart || dimTarget) return;
+    if (dimTarget) return;
+
+    if (dimensionMode === "angle") {
+      if (curve.type !== "line") return;
+      if (!dimLine) {
+        setDimLine(curve.id);
+        return;
+      }
+      if (dimLine === curve.id) {
+        setDimLine(null);
+        return;
+      }
+      setDimTarget({ kind: "angle", a: dimLine, b: curve.id });
+      setDimLine(null);
+      return;
+    }
+
+    if (dimPoint) {
+      if (curve.type !== "line") return;
+      setDimTarget({ kind: "pointLineDistance", point: dimPoint, line: curve.id });
+      setDimPoint(null);
+      return;
+    }
+
     if (curve.type === "line") {
       setDimTarget({ kind: "distance", a: curve.a, b: curve.b });
     } else {
-      setDimTarget({ kind: "diameter", circle: curve.id });
+      setDimTarget({
+        kind: radiusDimensions ? "radius" : "diameter",
+        circle: curve.id,
+      });
     }
+  };
+
+  const lineThrough = (id: string): { a: Vec2; b: Vec2 } | null => {
+    const curve = sketch.curves.find((candidate) => candidate.id === id);
+    if (curve?.type !== "line") return null;
+    const a = points[curve.a];
+    const b = points[curve.b];
+    return a && b ? { a, b } : null;
   };
 
   const placeDimension = (cursor: Vec2) => {
@@ -314,19 +410,164 @@ export function SketchCanvas({
         return;
       }
       onCreateDimension(dimTarget, { offset: dimensionOffset(a, b, cursor) });
+    } else if (dimTarget.kind === "pointLineDistance") {
+      const point = points[dimTarget.point];
+      const line = lineThrough(dimTarget.line);
+      if (!point || !line) {
+        setDimTarget(null);
+        return;
+      }
+      const projection = projectPointOnLine(line.a, line.b, point);
+      onCreateDimension(dimTarget, {
+        offset: dimensionOffset(point, projection, cursor),
+      });
+    } else if (dimTarget.kind === "angle") {
+      const a = lineThrough(dimTarget.a);
+      const b = lineThrough(dimTarget.b);
+      if (!a || !b) {
+        setDimTarget(null);
+        return;
+      }
+      const vertex = lineIntersection(a.a, a.b, b.a, b.b);
+      const offset = vertex
+        ? Math.max(8, Math.hypot(cursor[0] - vertex[0], cursor[1] - vertex[1]))
+        : 30;
+      onCreateDimension(dimTarget, { offset });
     } else {
-      const curve = sketch.curves.find(
-        (candidate): candidate is SketchCircle =>
-          candidate.id === dimTarget.circle && candidate.type === "circle",
-      );
-      const center = curve ? points[curve.center] : null;
-      const angle = center
-        ? (Math.atan2(cursor[1] - center[1], cursor[0] - center[0]) * 180) / Math.PI
+      const circle = circleLike(dimTarget.circle);
+      const angle = circle
+        ? (Math.atan2(cursor[1] - circle.center[1], cursor[0] - circle.center[0]) *
+            180)           / Math.PI
         : 45;
       onCreateDimension(dimTarget, { angle });
     }
+    setDimPoint(null);
+    setDimLine(null);
     setDimTarget(null);
     setDimPlacement(null);
+  };
+
+  const placementForTarget = (
+    target: DimensionTarget,
+    cursor: Vec2,
+  ): DimensionPlacement | null => {
+    if (target.kind === "distance") {
+      const a = points[target.a];
+      const b = points[target.b];
+      return a && b ? { offset: dimensionOffset(a, b, cursor) } : null;
+    }
+    if (target.kind === "pointLineDistance") {
+      const point = points[target.point];
+      const line = lineThrough(target.line);
+      if (!point || !line) return null;
+      const projection = projectPointOnLine(line.a, line.b, point);
+      return { offset: dimensionOffset(point, projection, cursor) };
+    }
+    if (target.kind === "angle") {
+      const a = lineThrough(target.a);
+      const b = lineThrough(target.b);
+      if (!a || !b) return null;
+      const vertex = lineIntersection(a.a, a.b, b.a, b.b);
+      return {
+        offset: vertex
+          ? Math.max(8, Math.hypot(cursor[0] - vertex[0], cursor[1] - vertex[1]))
+          : 30,
+      };
+    }
+    const circle = circleLike(target.circle);
+    return circle
+      ? {
+          angle:
+            (Math.atan2(cursor[1] - circle.center[1], cursor[0] - circle.center[0]) *
+              180) /
+            Math.PI,
+        }
+      : null;
+  };
+
+  const placementAtCursor = (
+    constraint: SketchConstraint,
+    cursor: Vec2,
+  ): DimensionPlacement | null => {
+    if (constraint.type === "distance") {
+      const a = points[constraint.a];
+      const b = points[constraint.b];
+      return a && b ? { offset: dimensionOffset(a, b, cursor) } : null;
+    }
+    if (constraint.type === "pointLineDistance") {
+      const point = points[constraint.point];
+      const line = lineThrough(constraint.line);
+      if (!point || !line) return null;
+      const projection = projectPointOnLine(line.a, line.b, point);
+      return { offset: dimensionOffset(point, projection, cursor) };
+    }
+    if (constraint.type === "diameter") {
+      const circle = circleLike(constraint.circle);
+      return circle
+        ? {
+            angle:
+              (Math.atan2(cursor[1] - circle.center[1], cursor[0] - circle.center[0]) *
+                180) /
+              Math.PI,
+          }
+        : null;
+    }
+    if (constraint.type === "angle") {
+      const a = lineThrough(constraint.a);
+      const b = lineThrough(constraint.b);
+      if (!a || !b) return null;
+      const vertex = lineIntersection(a.a, a.b, b.a, b.b);
+      return {
+        offset: vertex
+          ? Math.max(8, Math.hypot(cursor[0] - vertex[0], cursor[1] - vertex[1]))
+          : 30,
+      };
+    }
+    return null;
+  };
+
+  const pointLineInfo = (
+    pointId: string,
+    lineId: string,
+  ): { point: Vec2; line: { a: Vec2; b: Vec2 }; projection: Vec2 } | null => {
+    const point = points[pointId];
+    const line = lineThrough(lineId);
+    if (!point || !line) return null;
+    return {
+      point,
+      line,
+      projection: projectPointOnLine(line.a, line.b, point),
+    };
+  };
+
+  const angleInfo = (
+    aId: string,
+    bId: string,
+  ): { vertex: Vec2; rayA: Vec2; rayB: Vec2 } | null => {
+    const a = lineThrough(aId);
+    const b = lineThrough(bId);
+    if (!a || !b) return null;
+    const vertex = lineIntersection(a.a, a.b, b.a, b.b);
+    if (!vertex) return null;
+    return {
+      vertex,
+      rayA: [(a.a[0] + a.b[0]) / 2, (a.a[1] + a.b[1]) / 2],
+      rayB: [(b.a[0] + b.b[0]) / 2, (b.a[1] + b.b[1]) / 2],
+    };
+  };
+
+  const startDimensionDrag = (
+    event: ReactPointerEvent,
+    constraint: SketchConstraint,
+  ) => {
+    event.stopPropagation();
+    event.preventDefault();
+    dimensionDragRef.current = {
+      id: constraint.id,
+      start: toSketch(event),
+      constraint,
+      active: false,
+    };
   };
 
   const startPan = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -376,7 +617,8 @@ export function SketchCanvas({
       if (dimTarget) {
         placeDimension(raw);
       } else {
-        setDimStart(null);
+        setDimPoint(null);
+        setDimLine(null);
       }
       return;
     }
@@ -412,11 +654,67 @@ export function SketchCanvas({
         if (radius >= 0.5) onCreateCircle(circleCenter, roundTo(radius, 1));
         setCircleCenter(null);
       }
+      return;
+    }
+    if (tool === "arc") {
+      const snap = snapPoint(raw);
+      if (!arcStart) {
+        setArcStart({ point: snap.point, existingPointId: snap.existingPointId });
+        return;
+      }
+      if (!arcEnd) {
+        if (
+          Math.hypot(
+            snap.point[0] - arcStart.point[0],
+            snap.point[1] - arcStart.point[1],
+          ) >= 1
+        ) {
+          setArcEnd({ point: snap.point, existingPointId: snap.existingPointId });
+        }
+        return;
+      }
+      onCreateArc(arcStart, arcEnd, snap.point);
+      setArcStart(null);
+      setArcEnd(null);
+      setHover(null);
     }
   };
 
   const onPointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
     const raw = toSketch(event);
+
+    if (dimensionDragRef.current) {
+      const drag = dimensionDragRef.current;
+      if (!drag.active) {
+        if (Math.hypot(raw[0] - drag.start[0], raw[1] - drag.start[1]) * scale < 3) {
+          return;
+        }
+        drag.active = true;
+        svgRef.current?.setPointerCapture(event.pointerId);
+      }
+      const placement = placementAtCursor(drag.constraint, raw);
+      if (placement) onMoveDimension(drag.id, placement);
+      return;
+    }
+
+    if (arcDragRef.current) {
+      const drag = arcDragRef.current;
+      const dx = raw[0] - drag.start[0];
+      const dy = raw[1] - drag.start[1];
+      if (!drag.active) {
+        if (Math.hypot(dx, dy) * scale < 3) return;
+        drag.active = true;
+      }
+      onDragLine(
+        drag.arcId,
+        drag.points.map(({ id, point }) => ({
+          pointId: id,
+          x: point[0] + dx,
+          y: point[1] + dy,
+        })),
+      );
+      return;
+    }
 
     if (lineDragRef.current) {
       const drag = lineDragRef.current;
@@ -462,30 +760,21 @@ export function SketchCanvas({
 
     if (tool === "dimension") {
       if (dimTarget) {
-        if (dimTarget.kind === "distance") {
-          const a = points[dimTarget.a];
-          const b = points[dimTarget.b];
-          if (a && b) setDimPlacement({ offset: dimensionOffset(a, b, raw) });
-        } else {
-          const curve = sketch.curves.find(
-            (candidate): candidate is SketchCircle =>
-              candidate.id === dimTarget.circle && candidate.type === "circle",
-          );
-          const center = curve ? points[curve.center] : null;
-          if (center) {
-            setDimPlacement({
-              angle: (Math.atan2(raw[1] - center[1], raw[0] - center[0]) * 180) / Math.PI,
-            });
-          }
-        }
-      } else if (dimStart) {
+        const placement = placementForTarget(dimTarget, raw);
+        if (placement) setDimPlacement(placement);
+      } else if (dimPoint) {
         setHover(snapPoint(raw));
       }
       return;
     }
     if (tool === "select") return;
 
-    const axisFrom = tool === "line" ? draft[draft.length - 1]?.point : undefined;
+    const axisFrom =
+      tool === "line"
+        ? draft[draft.length - 1]?.point
+        : tool === "arc"
+          ? arcStart?.point
+          : undefined;
     const snap =
       tool === "rect"
         ? { point: snapGrid(raw), kind: "grid" as const }
@@ -510,6 +799,18 @@ export function SketchCanvas({
       if (Math.abs(end[0] - start[0]) >= 1 && Math.abs(end[1] - start[1]) >= 1) {
         onCreateRectangle(start, end);
       }
+    }
+
+    if (dimensionDragRef.current) {
+      const active = dimensionDragRef.current.active;
+      dimensionDragRef.current = null;
+      if (active) onDragEnd();
+    }
+
+    if (arcDragRef.current) {
+      const active = arcDragRef.current.active;
+      arcDragRef.current = null;
+      if (active) onDragEnd();
     }
 
     if (lineDragRef.current) {
@@ -565,6 +866,25 @@ export function SketchCanvas({
         start: toSketch(event),
         a: { id: curve.a, point: a },
         b: { id: curve.b, point: b },
+        active: false,
+      };
+      svgRef.current?.setPointerCapture(event.pointerId);
+      return;
+    }
+
+    if (curve.type === "arc") {
+      const center = points[curve.center];
+      const start = points[curve.start];
+      const end = points[curve.end];
+      if (!center || !start || !end) return;
+      arcDragRef.current = {
+        arcId: curve.id,
+        start: toSketch(event),
+        points: [
+          { id: curve.center, point: center },
+          { id: curve.start, point: start },
+          { id: curve.end, point: end },
+        ],
         active: false,
       };
       svgRef.current?.setPointerCapture(event.pointerId);
@@ -679,6 +999,13 @@ export function SketchCanvas({
           stroke="none"
         />
       ) : null}
+      {outer?.kind === "path" && outer.points.length >= 3 ? (
+        <polygon
+          points={outer.points.map((point) => `${point[0]},${point[1]}`).join(" ")}
+          fill={tone === "conflict" ? "rgba(255,123,114,0.07)" : "rgba(116,169,255,0.06)"}
+          stroke="none"
+        />
+      ) : null}
 
       {circles.map((circle) => {
         const center = points[circle.center];
@@ -722,6 +1049,26 @@ export function SketchCanvas({
         );
       })}
 
+      {sketch.curves.map((curve) => {
+        if (curve.type !== "arc") return null;
+        const d = arcPathData(curve, points);
+        if (!d) return null;
+        const isSelected = selected.has(curve.id);
+        return (
+          <path
+            key={curve.id}
+            data-geometry-id={curve.id}
+            d={d}
+            fill="none"
+            stroke={isSelected ? SELECT_COLOR : curve.construction ? "#4c5b6f" : color}
+            strokeWidth={isSelected ? 2.6 : 1.6}
+            strokeDasharray={curve.construction ? "5 4" : undefined}
+            strokeLinecap="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        );
+      })}
+
       {tool === "select" || tool === "dimension" ? (
         <g>
           {sketch.curves.map((curve) => {
@@ -747,6 +1094,24 @@ export function SketchCanvas({
                 />
               );
             }
+            if (curve.type === "arc") {
+              const d = arcPathData(curve, points);
+              if (!d) return null;
+              return (
+                <path
+                  key={curve.id}
+                  d={d}
+                  fill="none"
+                  stroke="transparent"
+                  strokeWidth={12}
+                  vectorEffect="non-scaling-stroke"
+                  pointerEvents="stroke"
+                  style={{ cursor: tool === "select" ? "grab" : "pointer" }}
+                  data-curve-id={curve.id}
+                  onPointerDown={(event) => onCurvePointerDown(event, curve)}
+                />
+              );
+            }
             const center = points[curve.center];
             if (!center) return null;
             return (
@@ -754,7 +1119,7 @@ export function SketchCanvas({
                 key={curve.id}
                 cx={center[0]}
                 cy={center[1]}
-                r={radii[curve.id] ?? curve.radius}
+                r={curveRadius(curve, points, radii) ?? 0}
                 fill="none"
                 stroke="transparent"
                 strokeWidth={12}
@@ -787,49 +1152,72 @@ export function SketchCanvas({
                 px={px}
                 fontSize={fontSize}
                 onEdit={openDimensionEditor}
+                onDrag={(event) => startDimensionDrag(event, constraint)}
               />
             );
           }
-          if (constraint.type === "diameter") {
-            const curve = sketch.curves.find(
-              (candidate) => candidate.id === constraint.circle && candidate.type === "circle",
-            );
-            if (!curve || curve.type !== "circle") return null;
-            const center = points[curve.center];
-            if (!center) return null;
-            const radius = radii[curve.id] ?? curve.radius;
+          if (constraint.type === "pointLineDistance") {
+            const info = pointLineInfo(constraint.point, constraint.line);
+            if (!info) return null;
             return (
-              <DiameterDimension
+              <LinearDimension
                 key={constraint.id}
                 id={constraint.id}
-                center={center}
-                radius={radius}
-                angle={constraint.angle ?? 45}
-                value={radius * 2}
+                a={info.point}
+                b={info.projection}
+                offset={constraint.offset ?? 10}
+                value={distanceBetween(info.point, info.projection)}
                 reference={constraint.driving === false}
                 px={px}
                 fontSize={fontSize}
                 onEdit={openDimensionEditor}
+                onDrag={(event) => startDimensionDrag(event, constraint)}
+              />
+            );
+          }
+          if (constraint.type === "diameter") {
+            const circle = circleLike(constraint.circle);
+            if (!circle) return null;
+            return (
+              <DiameterDimension
+                key={constraint.id}
+                id={constraint.id}
+                center={circle.center}
+                radius={circle.radius}
+                angle={constraint.angle ?? 45}
+                value={constraint.radius ? circle.radius : circle.radius * 2}
+                asRadius={constraint.radius}
+                reference={constraint.driving === false}
+                px={px}
+                fontSize={fontSize}
+                onEdit={openDimensionEditor}
+                onDrag={(event) => startDimensionDrag(event, constraint)}
+              />
+            );
+          }
+          if (constraint.type === "angle") {
+            const info = angleInfo(constraint.a, constraint.b);
+            if (!info) return null;
+            return (
+              <AngleDimension
+                key={constraint.id}
+                id={constraint.id}
+                vertex={info.vertex}
+                rayA={info.rayA}
+                rayB={info.rayB}
+                radius={constraint.offset ?? 30}
+                value={angleBetweenVectors(info.vertex, info.rayA, info.rayB)}
+                reference={constraint.driving === false}
+                px={px}
+                fontSize={fontSize}
+                onEdit={openDimensionEditor}
+                onDrag={(event) => startDimensionDrag(event, constraint)}
               />
             );
           }
           return null;
         })}
       </g>
-
-      {tool === "dimension" && dimStart && hover && points[dimStart] ? (
-        <line
-          x1={points[dimStart]![0]}
-          y1={points[dimStart]![1]}
-          x2={hover.point[0]}
-          y2={hover.point[1]}
-          stroke={SELECT_COLOR}
-          strokeWidth={1.2}
-          strokeDasharray="5 4"
-          vectorEffect="non-scaling-stroke"
-          pointerEvents="none"
-        />
-      ) : null}
 
       {tool === "dimension" && dimTarget && dimPlacement ? (
         <g opacity={0.65}>
@@ -848,23 +1236,57 @@ export function SketchCanvas({
               fontSize={fontSize}
             />
           ) : null}
-          {dimTarget.kind === "diameter" &&
+          {dimTarget.kind === "pointLineDistance" &&
           (() => {
-            const curve = sketch.curves.find(
-              (candidate): candidate is SketchCircle =>
-                candidate.id === dimTarget.circle && candidate.type === "circle",
+            const info = pointLineInfo(dimTarget.point, dimTarget.line);
+            if (!info) return null;
+            return (
+              <LinearDimension
+                id="preview"
+                a={info.point}
+                b={info.projection}
+                offset={dimPlacement.offset ?? 10}
+                value={distanceBetween(info.point, info.projection)}
+                reference={false}
+                preview
+                px={px}
+                fontSize={fontSize}
+              />
             );
-            if (!curve) return null;
-            const center = points[curve.center];
-            if (!center) return null;
-            const radius = radii[curve.id] ?? curve.radius;
+          })()}
+          {(dimTarget.kind === "diameter" || dimTarget.kind === "radius") &&
+          (() => {
+            const circle = circleLike(dimTarget.circle);
+            if (!circle) return null;
             return (
               <DiameterDimension
                 id="preview"
-                center={center}
-                radius={radius}
+                center={circle.center}
+                radius={circle.radius}
                 angle={dimPlacement.angle ?? 45}
-                value={radius * 2}
+                value={
+                  dimTarget.kind === "radius" ? circle.radius : circle.radius * 2
+                }
+                asRadius={dimTarget.kind === "radius"}
+                reference={false}
+                preview
+                px={px}
+                fontSize={fontSize}
+              />
+            );
+          })()}
+          {dimTarget.kind === "angle" &&
+          (() => {
+            const info = angleInfo(dimTarget.a, dimTarget.b);
+            if (!info) return null;
+            return (
+              <AngleDimension
+                id="preview"
+                vertex={info.vertex}
+                rayA={info.rayA}
+                rayB={info.rayB}
+                radius={dimPlacement.offset ?? 30}
+                value={angleBetweenVectors(info.vertex, info.rayA, info.rayB)}
                 reference={false}
                 preview
                 px={px}
@@ -998,6 +1420,57 @@ export function SketchCanvas({
         </g>
       ) : null}
 
+      {tool === "arc" && arcStart && arcEnd && hover ? (
+        (() => {
+          const preview = arcThroughPath(arcStart.point, arcEnd.point, hover.point);
+          if (!preview) return null;
+          return (
+            <path
+              d={preview.d}
+              fill="none"
+              stroke={color}
+              strokeWidth={1.5}
+              strokeDasharray="6 4"
+              vectorEffect="non-scaling-stroke"
+              pointerEvents="none"
+            />
+          );
+        })()
+      ) : null}
+
+      {tool === "arc" && arcStart && !arcEnd && hover ? (
+        <line
+          x1={arcStart.point[0]}
+          y1={arcStart.point[1]}
+          x2={hover.point[0]}
+          y2={hover.point[1]}
+          stroke={color}
+          strokeWidth={1.2}
+          strokeDasharray="4 4"
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+        />
+      ) : null}
+
+      {tool === "arc" && arcStart ? (
+        <circle
+          cx={arcStart.point[0]}
+          cy={arcStart.point[1]}
+          r={pointRadius}
+          fill={color}
+          pointerEvents="none"
+        />
+      ) : null}
+      {tool === "arc" && arcEnd ? (
+        <circle
+          cx={arcEnd.point[0]}
+          cy={arcEnd.point[1]}
+          r={pointRadius}
+          fill={color}
+          pointerEvents="none"
+        />
+      ) : null}
+
       {hover && tool !== "select" ? (
         <circle
           cx={hover.point[0]}
@@ -1065,7 +1538,9 @@ interface DimensionHandlers {
     id: string,
     value: number,
     reference: boolean,
+    asRadius?: boolean,
   ) => void;
+  onDrag?: (event: ReactPointerEvent) => void;
 }
 
 function LinearDimension({
@@ -1079,6 +1554,7 @@ function LinearDimension({
   px,
   fontSize,
   onEdit,
+  onDrag,
 }: DimensionHandlers & { a: Vec2; b: Vec2; offset: number }) {
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];
@@ -1099,7 +1575,9 @@ function LinearDimension({
       opacity={preview ? 0.7 : 1}
       style={{ cursor: onEdit && !preview ? "text" : "default" }}
       onPointerDown={(event) => {
-        if (!preview) event.stopPropagation();
+        if (preview) return;
+        event.stopPropagation();
+        onDrag?.(event);
       }}
       onDoubleClick={
         onEdit && !preview
@@ -1157,6 +1635,7 @@ function LinearDimension({
         onPointerDown={(event) => {
           if (preview) return;
           event.stopPropagation();
+          onDrag?.(event);
         }}
         onDoubleClick={
           onEdit && !preview
@@ -1181,7 +1660,9 @@ function DiameterDimension({
   px,
   fontSize,
   onEdit,
-}: DimensionHandlers & { center: Vec2; radius: number; angle: number }) {
+  onDrag,
+  asRadius,
+}: DimensionHandlers & { center: Vec2; radius: number; angle: number; asRadius?: boolean }) {
   const theta = (angle * Math.PI) / 180;
   const dx = Math.cos(theta);
   const dy = Math.sin(theta);
@@ -1191,7 +1672,7 @@ function DiameterDimension({
   const textY = end[1] + dy * 1.5 * px + fontSize * 0.35;
   const anchor = dx < -0.3 ? "end" : dx > 0.3 ? "start" : "middle";
   const color = reference ? "#7f8b9c" : "#c8b06a";
-  const label = `${reference ? "(" : ""}⌀ ${formatLength(value)}${reference ? ")" : ""}`;
+  const label = `${reference ? "(" : ""}${asRadius ? "R" : "⌀"} ${formatLength(value)}${reference ? ")" : ""}`;
 
   return (
     <g
@@ -1200,11 +1681,13 @@ function DiameterDimension({
       opacity={preview ? 0.7 : 1}
       style={{ cursor: onEdit && !preview ? "text" : "default" }}
       onPointerDown={(event) => {
-        if (!preview) event.stopPropagation();
+        if (preview) return;
+        event.stopPropagation();
+        onDrag?.(event);
       }}
       onDoubleClick={
         onEdit && !preview
-          ? (event) => onEdit(event, id, value, reference)
+          ? (event) => onEdit(event, id, value, reference, asRadius)
           : undefined
       }
     >
@@ -1229,10 +1712,11 @@ function DiameterDimension({
         onPointerDown={(event) => {
           if (preview) return;
           event.stopPropagation();
+          onDrag?.(event);
         }}
         onDoubleClick={
           onEdit && !preview
-            ? (event) => onEdit(event, id, value, reference)
+            ? (event) => onEdit(event, id, value, reference, asRadius)
             : undefined
         }
       >
@@ -1240,6 +1724,120 @@ function DiameterDimension({
       </text>
     </g>
   );
+}
+
+function AngleDimension({
+  id,
+  vertex,
+  rayA,
+  rayB,
+  radius,
+  value,
+  reference,
+  preview,
+  px,
+  fontSize,
+  onEdit,
+  onDrag,
+}: DimensionHandlers & { vertex: Vec2; rayA: Vec2; rayB: Vec2; radius: number }) {
+  let startAngle = Math.atan2(rayA[1] - vertex[1], rayA[0] - vertex[0]);
+  let endAngle = Math.atan2(rayB[1] - vertex[1], rayB[0] - vertex[0]);
+  let sweep = normalizeAngle(endAngle - startAngle);
+  if (sweep > Math.PI) {
+    [startAngle, endAngle] = [endAngle, startAngle];
+    sweep = Math.PI * 2 - sweep;
+  }
+  const start: Vec2 = [
+    vertex[0] + Math.cos(startAngle) * radius,
+    vertex[1] + Math.sin(startAngle) * radius,
+  ];
+  const end: Vec2 = [
+    vertex[0] + Math.cos(endAngle) * radius,
+    vertex[1] + Math.sin(endAngle) * radius,
+  ];
+  const labelAngle = startAngle + sweep / 2;
+  const labelRadius = radius + 12 * px + fontSize * 0.5;
+  const label: Vec2 = [
+    vertex[0] + Math.cos(labelAngle) * labelRadius,
+    vertex[1] + Math.sin(labelAngle) * labelRadius,
+  ];
+  const color = reference ? "#7f8b9c" : "#c8b06a";
+  const text = `${reference ? "(" : ""}${formatLength(value)}°${reference ? ")" : ""}`;
+
+  return (
+    <g
+      stroke={color}
+      fill={color}
+      opacity={preview ? 0.7 : 1}
+      style={{ cursor: onEdit && !preview ? "text" : "default" }}
+      onPointerDown={(event) => {
+        if (preview) return;
+        event.stopPropagation();
+        onDrag?.(event);
+      }}
+      onDoubleClick={
+        onEdit && !preview
+          ? (event) => onEdit(event, id, value, reference)
+          : undefined
+      }
+    >
+      <line
+        x1={vertex[0]}
+        y1={vertex[1]}
+        x2={start[0]}
+        y2={start[1]}
+        strokeWidth={0.8}
+        opacity={0.55}
+        vectorEffect="non-scaling-stroke"
+      />
+      <line
+        x1={vertex[0]}
+        y1={vertex[1]}
+        x2={end[0]}
+        y2={end[1]}
+        strokeWidth={0.8}
+        opacity={0.55}
+        vectorEffect="non-scaling-stroke"
+      />
+      <path
+        d={`M ${start[0]} ${start[1]} A ${radius} ${radius} 0 0 1 ${end[0]} ${end[1]}`}
+        fill="none"
+        strokeWidth={1.1}
+        vectorEffect="non-scaling-stroke"
+      />
+      <text
+        x={label[0]}
+        y={label[1] + fontSize * 0.35}
+        fontSize={fontSize}
+        textAnchor="middle"
+        stroke="#171b21"
+        strokeWidth={3 * px}
+        paintOrder="stroke"
+        data-dimension-id={preview ? undefined : id}
+        style={{ cursor: onEdit && !preview ? "text" : "default" }}
+        onPointerDown={(event) => {
+          if (preview) return;
+          event.stopPropagation();
+          onDrag?.(event);
+        }}
+        onDoubleClick={
+          onEdit && !preview
+            ? (event) => onEdit(event, id, value, reference)
+            : undefined
+        }
+      >
+        {text}
+      </text>
+    </g>
+  );
+}
+
+function angleBetweenVectors(vertex: Vec2, a: Vec2, b: Vec2): number {
+  const angleA = Math.atan2(a[1] - vertex[1], a[0] - vertex[0]);
+  const angleB = Math.atan2(b[1] - vertex[1], b[0] - vertex[0]);
+  let sweep = normalizeAngle(angleB - angleA);
+  if (sweep > Math.PI) sweep = Math.PI * 2 - sweep;
+  return (sweep * 180) / Math.PI;
 }
 
 function ConstraintBadges({
@@ -1273,8 +1871,17 @@ function ConstraintBadges({
       const b = points[curve.b];
       return a && b ? { x: (a[0] + b[0]) / 2, y: (a[1] + b[1]) / 2 } : null;
     }
+    if (curve.type === "arc") {
+      const geometry = arcGeometry(curve, points);
+      if (!geometry) return null;
+      const [x, y] = arcPointAt(geometry, 0.5);
+      return { x, y };
+    }
     const center = points[curve.center];
-    return center ? { x: center[0], y: center[1] - curve.radius } : null;
+    const radius = curveRadius(curve, points, {});
+    return center && radius !== null
+      ? { x: center[0], y: center[1] - radius }
+      : null;
   };
 
   const place = (constraintId: string, type: string, id: string, label: string) => {
@@ -1311,6 +1918,23 @@ function ConstraintBadges({
       }
       case "pointOnLine":
         place(constraint.id, "pointOnLine", constraint.point, "∈");
+        break;
+      case "pointOnCircle":
+        place(constraint.id, "pointOnCircle", constraint.point, "○");
+        break;
+      case "midpoint":
+        place(constraint.id, "midpoint", constraint.point, "M");
+        break;
+      case "fix":
+        place(constraint.id, "fix", constraint.point, "F");
+        break;
+      case "symmetric":
+        place(constraint.id, "symmetric", constraint.a, "⇄");
+        place(constraint.id, "symmetric", constraint.b, "⇄");
+        break;
+      case "tangent":
+        place(constraint.id, "tangent", constraint.a, "T");
+        place(constraint.id, "tangent", constraint.b, "T");
         break;
       default:
         break;
@@ -1364,12 +1988,20 @@ function fitView(sketch: Sketch, radii: Record<string, number>): ViewBox {
   const xs = sketch.points.map((point) => point.x);
   const ys = sketch.points.map((point) => point.y);
   for (const curve of sketch.curves) {
-    if (curve.type !== "circle") continue;
-    const center = sketch.points.find((point) => point.id === curve.center);
-    if (!center) continue;
-    const radius = radii[curve.id] ?? curve.radius;
-    xs.push(center.x - radius, center.x + radius);
-    ys.push(center.y - radius, center.y + radius);
+    if (curve.type === "circle") {
+      const center = sketch.points.find((point) => point.id === curve.center);
+      if (!center) continue;
+      const radius = radii[curve.id] ?? curve.radius;
+      xs.push(center.x - radius, center.x + radius);
+      ys.push(center.y - radius, center.y + radius);
+    } else if (curve.type === "arc") {
+      const center = sketch.points.find((point) => point.id === curve.center);
+      const start = sketch.points.find((point) => point.id === curve.start);
+      if (!center || !start) continue;
+      const radius = Math.hypot(start.x - center.x, start.y - center.y);
+      xs.push(center.x - radius, center.x + radius);
+      ys.push(center.y - radius, center.y + radius);
+    }
   }
 
   const minX = Math.min(...xs);
@@ -1410,4 +2042,60 @@ function clamp(value: number, min: number, max: number): number {
 
 function formatEditable(value: number): string {
   return String(Math.round(value * 100) / 100);
+}
+
+function projectPointOnLine(a: Vec2, b: Vec2, point: Vec2): Vec2 {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared < 1e-12) return a;
+  const t = ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / lengthSquared;
+  return [a[0] + dx * t, a[1] + dy * t];
+}
+
+function lineIntersection(a1: Vec2, a2: Vec2, b1: Vec2, b2: Vec2): Vec2 | null {
+  const dax = a2[0] - a1[0];
+  const day = a2[1] - a1[1];
+  const dbx = b2[0] - b1[0];
+  const dby = b2[1] - b1[1];
+  const denominator = dax * dby - day * dbx;
+  if (Math.abs(denominator) < 1e-9) return null;
+  const t = ((b1[0] - a1[0]) * dby - (b1[1] - a1[1]) * dbx) / denominator;
+  return [a1[0] + dax * t, a1[1] + day * t];
+}
+
+
+function arcPathData(arc: SketchArc, points: Record<string, Vec2>): string | null {
+  const geometry = arcGeometry(arc, points);
+  const start = points[arc.start];
+  const end = points[arc.end];
+  if (!geometry || !start || !end) return null;
+  const large = geometry.sweep > Math.PI ? 1 : 0;
+  return `M ${start[0]} ${start[1]} A ${geometry.radius} ${geometry.radius} 0 ${large} 1 ${end[0]} ${end[1]}`;
+}
+
+function arcThroughPath(
+  start: Vec2,
+  end: Vec2,
+  through: Vec2,
+): { d: string; center: Vec2; radius: number } | null {
+  const center = circumcenter(start, end, through);
+  if (!center) return null;
+  const radius = Math.hypot(start[0] - center[0], start[1] - center[1]);
+  if (radius < 1) return null;
+  const startAngle = Math.atan2(start[1] - center[1], start[0] - center[0]);
+  const endAngle = Math.atan2(end[1] - center[1], end[0] - center[0]);
+  const throughAngle = Math.atan2(through[1] - center[1], through[0] - center[0]);
+  let sweep = normalizeAngle(endAngle - startAngle);
+  const throughOffset = normalizeAngle(throughAngle - startAngle);
+  const swap = throughOffset > sweep + 1e-9;
+  if (swap) sweep = Math.PI * 2 - sweep;
+  const from = swap ? end : start;
+  const to = swap ? start : end;
+  const large = sweep > Math.PI ? 1 : 0;
+  return {
+    d: `M ${from[0]} ${from[1]} A ${radius} ${radius} 0 ${large} 1 ${to[0]} ${to[1]}`,
+    center,
+    radius,
+  };
 }

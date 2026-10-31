@@ -1,5 +1,5 @@
 import type { ProfileLoop, Vec2 } from "../types";
-import type { Sketch, SketchConstraint } from "./types";
+import type { Sketch, SketchArc, SketchConstraint, SketchCurve } from "./types";
 
 /** A solved sketch, in the form the UI and the kernel care about. */
 export interface SolvedGeometry {
@@ -48,6 +48,105 @@ export function loopBounds(loop: ProfileLoop): Bounds2 {
     return { minX: x - r, minY: y - r, maxX: x + r, maxY: y + r, width: 2 * r, height: 2 * r };
   }
   return polygonBounds(loop.points) ?? { minX: 0, minY: 0, maxX: 0, maxY: 0, width: 0, height: 0 };
+}
+
+/** Circumcentre of three points, or null when they are collinear. */
+export function circumcenter(a: Vec2, b: Vec2, c: Vec2): Vec2 | null {
+  const d = 2 * (a[0] * (b[1] - c[1]) + b[0] * (c[1] - a[1]) + c[0] * (a[1] - b[1]));
+  if (Math.abs(d) < 1e-9) return null;
+  const aa = a[0] * a[0] + a[1] * a[1];
+  const bb = b[0] * b[0] + b[1] * b[1];
+  const cc = c[0] * c[0] + c[1] * c[1];
+  return [
+    (aa * (b[1] - c[1]) + bb * (c[1] - a[1]) + cc * (a[1] - b[1])) / d,
+    (aa * (c[0] - b[0]) + bb * (a[0] - c[0]) + cc * (b[0] - a[0])) / d,
+  ];
+}
+
+export interface ArcGeometry {
+  center: Vec2;
+  radius: number;
+  startAngle: number;
+  endAngle: number;
+  /** Counter-clockwise sweep in radians, in (0, 2π]. */
+  sweep: number;
+}
+
+/** Resolve an arc's centre, radius and CCW angles from the solved points. */
+export function arcGeometry(
+  arc: Pick<SketchArc, "center" | "start" | "end">,
+  points: Record<string, Vec2>,
+): ArcGeometry | null {
+  const center = points[arc.center];
+  const start = points[arc.start];
+  const end = points[arc.end];
+  if (!center || !start || !end) return null;
+  const radius = distance(center, start);
+  if (radius < 1e-9) return null;
+  const startAngle = normalizeAngle(Math.atan2(start[1] - center[1], start[0] - center[0]));
+  const endAngle = normalizeAngle(Math.atan2(end[1] - center[1], end[0] - center[0]));
+  let sweep = endAngle - startAngle;
+  if (sweep <= 1e-9) sweep += Math.PI * 2;
+  return { center, radius, startAngle, endAngle, sweep };
+}
+
+/** A point on the arc, `t` in [0, 1] from start to end. */
+export function arcPointAt(arc: ArcGeometry, t: number): Vec2 {
+  const angle = arc.startAngle + arc.sweep * t;
+  return [
+    arc.center[0] + Math.cos(angle) * arc.radius,
+    arc.center[1] + Math.sin(angle) * arc.radius,
+  ];
+}
+
+/**
+ * Sample an arc from `from` to `to` (both are endpoint ids). The samples include
+ * `from` and include `to` only when `includeEnd` is true.
+ */
+export function sampleArc(
+  arc: SketchArc,
+  from: string,
+  to: string,
+  points: Record<string, Vec2>,
+  includeEnd: boolean,
+  maxStep = Math.PI / 36,
+): Vec2[] {
+  const geometry = arcGeometry(arc, points);
+  if (!geometry) return [];
+  const forward = from === arc.start && to === arc.end;
+  const backward = from === arc.end && to === arc.start;
+  if (!forward && !backward) return [];
+
+  const steps = Math.max(1, Math.ceil(geometry.sweep / maxStep));
+  const result: Vec2[] = [];
+  const count = includeEnd ? steps : steps - 1;
+  for (let i = 0; i <= count; i++) {
+    if (i === steps && !includeEnd) break;
+    const t = forward ? i / steps : 1 - i / steps;
+    result.push(arcPointAt(geometry, t));
+  }
+  return result;
+}
+
+/** Radius of a circle or arc, from the solved geometry. */
+export function curveRadius(
+  curve: SketchCurve,
+  points: Record<string, Vec2>,
+  radii: Record<string, number> = {},
+): number | null {
+  if (curve.type === "circle") return radii[curve.id] ?? curve.radius;
+  if (curve.type === "arc") {
+    const center = points[curve.center];
+    const start = points[curve.start];
+    return center && start ? distance(center, start) : null;
+  }
+  return null;
+}
+
+export function normalizeAngle(angle: number): number {
+  const twoPi = Math.PI * 2;
+  const wrapped = angle % twoPi;
+  return wrapped < 0 ? wrapped + twoPi : wrapped;
 }
 
 export function distance(a: Vec2, b: Vec2): number {
