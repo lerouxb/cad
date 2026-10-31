@@ -39,7 +39,9 @@ extrude:
   undo/redo, DOF/diagnostics, worker protocol, three.js viewport, exact volume/face counts,
   unit + e2e tests. The part is a plain-JSON `Doc` with sketch/extrude features,
   schemaVersion + migrations, autosave to `localStorage`, and undoable feature parameters
-  (extrude height and selected regions).
+  (extrude height and selected regions). The main-thread rebuild walks the feature list
+  in order with a prefix cache and per-feature diagnostics; the worker still builds one
+  extrude.
 - UI: one main stage. The bottom timeline switches between the full-stage sketch editor
   and the 3D model; the sketch has floating tools, a DOF pill, and a floating selection /
   dimension inspector. No permanent sidebar. The paper/ink theme has day/night modes and
@@ -50,12 +52,12 @@ extrude:
   trim supports lines and arcs but not turning a circle into an arc; face/edge picking is
   not implemented; the example sketch is hand-authored (`core/sketch/demo.ts`);
   **datum planes and sketch-on-face are not implemented (M4)**; the timeline is still the
-  fixed two-step list (rename/reorder/suppress and feature dialogs are next); the rebuild
-  engine still evaluates one sketch + one extrude without prefix caching or per-feature
-  diagnostics. Free 3D sketches, splines/text/images and drawing exports are out of scope.
+  fixed two-step list (rename/reorder/suppress and feature dialogs are next); the worker
+  still evaluates one extrude, without worker-side feature caching or join/cut booleans.
+  Free 3D sketches, splines/text/images and drawing exports are out of scope.
 
-Next: **finish M3** (ordered rebuild/cache, feature tree editing, multi-feature booleans),
-then **M4** (datum planes + face supports). Read `docs/PLAN.md`; it is the source of truth
+Next: **finish M3** (worker-side feature cache, feature tree editing, multi-feature
+booleans), then **M4** (datum planes + face supports). Read `docs/PLAN.md`; it is the source of truth
 for done. Unsupported geometry/features (ellipses, conics, B-splines, free
 3D sketches, 3D fillets, lofts/sweeps, patterns/mirror, drafts, shelling/offsets,
 expressions, threads) and the upstream SolveSpace/OCCT work are documented in **PLAN M9**.
@@ -227,6 +229,14 @@ docs/
   malformed or newer documents; `core/doc/persistence.ts` autosaves under `cad.doc`.
   `primarySketch` / `primaryExtrudeFeature` / `updatePrimarySketch` are the selectors
   App uses so component state does not become a second document.
+- **Rebuild is ordered, cached and explicit.** `core/rebuild` walks `doc.features` in
+  order. `cacheKey = hash(canonical(feature), upstreamKey)`, so a height/region edit reuses
+  the solved sketch and a sketch edit invalidates the extrude. Every feature returns
+  `status` + diagnostics; App uses `rebuild.params` when the solver is ready and keeps
+  the local region/param path only as the pre-solver fallback. The cache is bounded and
+  in-memory. `selectExtrudeRegions` is shared by App and the engine so the auto/largest
+  material fallback cannot drift. Do not claim worker-side feature caching or multi-body
+  booleans yet; the worker still builds the last extrude only.
 - **Regions are faces, not every cycle.** `planarArrangement` splits line/arc segments at
   crossings, T-junctions and circle crossings without touching the document. `findLoops`
   enumerates cycles on that split graph, `regionsFromSketch` drops a cycle when a smaller

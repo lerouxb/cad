@@ -42,8 +42,12 @@ then sketches on faces, then more features.
 - The part is a plain-JSON document (`Doc` + typed features), not component state:
   migrate-on-load, autosave to `localStorage`, undoable extrude height and region
   selection, and the feature names drive the timeline.
+- The main-thread rebuild is ordered and cached: sketch features solve and extract
+  profiles, extrude features resolve their source and regions, and every feature gets a
+  status/diagnostics record. A height edit reuses the sketch result; a sketch edit
+  invalidates the extrude. The kernel still builds one extrude in the worker.
 - The example sketch can be loaded, cleared, edited, or replaced by drawing.
-- `npm run verify` (110 unit tests) and `npm run e2e` (20 tests) are green. The e2e asserts
+- `npm run verify` (126 unit tests) and `npm run e2e` (20 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -304,14 +308,15 @@ candidates rather than being trimmed into arcs.
 ## M3 — History (4–6 days)
 
 **In progress.** The document store, migrations, autosave, feature names, undoable
-extrude height and region selection are in. The ordered rebuild engine/cache, feature
-tree editing, and multi-feature booleans are next.
+extrude height and region selection, and the main-thread ordered rebuild/cache are in.
+Worker-side feature caching, feature-tree editing, and multi-feature booleans are next.
 
 - [x] `core/doc`: feature/document schema (`Doc`, `schemaVersion`, ids, migrations) and
       move the sketch out of component state into the document store — prerequisites for
       history, deliberately deferred from M1
-- [ ] `core/rebuild`: ordered evaluation, per-feature status, prefix cache, generation
-      counters, cancellation of stale results
+- [x] `core/rebuild`: ordered evaluation, per-feature status, prefix cache, generation
+      counters, cancellation of stale results — the main-thread plan is in; the worker
+      still drops stale results with its latest-wins generation
 - [ ] Feature tree UI: select, rename, reorder (drag), suppress, delete
 - [ ] Feature edit dialogs (extrude distance/symmetric/operation/end condition)
 - [ ] Rebuild-on-edit with stale-while-rebuilding rendering

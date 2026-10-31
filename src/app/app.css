@@ -1712,8 +1712,16 @@ body {
 }
 
 .timeline-note {
+  max-width: 320px;
+  overflow: hidden;
   font-size: 10px;
   letter-spacing: 0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.timeline-note.is-error {
+  color: var(--danger);
 }
 
 .viewport-stats,

@@ -63,7 +63,8 @@ selection/dimension inspector; there is no permanent sidebar.
 - **A real document**: the sketch, extrude feature and selected regions live in a
   plain-JSON `Doc` with a schema version and migrations. The part autosaves to local
   storage and reopens with the same solid; the extrude height and region selection are
-  undoable feature parameters.
+  undoable feature parameters. The main-thread rebuild evaluates features in order,
+  caches the sketch prefix, and reports per-feature diagnostics.
 - Exact volume/face/triangle stats, and e2e tests that check them numerically while
   dragging, dimensioning, drawing, selecting/deleting, and undoing.
 - A typography-first **paper-and-ink** interface with day/night themes and one

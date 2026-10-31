@@ -406,20 +406,32 @@ symmetric). The sketch is no longer React component state.
   feature fields; changing them goes through the same `useHistory` snapshot store as
   sketch edits. Region ids can invalidate when a boundary changes, so the UI filters
   stored ids against the current regions and falls back to auto/largest.
-- **Still a two-feature rebuild.** The current kernel call is still
-  sketch -> selected regions -> one extrude. Ordered per-feature evaluation, prefix
-  caching, generation/cancellation and per-feature diagnostics are the next M3 slice.
+- **Ordered main-thread rebuild is in.** `core/rebuild/engine.ts` walks features in
+  order, solves/derives the sketch, resolves an extrude's source sketch and regions, and
+  returns a `FeatureResult` with status and diagnostics. `cacheKey =
+  hash(canonical(feature) + upstreamKey)` gives prefix reuse: height/region edits keep the
+  sketch result; sketch edits invalidate the extrude. The cache is bounded and in-memory.
+  `selectExtrudeRegions` is the single source of the auto/largest-material fallback.
+- **Still one kernel extrude.** The worker call remains sketch -> selected regions -> one
+  extrude, with latest-wins generation dropping stale results. Worker-side feature
+  caching, multiple bodies, join/cut booleans and feature-tree editing are the next M3
+  slices.
 
 ## 6. Rebuild engine
 
 Input: `Doc`. Output: the final solid, its tessellation, and per-feature status.
 
+Current split: the main thread evaluates sketches and produces `ExtrudeParams` in
+`core/rebuild`; the worker still turns the last params into one solid.
+
 ```
-features in order
-  ├─ resolve any TopoRefs against the output of the feature they refer to
-  ├─ evaluate (sketch: solve; extrude: wire→solid→boolean)
-  ├─ cache output keyed by hash(feature input, resolved refs, upstream key)
+main thread: features in order
+  ├─ evaluate sketch: solve -> regions
+  ├─ evaluate extrude: source sketch -> selected regions -> ExtrudeParams
+  ├─ cache output keyed by hash(feature, upstream key)
   └─ record { featureId, status, output, diagnostics }
+
+worker: ExtrudeParams -> one solid -> mesh
 ```
 
 - **Prefix caching.** `cacheKey = hash(canonical(feature), upstreamCacheKey)`. Editing

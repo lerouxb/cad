@@ -17,9 +17,11 @@ import {
   updatePrimarySketch,
 } from "../core/doc/selectors";
 import type { Doc } from "../core/doc/types";
-import { extrudeParams } from "../core/features/extrude";
+import { extrudeParams, selectExtrudeRegions } from "../core/features/extrude";
 import { KernelClient } from "../core/kernel/client";
 import type { BodyMesh } from "../core/kernel/protocol";
+import { rebuildDocument } from "../core/rebuild/engine";
+import { RebuildCache } from "../core/rebuild/types";
 import {
   addArc,
   addCircle,
@@ -130,27 +132,31 @@ export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const clientRef = useRef<KernelClient | null>(null);
   const viewportRef = useRef<Viewport | null>(null);
+  const [rebuildCache] = useState(() => new RebuildCache());
 
   const geometry = useMemo(() => sketchGeometry(sketch), [sketch]);
-  const regions = useMemo(() => regionsFromSketch(sketch), [sketch]);
-  const validRegionIds = useMemo(
-    () =>
-      (storedRegionIds ?? []).filter((id) =>
-        regions.some((region) => region.id === id),
-      ),
-    [storedRegionIds, regions],
+  // Region fills can render from the raw sketch before the solver is ready.
+  // Once it is, the ordered rebuild owns the solved sketch and its regions.
+  const localRegions = useMemo(() => regionsFromSketch(sketch), [sketch]);
+  const sketchOutcomes = useMemo(() => {
+    const outcomes = new Map<string, SolveOutcome>();
+    if (sketchFeature && editor.solved) outcomes.set(sketchFeature.id, editor.solved);
+    return outcomes;
+  }, [sketchFeature, editor.solved]);
+  const rebuild = useMemo(() => {
+    if (solverState !== "ready") return null;
+    return rebuildDocument(doc, {
+      cache: rebuildCache,
+      sketchOutcomes,
+    });
+  }, [doc, solverState, sketchOutcomes, rebuildCache]);
+  const regions = rebuild?.sketch?.regions ?? localRegions;
+  const regionSelection = useMemo(
+    () => selectExtrudeRegions(regions, storedRegionIds ?? []),
+    [regions, storedRegionIds],
   );
-  const activeRegionIds = useMemo(() => {
-    if (validRegionIds.length > 0) return validRegionIds;
-    // Auto defaults to the largest *material* face, not whichever void happens
-    // to have the bigger area (a thin frame around a huge hole is still a frame).
-    const fallback = regions.find((region) => region.kind === "material") ?? regions[0];
-    return fallback ? [fallback.id] : [];
-  }, [validRegionIds, regions]);
-  const activeRegions = useMemo(
-    () => regions.filter((region) => activeRegionIds.includes(region.id)),
-    [regions, activeRegionIds],
-  );
+  const activeRegionIds = regionSelection.ids;
+  const activeRegions = regionSelection.regions;
   const selectedRegions = useMemo(
     () => new Set(activeRegionIds),
     [activeRegionIds],
@@ -163,9 +169,28 @@ export function App() {
     () => regions.some((region) => region.kind === "void"),
     [regions],
   );
-  const params = useMemo(
-    () => (activeRegions.length > 0 ? extrudeParams(activeRegions, extrudeHeight) : null),
-    [activeRegions, extrudeHeight],
+  const params = useMemo(() => {
+    // Before the solver is ready, keep the existing local path so the first
+    // mesh can appear. Once the rebuild runs, its params are authoritative and
+    // a feature error must not silently fall back to a different body.
+    if (rebuild) return rebuild.params;
+    return activeRegions.length > 0
+      ? extrudeParams(activeRegions, extrudeHeight)
+      : null;
+  }, [rebuild, activeRegions, extrudeHeight]);
+  const rebuildDiagnostics = useMemo(
+    () =>
+      rebuild?.features
+        .flatMap((feature) =>
+          feature.diagnostics.map((diagnostic) => ({
+            feature: feature.name,
+            diagnostic,
+          })),
+        ) ?? [],
+    [rebuild],
+  );
+  const firstRebuildError = rebuildDiagnostics.find(
+    ({ diagnostic }) => diagnostic.severity === "error",
   );
 
   const selectedInfo = useMemo(
@@ -1065,7 +1090,7 @@ export function App() {
             {regions.length > 1 ? (
               <div className="region-panel" data-testid="region-panel">
                 <span>
-                  {validRegionIds.length > 0
+                  {!regionSelection.auto
                     ? `${activeRegionIds.length} of ${regions.length} regions${
                         activeVoidCount > 0
                           ? activeVoidCount === activeRegionIds.length
@@ -1093,7 +1118,7 @@ export function App() {
                     Voids
                   </button>
                 ) : null}
-                {validRegionIds.length > 0 ? (
+                {!regionSelection.auto ? (
                   <button
                     className="constraint-chip"
                     type="button"
@@ -1141,7 +1166,25 @@ export function App() {
             </button>
           </div>
           <div className="timeline-actions">
-            <span className="timeline-note">Autosaved locally</span>
+            <span
+              className={`timeline-note${firstRebuildError ? " is-error" : ""}`}
+              data-testid="rebuild-status"
+              data-status={rebuild?.status ?? "pending"}
+              title={
+                rebuildDiagnostics.length > 0
+                  ? rebuildDiagnostics
+                      .map(
+                        ({ feature, diagnostic }) =>
+                          `${feature}: ${diagnostic.message}`,
+                      )
+                      .join("\n")
+                  : undefined
+              }
+            >
+              {firstRebuildError
+                ? firstRebuildError.diagnostic.message
+                : "Autosaved locally"}
+            </span>
           </div>
         </footer>
       </main>

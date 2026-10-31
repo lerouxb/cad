@@ -1,0 +1,244 @@
+import { describe, expect, it } from "vitest";
+import { createDocument } from "../doc/create";
+import { updateExtrudeHeight, updateExtrudeRegions, updatePrimarySketch } from "../doc/selectors";
+import { extrudeParams } from "../features/extrude";
+import { addCircle, emptySketch } from "../sketch/create";
+import { createDemoModel } from "../sketch/demo";
+import { sketchGeometry } from "../sketch/geometry";
+import { regionsFromSketch } from "../sketch/loops";
+import type { SolveOutcome } from "../sketch/solver";
+import type { Sketch } from "../sketch/types";
+import { rebuildDocument } from "./engine";
+import { canonicalJson, stableHash } from "./hash";
+import { RebuildCache, type RebuildDeps } from "./types";
+
+function solved(sketch: Sketch): SolveOutcome {
+  const geometry = sketchGeometry(sketch);
+  return {
+    ok: true,
+    status: "ok",
+    dof: 0,
+    points: geometry.points,
+    radii: geometry.radii,
+    conflicting: [],
+  };
+}
+
+function countingDeps(): {
+  calls: { solve: number; regions: number; extrude: number };
+  deps: RebuildDeps;
+} {
+  const calls = { solve: 0, regions: 0, extrude: 0 };
+  return {
+    calls,
+    deps: {
+      solveSketch: (sketch) => {
+        calls.solve += 1;
+        return solved(sketch);
+      },
+      regionsFromSketch: (sketch) => {
+        calls.regions += 1;
+        return regionsFromSketch(sketch);
+      },
+      extrudeParams: (regions, height) => {
+        calls.extrude += 1;
+        return extrudeParams(regions, height);
+      },
+    },
+  };
+}
+
+function exampleDoc() {
+  return createDocument(createDemoModel().sketch, {
+    id: "doc",
+    sketchId: "sketch",
+    extrudeId: "extrude",
+    name: "Part",
+    height: 12,
+  });
+}
+
+describe("ordered rebuild", () => {
+  it("evaluates sketch then extrude with diagnostics", () => {
+    const { calls, deps } = countingDeps();
+    const result = rebuildDocument(
+      exampleDoc(),
+      { generation: 7, cache: new RebuildCache() },
+      deps,
+    );
+
+    expect(result.generation).toBe(7);
+    expect(result.status).toBe("ok");
+    expect(result.features.map((feature) => feature.type)).toEqual([
+      "sketch",
+      "extrude",
+    ]);
+    expect(result.features.every((feature) => feature.status === "ok")).toBe(true);
+    expect(result.features.every((feature) => !feature.cached)).toBe(true);
+    expect(result.sketch?.regions).toHaveLength(2);
+    expect(result.params?.height).toBe(12);
+    expect(calls).toEqual({ solve: 1, regions: 1, extrude: 1 });
+  });
+
+  it("re-evaluates only the extrude when its height changes", () => {
+    const { calls, deps } = countingDeps();
+    const cache = new RebuildCache();
+    const doc = exampleDoc();
+    rebuildDocument(doc, { cache }, deps);
+
+    const taller = updateExtrudeHeight(doc, 30);
+    const result = rebuildDocument(taller, { cache }, deps);
+
+    expect(result.features[0]?.cached).toBe(true);
+    expect(result.features[1]?.cached).toBe(false);
+    expect(result.params?.height).toBe(30);
+    expect(calls).toEqual({ solve: 1, regions: 1, extrude: 2 });
+  });
+
+  it("invalidates the extrude when the upstream sketch changes", () => {
+    const { calls, deps } = countingDeps();
+    const cache = new RebuildCache();
+    const doc = exampleDoc();
+    rebuildDocument(doc, { cache }, deps);
+
+    const sketch = doc.features[0];
+    if (sketch?.type !== "sketch") throw new Error("Expected a sketch");
+    const edited = updatePrimarySketch(
+      doc,
+      addCircle(sketch.sketch, { point: [45, 20] }, 5),
+    );
+    const result = rebuildDocument(edited, { cache }, deps);
+
+    expect(result.features[0]?.cached).toBe(false);
+    expect(result.features[1]?.cached).toBe(false);
+    expect(result.sketch?.regions).toHaveLength(3);
+    expect(calls).toEqual({ solve: 2, regions: 2, extrude: 2 });
+  });
+
+  it("uses the editor's solved outcome instead of solving again", () => {
+    const { calls, deps } = countingDeps();
+    const doc = exampleDoc();
+    const sketch = doc.features[0];
+    if (sketch?.type !== "sketch") throw new Error("Expected a sketch");
+    const outcomes = new Map([["sketch", solved(sketch.sketch)]]);
+
+    const result = rebuildDocument(doc, { sketchOutcomes: outcomes }, deps);
+    expect(result.status).toBe("ok");
+    expect(calls.solve).toBe(0);
+    expect(calls.regions).toBe(1);
+  });
+
+  it("skips downstream features when the sketch fails and caches the error", () => {
+    const deps: RebuildDeps = {
+      solveSketch: () => ({
+        ok: false,
+        status: "inconsistent",
+        dof: 0,
+        points: {},
+        radii: {},
+        conflicting: ["c1"],
+        message: "Constraints conflict.",
+      }),
+      regionsFromSketch,
+      extrudeParams,
+    };
+    const cache = new RebuildCache();
+    const first = rebuildDocument(exampleDoc(), { cache }, deps);
+    const second = rebuildDocument(exampleDoc(), { cache }, deps);
+
+    expect(first.status).toBe("error");
+    expect(first.features[0]?.status).toBe("error");
+    expect(first.features[1]?.status).toBe("skipped");
+    expect(first.params).toBeNull();
+    expect(first.features[0]?.diagnostics.map((d) => d.code)).toContain(
+      "solve-inconsistent",
+    );
+    expect(second.features[0]?.cached).toBe(true);
+    expect(second.features[1]?.cached).toBe(true);
+  });
+
+  it("reports an empty sketch and the extrude that cannot use it", () => {
+    const result = rebuildDocument(
+      createDocument(emptySketch(), { height: 12 }),
+      {},
+      countingDeps().deps,
+    );
+    expect(result.status).toBe("error");
+    expect(result.features[0]?.status).toBe("ok");
+    expect(result.features[0]?.diagnostics[0]?.code).toBe("empty-profile");
+    expect(result.features[1]?.status).toBe("error");
+    expect(result.features[1]?.diagnostics[0]?.code).toBe("no-region");
+  });
+
+  it("warns about a stale region selection and falls back to material", () => {
+    const doc = updateExtrudeRegions(exampleDoc(), ["missing-region"]);
+    const result = rebuildDocument(doc, {}, countingDeps().deps);
+    const extrude = result.features[1]!;
+    expect(result.status).toBe("ok");
+    expect(extrude.output?.kind).toBe("extrude");
+    if (extrude.output?.kind !== "extrude") throw new Error("Expected extrude");
+    expect(extrude.output.auto).toBe(true);
+    expect(extrude.diagnostics[0]?.code).toBe("stale-regions");
+  });
+
+  it("errors on an invalid height and unsupported operations", () => {
+    const zero = rebuildDocument(
+      updateExtrudeHeight(exampleDoc(), 0),
+      {},
+      countingDeps().deps,
+    );
+    expect(zero.status).toBe("error");
+    expect(zero.features[1]?.diagnostics[0]?.code).toBe("invalid-height");
+
+    const doc = exampleDoc();
+    const cut = {
+      ...doc,
+      features: doc.features.map((feature) =>
+        feature.type === "extrude"
+          ? { ...feature, operation: "cut" as const }
+          : feature,
+      ),
+    };
+    const result = rebuildDocument(cut, {}, countingDeps().deps);
+    expect(result.features[1]?.diagnostics[0]?.code).toBe(
+      "operation-not-implemented",
+    );
+  });
+
+  it("reports an extrude whose source sketch is missing", () => {
+    const doc = exampleDoc();
+    const isolated = {
+      ...doc,
+      features: doc.features.filter((feature) => feature.type === "extrude"),
+    };
+    const result = rebuildDocument(isolated, {}, countingDeps().deps);
+    expect(result.status).toBe("error");
+    expect(result.features[0]?.diagnostics[0]?.code).toBe("missing-sketch");
+  });
+});
+
+describe("rebuild cache keys", () => {
+  it("canonicalizes object keys and hashes deterministically", () => {
+    expect(canonicalJson({ b: 1, a: { d: 2, c: 3 } })).toBe(
+      '{"a":{"c":3,"d":2},"b":1}',
+    );
+    expect(stableHash("same")).toBe(stableHash("same"));
+    expect(stableHash("a")).not.toBe(stableHash("b"));
+  });
+
+  it("clears its entries and bounds a drag-time cache", () => {
+    const cache = new RebuildCache(2);
+    const result = rebuildDocument(exampleDoc(), { cache }, countingDeps().deps);
+    expect(cache.size).toBe(2);
+    expect(result.status).toBe("ok");
+
+    rebuildDocument(
+      updateExtrudeHeight(exampleDoc(), 20),
+      { cache },
+      countingDeps().deps,
+    );
+    expect(cache.size).toBe(2);
+    cache.clear();
+    expect(cache.size).toBe(0);
+  });
+});

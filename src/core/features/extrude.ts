@@ -3,6 +3,47 @@ import { ensureCounterClockwise, signedArea } from "../sketch/geometry";
 import type { SketchRegion } from "../sketch/loops";
 import type { ProfileLoop, ProfileSegment } from "../types";
 
+export interface ExtrudeRegionSelection {
+  /** Region ids actually used, in canvas/area order. */
+  ids: string[];
+  regions: SketchRegion[];
+  /** True when no explicit selection survived and the largest material face won. */
+  auto: boolean;
+  /** True when some stored ids no longer exist on the current sketch. */
+  stale: boolean;
+}
+
+/**
+ * Resolve an extrude's stored region ids against the current sketch.
+ *
+ * Empty or stale selections fall back to the largest material face, never to a
+ * void face: a thin frame around a huge hole is still a frame. Explicit void
+ * ids are honored exactly like material ids.
+ */
+export function selectExtrudeRegions(
+  all: readonly SketchRegion[],
+  stored: readonly string[],
+): ExtrudeRegionSelection {
+  const wanted = new Set(stored);
+  const valid = all.filter((region) => wanted.has(region.id));
+  if (valid.length > 0) {
+    return {
+      ids: valid.map((region) => region.id),
+      regions: valid,
+      auto: false,
+      stale: valid.length !== wanted.size,
+    };
+  }
+
+  const fallback = all.find((region) => region.kind === "material") ?? all[0];
+  return {
+    ids: fallback ? [fallback.id] : [],
+    regions: fallback ? [fallback] : [],
+    auto: true,
+    stale: stored.length > 0,
+  };
+}
+
 /** Turn selected sketch regions into kernel input. */
 export function extrudeParams(
   regions: readonly SketchRegion[],
