@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — typography specimen</title>
+    <link rel="stylesheet" href="mockup.css" />
+    <script src="theme-init.js"></script>
+  </head>
+  <body class="index-page">
+    <div class="mockbar">
+      <a class="mockbar-brand" href="index.html">
+        cad <span class="tag">UI studies</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Typeset">
+        <a href="index.html">index</a>
+        <a class="is-active" href="typography.html">type</a>
+      </nav>
+      <div class="mockbar-right">
+        <span class="hero-preview-label">preview</span>
+        <div class="theme-switch" role="group" aria-label="Theme">
+          <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+          <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+        </div>
+        <div class="highlight-switch" role="group" aria-label="Highlight colour">
+          <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+          <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+          <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+          <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+        </div>
+        <a class="mockbar-btn" href="TYPOGRAPHY.md">rules</a>
+      </div>
+    </div>
+
+    <main class="index">
+      <div class="index-kicker">typography · specimen</div>
+      <h1>Type is the <span class="mark">interface.</span></h1>
+      <p class="index-lede">
+        Three families, eight app roles, one editorial layer. This page is the
+        specimen; <b>TYPOGRAPHY.md</b> is the contract; the audit fails any raw
+        type value outside the token block.
+      </p>
+      <div class="index-actions">
+        <a class="text-action" href="index.html">back to index</a>
+        <a class="text-action" href="TYPOGRAPHY.md">read the rules</a>
+        <span class="text-action is-quiet">node docs/mockups/check-typography.mjs</span>
+      </div>
+
+      <section class="index-panel">
+        <div class="index-section-head">
+          <h2>app roles</h2>
+          <p>the eight roles used by the app surfaces</p>
+        </div>
+        <div class="type-specimen">
+          <div class="type-role">
+            <div class="type-role-meta">
+              <span class="type-role-token">--type-display</span>
+              <span class="type-role-use">serif · 27 · 400</span>
+            </div>
+            <span class="specimen-display">Body 01</span>
+          </div>
+          <div class="type-role">
+            <div class="type-role-meta">
+              <span class="type-role-token">--type-name</span>
+              <span class="type-role-use">serif · 17 · 400</span>
+            </div>
+            <span class="specimen-name">angle-bracket.cad</span>
+          </div>
+          <div class="type-role">
+            <div class="type-role-meta">
+              <span class="type-role-token">--type-row</span>
+              <span class="type-role-use">serif · 15 · 400</span>
+            </div>
+            <span class="specimen-row">hinge-bracket.cad · warm grey</span>
+          </div>
+          <div class="type-role">
+            <div class="type-role-meta">
+              <span class="type-role-token">--type-prose</span>
+              <span class="type-role-use">sans · 12 · 400</span>
+            </div>
+            <span class="specimen-prose">
+              Appearance is attached to the body created by this step. Later
+              features keep the same body.
+            </span>
+          </div>
+          <div class="type-role">
+            <div class="type-role-meta">
+              <span class="type-role-token">--type-control</span>
+              <span class="type-role-use">mono · 9.5 · 400</span>
+            </div>
+            <span class="specimen-control">new sketch · export STL · 100%</span>
+          </div>
+          <div class="type-role">
+            <div class="type-role-meta">
+              <span class="type-role-token">--type-value</span>
+              <span class="type-role-use">mono · 10 · 400</span>
+            </div>
+            <span class="specimen-value">40.0 mm · 24,310 mm³</span>
+          </div>
+          <div class="type-role">
+            <div class="type-role-meta">
+              <span class="type-role-token">--type-label</span>
+              <span class="type-role-use">mono · 9 · 500</span>
+            </div>
+            <span class="specimen-label">History · Current file</span>
+          </div>
+          <div class="type-role">
+            <div class="type-role-meta">
+              <span class="type-role-token">--type-micro</span>
+              <span class="type-role-use">mono · 8.5 · 400</span>
+            </div>
+            <span class="specimen-micro">7 steps · 1 body · just now</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="index-panel">
+        <div class="index-section-head">
+          <h2>families</h2>
+          <p>three, and only three</p>
+        </div>
+        <div class="type-family-grid">
+          <div class="type-family">
+            <div class="type-family-label">serif · names and titles</div>
+            <div class="specimen-serif">angle-bracket</div>
+          </div>
+          <div class="type-family">
+            <div class="type-family-label">sans · prose</div>
+            <div class="specimen-sans">The quick brown fox jumps over the lazy dog.</div>
+          </div>
+          <div class="type-family">
+            <div class="type-family-label">mono · labels and data</div>
+            <div class="specimen-mono">40.0 mm · 24,310 mm³</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="index-panel">
+        <div class="index-section-head">
+          <h2>weights</h2>
+          <p>400 / 500 / 600 only</p>
+        </div>
+        <div class="type-weight-grid">
+          <span class="specimen-weight is-regular">regular 400</span>
+          <span class="specimen-weight is-medium">medium 500</span>
+          <span class="specimen-weight is-strong">strong 600</span>
+        </div>
+        <p class="specimen-note">
+          The index headline and study titles are the only editorial exceptions:
+          <span class="mono">--type-editorial-display</span>,
+          <span class="mono">--type-editorial-title</span> and
+          <span class="mono">--type-editorial-lede</span>.
+        </p>
+      </section>
+    </main>
+
+    <script src="mockups.js"></script>
+  </body>
+</html>

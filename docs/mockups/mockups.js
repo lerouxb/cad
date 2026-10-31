@@ -466,7 +466,6 @@
     var error = opts.error || "";
     var pending = opts.pending || null;
     var out = [];
-    var pauseInserted = false;
 
     for (var i = 0; i < HISTORY.length; i++) {
       var step = HISTORY[i];
@@ -475,20 +474,6 @@
       if (step.num === active) classes.push("is-active");
       if (pausedFrom && index >= pausedFrom) classes.push("is-paused");
       if (error && step.num === error) classes.push("is-error");
-
-      if (
-        pausedFrom &&
-        index === pausedFrom &&
-        opts.pauseLabel !== false &&
-        !pauseInserted
-      ) {
-        out.push(
-          '<span class="step-pause"><span>' +
-            (opts.pauseLabel || "rollback") +
-            "</span></span>",
-        );
-        pauseInserted = true;
-      }
 
       out.push(
         '<button class="' +
@@ -529,10 +514,6 @@
           "</span>" +
           "</button>",
       );
-    }
-
-    if (opts.end !== false) {
-      out.push('<span class="timeline-end">end of part</span>');
     }
     return out.join("");
   }

@@ -49,6 +49,9 @@ dependencies. The shared files are plain HTML/CSS/JS and are **not imported by
 8. **Separate the study from the app.** The thin top bar is mockup navigation
    and design notes. Appearance is a quick-access app setting in the app header;
    a future full settings surface can hold the rest.
+9. **Typography is a contract.** Three families, eight app roles, one separate
+   editorial layer for this index. No raw type values outside the token block;
+   run the audit before calling a change done.
 
 ## Using the studies
 
@@ -104,6 +107,15 @@ naming should leave room for those later, but they are not part of this pass.
 The document is also **offline and local-only**: no accounts, sharing, or cloud
 sync. Files are downloaded as `.cad` and browsed on this device.
 
+## Typography
+
+See [TYPOGRAPHY.md](TYPOGRAPHY.md) for the families, the eight app roles, the
+editorial layer, and the rules. Run the audit from the repo root:
+
+```bash
+node docs/mockups/check-typography.mjs
+```
+
 ## Files
 
 ```
@@ -116,6 +128,9 @@ index.html          the design document / gallery
 06-errors.html      lost reference / paused rebuild
 07-files.html       local file menu + file browser
 08-body.html        body material + finish
+typography.html     visual specimen for every app role
+TYPOGRAPHY.md       the type contract and role table
+check-typography.mjs  audit raw type values outside the token block
 mockup.css          the whole visual system, both themes and all four highlighters
 mockups.js          bracket, datum planes, timeline strip, theme + highlight switches
 theme-init.js       restore theme and highlighter before first paint
