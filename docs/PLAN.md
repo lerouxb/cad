@@ -11,7 +11,7 @@ then sketches on faces, then more features.
 
 ## Where we are (2026-10-31)
 
-**M0 and the M1 core are done.** The app is an editable parametric sketcher:
+**M0 and M1 are done.** The app is an editable parametric sketcher:
 
 - `slvs` loads lazily and solves real sketches. Dragging projects the cursor delta onto
   the constraint tangent space, so points slide along lines and circles, and whole lines
@@ -22,25 +22,28 @@ then sketches on faces, then more features.
 - Closed profiles are extracted from the graph: the largest region (a line loop or a
   circle) becomes the body, nested loops/circles become holes. Extruded by OCCT in a
   worker; three.js renders the solid and its B-rep edges, Z-up.
-- Dimension tool: distance (point-to-point / line) and diameter, driving or reference,
-  with inline edit/delete. Floating constraint bar: parallel, perpendicular, equal,
-  point-on-line, coincident, horizontal/vertical, construction.
+- Dimension tool: distance (point-to-point, point-to-line, line), angle, diameter and
+  radius, driving or reference, with inline edit/delete and draggable labels. Floating
+  constraint bar: parallel, perpendicular, equal, point-on-line, point-on-circle,
+  tangent, symmetric, midpoint, coincident, fix, horizontal/vertical, construction.
+- Arcs: three-point arcs and a parametric corner fillet; arc loops extrude exactly as
+  OCCT arc edges (not tessellated).
 - Undo/redo with gesture grouping (`Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`); one drag or slider
   gesture is one step. `Esc` cancels a draft and clears the selection.
 - Click curves/points to select them, Shift-click to multi-select, and Delete/Backspace to
   remove. Deletion cascades to dependent curves and constraints, and leaves no orphaned
   references. A selection card reports length/diameter/position.
 - The example sketch can be loaded, cleared, edited, or replaced by drawing.
-- `npm run verify` (59 unit tests) and `npm run e2e` (7 tests) are green. The e2e asserts
-  exact volumes, drags, dimensions, constraints, draws, selects/deletes, and undoes.
+- `npm run verify` (75 unit tests) and `npm run e2e` (10 tests) are green. The e2e asserts
+  exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
+  draws, selects/deletes, and undoes.
 
 Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
 95 017.7 mm³ and rebuilds in ~35 ms after warm-up.
 
-**Still temporary** (all scheduled below): profile selection is "largest loop"; line
-dimension labels cannot be repositioned after placement; angle/tangent/symmetric
-constraints and arcs have no UI yet; **datum planes and sketch-on-face are M4**; the
-feature tree is static; nothing is persisted.
+**Still temporary** (all scheduled below): profile selection is "largest loop"; **datum
+planes and sketch-on-face are M4**; the feature tree is static; nothing is persisted.
+Free 3D sketches, splines/text/images and drawing exports remain out of scope.
 
 ---
 
@@ -62,14 +65,14 @@ anchored between the inner walls.
 | Sketch anywhere in 3D (3D lines) | Out of scope: the solver/model is 2D-plane. Revisit if sweep paths need it. |
 | Datum point / workplane | Planes M4; datum points/axes M6 (needed for through-3-point planes and revolve axes) |
 | Line, construction line, rectangle, circle | Done |
-| Arc (3-point, tangent at point) | M1 — this is how the demo rounds the L's inner corner |
+| Arc (3-point, tangent at point) | Done — three-point arcs + a parametric corner fillet |
 | Bezier cubic / text / image | Out of scope for now (arcs first; profile extraction is line+circle only) |
 | Split curves at intersection / trim | M2 sketch editing |
-| Distance/diameter + reference dimensions | Done |
-| Angle / reference angle | M1 |
+| Distance (point-point, point-line), angle, diameter, radius, reference dimensions | Done |
+| Angle / reference angle | Done (dimension tool) |
 | Horizontal, vertical, parallel, perpendicular, equal, point-on-line | Done |
-| Midpoint, symmetric, tangent | M1 (midpoint solver exists; UI missing) |
-| Lock point where dragged / fix | M1 (a real "fixed point" constraint) |
+| Midpoint, symmetric, tangent | Done |
+| Lock point where dragged / fix | Done |
 | Extrude, one-sided | Done |
 | Two-sided / symmetric extrude | M3 (`symmetric`) |
 | Through-all / up-to-face extrude end condition | M3 blind + through-all; up-to-face in M4 (needs `TopoRef`) |
@@ -141,13 +144,14 @@ reference survive edits through topological naming.
 
 ---
 
-## M1 — The real sketcher (core done)
+## Done: M1 — The real sketcher
 
-The most UX-sensitive milestone. The solver plumbing, the drawing loop, selection,
-dimensions and the common constraints work; what is left is refinement.
+The most UX-sensitive milestone: solver, drawing loop, selection, dimensions, arcs and
+the full constraint set.
 
-- [x] Tools: line (chain), rectangle, circle; select mode; grid + point snapping;
-      automatic coincident endpoints (shared points) and horizontal/vertical constraints
+- [x] Tools: line (chain), rectangle, circle, three-point arc; select mode; grid + point
+      snapping; automatic coincident endpoints (shared points) and horizontal/vertical
+      constraints
 - [x] **Drag projection**: cursor delta projected onto the constraint tangent space
       (analytic Jacobian + weighted Kaczmarz), so points slide along circles and angled
       lines. A fully constrained sketch refuses to move.
@@ -156,34 +160,36 @@ dimensions and the common constraints work; what is left is refinement.
 - [x] Sketch origin as a group-0 fixed entity; construction geometry
 - [x] Zoom (wheel), pan (middle/right, or select-drag on empty space), double-click fit
 - [x] Drag primitives: points, whole lines (both endpoints), circles (grab offset, radius
-      fixed); 3 px threshold so a click does not nudge them
-- [x] Keyboard: `V/L/R/C`, `Esc`, `Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`
+      fixed), arcs (centre + endpoints); 3 px threshold so a click does not nudge them
+- [x] Keyboard: `V/L/R/C/A/D`, `Esc`, `Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`
 - [x] **Selection + deletion**: click curves/points, delete, multi-select, then entity
       property panel. Selection is ephemeral UI state; deletion is a pure sketch edit in
       `core/sketch/edit.ts` and is covered by unit + e2e tests.
-- [x] **Dimension tool**: click two points, a line, or a circle → place the dimension;
-      inline edit and delete; driving vs reference. The example's sliders now drive real
-      dimensions, not special-cased annotations.
-- [ ] Reposition an existing dimension label (placement currently happens at creation)
-- [ ] Angular and point-to-line dimensions; radius (not just diameter)
-- [x] **Constraint bar**: parallel, perpendicular, equal, point-on-line, coincident,
-      horizontal/vertical, plus construction geometry, applied from the floating selection
-      card and shown as badges
-- [ ] Angle, tangent and symmetric constraints; radius (as opposed to diameter)
-- [ ] Midpoint constraint UI (point + line → at midpoint); point-on-circle/plane
-- [ ] A real "fix points" constraint (SolveSpace's lock-where-dragged)
-- [ ] Endpoint *coincident constraints* for points that are near but not identical
-      (currently only shared points)
-- [ ] Arc tool (three-point + tangent-at-point, as in the demo's corner fillet), plus arc
-      loops in profile extraction
-- [ ] `core/doc`: feature/document schema, ids, migrations — before history lands
-- [ ] Move the sketch out of component state into the document store
+- [x] **Dimension tool**: click two points, a point + line, two lines, or a circle/arc →
+      place the dimension; inline edit/delete and draggable labels; driving vs reference.
+- [x] Reposition an existing dimension label (drag; one undo entry per gesture)
+- [x] Angular, point-to-line, radius and point-to-point dimensions
+- [x] **Constraint bar**: parallel, perpendicular, equal, point-on-line, point-on-circle,
+      tangent, symmetric, midpoint, coincident, fix, horizontal/vertical, plus construction
+      geometry, applied from the floating selection card and shown as badges
+- [x] Angle, tangent and symmetric constraints; radius as a dimension
+- [x] Midpoint constraint UI (point + line → at midpoint); point-on-circle
+- [x] A real "fix point" constraint (SolveSpace's lock-where-dragged)
+- [x] Coincident constraint action for points that are near but not identical (drawing
+      still snaps exact/shared points)
+- [x] Arc tool (three-point) + a parametric corner fillet, plus exact line/arc loops in
+      profile extraction (`ProfileLoop.kind = "path"`, OCCT `threePointArc` edges)
 
 **Done when:** you can draw a rectangle from scratch, dimension it with real dimension
 annotations, drag it, see it become fully constrained, delete an entity, then undo
-everything back to empty. (All of that works today except creating the remaining
-constraint types via UI, and the conflict state is only reachable through inconsistent
-edits, not through a "break this constraint" interaction.)
+everything back to empty. You can also draw an arc, fillet a corner, dimension an angle,
+a point-to-line distance, or a radius, and drag any dimension label. (The conflict state
+is still only reachable through inconsistent edits, not through a "break this
+constraint" interaction.)
+
+The old M1 list also had `core/doc` and "move the sketch into the document store". Those
+are prerequisites for history, not sketcher UX, and only make sense once features and
+rebuild exist; they are tracked at the top of M3.
 
 ## M2 — Profiles and solids (the spike covers ~70%)
 
@@ -215,6 +221,9 @@ edits, not through a "break this constraint" interaction.)
 
 ## M3 — History (4–6 days)
 
+- [ ] `core/doc`: feature/document schema (`Doc`, `schemaVersion`, ids, migrations) and
+      move the sketch out of component state into the document store — prerequisites for
+      history, deliberately deferred from M1
 - [ ] `core/rebuild`: ordered evaluation, per-feature status, prefix cache, generation
       counters, cancellation of stale results
 - [ ] Feature tree UI: select, rename, reorder (drag), suppress, delete

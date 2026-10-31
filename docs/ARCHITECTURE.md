@@ -198,24 +198,31 @@ slot is `slvs.E_NONE`):
 | --- | --- |
 | point | `addPoint2D(g, u, v, wp)` → `E_POINT_IN_2D` |
 | line | `addLine2D(g, ptA, ptB, wp)` → `E_LINE_SEGMENT` |
-| arc | `addArc(g, normal, center, start, end, wp)` |
+| arc | `addArc(g, fixed +Z normal, center, start, end, wp)`, always CCW start→end |
 | circle | `addCircle(g, normal, center, radius, wp)` where `radius = addDistance(g, r, wp)` |
 | coincident | `coincident(g, entityA, entityB, wp)` |
 | point–point distance | `distance(g, ptA, ptB, mm, wp)` |
-| horizontal / vertical | `horizontal(g, line, wp, E_NONE)` / `vertical(...)` |
+| point–line distance | `addConstraint(g, C_PT_LINE_DISTANCE, wp, mm, point, E_NONE, line, …)` |
+| horizontal / vertical | `horizontal(g, line, wp, E_NONE)` / `vertical(…)` |
 | parallel / perpendicular | `parallel(g, a, b, wp)` / `perpendicular(g, a, b, wp, false)` |
 | equal (lines or circles) | `equal(g, a, b, wp)` — picks length or radius by entity type |
-| point on line | `addConstraint(g, C_PT_ON_LINE, wp, 0, point, E_NONE, line, ...)` |
-| parallel / perpendicular | `parallel(g, a, b, wp)` / `perpendicular(g, a, b, wp, inverse)` |
-| tangent | `tangent(g, a, b, wp)` |
-| equal | `equal(g, a, b, wp)` |
-| angle | `angle(g, a, b, deg, wp, inverse)` |
-| diameter | `diameter(g, circle, value)` — note: no workplane argument |
-| point on line | `addConstraint(g, C_PT_ON_LINE, wp, 0, pt, E_NONE, line, ...)` |
+| point on line / circle | `addConstraint(g, C_PT_ON_LINE / C_PT_ON_CIRCLE, …)` |
+| tangent (arc ↔ line) | `addConstraint(g, C_ARC_LINE_TANGENT, …, arc, line, …, other)` |
+| symmetric (two points, axis line) | `addConstraint(g, C_SYMMETRIC_LINE, …, ptA, ptB, line)` |
+| midpoint | `midpoint(g, point, line, wp)` (npm wrapper takes the line, not two points) |
+| angle (two lines) | `angle(g, a, b, degrees, wp, false)` |
+| diameter / radius | `diameter(g, circleOrArc, 2R)` — no workplane argument |
+| fix point | `dragged(g, point, wp)` |
 
-Circle radius and arc radius are solver variables (`E_DISTANCE` params), not just
-document fields: after solving, read them back with `getParamValue(entity.param[0])`.
-That is what makes a diameter/radius dimension drive the geometry.
+The table is the only place that should know these signatures. Two wrapper quirks are
+deliberate: `tangent` is built with `addConstraint` (the helper aborts the WASM instance
+when it cannot prove the endpoint is shared), and `symmetric` uses `C_SYMMETRIC_LINE`
+(the helper's `.d.ts` signature is wrong). The C API expects `other`/`other2` as booleans
+in the JS wrapper.
+
+Circle radius is a solver variable (`E_DISTANCE` param). An arc's radius is **not** a
+separate entity: it is `|start - centre|`, so the adapter reads it back from the solved
+points, and a diameter dimension on an arc constrains through `C_DIAMETER`.
 
 The adapter lives in `core/sketch/solver.ts` and is the **only** file that imports
 `slvs`. Everything else speaks our types.
@@ -277,19 +284,43 @@ Rules:
   is projected independently, constraints can turn that translation into a stretch or a
   rotation. Circles drag by their centre with the grab offset preserved.
 
+### Arcs and fillets
+
+An arc is three point ids: `center`, `start`, `end`. It is **counter-clockwise from start
+to end** around a group-0 +Z normal; there is no separate sweep flag. `addArc` computes
+the circumcentre of the clicked start/end/through points and swaps the endpoints when the
+through-point lies on the complementary arc, so the stored direction always contains the
+point the user clicked.
+
+Dragging an arc moves its centre, start and end together (the same multi-target path as a
+line). The drag Jacobian includes the arc's internal equal-radius equation
+`|start-centre|² = |end-centre|²`; without it the endpoints would drift off the circle.
+The solver owns the same relation in the arc entity.
+
+A **fillet** is a structural sketch edit, not a 3D feature: `addFillet` finds two lines
+that share a point, computes the tangent points at the requested radius, shortens the
+lines to those points, inserts a CCW arc between them, and adds two `tangent` constraints
+plus a driving diameter. The old corner point is removed only if nothing else uses it.
+The tangent points are shared point ids across the line and the arc, which is what makes
+`C_ARC_LINE_TANGENT` applicable.
+
 ### Loop finding and profiles
 
 For extrude we need closed profiles. `core/sketch/loops.ts` currently does this:
 
-1. Collect **regions**: simple cycles over non-construction line segments (DFS, capped,
-   deduplicated by curve set) and every non-construction circle. Each has an area.
-2. The largest region is the outer profile. It can be a polygon or a circle, so a lone
-   circle extrudes to a cylinder.
-3. Every other region strictly inside the outer becomes a hole: circles and line loops
-   alike. Loops that share an edge with the outer are subdivisions (rectangle + diagonal),
-   not holes, and are excluded. Only one nesting level is supported: an island inside a
-   hole is ignored rather than double-subtracted.
-4. The kernel worker validates clearances and reports a crossing hole as an error.
+1. Collect **regions**: simple cycles over non-construction line **and arc** segments
+   (DFS, capped, deduplicated by curve set) and every non-construction circle. Each has an
+   area.
+2. The largest region is the outer profile. It can be a polygon, a closed line/arc path,
+   or a circle, so a lone circle extrudes to a cylinder.
+3. Every other region strictly inside the outer becomes a hole: circles, line loops and
+   mixed paths alike. Loops that share an edge with the outer are subdivisions (rectangle
+   + diagonal), not holes, and are excluded. Only one nesting level is supported: an
+   island inside a hole is ignored rather than double-subtracted.
+4. A path loop carries **exact** line/arc segments for the kernel plus a sampled polygon
+   for containment/area. The kernel assembles `threePointArc` edges, so the extruded arc
+   is an OCCT arc, not a chord approximation. The sampled polygon is only for validation.
+5. The kernel worker validates clearances and reports a crossing hole as an error.
 
 This is exact for the shapes the sketcher can draw today and is easy to test. It is not a
 general planar arrangement: multiple disjoint bodies/regions, deeper nesting, arcs, and
@@ -305,6 +336,22 @@ circles; arcs will use `threePointArc` or the blueprint layer when they land.
 Auto-constraints while drawing (snap to horizontal/vertical, coincident to nearby
 endpoints, tangent continuation) are what make the sketcher feel good. They are part of
 M1, not a polish item.
+
+### Dimensions
+
+Dimensions are constraints with a `driving` flag. The supported measurements are:
+
+| Type | Stored | Display/edit |
+| --- | --- | --- |
+| `distance` | two point ids, mm, label offset | linear dimension |
+| `pointLineDistance` | point + line, mm, label offset | projection + linear dimension |
+| `angle` | two line ids, degrees, arc radius | arc + `90°` label |
+| `diameter` | circle/arc id, **diameter**, leader angle, `radius?` | `⌀ 20` or `R 10` |
+
+The radius display is only a presentation flag; the solver constraint is always the
+diameter. The editor converts back to diameter on commit. `setDimensionPlacement` changes
+only the offset/leader/arc radius, never the value, and label drags are merged into one
+undo entry per gesture.
 
 ## 6. Rebuild engine
 

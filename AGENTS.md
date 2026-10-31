@@ -18,29 +18,30 @@ engine matters more than feature count.
 
 ## Status
 
-**M1 core is in.** The app is an editable sketcher driving an exact extrude:
+**M1 is done.** The app is an editable sketcher driving an exact extrude:
 
-- Real: `slvs` adapter, tangent-space constrained dragging of points, whole lines and
-  circles, line/rectangle/circle tools,
-  grid + point snapping, automatic horizontal/vertical constraints, profile extraction
-  (line loops or circles as the body, nested loops/circles as holes), click/shift-click
-  selection, cascading delete, a dimension tool (distance/diameter, driving or reference,
-  inline edit and delete), a floating constraint bar (horizontal/vertical, parallel,
-  perpendicular, equal, point-on-line, coincident) with construction geometry,
-  undo/redo, DOF/diagnostics, worker protocol, three.js viewport, exact volume/face
-  counts, unit + e2e tests.
+- Real: `slvs` adapter, tangent-space constrained dragging of points, whole lines, circles
+  and arcs, line/rectangle/circle/three-point-arc tools and a parametric corner fillet,
+  grid + point snapping, automatic horizontal/vertical constraints, exact profile
+  extraction (line/arc loops or circles as the body, nested loops/circles as holes;
+  arcs extrude as OCCT arc edges, not tessellated), click/shift-click selection,
+  cascading delete, dimensions (point-point, point-line, angle, diameter, radius, driving
+  or reference, inline edit/delete and draggable labels), a floating constraint bar
+  (horizontal/vertical, parallel, perpendicular, equal, point-on-line, point-on-circle,
+  tangent, symmetric, midpoint, coincident, fix) with construction geometry, undo/redo,
+  DOF/diagnostics, worker protocol, three.js viewport, exact volume/face counts, unit +
+  e2e tests.
 - UI: one main stage. The bottom timeline switches between the full-stage sketch editor
   and the 3D model; the sketch has floating tools, a DOF pill, and a floating selection /
   dimension inspector. No permanent sidebar.
 - Temporary: profile selection is "largest closed loop" (`core/sketch/loops.ts`), the
-  example sketch is hand-authored (`core/sketch/demo.ts`), dimension labels cannot be
-  repositioned after placement, angle/tangent/symmetric constraints have no UI yet, there
-  is no arc tool, **datum planes and sketch-on-face are not implemented (M4)**, the
-  feature tree is static, and nothing is persisted.
+  example sketch is hand-authored (`core/sketch/demo.ts`), **datum planes and
+  sketch-on-face are not implemented (M4)**, the feature tree is static, and nothing is
+  persisted. Free 3D sketches, splines/text/images and drawing exports are out of scope.
 
-Next: **finish M1** (angle/tangent, arcs, label dragging), **M2** (explicit region
-selection, picking), **M3** (history), then **M4** (datum planes + face supports).
-Read `docs/PLAN.md`; it is the source of truth for done.
+Next: **M2** (explicit region selection, picking), **M3** (document schema + history),
+then **M4** (datum planes + face supports). Read `docs/PLAN.md`; it is the source of
+truth for done.
 
 ## Stack (decided)
 
@@ -170,7 +171,31 @@ docs/
   grab.
 - Dimension labels stop `pointerdown` propagation. Without that the SVG's pan handler
   captures the pointer on press and the label never receives a `dblclick`; this is subtle
-  and easy to regress.
+  and easy to regress. Label dragging only captures the pointer after a 3 px movement, for
+  the same reason.
+- **Arcs are CCW from `start` to `end` around a group-0 +Z normal.** `addArc` flips the
+  endpoints so the clicked through-point lies on that sweep; there is no `clockwise`
+  flag. The solver's arc entity enforces equal radius, and the drag projection adds the
+  same first-order row. Arc radii are derived from centre + start, not stored on the curve.
+- **`slvs` tangency is only arc↔line sharing an endpoint** (and cubic↔line). Use
+  `addConstraint(C_ARC_LINE_TANGENT, …, arc, line, …, other)` — `s.tangent()` aborts the
+  WASM instance when its endpoint-equality check fails. `other` is true when the shared
+  endpoint is `arc.end`.
+- **Angle dimension values are degrees** in the `slvs` API. `C_SYMMETRIC_LINE` takes the
+  two points in `ptA`/`ptB` and the axis line in `entityA`; the npm helper has a different
+  signature from its `.d.ts`.
+- The fillet creates two new tangent points that are shared by the arc and the two lines,
+  then adds tangent constraints and a driving **diameter** dimension. It removes the old
+  corner point only when nothing else uses it; constraints that referenced that corner are
+  dropped.
+- `ProfileLoop.kind = "path"` carries exact line/arc segments plus a sampled polygon for
+  containment/validation. The kernel assembles `threePointArc` edges; the sampled points
+  are never used to extrude. `ensureCounterClockwise` must reverse the segments, not just
+  the points.
+- Every new constraint type also needs a row in `core/sketch/drag.ts`: arc equal-radius,
+  point-on-circle, point-line distance, angle, tangent, symmetric, and fixed points (which
+  are omitted from the parameter vector). If it is missing, the solver still cleans up,
+  but the drag visibly fights the constraint.
 - **Never pin the dragged point at the cursor.** Any off-manifold target (a circle, an
   angled line) makes the constraint system `INCONSISTENT`. `solveDrag()` instead projects
   the cursor delta onto the constraint tangent space (`core/sketch/drag.ts`), applies it

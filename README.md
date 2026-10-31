@@ -30,25 +30,32 @@ The main stage toggles between the **model** and a full-stage **sketch editor** 
 timeline at the bottom. Sketch mode has a floating tool strip, a DOF pill, and a floating
 selection/dimension inspector; there is no permanent sidebar.
 
-- Draw with the **line**, **rectangle**, and **circle** tools. Grid and point snapping;
-  axis inference adds horizontal/vertical constraints; chains close on their first point.
-- Drag points, whole lines, and circles: the cursor delta is projected onto the constraint
-  tangent space, so points slide along lines and circles and lines translate (or stretch,
-  if their endpoints are constrained differently). Fully constrained geometry refuses to
-  move.
+- Draw with the **line**, **rectangle**, **circle**, and **three-point arc** tools.
+  Grid and point snapping; axis inference adds horizontal/vertical constraints; chains
+  close on their first point. Select two adjacent lines to round the corner with a
+  parametric **fillet**.
+- Drag points, whole lines, circles, and arcs: the cursor delta is projected onto the
+  constraint tangent space, so points slide along lines and circles and lines translate
+  (or stretch, if their endpoints are constrained differently). Fully constrained
+  geometry refuses to move.
+- Dimension distances, point-to-line distances, angles, diameters, and radii; driving or
+  reference; double-click to edit and drag the label to reposition it. The floating
+  constraint bar adds perpendicular/parallel/equal/tangent/symmetric/midpoint/point-on-
+  line/point-on-circle/coincident/fix and toggles construction geometry.
 - Extrude any closed region: a plate, a cylinder from a lone circle, a tube from two
-  concentric circles, or an arbitrary face with nested line/circle cutouts. OCCT runs in
-  a Web Worker; three.js renders the solid with its B-rep edges (Z-up, mm).
+  concentric circles, an arbitrary face with nested cutouts, or a mixed line/arc profile.
+  Arc edges stay exact through the kernel. OCCT runs in a Web Worker; three.js renders the
+  solid with its B-rep edges (Z-up, mm).
 - **Select and delete**: click a curve or point, Shift-click to multi-select, Delete to
   remove. Deletion cascades through dependent curves/constraints; undo restores it.
 - **Undo/redo** with gesture grouping (`Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`), `Esc` to cancel a
-  draft and clear the selection, `V/L/R/C` for tools.
+  draft and clear the selection, `V/L/R/C/A/D` for tools.
 - Exact volume/face/triangle stats, and e2e tests that check them numerically while
   dragging, dimensioning, drawing, selecting/deleting, and undoing.
 
-It is intentionally narrow: profile selection is "largest closed loop", dimensions only
-exist on the example, there is no dimension/constraint tool yet, the feature tree is a
-preview, and nothing is persisted yet. See `docs/PLAN.md` for what comes next.
+It is intentionally narrow: profile selection is still "largest closed loop", datum planes
+and sketches on faces are M4, the feature tree is a preview, and nothing is persisted yet.
+See `docs/PLAN.md` for what comes next.
 
 ## The stack in one line
 
