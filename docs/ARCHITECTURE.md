@@ -300,9 +300,17 @@ The solver owns the same relation in the arc entity.
 A **fillet** is a structural sketch edit, not a 3D feature: `addFillet` finds two lines
 that share a point, computes the tangent points at the requested radius, shortens the
 lines to those points, inserts a CCW arc between them, and adds two `tangent` constraints
-plus a driving diameter. The old corner point is removed only if nothing else uses it.
-The tangent points are shared point ids across the line and the arc, which is what makes
-`C_ARC_LINE_TANGENT` applicable.
+plus a driving diameter. The tangent points are shared point ids across the line and the
+arc, which is what makes `C_ARC_LINE_TANGENT` applicable.
+
+If another curve still uses the old corner point (for example the demo's construction
+diagonal), the point is kept and constrained **onto the new arc** rather than left at the
+sharp corner. Constraints that contradict that move are dropped: a Fix, a coincidence
+with a fixed point, or point-on-line against either trimmed line. Dropping a fixed anchor
+is unavoidable when the sharp corner becomes round; the UI surfaces it and offers to Fix
+the arc centre (or the user can add dimensions to re-anchor). The corner's diameter
+label is placed at the visible arc's midpoint, not at the default 45° point on its full
+circle.
 
 ### Loop finding and profiles
 

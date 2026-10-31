@@ -185,9 +185,12 @@ docs/
   two points in `ptA`/`ptB` and the axis line in `entityA`; the npm helper has a different
   signature from its `.d.ts`.
 - The fillet creates two new tangent points that are shared by the arc and the two lines,
-  then adds tangent constraints and a driving **diameter** dimension. It removes the old
-  corner point only when nothing else uses it; constraints that referenced that corner are
-  dropped.
+  then adds tangent constraints and a driving **diameter** dimension. If no other curve
+  uses the old corner, it is removed. If another curve still uses it (the demo's
+  construction diagonal), the point is kept and constrained **onto the new arc**, so
+  attached geometry follows the rounded boundary. Conflicting constraints (a Fix, a
+  coincidence with a fixed point, point-on-line against either trimmed line) are dropped;
+  if that removes an anchor, the UI shows a notice and offers to Fix the arc centre.
 - `ProfileLoop.kind = "path"` carries exact line/arc segments plus a sampled polygon for
   containment/validation. The kernel assembles `threePointArc` edges; the sampled points
   are never used to extrude. `ensureCounterClockwise` must reverse the segments, not just

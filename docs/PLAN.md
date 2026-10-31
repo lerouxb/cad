@@ -34,7 +34,7 @@ then sketches on faces, then more features.
   remove. Deletion cascades to dependent curves and constraints, and leaves no orphaned
   references. A selection card reports length/diameter/position.
 - The example sketch can be loaded, cleared, edited, or replaced by drawing.
-- `npm run verify` (75 unit tests) and `npm run e2e` (11 tests) are green. The e2e asserts
+- `npm run verify` (76 unit tests) and `npm run e2e` (12 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   draws, selects/deletes, and undoes.
 
@@ -178,7 +178,9 @@ the full constraint set.
 - [x] Coincident constraint action for points that are near but not identical (drawing
       still snaps exact/shared points)
 - [x] Arc tool (three-point) + a parametric corner fillet, plus exact line/arc loops in
-      profile extraction (`ProfileLoop.kind = "path"`, OCCT `threePointArc` edges)
+      profile extraction (`ProfileLoop.kind = "path"`, OCCT `threePointArc` edges).
+      Attached construction geometry follows the new arc; a lost origin/Fix anchor is
+      surfaced with a one-click "Fix arc centre" remedy
 
 **Done when:** you can draw a rectangle from scratch, dimension it with real dimension
 annotations, drag it, see it become fully constrained, delete an entity, then undo
