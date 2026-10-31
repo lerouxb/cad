@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — 02 sketch</title>
+    <link rel="stylesheet" href="mockup.css" />
+    <script src="theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="index.html">
+        cad <span class="tag">UI studies</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Studies">
+        <a href="01-history.html"><span class="num">01</span>history</a>
+        <a class="is-active" href="02-sketch.html"><span class="num">02</span>sketch</a>
+        <a href="03-model.html"><span class="num">03</span>model</a>
+        <a href="04-support.html"><span class="num">04</span>support</a>
+        <a href="05-export.html"><span class="num">05</span>export</a>
+        <a href="06-errors.html"><span class="num">06</span>errors</a>
+        <a href="07-files.html"><span class="num">07</span>files</a>
+        <a href="08-body.html"><span class="num">08</span>body</a>
+        <a href="index.html">index</a>
+      </nav>
+      <div class="mockbar-right">
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" aria-expanded="false" title="File menu">
+            <span class="doc-name">angle-bracket</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-actions">
+          <button class="text-action" type="button">
+            finish sketch <span class="key">↵</span>
+          </button>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage has-grid">
+          <div class="stage-head">
+            <div class="tool-line" role="toolbar" aria-label="Sketch tools">
+              <button class="tool" type="button">select <kbd>v</kbd></button>
+              <button class="tool" type="button">line <kbd>l</kbd></button>
+              <button class="tool" type="button">rect <kbd>r</kbd></button>
+              <button class="tool" type="button">circle <kbd>c</kbd></button>
+              <button class="tool" type="button">arc <kbd>a</kbd></button>
+              <button class="tool is-active" type="button">dimension <kbd>d</kbd></button>
+              <button class="tool" type="button">project <kbd>p</kbd></button>
+            </div>
+          </div>
+
+          <div class="sketch-viewport">
+            <svg
+              class="stage-svg sketch-svg"
+            viewBox="0 0 1200 700"
+            preserveAspectRatio="xMidYMid meet"
+            role="img"
+            aria-label="A gusset triangle constrained to projected edges, with the 55 mm dimension selected"
+          >
+            <!-- fixed, projected reference geometry -->
+            <g class="ref-geometry">
+              <path class="ref-line" d="M430 120V620" />
+              <path class="ref-line" d="M260 520H960" />
+              <path class="ref-line" d="M960 520V640" />
+              <path class="ref-line is-soft" d="M300 520V640" />
+              <text class="ref-tag" x="442" y="136">inner wall · fixed</text>
+              <text class="ref-tag" x="820" y="508">top of base · fixed</text>
+              <text class="ref-tag" x="972" y="612">outer edge · fixed</text>
+            </g>
+
+            <!-- origin -->
+            <path class="origin-mark" d="M300 604v32M284 620h32" />
+
+            <!-- user geometry -->
+            <g class="sketch-geometry">
+              <path class="sketch-line" d="M430 520H790" />
+              <path class="sketch-line" d="M430 520V250" />
+              <path class="sketch-line" d="M790 520 430 250" />
+            </g>
+
+            <!-- points + constraints -->
+            <g>
+              <circle class="point-halo" cx="430" cy="520" r="10" />
+              <circle class="sketch-point" cx="430" cy="520" r="4.2" />
+              <circle class="sketch-point" cx="790" cy="520" r="4.2" />
+              <circle class="sketch-point" cx="430" cy="250" r="4.2" />
+              <circle class="constraint-glyph" cx="430" cy="520" r="7.5" />
+              <circle class="constraint-glyph" cx="790" cy="520" r="5.5" />
+              <path class="constraint-glyph" d="M780 520h20" />
+              <circle class="constraint-glyph" cx="430" cy="250" r="5.5" />
+              <path class="constraint-glyph" d="M430 240v20" />
+              <path class="constraint-glyph" d="M430 500h20v20" />
+              <text class="constraint-label" x="446" y="548">coincident</text>
+              <text class="constraint-label" x="802" y="516">on line</text>
+              <text class="constraint-label" x="446" y="244">on line</text>
+              <text class="constraint-label" x="594" y="510">H</text>
+              <text class="constraint-label" x="438" y="404">V</text>
+            </g>
+
+            <!-- dimensions -->
+            <g>
+              <!-- base 70.0 -->
+              <path class="dim-ext" d="M430 520v70M790 520v70" />
+              <path class="dim-line" d="M430 570h360" />
+              <path class="dim-line" d="M430 565v10M790 565v10" />
+              <text class="dim-text" x="600" y="588">70.0</text>
+
+              <!-- height 55.0, selected -->
+              <path class="dim-ext" d="M430 250h-80M430 520h-80" />
+              <path class="dim-line" d="M370 250v270" />
+              <path class="dim-line" d="M365 250h10M365 520h10" />
+              <rect class="marker-wash" x="355" y="379" width="40" height="16" />
+              <text class="dim-text is-selected" x="359" y="392">55.0</text>
+
+              <!-- angle 45.0° -->
+              <path
+                class="dim-line"
+                d="M730 520A60 60 0 0 0 744.0 481.4"
+              />
+              <text class="dim-text" x="704" y="474">45.0°</text>
+
+              <!-- reference hypotenuse -->
+              <text
+                class="dim-text is-ref"
+                x="614"
+                y="398"
+                transform="rotate(-40 614 398)"
+              >
+                (89.0)
+              </text>
+            </g>
+
+            <!-- inline dimension edit, positioned in sketch coordinates -->
+            <foreignObject x="292" y="342" width="166" height="38">
+              <div xmlns="http://www.w3.org/1999/xhtml" class="dim-editor is-inline">
+                <input type="text" value="55.0" aria-label="Dimension value" />
+                <span class="dim-unit">mm</span>
+                <span class="dim-actions">
+                  <button class="text-action" type="button">apply</button>
+                  <button class="text-action is-quiet" type="button">cancel</button>
+                </span>
+              </div>
+            </foreignObject>
+            </svg>
+          </div>
+
+          <div class="selection-line is-top">
+            <span class="selection-title">dimension</span>
+            <span>driving</span>
+            <span class="selection-actions">
+              <button class="text-action" type="button">make reference</button>
+              <button class="text-action is-quiet" type="button">delete</button>
+            </span>
+          </div>
+
+          <div class="stage-foot">
+            <div class="stage-foot-left">
+              <span><b>0 DOF</b> · fully constrained</span>
+              <span class="grid-status">
+                <span class="grid-control" data-grid-control>
+                  <button
+                    class="text-action"
+                    type="button"
+                    data-grid-toggle
+                    aria-expanded="false"
+                  >
+                    grid 10 mm <span class="caret">▾</span>
+                  </button>
+                </span>
+                <span class="scale-bar" aria-hidden="true">
+                  <i></i><em data-scale-label>10 mm</em>
+                </span>
+                <button
+                  class="text-action snap-toggle"
+                  type="button"
+                  data-snap-toggle
+                  aria-pressed="true"
+                >
+                  snap on
+                </button>
+              </span>
+            </div>
+            <div class="stage-foot-right">
+              <span class="zoom-control" data-zoom-control>
+                <button
+                  class="text-action"
+                  type="button"
+                  data-zoom-toggle
+                  aria-expanded="false"
+                >
+                  100% <span class="caret">▾</span>
+                </button>
+              </span>
+              <span>front ortho</span>
+            </div>
+          </div>
+
+          <div class="grid-menu" data-grid-menu hidden>
+            <div class="grid-menu-head">snap to grid</div>
+            <button class="grid-option" type="button" data-grid-value="5">
+              <span>5 mm</span>
+              <span class="grid-option-note">fine</span>
+            </button>
+            <button
+              class="grid-option is-selected"
+              type="button"
+              data-grid-value="10"
+            >
+              <span>10 mm</span>
+              <span class="grid-option-note">default</span>
+            </button>
+            <button class="grid-option" type="button" data-grid-value="25">
+              <span>25 mm</span>
+              <span class="grid-option-note">coarse</span>
+            </button>
+          </div>
+
+          <div class="view-menu" data-zoom-menu hidden>
+            <div class="grid-menu-head">zoom</div>
+            <button class="grid-option" type="button" data-zoom-value="50">
+              <span>50%</span>
+              <span class="grid-option-note">half</span>
+            </button>
+            <button
+              class="grid-option is-selected"
+              type="button"
+              data-zoom-value="100"
+            >
+              <span>100%</span>
+              <span class="grid-option-note">actual</span>
+            </button>
+            <button class="grid-option" type="button" data-zoom-value="200">
+              <span>200%</span>
+              <span class="grid-option-note">detail</span>
+            </button>
+            <button class="grid-option" type="button" data-zoom-value="fit">
+              <span>fit</span>
+              <span class="grid-option-note">view</span>
+            </button>
+          </div>
+        </section>
+
+        <footer class="timeline">
+          <div class="timeline-head">
+            <span class="timeline-title">history</span>
+            <span class="timeline-hint">one gesture = one undo · esc cancels</span>
+          </div>
+          <div class="steps" id="steps"></div>
+          <div class="timeline-detail">
+            <span class="detail-item">
+              <span class="detail-key">plane</span>
+              <span class="detail-value">Plane 03 · midplane</span>
+            </span>
+            <span class="detail-item">
+              <span class="detail-key">refs</span>
+              <span class="detail-value">3 fixed</span>
+            </span>
+            <span class="detail-actions">
+              <button class="text-action" type="button">rename</button>
+              <button class="text-action is-quiet" type="button">delete step</button>
+            </span>
+          </div>
+        </footer>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · 02</div>
+          <h2>Sketch on paper</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        The sketch is the page. Geometry, dimensions, and constraints are drawn
+        in ink; the only colour is the highlighter on the thing you are changing
+        right now.
+      </p>
+      <h3>What this study tests</h3>
+      <ul>
+        <li><b>Tools are a line of words, not a toolbar.</b> They appear only in sketch mode, with the shortcut beside each one.</li>
+        <li><b>The dimension editor is in place.</b> It sits next to the dimension, not in a properties panel.</li>
+        <li><b>Projected reference geometry is visibly different.</b> Dashed, labelled, fixed, and never selectable as user geometry.</li>
+        <li><b>The background is the snap grid.</b> Change the spacing from the footer; the scale bar shows one cell at the current zoom (100%). Snap can be switched off without hiding the grid.</li>
+        <li><b>The view footer is real.</b> 100% opens 50 / 100 / 200 / fit. The grid and scale bar follow the zoom. Every control is focusable; coarse pointers get larger targets.</li>
+        <li><b>The selection line replaces a floating inspector.</b> Only the selected dimension and the actions that apply to it appear.</li>
+        <li><b>The timeline is still here.</b> Sketching is a step in history, not a separate application. The step name is the identifier; “rename” lives in the timeline detail.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Should the tool line stay visible for the whole sketch, or fade once a tool is chosen?</li>
+        <li>Is the inline editor enough for driving vs. reference dimensions, or does that need a modifier?</li>
+        <li>Do projected edges need a global show/hide control, or is the dashed style enough?</li>
+        <li>Should the grid hide automatically when zooming out makes the cells too dense?</li>
+      </ul>
+      <div class="mini-note">
+        The highlighter is never decoration: it means “current”, “selected”, or
+        “changed”. Everything else is ink on paper. The grid is the opposite:
+        it is structure, so it stays quiet until you use it.
+      </div>
+    </aside>
+
+    <script src="mockups.js"></script>
+    <script>
+      document.getElementById("steps").innerHTML = M.timeline({
+        active: "04",
+        pausedFrom: 5,
+        pauseLabel: "editing",
+      });
+
+      (function () {
+        var stage = document.querySelector(".stage.has-grid");
+        var svg = document.querySelector(".sketch-svg");
+        var control = document.querySelector("[data-grid-control]");
+        var button = document.querySelector("[data-grid-toggle]");
+        var menu = document.querySelector("[data-grid-menu]");
+        var scaleLabel = document.querySelector("[data-scale-label]");
+        var options = Array.prototype.slice.call(
+          document.querySelectorAll("[data-grid-value]"),
+        );
+        var snapToggle = document.querySelector("[data-snap-toggle]");
+        var zoomControl = document.querySelector("[data-zoom-control]");
+        var zoomButton = document.querySelector("[data-zoom-toggle]");
+        var zoomMenu = document.querySelector("[data-zoom-menu]");
+        var zoomOptions = Array.prototype.slice.call(
+          document.querySelectorAll("[data-zoom-value]"),
+        );
+        var currentMm = 10;
+        var snapOn = true;
+        var zoom = 1;
+
+        // The drawing scale: 70 mm spans of the sketch's 360 viewBox units.
+        // Re-derive it from the rendered SVG so the grid stays in millimetres
+        // when the window changes size.
+        function pixelsPerMm() {
+          var rect = svg.getBoundingClientRect();
+          var scale = Math.min(rect.width / 1200, rect.height / 700);
+          return scale > 0 ? scale * (360 / 70) : 360 / 70;
+        }
+
+        function setGrid(mm) {
+          currentMm = mm;
+          var px = mm * pixelsPerMm();
+          stage.style.setProperty("--grid-size", px.toFixed(1) + "px");
+          stage.style.setProperty("--grid-major-size", (px * 5).toFixed(1) + "px");
+          button.innerHTML =
+            "grid " + mm + ' mm <span class="caret">▾</span>';
+          scaleLabel.textContent = mm + " mm";
+          options.forEach(function (option) {
+            option.classList.toggle(
+              "is-selected",
+              Number(option.dataset.gridValue) === mm,
+            );
+          });
+        }
+
+        function openMenu(open) {
+          menu.hidden = !open;
+          control.classList.toggle("is-open", open);
+          button.setAttribute("aria-expanded", String(open));
+        }
+
+        function setSnap(on) {
+          snapOn = on;
+          stage.classList.toggle("is-snap-off", !on);
+          snapToggle.textContent = on ? "snap on" : "snap off";
+          snapToggle.setAttribute("aria-pressed", String(on));
+        }
+
+        function openZoomMenu(open) {
+          zoomMenu.hidden = !open;
+          zoomControl.classList.toggle("is-open", open);
+          zoomButton.setAttribute("aria-expanded", String(open));
+        }
+
+        function applyZoom(value) {
+          zoom = value === "fit" ? 1 : Number(value) / 100;
+          stage.style.setProperty("--zoom", String(zoom));
+          zoomButton.innerHTML =
+            Math.round(zoom * 100) + '% <span class="caret">▾</span>';
+          zoomOptions.forEach(function (option) {
+            option.classList.toggle(
+              "is-selected",
+              option.dataset.zoomValue === String(value),
+            );
+          });
+          // The grid is in screen space; re-derive it after the SVG transform.
+          window.requestAnimationFrame(function () {
+            setGrid(currentMm);
+          });
+        }
+
+        snapToggle.addEventListener("click", function () {
+          setSnap(!snapOn);
+        });
+
+        button.addEventListener("click", function (event) {
+          event.stopPropagation();
+          openMenu(menu.hidden);
+        });
+
+        options.forEach(function (option) {
+          option.addEventListener("click", function () {
+            setGrid(Number(option.dataset.gridValue));
+          });
+        });
+
+        zoomButton.addEventListener("click", function (event) {
+          event.stopPropagation();
+          openZoomMenu(zoomMenu.hidden);
+        });
+
+        zoomOptions.forEach(function (option) {
+          option.addEventListener("click", function () {
+            applyZoom(option.dataset.zoomValue);
+            openZoomMenu(false);
+          });
+        });
+
+        document.addEventListener("click", function (event) {
+          if (
+            !zoomMenu.hidden &&
+            !zoomMenu.contains(event.target) &&
+            !zoomControl.contains(event.target)
+          ) {
+            openZoomMenu(false);
+          }
+        });
+
+        document.addEventListener("keydown", function (event) {
+          if (event.key === "Escape") openZoomMenu(false);
+        });
+
+        document.addEventListener("click", function (event) {
+          if (
+            !menu.hidden &&
+            !menu.contains(event.target) &&
+            !control.contains(event.target)
+          ) {
+            openMenu(false);
+          }
+        });
+
+        document.addEventListener("keydown", function (event) {
+          if (event.key === "Escape") openMenu(false);
+        });
+
+        window.addEventListener("resize", function () {
+          setGrid(currentMm);
+        });
+
+        setGrid(10);
+        setSnap(true);
+        applyZoom(100);
+      })();
+    </script>
+  </body>
+</html>

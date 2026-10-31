@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — 07 files</title>
+    <link rel="stylesheet" href="mockup.css" />
+    <script src="theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="index.html">
+        cad <span class="tag">UI studies</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Studies">
+        <a href="01-history.html"><span class="num">01</span>history</a>
+        <a href="02-sketch.html"><span class="num">02</span>sketch</a>
+        <a href="03-model.html"><span class="num">03</span>model</a>
+        <a href="04-support.html"><span class="num">04</span>support</a>
+        <a href="05-export.html"><span class="num">05</span>export</a>
+        <a href="06-errors.html"><span class="num">06</span>errors</a>
+        <a class="is-active" href="07-files.html"><span class="num">07</span>files</a>
+        <a href="08-body.html"><span class="num">08</span>body</a>
+        <a href="index.html">index</a>
+      </nav>
+      <div class="mockbar-right">
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file is-open" type="button" aria-expanded="true" title="File menu">
+            <span class="doc-name">angle-bracket</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage">
+          <svg
+            class="stage-svg"
+            viewBox="0 0 1200 760"
+            preserveAspectRatio="xMidYMid meet"
+            role="img"
+            aria-label="The angle bracket, dimmed, behind the local file browser"
+          >
+            <g id="scene"></g>
+          </svg>
+
+          <div class="floating-note file-browser">
+            <div class="file-browser-head">
+              <div>
+                <div class="picker-title">Files</div>
+                <p class="picker-copy">
+                  Local documents. Nothing leaves this device.
+                </p>
+              </div>
+              <button class="text-action" type="button">close</button>
+            </div>
+
+            <div class="file-actions">
+              <span class="file-actions-label">current file</span>
+              <button class="text-action" type="button">download .cad</button>
+              <button class="text-action" type="button">make a copy</button>
+              <button class="text-action" type="button">rename</button>
+            </div>
+
+            <div class="file-list-head">
+              <span>local files</span>
+              <span class="file-count">4 files</span>
+            </div>
+
+            <div class="file-list">
+              <button class="file-row is-current" type="button">
+                <span class="file-row-name">angle-bracket.cad</span>
+                <span class="file-row-meta">7 steps · 1 body</span>
+                <span class="file-row-time">just now</span>
+              </button>
+              <button class="file-row" type="button">
+                <span class="file-row-name">hinge-bracket.cad</span>
+                <span class="file-row-meta">4 steps · 1 body</span>
+                <span class="file-row-time">2 days ago</span>
+              </button>
+              <button class="file-row" type="button">
+                <span class="file-row-name">phone-stand.cad</span>
+                <span class="file-row-meta">9 steps · 1 body</span>
+                <span class="file-row-time">last week</span>
+              </button>
+              <button class="file-row" type="button">
+                <span class="file-row-name">drawer-slide.cad</span>
+                <span class="file-row-meta">12 steps · 1 body</span>
+                <span class="file-row-time">last month</span>
+              </button>
+            </div>
+
+            <div class="file-browser-foot">
+              <button class="text-action" type="button">new file</button>
+              <button class="text-action" type="button">open .cad…</button>
+              <span class="file-note">offline · no sharing</span>
+            </div>
+          </div>
+
+          <div class="stage-foot">
+            <div class="stage-foot-right">
+              <span>click a file to open</span>
+              <span>esc closes</span>
+            </div>
+          </div>
+        </section>
+
+        <footer class="timeline is-dim">
+          <div class="timeline-head">
+            <span class="timeline-title">history</span>
+            <span class="timeline-hint">files are separate from the undo history</span>
+          </div>
+          <div class="steps" id="steps"></div>
+          <div class="timeline-detail">
+            <span class="detail-item">
+              <span class="detail-key">end</span>
+              <span class="detail-value">through all</span>
+            </span>
+            <span class="detail-item">
+              <span class="detail-key">operation</span>
+              <span class="detail-value">cut</span>
+            </span>
+            <span class="detail-item">
+              <span class="detail-key">profile</span>
+              <span class="detail-value">2 circles · Ø 8.0</span>
+            </span>
+          </div>
+        </footer>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · 07</div>
+          <h2>Files stay local</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        The filename at the top-left is the file menu. It opens a local file
+        browser, not an account or a cloud project. There is no sharing in this
+        tool.
+      </p>
+      <h3>What this study tests</h3>
+      <ul>
+        <li><b>Download is a file action.</b> “Download .cad” writes the document; it is not an export of the solid.</li>
+        <li><b>Make a copy and rename stay local.</b> They act on the current file without changing its history.</li>
+        <li><b>The list is navigation.</b> Local files show their name, step count, body count and modification time.</li>
+        <li><b>No account chrome.</b> No sign-in, no share links, no cloud sync; just this device.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Should the file list show a tiny geometry thumbnail, or is text enough?</li>
+        <li>Where do downloaded <code>.cad</code> files re-enter the app, if at all?</li>
+        <li>How should a deleted or renamed local file behave in an open tab?</li>
+      </ul>
+      <div class="mini-note">
+        The filename is the only file affordance in the app header. It is
+        deliberately separate from the timeline and from export.
+      </div>
+    </aside>
+
+    <script src="mockups.js"></script>
+    <script>
+      document.getElementById("steps").innerHTML = M.timeline({ active: "07" });
+
+      document.getElementById("scene").innerHTML = M.bracket({
+        cx: 780,
+        cy: 400,
+        s: 2.8,
+        dim: true,
+        holes: true,
+      });
+    </script>
+  </body>
+</html>

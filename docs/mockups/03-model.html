@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — 03 model</title>
+    <link rel="stylesheet" href="mockup.css" />
+    <script src="theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="index.html">
+        cad <span class="tag">UI studies</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Studies">
+        <a href="01-history.html"><span class="num">01</span>history</a>
+        <a href="02-sketch.html"><span class="num">02</span>sketch</a>
+        <a class="is-active" href="03-model.html"><span class="num">03</span>model</a>
+        <a href="04-support.html"><span class="num">04</span>support</a>
+        <a href="05-export.html"><span class="num">05</span>export</a>
+        <a href="06-errors.html"><span class="num">06</span>errors</a>
+        <a href="07-files.html"><span class="num">07</span>files</a>
+        <a href="08-body.html"><span class="num">08</span>body</a>
+        <a href="index.html">index</a>
+      </nav>
+      <div class="mockbar-right">
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" aria-expanded="false" title="File menu">
+            <span class="doc-name">angle-bracket</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-actions">
+          <button class="text-action" type="button">new sketch</button>
+          <button class="text-action" type="button">export STL</button>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage">
+          <svg
+            class="stage-svg"
+            viewBox="0 0 1200 760"
+            preserveAspectRatio="xMidYMid meet"
+            role="img"
+            aria-label="The angle bracket with the gusset highlighted, shown as a technical drawing"
+          >
+            <g id="scene"></g>
+          </svg>
+
+          <div class="stage-foot">
+            <div class="stage-foot-left">
+              <span><b>1 body</b> · 1 shell · 12 faces · watertight</span>
+              <span>24,310 mm³</span>
+            </div>
+            <div class="stage-foot-right">
+              <span>150 × 40 × 110</span>
+              <span>front iso</span>
+              <span>Z-up · mm</span>
+              <button class="text-action" type="button">fit</button>
+            </div>
+          </div>
+        </section>
+
+        <footer class="timeline">
+          <div class="timeline-head">
+            <span class="timeline-title">history</span>
+            <span class="timeline-hint">click a step to edit · the model follows the playhead</span>
+          </div>
+          <div class="steps" id="steps"></div>
+          <div class="timeline-detail">
+            <span class="detail-item">
+              <span class="detail-key">distance</span>
+              <span class="detail-value is-editable">40.0 mm</span>
+            </span>
+            <span class="detail-item">
+              <span class="detail-key">direction</span>
+              <span class="detail-value">symmetric</span>
+            </span>
+            <span class="detail-item">
+              <span class="detail-key">operation</span>
+              <span class="detail-value">join</span>
+            </span>
+            <span class="detail-item">
+              <span class="detail-key">profile</span>
+              <span class="detail-value">region 01 · 2 curves</span>
+            </span>
+            <span class="detail-actions">
+              <button class="text-action" type="button">rename</button>
+              <button class="text-action" type="button">edit</button>
+              <button class="text-action" type="button">suppress</button>
+              <button class="text-action is-quiet" type="button">delete</button>
+            </span>
+          </div>
+        </footer>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · 03</div>
+          <h2>The solid, quietly</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        There is no model-mode toolbar. The model is a drawing on the page, the
+        timeline is the structure, and the selected feature's parameters sit in
+        the timeline detail line.
+      </p>
+      <h3>What this study tests</h3>
+      <ul>
+        <li><b>No stage title or status block.</b> The header identifies the file, the timeline identifies the step, and one footer line holds body health.</li>
+        <li><b>The selected feature is the context.</b> Its distance, direction, operation, and profile live in one line under the timeline; the active step name above is the identity.</li>
+        <li><b>The name is the handle.</b> “Gusset 45°” is how you find this step again when a downstream reference fails; the detail line offers rename.</li>
+        <li><b>The stage is the model at the selected step.</b> Steps 06–07 are paused, so the holes are not built here.</li>
+        <li><b>The highlighter follows the feature.</b> Selecting Extrude 05 washes the gusset, not the whole body.</li>
+        <li><b>Export is one quiet action.</b> It is the end of the loop, not a separate mode with its own chrome.</li>
+        <li><b>Measurements are typographic.</b> Overall dimensions sit on the drawing like annotations, not in a stats panel.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Should the feature detail line expand into a full inline editor, or stay a compact sentence?</li>
+        <li>Is a single overall dimension enough, or should selected faces show their own measurements?</li>
+        <li>Where do bodies and materials live if there is no persistent browser?</li>
+      </ul>
+      <div class="mini-note">
+        “No permanent toolbar” does not mean no affordances. It means every
+        affordance appears next to the thing it changes.
+      </div>
+    </aside>
+
+    <script src="mockups.js"></script>
+    <script>
+      document.getElementById("steps").innerHTML = M.timeline({
+        active: "05",
+        pausedFrom: 6,
+        pauseLabel: "pause",
+      });
+
+      (function () {
+        var cx = 610;
+        var cy = 400;
+        var s = 3.0;
+        var scene = M.bracket({
+          cx: cx,
+          cy: cy,
+          s: s,
+          holes: false,
+          highlightGusset: true,
+        });
+
+        // overall height, drawn like an engineering-drawing dimension
+        var top = M.iso(cx, cy, s, 0, 40, 110);
+        var bottom = M.iso(cx, cy, s, 0, 40, 0);
+        var x = Math.min(top[0], bottom[0]) - 42;
+        var y1 = Math.min(top[1], bottom[1]);
+        var y2 = Math.max(top[1], bottom[1]);
+
+        scene +=
+          '<path class="measure-line is-soft" d="M' +
+          top[0].toFixed(1) +
+          " " +
+          top[1].toFixed(1) +
+          "H" +
+          x.toFixed(1) +
+          "M" +
+          bottom[0].toFixed(1) +
+          " " +
+          bottom[1].toFixed(1) +
+          "H" +
+          x.toFixed(1) +
+          '"/>' +
+          '<path class="measure-line" d="M' +
+          x.toFixed(1) +
+          " " +
+          y1.toFixed(1) +
+          "V" +
+          y2.toFixed(1) +
+          '"/>' +
+          '<path class="measure-tick" d="M' +
+          (x - 5).toFixed(1) +
+          " " +
+          y1.toFixed(1) +
+          "h10M" +
+          (x - 5).toFixed(1) +
+          " " +
+          y2.toFixed(1) +
+          'h10"/>' +
+          '<text class="measure-text is-strong" x="' +
+          (x - 9).toFixed(1) +
+          '" y="' +
+          ((y1 + y2) / 2).toFixed(1) +
+          '" transform="rotate(-90 ' +
+          (x - 9).toFixed(1) +
+          " " +
+          ((y1 + y2) / 2).toFixed(1) +
+          ')">110.0</text>';
+
+        // a quiet overall note, like a drawing title block
+        scene += '';
+
+        document.getElementById("scene").innerHTML = scene;
+      })();
+    </script>
+  </body>
+</html>

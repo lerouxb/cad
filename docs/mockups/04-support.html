@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — 04 support</title>
+    <link rel="stylesheet" href="mockup.css" />
+    <script src="theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="index.html">
+        cad <span class="tag">UI studies</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Studies">
+        <a href="01-history.html"><span class="num">01</span>history</a>
+        <a href="02-sketch.html"><span class="num">02</span>sketch</a>
+        <a href="03-model.html"><span class="num">03</span>model</a>
+        <a class="is-active" href="04-support.html"><span class="num">04</span>support</a>
+        <a href="05-export.html"><span class="num">05</span>export</a>
+        <a href="06-errors.html"><span class="num">06</span>errors</a>
+        <a href="07-files.html"><span class="num">07</span>files</a>
+        <a href="08-body.html"><span class="num">08</span>body</a>
+        <a href="index.html">index</a>
+      </nav>
+      <div class="mockbar-right">
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" aria-expanded="false" title="File menu">
+            <span class="doc-name">angle-bracket</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-actions">
+          <button class="text-action" type="button">cancel</button>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage">
+          <svg
+            class="stage-svg"
+            viewBox="0 0 1200 760"
+            preserveAspectRatio="xMidYMid meet"
+            role="img"
+            aria-label="The angle bracket, dimmed, with its front planar face highlighted as a sketch support"
+          >
+            <g id="scene"></g>
+            <g id="face-overlay"></g>
+          </svg>
+
+          <div class="pick-label" style="left: 54%; top: 31%">
+            <b>front face</b> · 8,412 mm²
+          </div>
+
+          <div class="floating-note picker" data-select-group>
+            <h1 class="picker-title">New sketch</h1>
+            <p class="picker-copy">
+              Choose a support. The sketch stays attached to it when the model
+              changes.
+            </p>
+
+            <div class="picker-section">world</div>
+            <button class="picker-row" type="button" data-select-option>
+              <span class="row-name">XY plane</span>
+              <span class="row-meta">top</span>
+            </button>
+            <button class="picker-row" type="button" data-select-option>
+              <span class="row-name">XZ plane</span>
+              <span class="row-meta">front</span>
+            </button>
+            <button class="picker-row" type="button" data-select-option>
+              <span class="row-name">YZ plane</span>
+              <span class="row-meta">right</span>
+            </button>
+
+            <div class="picker-section">planar faces</div>
+            <button
+              class="picker-row is-selected"
+              type="button"
+              data-select-option
+            >
+              <span class="row-name">Extrude 02 · front</span>
+              <span class="row-meta">8,412 mm²</span>
+            </button>
+            <button class="picker-row" type="button" data-select-option>
+              <span class="row-name">Extrude 02 · top</span>
+              <span class="row-meta">2,240 mm²</span>
+            </button>
+            <button class="picker-row is-disabled" type="button" disabled>
+              <span class="row-name">Extrude 05 · sloped</span>
+              <span class="row-flag">curved · unsupported</span>
+            </button>
+
+            <div class="picker-section">datum planes</div>
+            <button class="picker-row" type="button" data-select-option>
+              <span class="row-name">Plane 03 · midplane</span>
+              <span class="row-meta">between faces</span>
+            </button>
+
+            <div class="picker-foot">
+              <span class="hint">
+                curved faces are not valid supports in v1
+              </span>
+              <button class="text-action" type="button">
+                start sketch →
+              </button>
+            </div>
+          </div>
+
+          <div class="stage-foot">
+            <div class="stage-foot-right">
+              <span>click to preview</span>
+              <span>esc cancels</span>
+            </div>
+          </div>
+        </section>
+
+        <footer class="timeline is-dim">
+          <div class="timeline-head">
+            <span class="timeline-title">history</span>
+            <span class="timeline-hint">the new step is added when you start</span>
+          </div>
+          <div class="steps" id="steps"></div>
+          <div class="timeline-detail">
+            <span class="detail-item">
+              <span class="detail-key">face</span>
+              <span class="detail-value">Extrude 02 · front</span>
+            </span>
+            <span class="detail-item">
+              <span class="detail-key">frame</span>
+              <span class="detail-value">inherits the face</span>
+            </span>
+            <span class="detail-actions">
+              <button class="text-action" type="button">rename</button>
+            </span>
+          </div>
+        </footer>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · 04</div>
+          <h2>Start from a face</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        Choosing a support is a temporary decision, so it gets a temporary
+        surface. The rest of the model goes quiet; the candidate face is the
+        only thing wearing the highlighter.
+      </p>
+      <h3>What this study tests</h3>
+      <ul>
+        <li><b>One list, not three dialogs.</b> World planes, planar faces, and datum planes share the same typographic list.</li>
+        <li><b>Unsupported is visible.</b> The curved face is still listed, but it explains itself instead of failing later.</li>
+        <li><b>The new step appears in history.</b> It starts as “untitled” and can be named before or after the sketch exists.</li>
+        <li><b>The model is still the context.</b> Hovering or selecting a row previews the support on the actual body.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Should a face support default to the face's boundary projected into the sketch?</li>
+        <li>Does “new sketch” need an offset field here, or is that a datum-plane step?</li>
+        <li>How do we show a flipped normal without adding a checkbox?</li>
+      </ul>
+      <div class="mini-note">
+        This is the only moment the model is dimmed. The highlighter is the
+        answer to “where will the sketch live?”
+      </div>
+    </aside>
+
+    <script src="mockups.js"></script>
+    <script>
+      document.getElementById("steps").innerHTML = M.timeline({
+        pending: {
+          kind: "sketch",
+          name: "untitled",
+          meta: "choosing support",
+        },
+        end: false,
+      });
+
+      (function () {
+        var cx = 740;
+        var cy = 400;
+        var s = 2.8;
+        document.getElementById("scene").innerHTML = M.bracket({
+          cx: cx,
+          cy: cy,
+          s: s,
+          dim: true,
+          holes: true,
+        });
+
+        var front = [
+          [0, 40, 0],
+          [150, 40, 0],
+          [150, 40, 14],
+          [24, 40, 14],
+          [24, 40, 110],
+          [0, 40, 110],
+        ]
+          .map(function (point) {
+            return M.iso(cx, cy, s, point[0], point[1], point[2]);
+          })
+          .map(function (point) {
+            return point[0].toFixed(1) + "," + point[1].toFixed(1);
+          })
+          .join(" ");
+
+        document.getElementById("face-overlay").innerHTML =
+          '<polygon class="face-overlay" points="' + front + '"/>';
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — 01 history</title>
+    <link rel="stylesheet" href="mockup.css" />
+    <script src="theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="index.html">
+        cad <span class="tag">UI studies</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Studies">
+        <a class="is-active" href="01-history.html"><span class="num">01</span>history</a>
+        <a href="02-sketch.html"><span class="num">02</span>sketch</a>
+        <a href="03-model.html"><span class="num">03</span>model</a>
+        <a href="04-support.html"><span class="num">04</span>support</a>
+        <a href="05-export.html"><span class="num">05</span>export</a>
+        <a href="06-errors.html"><span class="num">06</span>errors</a>
+        <a href="07-files.html"><span class="num">07</span>files</a>
+        <a href="08-body.html"><span class="num">08</span>body</a>
+        <a href="index.html">index</a>
+      </nav>
+      <div class="mockbar-right">
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" aria-expanded="false" title="File menu">
+            <span class="doc-name">angle-bracket</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-actions">
+          <button class="text-action" type="button">roll forward →</button>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage">
+          <svg
+            class="stage-svg"
+            viewBox="0 0 1200 760"
+            preserveAspectRatio="xMidYMid meet"
+            role="img"
+            aria-label="The angle bracket shown at step 04, with the gusset sketch plane and profile"
+          >
+            <g id="scene"></g>
+          </svg>
+
+          <div class="stage-foot">
+            <div class="stage-foot-right">
+              <span>front iso</span>
+              <span>Z-up · mm</span>
+              <button class="text-action" type="button">fit</button>
+            </div>
+          </div>
+        </section>
+
+        <footer class="timeline">
+          <div class="timeline-head">
+            <span class="timeline-title">history</span>
+            <span class="timeline-hint">click a step to edit · drag to roll back</span>
+          </div>
+          <div class="steps" id="steps"></div>
+          <div class="timeline-detail">
+            <span class="detail-item">
+              <span class="detail-key">plane</span>
+              <span class="detail-value">Plane 03 · midplane</span>
+            </span>
+            <span class="detail-item">
+              <span class="detail-key">refs</span>
+              <span class="detail-value">3 fixed</span>
+            </span>
+            <span class="detail-item">
+              <span class="detail-key">dof</span>
+              <span class="detail-value">0</span>
+            </span>
+            <span class="detail-actions">
+              <button class="text-action" type="button">rename</button>
+              <button class="text-action" type="button">open sketch</button>
+              <button class="text-action is-quiet" type="button">delete step</button>
+            </span>
+          </div>
+        </footer>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · 01</div>
+          <h2>History is the workspace</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        The timeline is not a status bar bolted onto the bottom. It is the main
+        navigation surface: the model is always shown at the active step, and
+        editing a step is the same gesture as scrubbing history.
+      </p>
+      <h3>What this study tests</h3>
+      <ul>
+        <li><b>Rollback is a visible state.</b> Steps 05–07 stay in place, dimmed and italic, rather than disappearing.</li>
+        <li><b>The highlighter marks the present.</b> Only the active step gets the marker; the rest is ink on paper.</li>
+        <li><b>The stage follows the timeline.</b> The body is shown as it existed at step 04: no gusset, no holes.</li>
+        <li><b>The stage has no title.</b> The active step name above is the identity; the stage is only the model at that step. The header keeps the document name and the next action.</li>
+        <li><b>Steps are named.</b> The active step name is the handle. The detail line offers “rename”, because in a complicated history the name is how you identify the right sketch when a reference breaks.</li>
+        <li><b>One contextual action.</b> “Roll forward” is the only primary action because it is the only next decision.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Should nested sketches sit under their feature, or stay flat like this?</li>
+        <li>Does a dimmed-paused step read clearly enough without a lock or eye icon?</li>
+        <li>How should dragging the rollback bar behave on a touch device?</li>
+      </ul>
+      <div class="mini-note">
+        Paper is the default. Night mode is the same ink and the same single
+        highlighter, inverted.
+      </div>
+    </aside>
+
+    <script src="mockups.js"></script>
+    <script>
+      document.getElementById("steps").innerHTML = M.timeline({
+        active: "04",
+        pausedFrom: 5,
+        pauseLabel: "rollback",
+      });
+
+      (function () {
+        var cx = 560;
+        var cy = 420;
+        var s = 3.05;
+        var base = M.bracket({
+          cx: cx,
+          cy: cy,
+          s: s,
+          showGusset: false,
+          holes: false,
+        });
+        var plane = M.datumPlane({
+          cx: cx,
+          cy: cy,
+          s: s,
+          y: 20,
+          label: "Plane 03 · midplane",
+        });
+
+        var corners = [
+          [24, 14],
+          [78, 14],
+          [24, 78],
+        ].map(function (point) {
+          return M.iso(cx, cy, s, point[0], 20, point[1]);
+        });
+        var profile =
+          "M " +
+          corners
+            .map(function (point) {
+              return point[0].toFixed(1) + " " + point[1].toFixed(1);
+            })
+            .join(" L ") +
+          " Z";
+
+        var label = corners[1];
+        document.getElementById("scene").innerHTML =
+          base +
+          plane +
+          '<path class="profile-line" d="' +
+          profile +
+          '"/>' +
+          '<text class="profile-label" x="' +
+          (label[0] + 16) +
+          '" y="' +
+          (label[1] + 4) +
+          '">gusset profile</text>';
+      })();
+    </script>
+  </body>
+</html>

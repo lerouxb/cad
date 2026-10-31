@@ -1,0 +1,392 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad — UI studies</title>
+    <link rel="stylesheet" href="mockup.css" />
+    <script src="theme-init.js"></script>
+  </head>
+  <body class="index-page">
+    <div class="mockbar">
+      <a class="mockbar-brand" href="index.html">
+        cad <span class="tag">UI studies</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Studies">
+        <a href="01-history.html"><span class="num">01</span>history</a>
+        <a href="02-sketch.html"><span class="num">02</span>sketch</a>
+        <a href="03-model.html"><span class="num">03</span>model</a>
+        <a href="04-support.html"><span class="num">04</span>support</a>
+        <a href="05-export.html"><span class="num">05</span>export</a>
+        <a href="06-errors.html"><span class="num">06</span>errors</a>
+        <a href="07-files.html"><span class="num">07</span>files</a>
+        <a href="08-body.html"><span class="num">08</span>body</a>
+        <a class="is-active" href="index.html">index</a>
+      </nav>
+      <div class="mockbar-right">
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <main class="index">
+      <div class="index-kicker">cad · UI studies · October 2026</div>
+      <h1>
+        Sketch first.<br />
+        Then solids.<br />
+        <span class="mark">Then print.</span>
+      </h1>
+      <p class="index-lede">
+        A CAD tool for the way I actually work: draw a constrained profile,
+        give it thickness, and send it to the printer. The interface is
+        <b>paper and ink</b>, with one highlighter colour — yellow, pink, blue,
+        or green — for the thing that is current. The timeline is the workspace;
+        the sketch is the page. There is no permanent toolbar.
+      </p>
+      <div class="index-actions">
+        <a class="text-action is-primary" href="02-sketch.html">
+          open the sketch study →
+        </a>
+        <a class="text-action" href="01-history.html">
+          start with the timeline
+        </a>
+        <span class="text-action is-quiet">eight states · day / night</span>
+      </div>
+
+      <div class="index-hero-wrap">
+        <div class="hero-bar">
+          <span>study 02 · sketch · live preview</span>
+          <div class="hero-bar-right">
+            <span class="hero-preview-label">preview</span>
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+            <a class="text-action" href="02-sketch.html">open full study →</a>
+          </div>
+        </div>
+        <div class="index-hero">
+          <iframe
+            class="hero-frame"
+            src="02-sketch.html?embed=1&theme=day&highlight=yellow"
+            title="Sketch mode preview"
+            loading="lazy"
+            scrolling="no"
+          ></iframe>
+        </div>
+      </div>
+
+      <section class="index-section">
+        <div class="index-section-head">
+          <h2>studies</h2>
+          <p>one workflow · eight states</p>
+        </div>
+        <div class="study-list">
+          <a class="study" href="01-history.html">
+            <span class="study-num">01</span>
+            <div class="study-main">
+              <div class="study-title">History is the workspace</div>
+              <p class="study-desc">
+                The timeline is the primary surface. Steps are named and
+                renamable; clicking a step shows the model at that moment;
+                downstream steps stay visible, paused and dimmed until you roll
+                forward.
+              </p>
+            </div>
+            <div class="study-tags">
+              <span>timeline</span>
+              <span>rollback</span>
+              <span class="tag-mark">core</span>
+            </div>
+          </a>
+
+          <a class="study" href="02-sketch.html">
+            <span class="study-num">02</span>
+            <div class="study-main">
+              <div class="study-title">Sketch on paper</div>
+              <p class="study-desc">
+                Geometry, dimensions, and constraints in ink. Tools are a line
+                of words with shortcuts, not a toolbar. The selected dimension
+                edits in place; projected references are dashed and fixed. The
+                grid is the snap grid, set from the footer; the view footer
+                zooms, and the grid follows.
+              </p>
+            </div>
+            <div class="study-tags">
+              <span>constraints</span>
+              <span>dimensions</span>
+              <span class="tag-mark">daily</span>
+            </div>
+          </a>
+
+          <a class="study" href="03-model.html">
+            <span class="study-num">03</span>
+            <div class="study-main">
+              <div class="study-title">The solid, quietly</div>
+              <p class="study-desc">
+                A technical drawing on the page. The selected feature's
+                parameters live in the timeline detail line; the highlighter
+                washes the gusset. Export is one quiet action.
+              </p>
+            </div>
+            <div class="study-tags">
+              <span>model</span>
+              <span>feature edit</span>
+            </div>
+          </a>
+
+          <a class="study" href="04-support.html">
+            <span class="study-num">04</span>
+            <div class="study-main">
+              <div class="study-title">Start from a face</div>
+              <p class="study-desc">
+                World planes, planar faces, and datum planes in one typographic
+                list. The model dims; the candidate face is the only thing in
+                the highlighter. Curved faces explain why they are unsupported.
+              </p>
+            </div>
+            <div class="study-tags">
+              <span>supports</span>
+              <span>face pick</span>
+              <span>m4</span>
+            </div>
+          </a>
+
+          <a class="study" href="05-export.html">
+            <span class="study-num">05</span>
+            <div class="study-main">
+              <div class="study-title">Export for the printer</div>
+              <p class="study-desc">
+                The end of the loop is a page, not a dialog. Watertight, one
+                shell, millimetres, triangles, build volume, and a single
+                “export STL” action.
+              </p>
+            </div>
+            <div class="study-tags">
+              <span>STL</span>
+              <span>print check</span>
+              <span class="tag-mark">goal</span>
+            </div>
+          </a>
+
+          <a class="study" href="06-errors.html">
+            <span class="study-num">06</span>
+            <div class="study-main">
+              <div class="study-title">When a reference dies</div>
+              <p class="study-desc">
+                A failed step stays in the timeline. The last good body stays on
+                the page. The lost support is named in plain language, and
+                recovery is three sentences, not a modal.
+              </p>
+            </div>
+            <div class="study-tags">
+              <span>failure</span>
+              <span>recovery</span>
+              <span>topo refs</span>
+            </div>
+          </a>
+
+          <a class="study" href="07-files.html">
+            <span class="study-num">07</span>
+            <div class="study-main">
+              <div class="study-title">Files stay local</div>
+              <p class="study-desc">
+                The filename is the file menu: download .cad, make a copy,
+                rename, and a local list of documents. No accounts and no
+                sharing; this is an offline tool.
+              </p>
+            </div>
+            <div class="study-tags">
+              <span>files</span>
+              <span>offline</span>
+              <span>download</span>
+            </div>
+          </a>
+
+          <a class="study" href="08-body.html">
+            <span class="study-num">08</span>
+            <div class="study-main">
+              <div class="study-title">Bodies have looks</div>
+              <p class="study-desc">
+                Body appearance lives on the feature that creates the body,
+                next to its name and parameters. Choose a material and finish;
+                later features keep the same body and the same look.
+              </p>
+            </div>
+            <div class="study-tags">
+              <span>body</span>
+              <span>appearance</span>
+              <span>material</span>
+            </div>
+          </a>
+        </div>
+      </section>
+
+      <section class="index-panel">
+        <div class="index-section-head">
+          <h2>the direction</h2>
+          <p>six rules for the visual system</p>
+        </div>
+        <div class="principles">
+          <div class="principle">
+            <b>Typography carries the interface.</b>
+            <span>
+              Feature names, measurements, and states are set as type. Lines
+              separate; boxes are rare. The page should read like an annotated
+              drawing, not a dashboard.
+            </span>
+          </div>
+          <div class="principle">
+            <b>One highlighter, used for state.</b>
+            <span>
+              Yellow, pink, blue, or green — one classic highlighter at a time.
+              The chosen colour means current, selected, or changed. It is never
+              decoration. Everything else is ink on paper, or paper on ink at
+              night.
+            </span>
+          </div>
+          <div class="principle">
+            <b>The timeline is the only permanent structure.</b>
+            <span>
+              No sidebar, no ribbon, no mode switcher. History is the map:
+              selecting a step changes the stage, and editing a step is the
+              same gesture. Every step is named; the name is editable and is
+              the handle you use when repairing history.
+            </span>
+          </div>
+          <div class="principle">
+            <b>Controls appear where the decision is.</b>
+            <span>
+              Tools show up in sketch mode. A dimension editor opens at the
+              dimension. Support choices appear only when starting a sketch.
+              Export is a page because it is the end of the job.
+            </span>
+          </div>
+          <div class="principle">
+            <b>The background is a tool.</b>
+            <span>
+              The sketch grid is the snap grid. Its spacing is set in the footer,
+              and the scale bar shows one cell at the current zoom. Snap can be
+              off; the grid stays as a reference.
+            </span>
+          </div>
+          <div class="principle">
+            <b>One home for every fact.</b>
+            <span>
+              The header holds identity and actions. The timeline holds history,
+              names, and feature parameters. The stage status holds solver or
+              body health. The corners hold tools, selection, and view. Nothing
+              repeats.
+            </span>
+          </div>
+        </div>
+      </section>
+
+      <section class="index-panel">
+        <div class="index-section-head">
+          <h2>open questions</h2>
+          <p>things to settle before this becomes the app</p>
+        </div>
+        <ul class="questions">
+          <li>Is a flat timeline enough, or do sketches need to nest under the features they drive?</li>
+          <li>Should day be the default, or is night mode the better long-session working surface?</li>
+          <li>How much of the feature inspector belongs in the timeline detail, versus inline on the model?</li>
+          <li>Do projected reference edges need a show/hide control, or is the dashed fixed style enough?</li>
+          <li>Should export freeze a mesh into history, or always derive from the current rebuild state?</li>
+          <li>Is a print-orientation preview in scope, or is “fits the build volume” enough for v1?</li>
+          <li>How do multiple bodies, moving parts, and assemblies enter this timeline later without turning it into a tree?</li>
+          <li>How should pan, zoom, and constraint dragging work on touch and tablet, and what is the keyboard equivalent for each view control?</li>
+          <li>Should the filename own download, copy and rename, or does .cad download deserve a separate action?</li>
+          <li>Should body appearance be editable from any step once the body exists, or only from the body-creating step?</li>
+        </ul>
+      </section>
+
+      <div class="index-foot">
+        Open any study directly in a browser. No build step. These are static
+        design targets, not the application. The implementation lives in
+        <span class="mono">src/</span>.
+      </div>
+    </main>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design direction</div>
+          <h2>Paper, ink, one highlighter</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        The studies are a reaction to form-heavy CAD interfaces: permanent
+        ribbons, panels of buttons that may or may not apply, and a timeline
+        treated as a receipt rather than a workspace.
+      </p>
+      <h3>What stays</h3>
+      <ul>
+        <li><b>Sketch → model → STL</b> is the whole product loop.</li>
+        <li><b>The timeline</b> is the one persistent structure.</li>
+        <li><b>Day and night</b> are the same system inverted.</li>
+        <li><b>One highlighter</b> — yellow, pink, blue, or green — marks the current decision.</li>
+        <li><b>Controls are contextual</b> and appear next to the thing they change.</li>
+      </ul>
+      <h3>What goes</h3>
+      <ul>
+        <li>Permanent toolbars and icon grids.</li>
+        <li>Floating cards for every selection.</li>
+        <li>Decorative colour beyond the single highlighter.</li>
+        <li>Buttons that exist in every mode but only work in one.</li>
+      </ul>
+      <h3>Chrome boundaries</h3>
+      <ul>
+        <li><b>Study bar</b> — study navigation and design notes. Not part of the app.</li>
+        <li><b>App header</b> — file identity, the next action, and quick-access appearance.</li>
+        <li><b>Preview controls</b> — the appearance settings above the hero on this page belong to the design document, not the app.</li>
+      </ul>
+      <div class="mini-note">
+        The two themes are a design constraint, not an afterthought: every study
+        must work as day with black ink and as night with white ink.
+      </div>
+    </aside>
+
+    <script src="mockups.js"></script>
+    <script>
+      (function () {
+        var hero = document.querySelector(".hero-frame");
+        if (!hero) return;
+
+        function currentTheme() {
+          return document.documentElement.getAttribute("data-theme") === "night"
+            ? "night"
+            : "day";
+        }
+
+        function currentHighlight() {
+          return (
+            document.documentElement.getAttribute("data-highlight") || "yellow"
+          );
+        }
+
+        function syncHero(theme, highlight) {
+          hero.src =
+            "02-sketch.html?embed=1&theme=" +
+            (theme === "night" ? "night" : "day") +
+            "&highlight=" +
+            (highlight || "yellow");
+        }
+
+        syncHero(currentTheme(), currentHighlight());
+        document.addEventListener("mockup-theme", function (event) {
+          syncHero(event.detail, currentHighlight());
+        });
+        document.addEventListener("mockup-highlight", function (event) {
+          syncHero(currentTheme(), event.detail);
+        });
+      })();
+    </script>
+  </body>
+</html>

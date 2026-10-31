@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — 06 errors</title>
+    <link rel="stylesheet" href="mockup.css" />
+    <script src="theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="index.html">
+        cad <span class="tag">UI studies</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Studies">
+        <a href="01-history.html"><span class="num">01</span>history</a>
+        <a href="02-sketch.html"><span class="num">02</span>sketch</a>
+        <a href="03-model.html"><span class="num">03</span>model</a>
+        <a href="04-support.html"><span class="num">04</span>support</a>
+        <a href="05-export.html"><span class="num">05</span>export</a>
+        <a class="is-active" href="06-errors.html"><span class="num">06</span>errors</a>
+        <a href="07-files.html"><span class="num">07</span>files</a>
+        <a href="08-body.html"><span class="num">08</span>body</a>
+        <a href="index.html">index</a>
+      </nav>
+      <div class="mockbar-right">
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" aria-expanded="false" title="File menu">
+            <span class="doc-name">angle-bracket</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage">
+          <svg
+            class="stage-svg"
+            viewBox="0 0 1200 760"
+            preserveAspectRatio="xMidYMid meet"
+            role="img"
+            aria-label="The last good body, with a dashed outline where the lost sketch support used to be"
+          >
+            <g id="scene"></g>
+            <g id="missing"></g>
+          </svg>
+
+          <div class="floating-note error-note">
+            <div class="error-kicker">
+              <span class="bang">!</span> rebuild paused · step 06
+            </div>
+            <h1 class="error-title">The M4-hole sketch lost its face.</h1>
+            <p class="error-copy">
+              Sketch 06, named <span class="quote">M4 holes</span>, was drawn on
+              <span class="quote">Extrude 02 · front</span>. That face no longer
+              exists after the edit to step 01. The sketch keeps its last-known
+              frame; the cut in step 07 is paused.
+            </p>
+            <div class="error-actions">
+              <button class="text-action" type="button">
+                reselect support →
+              </button>
+              <button class="text-action" type="button">open sketch</button>
+              <button class="text-action is-quiet" type="button">revert edit</button>
+            </div>
+          </div>
+
+          <div class="stage-foot">
+            <div class="stage-foot-right">
+              <span>front iso</span>
+              <span>Z-up · mm</span>
+              <button class="text-action" type="button">fit</button>
+            </div>
+          </div>
+        </section>
+
+        <footer class="timeline">
+          <div class="timeline-head">
+            <span class="timeline-title">history</span>
+            <span class="timeline-hint">a failed step is skipped, never silently dropped</span>
+          </div>
+          <div class="steps" id="steps"></div>
+          <div class="timeline-detail">
+            <span class="detail-item">
+              <span class="detail-key">support</span>
+              <span class="detail-value">Extrude 02 · front · lost</span>
+            </span>
+            <span class="detail-item">
+              <span class="detail-key">frame</span>
+              <span class="detail-value">cached</span>
+            </span>
+            <span class="detail-actions">
+              <button class="text-action" type="button">rename</button>
+            </span>
+          </div>
+        </footer>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · 06</div>
+          <h2>When a reference dies</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        A broken reference is an ordinary state, not an exception. The failed
+        step stays in the timeline, the last good body stays on the page, and
+        the recovery is written in the same voice as the rest of the app.
+      </p>
+      <h3>What this study tests</h3>
+      <ul>
+        <li><b>Failure is visible in history.</b> Step 06 is dotted-underlined and marked; step 07 is paused, not deleted.</li>
+        <li><b>The last good body remains.</b> You can still look at the model while deciding what to fix.</li>
+        <li><b>The lost reference is named.</b> “Extrude 02 · front” is a human-readable topological name, not an index.</li>
+        <li><b>Steps are named too.</b> Step 06 is “M4 holes”; the error names the step and the lost face, so you know exactly what to repair.</li>
+        <li><b>Recovery is three sentences.</b> Reselect, open the sketch, or revert the edit.</li>
+        <li><b>No red.</b> The error uses ink, a dotted rule, and a single “!”. The highlighter is reserved for the active choice.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Should a failed step automatically open its diagnostics, or stay quiet until selected?</li>
+        <li>How do we show “using cached frame” on the model without adding another badge?</li>
+        <li>Is a visible “roll back to here” affordance needed on every step?</li>
+      </ul>
+      <div class="mini-note">
+        Never silently drop geometry. The page keeps the last good body and
+        tells you which sentence is broken.
+      </div>
+    </aside>
+
+    <script src="mockups.js"></script>
+    <script>
+      document.getElementById("steps").innerHTML = M.timeline({
+        active: "06",
+        error: "06",
+        pausedFrom: 7,
+        pauseLabel: false,
+      });
+
+      (function () {
+        var cx = 780;
+        var cy = 400;
+        var s = 2.8;
+
+        document.getElementById("scene").innerHTML = M.bracket({
+          cx: cx,
+          cy: cy,
+          s: s,
+          dim: true,
+          holes: false,
+        });
+
+        var front = [
+          [0, 40, 0],
+          [150, 40, 0],
+          [150, 40, 14],
+          [24, 40, 14],
+          [24, 40, 110],
+          [0, 40, 110],
+        ].map(function (point) {
+          return M.iso(cx, cy, s, point[0], point[1], point[2]);
+        });
+        var points = front
+          .map(function (point) {
+            return point[0].toFixed(1) + "," + point[1].toFixed(1);
+          })
+          .join(" ");
+
+        var anchor = M.iso(cx, cy, s, 24, 40, 96);
+        var text = 
+          '<polygon class="missing-face" points="' +
+          points +
+          '"/>' +
+          '<line class="measure-line is-soft" x1="' +
+          anchor[0].toFixed(1) +
+          '" y1="' +
+          anchor[1].toFixed(1) +
+          '" x2="' +
+          (anchor[0] + 44).toFixed(1) +
+          '" y2="' +
+          (anchor[1] - 24).toFixed(1) +
+          '"/>' +
+          '<text class="missing-label" x="' +
+          (anchor[0] + 50).toFixed(1) +
+          '" y="' +
+          (anchor[1] - 28).toFixed(1) +
+          '">face 02 · lost</text>';
+
+        document.getElementById("missing").innerHTML = text;
+      })();
+    </script>
+  </body>
+</html>

@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — 08 body appearance</title>
+    <link rel="stylesheet" href="mockup.css" />
+    <script src="theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="index.html">
+        cad <span class="tag">UI studies</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Studies">
+        <a href="01-history.html"><span class="num">01</span>history</a>
+        <a href="02-sketch.html"><span class="num">02</span>sketch</a>
+        <a href="03-model.html"><span class="num">03</span>model</a>
+        <a href="04-support.html"><span class="num">04</span>support</a>
+        <a href="05-export.html"><span class="num">05</span>export</a>
+        <a href="06-errors.html"><span class="num">06</span>errors</a>
+        <a href="07-files.html"><span class="num">07</span>files</a>
+        <a class="is-active" href="08-body.html"><span class="num">08</span>body</a>
+        <a href="index.html">index</a>
+      </nav>
+      <div class="mockbar-right">
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" aria-expanded="false" title="File menu">
+            <span class="doc-name">angle-bracket</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage">
+          <svg
+            class="stage-svg"
+            viewBox="0 0 1200 760"
+            preserveAspectRatio="xMidYMid meet"
+            role="img"
+            aria-label="The bracket body at step 02, tinted warm grey, with its body appearance editor"
+          >
+            <g id="scene"></g>
+          </svg>
+
+          <div class="floating-note body-panel">
+            <div class="picker-title">Body 01</div>
+            <p class="picker-copy">
+              Appearance is attached to the body created by this step. Later
+              features keep the same body.
+            </p>
+
+            <div class="field-label">material</div>
+            <div class="material-grid">
+              <button class="material is-selected" type="button" data-material="warm">
+                <span class="material-swatch" style="--material-color: #d8cfc0"></span>
+                <span class="material-name">warm grey</span>
+              </button>
+              <button class="material" type="button" data-material="graphite">
+                <span class="material-swatch" style="--material-color: #8a8a84"></span>
+                <span class="material-name">graphite</span>
+              </button>
+              <button class="material" type="button" data-material="clay">
+                <span class="material-swatch" style="--material-color: #d8a78f"></span>
+                <span class="material-name">clay</span>
+              </button>
+              <button class="material" type="button" data-material="white">
+                <span class="material-swatch" style="--material-color: #f3f1ea"></span>
+                <span class="material-name">white</span>
+              </button>
+            </div>
+
+            <div class="field-label">finish</div>
+            <div class="finish-row">
+              <button class="finish is-selected" type="button" data-finish="satin">satin</button>
+              <button class="finish" type="button" data-finish="matte">matte</button>
+              <button class="finish" type="button" data-finish="gloss">gloss</button>
+            </div>
+
+            <div class="body-panel-actions">
+              <button class="text-action" type="button">done</button>
+            </div>
+          </div>
+
+          <div class="stage-foot">
+            <div class="stage-foot-right">
+              <span>front iso</span>
+              <span>Z-up · mm</span>
+              <button class="text-action" type="button">fit</button>
+            </div>
+          </div>
+        </section>
+
+        <footer class="timeline">
+          <div class="timeline-head">
+            <span class="timeline-title">history</span>
+            <span class="timeline-hint">appearance lives on the step that creates the body</span>
+          </div>
+          <div class="steps" id="steps"></div>
+          <div class="timeline-detail">
+            <span class="detail-item">
+              <span class="detail-key">distance</span>
+              <span class="detail-value">12.0 mm</span>
+            </span>
+            <span class="detail-item">
+              <span class="detail-key">direction</span>
+              <span class="detail-value">one side</span>
+            </span>
+            <span class="detail-item">
+              <span class="detail-key">operation</span>
+              <span class="detail-value">new</span>
+            </span>
+            <span class="detail-item">
+              <span class="detail-key">body</span>
+              <span class="detail-value">01</span>
+            </span>
+            <span class="detail-item">
+              <span class="detail-key">appearance</span>
+              <span class="detail-value">
+                <span class="body-swatch" data-body-swatch style="--material-color: #d8cfc0"></span>
+                <span data-body-appearance>warm grey · satin</span>
+              </span>
+            </span>
+            <span class="detail-actions">
+              <button class="text-action" type="button">rename</button>
+              <button class="text-action" type="button">edit</button>
+            </span>
+          </div>
+        </footer>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · 08</div>
+          <h2>Bodies have looks</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        Body appearance is a property of the body, and the body is first created
+        by a feature. Selecting that feature exposes the body: its material and
+        finish sit next to the feature parameters, the same way the name does.
+      </p>
+      <h3>What this study tests</h3>
+      <ul>
+        <li><b>Appearance is not a global settings panel.</b> It lives on the body-creating step.</li>
+        <li><b>Later features keep the body.</b> A join or cut changes the shape but not the material; the body stays warm grey.</li>
+        <li><b>Material and finish are separate.</b> Material changes the neutral tint; finish is a surface property for later rendering and print planning.</li>
+        <li><b>The timeline detail is the summary.</b> The body row shows the current look; the panel is the transient editor.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Should body appearance be editable from any step once the body exists, or only from the creating step?</li>
+        <li>How does this extend to multiple bodies: one appearance per body, or per-body material assignments in an assembly?</li>
+        <li>Do material and finish belong in the document, or are they presentation-only?</li>
+      </ul>
+      <div class="mini-note">
+        The appearance panel is deliberately small: one body, two decisions
+        (material, finish), one place.
+      </div>
+    </aside>
+
+    <script src="mockups.js"></script>
+    <script>
+      document.getElementById("steps").innerHTML = M.timeline({
+        active: "02",
+        pausedFrom: 3,
+        pauseLabel: "pause",
+      });
+
+      (function () {
+        var model = M.bracket({
+          cx: 480,
+          cy: 400,
+          s: 2.6,
+          showGusset: false,
+          holes: false,
+          className: "is-material-warm",
+        });
+        document.getElementById("scene").innerHTML = model;
+
+        var materials = {
+          warm: { name: "warm grey", color: "#d8cfc0" },
+          graphite: { name: "graphite", color: "#8a8a84" },
+          clay: { name: "clay", color: "#d8a78f" },
+          white: { name: "white", color: "#f3f1ea" },
+        };
+        var state = { material: "warm", finish: "satin" };
+        var group = document.querySelector(".model-bracket");
+        var bodySummary = document.querySelector("[data-body-appearance]");
+        var bodySwatch = document.querySelector("[data-body-swatch]");
+        var materialButtons = Array.prototype.slice.call(
+          document.querySelectorAll("[data-material]"),
+        );
+        var finishButtons = Array.prototype.slice.call(
+          document.querySelectorAll("[data-finish]"),
+        );
+
+        function render() {
+          group.classList.remove(
+            "is-material-warm",
+            "is-material-graphite",
+            "is-material-clay",
+            "is-material-white",
+          );
+          group.classList.add("is-material-" + state.material);
+          bodySummary.textContent =
+            materials[state.material].name + " · " + state.finish;
+          bodySwatch.style.setProperty("--material-color", materials[state.material].color);
+          materialButtons.forEach(function (button) {
+            button.classList.toggle(
+              "is-selected",
+              button.dataset.material === state.material,
+            );
+          });
+          finishButtons.forEach(function (button) {
+            button.classList.toggle(
+              "is-selected",
+              button.dataset.finish === state.finish,
+            );
+          });
+        }
+
+        materialButtons.forEach(function (button) {
+          button.addEventListener("click", function () {
+            state.material = button.dataset.material;
+            render();
+          });
+        });
+
+        finishButtons.forEach(function (button) {
+          button.addEventListener("click", function () {
+            state.finish = button.dataset.finish;
+            render();
+          });
+        });
+
+        render();
+      })();
+    </script>
+  </body>
+</html>
