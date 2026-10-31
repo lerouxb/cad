@@ -36,7 +36,7 @@ then sketches on faces, then more features.
   remove. Deletion cascades to dependent curves and constraints, and leaves no orphaned
   references. A selection card reports length/diameter/position.
 - The example sketch can be loaded, cleared, edited, or replaced by drawing.
-- `npm run verify` (90 unit tests) and `npm run e2e` (15 tests) are green. The e2e asserts
+- `npm run verify` (90 unit tests) and `npm run e2e` (16 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -46,8 +46,8 @@ Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
 95 017.7 mm³ and rebuilds in ~35 ms after warm-up.
 
 **Still temporary** (all scheduled below): auto mode defaults to the largest region until
-you click one; intersecting segments are not split into faces; face/edge picking is
-pending; **datum planes and sketch-on-face are M4**; the feature tree is static; nothing is
+you click one; intersecting segments are not split into faces (M2.6); face/edge picking is
+pending; **datum planes and sketch-on-face are M4**; the feature tree is static; no document is
 persisted. Free 3D sketches, splines/text/images and drawing exports remain out of scope.
 
 ---
@@ -76,7 +76,7 @@ anchored between the inner walls.
 | Ellipses, parabolic/hyperbolic arcs, conic sections | Not in `slvs`; M9 upstream work. Approximate with lines/arcs for now. |
 | Sketch text / images | Not implemented; M9 |
 | Expressions / spreadsheets | M7 (app-level; `slvs` only receives numeric values) |
-| Split curves at intersection / trim | M2 sketch editing |
+| Split curves at intersection / trim | M2.6 (moved from M2) |
 | Distance (point-point, point-line), angle, diameter, radius, reference dimensions | Done |
 | Angle / reference angle | Done (dimension tool) |
 | Horizontal, vertical, parallel, perpendicular, equal, point-on-line | Done |
@@ -229,7 +229,7 @@ rebuild exist; they are tracked at the top of M3.
 - [x] Multiple regions per extrude. The worker extrudes each region and fuses the solids
       (`fuseAll`), so disjoint regions become one body
 - [x] Deeper nesting: a hole can contain an island, which is a separate depth-2 region
-- [ ] Split curves at intersections / trim while sketching (SolveSpace's split)
+- [ ] Split curves at intersections / trim while sketching — moved to M2.6
 - [ ] Full planar face traversal: intersecting segments without a shared endpoint are not
       yet split, so crossing diagonals are still ambiguous
 - [ ] Rebuild goldens: several profiles → bbox/face-count assertions (volume is covered by
@@ -240,6 +240,54 @@ rebuild exist; they are tracked at the top of M3.
 **Done when:** you can draw an arbitrary multi-region sketch, click one or more regions
 (including holes and islands), and extrude/fuse them with exact volume. Auto mode still
 defaults to the largest region until you click; intersections are not split yet.
+
+## M2.5 — UI foundations: paper/ink visual system (2–3 days)
+
+Use `docs/mockups/` as the design target without importing it into `src/`. This is a
+visual and interaction-layer pass only; it must not invent history steps, support pickers,
+exports or file screens before their models exist.
+
+- [x] Theme tokens and typography from the mockups: paper/ink day and night palettes,
+      one highlighter colour (yellow/pink/blue/green), persisted in `localStorage`
+- [x] App header: document identity, current mode/action, solver/kernel health, theme
+      and highlighter controls; keep the current extrude/undo/redo controls
+- [x] Restyle the timeline as the primary structure, but keep only the two real steps
+      (Sketch 1 → Extrude 1); no fake feature cards or rollback states
+- [x] Sketch canvas palette: ink geometry, highlighter selection/current state, themed
+      grid, dimensions, constraint badges, snap/hover, construction/reference styling
+- [x] Panels and controls: tool strip, selection/dimension inspector, DOF/status line,
+      region panel, dimension editor, viewport stats/messages — thin rules over boxes
+- [x] Viewer theme: background, grid, lights, body material and B-rep edges for day/night
+      (the mockup's technical-drawing look is a later refinement, not required here)
+- [x] Preserve all existing `data-testid`s and behaviour; add a theme e2e smoke test
+- [x] Keep `docs/mockups/` static: do not import its CSS/JS, do not wire it into `src/`
+
+**Done.** The current loop is coherent in day and night, the choices persist, and no
+placeholder history/support/export UI was added. The mockups' technical-drawing model
+refinement stays deferred.
+
+**Done when:** the current sketch → model loop is visually coherent with the mockups in
+both day and night, the theme/highlighter choices survive reload, and no placeholder
+history/support/export UI has been added.
+
+## M2.6 — Split at intersections / trim (2–3 days)
+
+The biggest remaining profile-correctness gap: intersecting segments without a shared
+endpoint do not yet split the graph.
+
+- [ ] Planar arrangement: split line/arc segments at intersections, create real vertices,
+      and rebuild adjacency from the split segments
+- [ ] Trim tool: remove the clicked segment between intersections/boundaries, with undo
+- [ ] Region extraction: crossing diagonals become real faces (four faces for two
+      diagonals), and trim/curve splits invalidate the right regions
+- [ ] Tests: split line/line and line/arc; trim while preserving constraints where
+      possible; crossing-diagonal face/area cases; e2e trim + extrude
+- [ ] Keep construction geometry excluded, and do not silently drop constraints: mark
+      or remove them explicitly when a split changes the geometry
+
+**Done when:** two crossing diagonals in a rectangle produce the four actual regions, and
+trimming a segment updates the selectable regions and extrude volume without an invalid
+profile.
 
 ## M3 — History (4–6 days)
 

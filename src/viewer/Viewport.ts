@@ -8,12 +8,16 @@ import type { BodyMesh } from "../core/kernel/protocol";
  *
  * Model space is Z-up (CAD convention), matching OCCT.
  */
+type ViewportTheme = "day" | "night";
+
 export class Viewport {
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
   private camera: THREE.PerspectiveCamera;
   private controls: OrbitControls;
   private body = new THREE.Group();
+  private environment = new THREE.Group();
+  private theme: ViewportTheme;
   private resizeObserver: ResizeObserver;
   private disposed = false;
   private framed = false;
@@ -21,8 +25,9 @@ export class Viewport {
   private dirty = true;
   private readonly canvas: HTMLCanvasElement;
 
-  constructor(canvas: HTMLCanvasElement) {
+  constructor(canvas: HTMLCanvasElement, theme: ViewportTheme = "night") {
     this.canvas = canvas;
+    this.theme = theme;
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
@@ -33,7 +38,7 @@ export class Viewport {
     this.renderer.toneMappingExposure = 0.95;
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x101317);
+    this.scene.background = new THREE.Color(this.background());
 
     this.camera = new THREE.PerspectiveCamera(42, 1, 0.1, 10_000);
     this.camera.up.set(0, 0, 1);
@@ -50,6 +55,7 @@ export class Viewport {
     this.controls.update();
 
     this.scene.add(this.body);
+    this.scene.add(this.environment);
     this.addEnvironment();
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -57,6 +63,15 @@ export class Viewport {
     this.resize();
 
     this.startLoop();
+  }
+
+  setTheme(theme: ViewportTheme): void {
+    if (this.theme === theme || this.disposed) return;
+    this.theme = theme;
+    this.scene.background = new THREE.Color(this.background());
+    this.addEnvironment();
+    this.applyBodyTheme();
+    this.dirty = true;
   }
 
   /** Pause rendering while the 3D view is hidden (sketch mode). */
@@ -82,9 +97,9 @@ export class Viewport {
     geometry.computeBoundingSphere();
 
     const material = new THREE.MeshStandardMaterial({
-      color: 0xb3c0d2,
-      metalness: 0.28,
-      roughness: 0.46,
+      color: this.bodyColor(),
+      metalness: 0.05,
+      roughness: 0.72,
       polygonOffset: true,
       polygonOffsetFactor: 1,
       polygonOffsetUnits: 1,
@@ -99,9 +114,9 @@ export class Viewport {
       new THREE.BufferAttribute(mesh.edgePositions, 3),
     );
     const edgeMaterial = new THREE.LineBasicMaterial({
-      color: 0x11161c,
+      color: this.edgeColor(),
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.9,
     });
     const edges = new THREE.LineSegments(edgeGeometry, edgeMaterial);
     edges.name = "edges";
@@ -142,30 +157,97 @@ export class Viewport {
     this.resizeObserver.disconnect();
     this.controls.dispose();
     this.clearBody();
+    this.clearEnvironment();
     this.renderer.dispose();
   }
 
   private addEnvironment(): void {
-    this.scene.add(new THREE.HemisphereLight(0xc7d8ff, 0x1a1f27, 1.1));
+    this.clearEnvironment();
 
-    const key = new THREE.DirectionalLight(0xffffff, 1.7);
+    const day = this.theme === "day";
+    this.environment.add(
+      new THREE.HemisphereLight(
+        day ? 0xffffff : 0xa5a396,
+        day ? 0xf0efe8 : 0x1a1a17,
+        day ? 1.15 : 1.05,
+      ),
+    );
+
+    const key = new THREE.DirectionalLight(0xffffff, day ? 1.5 : 1.85);
     key.position.set(120, -90, 180);
-    this.scene.add(key);
+    this.environment.add(key);
 
-    const fill = new THREE.DirectionalLight(0x8fb4ff, 0.55);
+    const fill = new THREE.DirectionalLight(
+      day ? 0xffffff : 0xb9b6a8,
+      day ? 0.45 : 0.55,
+    );
     fill.position.set(-140, 120, 40);
-    this.scene.add(fill);
+    this.environment.add(fill);
 
-    const grid = new THREE.GridHelper(600, 60, 0x333c48, 0x20262e);
+    const grid = new THREE.GridHelper(
+      600,
+      60,
+      day ? 0xc9c8bf : 0x4e4d45,
+      day ? 0xe2e1d9 : 0x2d2d28,
+    );
     grid.rotation.x = Math.PI / 2;
     grid.material.transparent = true;
-    grid.material.opacity = 0.7;
+    grid.material.opacity = day ? 0.85 : 0.8;
     grid.position.z = -0.05;
-    this.scene.add(grid);
+    this.environment.add(grid);
 
     const axes = new THREE.AxesHelper(22);
     axes.position.z = 0.01;
-    this.scene.add(axes);
+    this.environment.add(axes);
+  }
+
+  private clearEnvironment(): void {
+    for (const child of [...this.environment.children]) {
+      this.environment.remove(child);
+      if (
+        child instanceof THREE.GridHelper ||
+        child instanceof THREE.AxesHelper ||
+        child instanceof THREE.LineSegments ||
+        child instanceof THREE.Mesh
+      ) {
+        child.geometry.dispose();
+        if (Array.isArray(child.material)) {
+          child.material.forEach((material) => material.dispose());
+        } else {
+          child.material.dispose();
+        }
+      }
+    }
+  }
+
+  private applyBodyTheme(): void {
+    for (const child of this.body.children) {
+      if (child instanceof THREE.Mesh) {
+        const material = child.material;
+        if (material instanceof THREE.MeshStandardMaterial) {
+          material.color.setHex(this.bodyColor());
+          material.needsUpdate = true;
+        }
+      } else if (child instanceof THREE.LineSegments) {
+        const material = child.material;
+        if (material instanceof THREE.LineBasicMaterial) {
+          material.color.setHex(this.edgeColor());
+          material.needsUpdate = true;
+        }
+      }
+    }
+  }
+
+  private background(): number {
+    return this.theme === "day" ? 0xfbfbf9 : 0x111110;
+  }
+
+  private bodyColor(): number {
+    return this.theme === "day" ? 0xefeee7 : 0x77756b;
+  }
+
+  private edgeColor(): number {
+    return this.theme === "day" ? 0x161614 : 0xf2efe3;
   }
 
   private clearBody(): void {

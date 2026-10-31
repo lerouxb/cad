@@ -18,7 +18,8 @@ engine matters more than feature count.
 
 ## Status
 
-**M1 is done and M2 region selection is in.** The app is an editable sketcher driving an exact extrude:
+**M1 is done, M2 region selection is in, and M2.5 paper/ink UI foundations are in.**
+The app is an editable sketcher driving an exact extrude:
 
 - Real: `slvs` adapter, tangent-space constrained dragging of points, whole lines, circles
   and arcs, line/rectangle/circle/three-point-arc tools and a parametric corner fillet,
@@ -36,15 +37,18 @@ engine matters more than feature count.
   unit + e2e tests.
 - UI: one main stage. The bottom timeline switches between the full-stage sketch editor
   and the 3D model; the sketch has floating tools, a DOF pill, and a floating selection /
-  dimension inspector. No permanent sidebar.
+  dimension inspector. No permanent sidebar. The paper/ink theme has day/night modes and
+  one highlighter colour (yellow/pink/blue/green), persisted in `localStorage`; the
+  static studies in `docs/mockups/` are the design target and are never imported.
 - Temporary: auto mode still defaults to the largest region until a region is clicked;
-  intersecting segments are not split into faces; face/edge picking is not implemented;
-  the example sketch is hand-authored (`core/sketch/demo.ts`); **datum planes and
-  sketch-on-face are not implemented (M4)**; the feature tree is static; nothing is
-  persisted. Free 3D sketches, splines/text/images and drawing exports are out of scope.
+  intersecting segments are not split into faces (split/trim is M2.6); face/edge picking
+  is not implemented; the example sketch is hand-authored (`core/sketch/demo.ts`);
+  **datum planes and sketch-on-face are not implemented (M4)**; the feature tree is
+  static; no document is persisted. Free 3D sketches, splines/text/images and drawing
+  exports are out of scope.
 
-Next: **finish M2** (split at intersections, face/edge picking), **M3** (document schema +
-history), then **M4** (datum planes + face supports). Read `docs/PLAN.md`; it is the
+Next: **M2.6** (split at intersections + trim), **M3** (document schema + history), then
+**M4** (datum planes + face supports). Read `docs/PLAN.md`; it is the
 source of truth for done. Unsupported geometry/features (ellipses, conics, B-splines, free
 3D sketches, 3D fillets, lofts/sweeps, patterns/mirror, drafts, shelling/offsets,
 expressions, threads) and the upstream SolveSpace/OCCT work are documented in **PLAN M9**.
@@ -52,7 +56,8 @@ expressions, threads) and the upstream SolveSpace/OCCT work are documented in **
 **E2E**: tests reuse one worker-scoped page per worker and reset the app through its UI;
 do not add `page.goto()` per test. The WASM stays warm, which takes the suite from ~1 min
 to ~30 s locally (2 workers; 1 in CI). Reset modes, the demo and the height slider in the
-shared `beforeEach`; if state leaks between tests, extend that reset.
+shared `beforeEach`; if state leaks between tests, extend that reset. That reset now
+includes day mode and the yellow highlighter, since both persist in `localStorage`.
 
 ## Stack (decided)
 

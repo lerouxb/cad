@@ -60,6 +60,13 @@ import {
   type SketchTone,
 } from "../sketch/SketchCanvas";
 import { useHistory } from "../ui/useHistory";
+import {
+  applyTheme,
+  highlighterColor,
+  loadTheme,
+  sketchPalette,
+  type ThemeSettings,
+} from "./theme";
 import { Viewport } from "../viewer/Viewport";
 
 type LoadState = "loading" | "ready" | "error";
@@ -75,6 +82,8 @@ export function App() {
   const { state: doc, getState, commit, replace, undo, redo, endMerge } = history;
   const { sketch } = doc;
 
+  const [themeSettings, setThemeSettings] = useState<ThemeSettings>(() => loadTheme());
+  const palette = useMemo(() => sketchPalette(themeSettings), [themeSettings]);
   const [mode, setMode] = useState<"model" | "sketch">("model");
   const [tool, setTool] = useState<SketchTool>("select");
   const [dimensionMode, setDimensionMode] = useState<DimensionMode>("distance");
@@ -244,7 +253,7 @@ export function App() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const viewport = new Viewport(canvas);
+    const viewport = new Viewport(canvas, loadTheme().mode);
     viewportRef.current = viewport;
 
     const client = new KernelClient({
@@ -283,6 +292,14 @@ export function App() {
   useEffect(() => {
     viewportRef.current?.setActive(mode === "model");
   }, [mode]);
+
+  useEffect(() => {
+    applyTheme(themeSettings);
+  }, [themeSettings]);
+
+  useEffect(() => {
+    viewportRef.current?.setTheme(themeSettings.mode);
+  }, [themeSettings.mode]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -625,6 +642,48 @@ export function App() {
             testId="kernel-status"
           />
         </div>
+
+        <div className="appearance-controls" data-testid="appearance-controls">
+          <button
+            className={`appearance-theme${themeSettings.mode === "day" ? " is-active" : ""}`}
+            type="button"
+            onClick={() => setThemeSettings((settings) => ({ ...settings, mode: "day" }))}
+            aria-label="Day appearance"
+            aria-pressed={themeSettings.mode === "day"}
+            data-testid="theme-day"
+          >
+            <SunIcon />
+          </button>
+          <button
+            className={`appearance-theme${themeSettings.mode === "night" ? " is-active" : ""}`}
+            type="button"
+            onClick={() => setThemeSettings((settings) => ({ ...settings, mode: "night" }))}
+            aria-label="Night appearance"
+            aria-pressed={themeSettings.mode === "night"}
+            data-testid="theme-night"
+          >
+            <MoonIcon />
+          </button>
+          <div className="highlight-dots" role="group" aria-label="Highlighter colour">
+            {(["yellow", "pink", "blue", "green"] as const).map((highlight) => {
+              const color = highlighterColor(highlight, themeSettings.mode);
+              return (
+                <button
+                  key={highlight}
+                  className={`highlight-dot${themeSettings.highlight === highlight ? " is-active" : ""}`}
+                  type="button"
+                  style={{ background: color.color }}
+                  onClick={() =>
+                    setThemeSettings((settings) => ({ ...settings, highlight }))
+                  }
+                  aria-label={`${highlight} highlighter`}
+                  aria-pressed={themeSettings.highlight === highlight}
+                  data-testid={`highlight-${highlight}`}
+                />
+              );
+            })}
+          </div>
+        </div>
       </header>
 
       <main className="workspace">
@@ -696,6 +755,7 @@ export function App() {
                 points={geometry.points}
                 radii={geometry.radii}
                 tone={tone}
+                palette={palette}
                 regions={regions}
                 selectedRegions={selectedRegions}
                 onSelectRegion={handleSelectRegion}
@@ -909,8 +969,9 @@ export function App() {
               data-testid="timeline-sketch"
             >
               <SketchIcon />
+              <span className="timeline-index">01</span>
               <span>Sketch 1</span>
-              <span className="tree-meta">XY</span>
+              <span className="tree-meta">XY · {sketch.curves.length} curves</span>
             </button>
             <span className="timeline-arrow" aria-hidden="true">›</span>
             <button
@@ -920,8 +981,12 @@ export function App() {
               data-testid="timeline-extrude"
             >
               <ExtrudeIcon />
+              <span className="timeline-index">02</span>
               <span>Extrude 1</span>
-              <span className="tree-meta">{extrudeHeight} mm</span>
+              <span className="tree-meta">
+                {extrudeHeight} mm · {activeRegionIds.length} region
+                {activeRegionIds.length === 1 ? "" : "s"}
+              </span>
             </button>
           </div>
           <div className="timeline-actions">
@@ -1311,6 +1376,23 @@ function LogoMark() {
         strokeLinejoin="round"
         opacity="0.7"
       />
+    </svg>
+  );
+}
+
+function SunIcon() {
+  return (
+    <svg {...svgProps()} viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" />
+    </svg>
+  );
+}
+
+function MoonIcon() {
+  return (
+    <svg {...svgProps()} viewBox="0 0 24 24">
+      <path d="M20 15.5A8 8 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z" />
     </svg>
   );
 }

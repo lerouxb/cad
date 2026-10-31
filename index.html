@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="light dark" />
     <title>cad</title>
     <style>
       html,
@@ -11,9 +11,24 @@
       #root {
         height: 100%;
         margin: 0;
-        background: #101317;
+        background: #fbfbf9;
       }
     </style>
+    <script>
+      (() => {
+        try {
+          const mode = localStorage.getItem("cad.theme") === "night" ? "night" : "day";
+          const saved = localStorage.getItem("cad.highlight");
+          const highlight = ["yellow", "pink", "blue", "green"].includes(saved)
+            ? saved
+            : "yellow";
+          document.documentElement.dataset.theme = mode;
+          document.documentElement.dataset.highlight = highlight;
+          document.documentElement.style.backgroundColor =
+            mode === "night" ? "#111110" : "#fbfbf9";
+        } catch {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

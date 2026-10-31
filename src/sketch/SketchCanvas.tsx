@@ -8,6 +8,7 @@ import {
 } from "react";
 import type { ProfileLoop, Vec2 } from "../core/types";
 import type { SketchRegion } from "../core/sketch/loops";
+import type { SketchPalette } from "../app/theme";
 import type { DraftVertex } from "../core/sketch/create";
 import type { DimensionPlacement, DimensionTarget } from "../core/sketch/dimensions";
 import type { DragTarget } from "../core/sketch/solver";
@@ -38,6 +39,7 @@ export interface SketchCanvasProps {
   points: Record<string, Vec2>;
   radii: Record<string, number>;
   tone: SketchTone;
+  palette: SketchPalette;
   /** All selectable solid regions, with holes. */
   regions: SketchRegion[];
   /** The regions currently used by the (single) extrude. */
@@ -81,15 +83,7 @@ interface Snap {
   kind: "point" | "axis" | "grid";
 }
 
-const TONE_COLOR: Record<SketchTone, string> = {
-  under: "#74a9ff",
-  full: "#4fd39a",
-  conflict: "#ff7b72",
-};
-
 /** Selection is deliberately not the tone colour: it must read as "picked". */
-const SELECT_COLOR = "#ffd479";
-
 const GRID_STEP = 10;
 const MAJOR_EVERY = 5;
 const DRAW_GRID = 5;
@@ -99,6 +93,7 @@ export function SketchCanvas({
   points,
   radii,
   tone,
+  palette,
   regions,
   selectedRegions,
   onSelectRegion,
@@ -175,7 +170,8 @@ export function SketchCanvas({
 
   const scale = Math.min(size.width / viewBox.w, size.height / viewBox.h) || 1;
   const px = 1 / scale;
-  const color = TONE_COLOR[tone];
+  const color = palette[tone];
+  const selectColor = palette.selected;
   const snapTolerance = 11 * px;
 
   useEffect(() => {
@@ -1002,7 +998,7 @@ export function SketchCanvas({
             y1={line.y1}
             x2={line.x2}
             y2={line.y2}
-            stroke={line.major ? "#28313c" : "#1d242d"}
+            stroke={line.major ? palette.gridMajor : palette.grid}
             vectorEffect="non-scaling-stroke"
           />
         ))}
@@ -1021,7 +1017,7 @@ export function SketchCanvas({
             y1={a[1]}
             x2={b[0]}
             y2={b[1]}
-            stroke={isSelected ? SELECT_COLOR : "#394453"}
+            stroke={isSelected ? selectColor : palette.axis}
             strokeWidth={isSelected ? 1.6 : 1}
             vectorEffect="non-scaling-stroke"
           />
@@ -1039,16 +1035,8 @@ export function SketchCanvas({
             key={region.id}
             d={d}
             fillRule="evenodd"
-            fill={
-              conflict
-                ? active
-                  ? "rgba(255,123,114,0.18)"
-                  : "rgba(255,123,114,0.04)"
-                : active
-                  ? "rgba(116,169,255,0.14)"
-                  : "rgba(116,169,255,0.035)"
-            }
-            stroke={active ? (conflict ? "#ff7b72" : "rgba(116,169,255,0.5)") : "none"}
+            fill={active ? palette.markerSoft : palette.grid}
+            stroke={active ? (conflict ? palette.danger : palette.ink) : "none"}
             strokeWidth={1}
             vectorEffect="non-scaling-stroke"
             data-region-id={region.id}
@@ -1078,7 +1066,7 @@ export function SketchCanvas({
             cy={center[1]}
             r={radii[circle.id] ?? circle.radius}
             fill="none"
-            stroke={isSelected ? SELECT_COLOR : color}
+            stroke={isSelected ? selectColor : color}
             strokeWidth={isSelected ? 2.4 : 1.4}
             vectorEffect="non-scaling-stroke"
           />
@@ -1099,7 +1087,7 @@ export function SketchCanvas({
             y1={a[1]}
             x2={b[0]}
             y2={b[1]}
-            stroke={isSelected ? SELECT_COLOR : curve.construction ? "#4c5b6f" : color}
+            stroke={isSelected ? selectColor : curve.construction ? palette.construction : color}
             strokeWidth={isSelected ? 2.6 : 1.6}
             strokeDasharray={curve.construction ? "5 4" : undefined}
             strokeLinecap="round"
@@ -1119,7 +1107,7 @@ export function SketchCanvas({
             data-geometry-id={curve.id}
             d={d}
             fill="none"
-            stroke={isSelected ? SELECT_COLOR : curve.construction ? "#4c5b6f" : color}
+            stroke={isSelected ? selectColor : curve.construction ? palette.construction : color}
             strokeWidth={isSelected ? 2.6 : 1.6}
             strokeDasharray={curve.construction ? "5 4" : undefined}
             strokeLinecap="round"
@@ -1254,6 +1242,7 @@ export function SketchCanvas({
                 reference={constraint.driving === false}
                 px={px}
                 fontSize={fontSize}
+                palette={palette}
                 onEdit={openDimensionEditor}
                 onDrag={(event) => startDimensionDrag(event, constraint)}
               />
@@ -1273,6 +1262,7 @@ export function SketchCanvas({
                 reference={constraint.driving === false}
                 px={px}
                 fontSize={fontSize}
+                palette={palette}
                 onEdit={openDimensionEditor}
                 onDrag={(event) => startDimensionDrag(event, constraint)}
               />
@@ -1295,6 +1285,7 @@ export function SketchCanvas({
                 reference={constraint.driving === false}
                 px={px}
                 fontSize={fontSize}
+                palette={palette}
                 onEdit={openDimensionEditor}
                 onDrag={(event) => startDimensionDrag(event, constraint)}
               />
@@ -1313,6 +1304,7 @@ export function SketchCanvas({
                 radius={constraint.offset ?? 30}
                 value={angleBetweenVectors(info.vertex, info.rayA, info.rayB)}
                 reference={constraint.driving === false}
+                palette={palette}
                 px={px}
                 fontSize={fontSize}
                 onEdit={openDimensionEditor}
@@ -1337,6 +1329,7 @@ export function SketchCanvas({
               value={distanceBetween(points[dimTarget.a]!, points[dimTarget.b]!)}
               reference={false}
               preview
+              palette={palette}
               px={px}
               fontSize={fontSize}
             />
@@ -1354,6 +1347,7 @@ export function SketchCanvas({
                 value={distanceBetween(info.point, info.projection)}
                 reference={false}
                 preview
+                palette={palette}
                 px={px}
                 fontSize={fontSize}
               />
@@ -1377,6 +1371,7 @@ export function SketchCanvas({
                 asRadius={dimTarget.kind === "radius"}
                 reference={false}
                 preview
+                palette={palette}
                 px={px}
                 fontSize={fontSize}
               />
@@ -1396,6 +1391,7 @@ export function SketchCanvas({
                 value={angleBetweenVectors(info.vertex, info.rayA, info.rayB)}
                 reference={false}
                 preview
+                palette={palette}
                 px={px}
                 fontSize={fontSize}
               />
@@ -1404,7 +1400,7 @@ export function SketchCanvas({
         </g>
       ) : null}
 
-      <ConstraintBadges sketch={sketch} points={points} px={px} />
+      <ConstraintBadges sketch={sketch} points={points} palette={palette} px={px} />
 
       <g pointerEvents="none">
           <line
@@ -1412,7 +1408,7 @@ export function SketchCanvas({
             y1={0}
             x2={5 * px}
             y2={0}
-            stroke={originSelected ? SELECT_COLOR : "#7f8b9c"}
+            stroke={originSelected ? selectColor : palette.dim}
             strokeWidth={1.2}
             vectorEffect="non-scaling-stroke"
           />
@@ -1421,7 +1417,7 @@ export function SketchCanvas({
             y1={-5 * px}
             x2={0}
             y2={5 * px}
-            stroke={originSelected ? SELECT_COLOR : "#7f8b9c"}
+            stroke={originSelected ? selectColor : palette.dim}
             strokeWidth={1.2}
             vectorEffect="non-scaling-stroke"
           />
@@ -1429,8 +1425,8 @@ export function SketchCanvas({
             cx={0}
             cy={0}
             r={2.2 * px}
-            fill="#171b21"
-            stroke={originSelected ? SELECT_COLOR : "#7f8b9c"}
+            fill={palette.halo}
+            stroke={originSelected ? selectColor : palette.dim}
           />
       </g>
 
@@ -1461,8 +1457,8 @@ export function SketchCanvas({
               cx={position[0]}
               cy={position[1]}
               r={active ? pointRadius * 1.35 : pointRadius}
-              fill={isSelected ? SELECT_COLOR : active ? color : "#101317"}
-              stroke={isSelected ? SELECT_COLOR : color}
+              fill={isSelected ? selectColor : active ? color : palette.pointFill}
+              stroke={isSelected ? selectColor : color}
               strokeWidth={1.6}
               vectorEffect="non-scaling-stroke"
               pointerEvents="none"
@@ -1500,7 +1496,7 @@ export function SketchCanvas({
           y={rectGeometry.y}
           width={rectGeometry.w}
           height={rectGeometry.h}
-          fill="rgba(116,169,255,0.05)"
+          fill={palette.grid}
           stroke={color}
           strokeWidth={1.4}
           strokeDasharray="6 4"
@@ -1589,8 +1585,8 @@ export function SketchCanvas({
           cx={hover.point[0]}
           cy={hover.point[1]}
           r={(hover.kind === "point" ? 6 : 4) * px}
-          fill={hover.kind === "point" ? "rgba(226,180,92,0.18)" : "none"}
-          stroke={hover.kind === "point" ? "#e2b45c" : "#5c7699"}
+          fill={hover.kind === "point" ? palette.markerSoft : "none"}
+          stroke={hover.kind === "point" ? palette.hover : palette.snap}
           strokeWidth={1.2}
           vectorEffect="non-scaling-stroke"
           pointerEvents="none"
@@ -1646,6 +1642,7 @@ interface DimensionHandlers {
   preview?: boolean;
   px: number;
   fontSize: number;
+  palette: SketchPalette;
   onEdit?: (
     event: ReactMouseEvent,
     id: string,
@@ -1666,6 +1663,7 @@ function LinearDimension({
   preview,
   px,
   fontSize,
+  palette,
   onEdit,
   onDrag,
 }: DimensionHandlers & { a: Vec2; b: Vec2; offset: number }) {
@@ -1678,7 +1676,7 @@ function LinearDimension({
   const B: Vec2 = [b[0] + nx * offset, b[1] + ny * offset];
   const mid: Vec2 = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2];
   const tick = 3.5 * px;
-  const color = reference ? "#7f8b9c" : "#c8b06a";
+  const color = reference ? palette.dim : palette.dimension;
   const label = `${reference ? "(" : ""}${formatLength(value)}${reference ? ")" : ""}`;
 
   return (
@@ -1740,7 +1738,7 @@ function LinearDimension({
         y={mid[1] + fontSize * 0.35}
         fontSize={fontSize}
         textAnchor="middle"
-        stroke="#171b21"
+        stroke={palette.halo}
         strokeWidth={3 * px}
         paintOrder="stroke"
         data-dimension-id={preview ? undefined : id}
@@ -1772,6 +1770,7 @@ function DiameterDimension({
   preview,
   px,
   fontSize,
+  palette,
   onEdit,
   onDrag,
   asRadius,
@@ -1797,7 +1796,7 @@ function DiameterDimension({
   const textX = end[0] + dx * 1.5 * px;
   const textY = end[1] + dy * 1.5 * px + fontSize * 0.35;
   const anchor = dx < -0.3 ? "end" : dx > 0.3 ? "start" : "middle";
-  const color = reference ? "#7f8b9c" : "#c8b06a";
+  const color = reference ? palette.dim : palette.dimension;
   const label = `${reference ? "(" : ""}${asRadius ? "R" : "⌀"} ${formatLength(value)}${reference ? ")" : ""}`;
 
   return (
@@ -1830,7 +1829,7 @@ function DiameterDimension({
         y={textY}
         fontSize={fontSize}
         textAnchor={anchor}
-        stroke="#171b21"
+        stroke={palette.halo}
         strokeWidth={3 * px}
         paintOrder="stroke"
         data-dimension-id={preview ? undefined : id}
@@ -1863,6 +1862,7 @@ function AngleDimension({
   preview,
   px,
   fontSize,
+  palette,
   onEdit,
   onDrag,
 }: DimensionHandlers & { vertex: Vec2; rayA: Vec2; rayB: Vec2; radius: number }) {
@@ -1887,7 +1887,7 @@ function AngleDimension({
     vertex[0] + Math.cos(labelAngle) * labelRadius,
     vertex[1] + Math.sin(labelAngle) * labelRadius,
   ];
-  const color = reference ? "#7f8b9c" : "#c8b06a";
+  const color = reference ? palette.dim : palette.dimension;
   const text = `${reference ? "(" : ""}${formatLength(value)}°${reference ? ")" : ""}`;
 
   return (
@@ -1936,7 +1936,7 @@ function AngleDimension({
         y={label[1] + fontSize * 0.35}
         fontSize={fontSize}
         textAnchor="middle"
-        stroke="#171b21"
+        stroke={palette.halo}
         strokeWidth={3 * px}
         paintOrder="stroke"
         data-dimension-id={preview ? undefined : id}
@@ -1969,10 +1969,12 @@ function angleBetweenVectors(vertex: Vec2, a: Vec2, b: Vec2): number {
 function ConstraintBadges({
   sketch,
   points,
+  palette,
   px,
 }: {
   sketch: Sketch;
   points: Record<string, Vec2>;
+  palette: SketchPalette;
   px: number;
 }) {
   const curves = new Map(sketch.curves.map((curve) => [curve.id, curve]));
@@ -2068,13 +2070,13 @@ function ConstraintBadges({
   }
 
   return (
-    <g fontSize={8 * px} fill="#6f7d8f" textAnchor="middle" pointerEvents="none">
+    <g fontSize={8 * px} fill={palette.badge} textAnchor="middle" pointerEvents="none">
       {badges.map((badge) => (
         <text
           key={badge.key}
           x={badge.x}
           y={badge.y}
-          stroke="#171b21"
+          stroke={palette.halo}
           strokeWidth={2.5 * px}
           paintOrder="stroke"
           data-constraint-id={badge.id}

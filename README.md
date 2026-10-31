@@ -57,11 +57,15 @@ selection/dimension inspector; there is no permanent sidebar.
   draft and clear the selection, `V/L/R/C/A/D` for tools.
 - Exact volume/face/triangle stats, and e2e tests that check them numerically while
   dragging, dimensioning, drawing, selecting/deleting, and undoing.
+- A typography-first **paper-and-ink** interface with day/night themes and one
+  highlighter colour (yellow, pink, blue, or green). The appearance is saved locally and
+  survives reload; it follows the static studies in [`docs/mockups/`](docs/mockups/),
+  which are design targets only and are never imported by `src/`.
 
 It is intentionally narrow: auto mode defaults to the largest region until you click one,
-intersecting sketch segments are not split into faces yet, face/edge picking is pending,
-datum planes and sketches on faces are M4, the feature tree is a preview, and nothing is
-persisted yet. Ellipses/conics/B-splines, free 3D sketches, 3D fillets, lofts/sweeps,
+intersecting sketch segments are not split into faces yet (split/trim is M2.6), face/edge
+picking is pending, datum planes and sketches on faces are M4, the feature tree is a
+preview, and no document is persisted yet. Ellipses/conics/B-splines, free 3D sketches, 3D fillets, lofts/sweeps,
 patterns/mirror, drafts, shelling/offsets, expressions and threads are tracked in the
 **M9 TODO/limitations backlog** in `docs/PLAN.md`, with workarounds and the upstream
 SolveSpace/OCCT work each would need.
@@ -78,4 +82,6 @@ Because `slvs` is GPLv3, this project is GPLv3.
 - [`AGENTS.md`](AGENTS.md) — stack, invariants, conventions, commands, gotchas
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how it works and why
 - [`docs/PLAN.md`](docs/PLAN.md) — milestones and the next concrete tasks
+- [`docs/mockups/`](docs/mockups/) — static paper-and-ink UI studies and visual rules;
+  design targets, not application code
 - [`docs/decisions/`](docs/decisions/) — architecture decision records

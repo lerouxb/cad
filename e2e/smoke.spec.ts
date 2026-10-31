@@ -132,6 +132,8 @@ const test = base.extend<Record<never, never>, { app: Page }>({
 test.beforeEach(async ({ app: page }) => {
   // Reset UI modes that are not part of the document, then reload the demo and
   // wait for a known mesh. No page reload, so the WASM stays warm.
+  await page.getByTestId("theme-day").click();
+  await page.getByTestId("highlight-yellow").click();
   await page.getByTestId("timeline-sketch").click();
   await page.getByTestId("tool-dimension").click();
   await page.getByTestId("dimension-distance").click();
@@ -721,4 +723,48 @@ test("selects and fuses multiple sketch regions", async ({ app: page }) => {
   await expect.poll(() => volume(page)).toBeCloseTo(30 * 40 * 12, -1);
 
   expect(errors).toEqual([]);
+});
+
+test("switches and persists the appearance theme", async ({ app: page }) => {
+  await page.getByTestId("theme-night").click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "night");
+  await expect(page.locator(".toolbar")).toHaveCSS(
+    "background-color",
+    "rgb(17, 17, 16)",
+  );
+
+  await page.getByTestId("highlight-pink").click();
+  await expect(page.locator("html")).toHaveAttribute("data-highlight", "pink");
+  await expect(page.locator(".chip")).toHaveCSS(
+    "background-color",
+    "rgba(255, 121, 201, 0.3)",
+  );
+  expect(
+    await page.evaluate(() => ({
+      mode: localStorage.getItem("cad.theme"),
+      highlight: localStorage.getItem("cad.highlight"),
+    })),
+  ).toEqual({ mode: "night", highlight: "pink" });
+
+  // Sketch ink follows the theme immediately.
+  await enterSketch(page);
+  await expect(page.locator("line[data-geometry-id]").first()).toHaveCSS(
+    "stroke",
+    "rgb(242, 239, 227)",
+  );
+
+  // A new document in the same context reads the saved appearance before React
+  // paints, without reloading the warm worker page.
+  const second = await page.context().newPage();
+  await second.goto("/");
+  await expect(second.locator("html")).toHaveAttribute("data-theme", "night");
+  await expect(second.locator("html")).toHaveAttribute("data-highlight", "pink");
+  await second.close();
+
+  await page.getByTestId("theme-day").click();
+  await page.getByTestId("highlight-yellow").click();
+  await expect(page.locator(".toolbar")).toHaveCSS(
+    "background-color",
+    "rgb(251, 251, 249)",
+  );
 });

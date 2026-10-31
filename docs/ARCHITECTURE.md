@@ -375,7 +375,8 @@ polygon is only for containment/validation. `profileFromSketch` remains as the l
 single-largest-loop helper used by older tests.
 
 Known M2 boundary: intersecting segments without a shared endpoint are not split, so two
-crossing diagonals are not decomposed into their four faces. Split/trim is still pending.
+crossing diagonals are not decomposed into their four faces. **M2.6** adds the planar
+arrangement, split vertices and trim tool before history lands.
 
 ## 6. Rebuild engine
 
