@@ -171,8 +171,12 @@ interface ExtrudeFeature extends FeatureBase {
   type: "extrude";
   sketch: Id;
   regions: string[];      // region ids, derived from the sorted curve ids that form the loop
-  distance: Expr;
-  symmetric?: boolean;
+  /** How far the profile travels. */
+  end:
+    | { kind: "blind"; distance: Expr }
+    | { kind: "throughAll" }          // M3: both ways for a cut, one way for a join
+    | { kind: "upTo"; ref: TopoRef }; // M4: stop at a face/vertex, resolved at rebuild
+  symmetric?: boolean;                 // two-sided; the sketch plane is the midplane
   operation: "new" | "join" | "cut" | "intersect";
 }
 ```
@@ -405,12 +409,27 @@ and datum planes.
 - A lost base face/plane errors the plane feature; every dependent sketch/feature shows
   "support lost" and uses its cached frame until reselected.
 
-### Projected reference geometry
+### Projected reference geometry ("On Face / On Line")
 
-Sketch-on-face and sketch-on-datum-plane need edges projected into the sketch as fixed
-construction curves, so new geometry can be aligned with existing geometry. `brepjs`
-provides `drawProjection`, `drawFaceOutline` and `makeProjectedEdges`; v1 projects the
-supporting face's boundary, and arbitrary edge projection lands with the rest of M4.
+SolveSpace lets a sketch point be constrained directly to a solid face or edge. Our 2D
+solver cannot see 3D, so we do the equivalent: **project the referenced face/edge into the
+sketch as fixed construction geometry**, then use the ordinary 2D point-on-line,
+point-on-point or coincident constraints against it.
+
+- A projected entity stores the `TopoRef` it came from, not the resulting 2D coordinates.
+  It is derived on every rebuild (after the body it references has been evaluated), so it
+  tracks edits and survives topological evolution.
+- Projected geometry is fixed reference geometry: it is not editable, not solver
+  unknowns, and is excluded from profile extraction. It uses the same group-0 treatment
+  as the origin in the `slvs` adapter.
+- The supporting face's boundary is projected by default; arbitrary edges/faces can be
+  picked explicitly. `brepjs` provides `drawProjection`, `drawFaceOutline` and
+  `makeProjectedEdges`.
+- A lost reference errors the sketch (or marks the projection stale) and keeps the last
+  known projection visible, rather than silently detaching the geometry.
+- A sketch does not have to be *on* a face to reference one: the gusset demo draws in the
+  body's symmetry/midplane and projects the inner corner edge and both inner faces into
+  that plane. That is how a sketch "between surfaces" stays welded to the walls.
 
 ### Sketches in empty space
 

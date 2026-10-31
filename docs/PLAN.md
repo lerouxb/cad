@@ -9,52 +9,60 @@ then sketches on faces, then more features.
 
 ---
 
-## Where we are (2026-10-25)
+## Where we are (2026-10-31)
 
 **M0 and the M1 core are done.** The app is an editable parametric sketcher:
 
 - `slvs` loads lazily and solves real sketches. Dragging projects the cursor delta onto
-  the constraint tangent space, so points slide along lines and circles instead of the
-  drag being rejected.
+  the constraint tangent space, so points slide along lines and circles, and whole lines
+  translate (or stretch) instead of the drag being rejected.
 - Draw with line (chain, closes on first point), rectangle (drag), and circle
   (centre + radius). Grid and point snapping; automatic horizontal/vertical constraints;
   coincident endpoints come from shared points.
 - Closed profiles are extracted from the graph: the largest region (a line loop or a
   circle) becomes the body, nested loops/circles become holes. Extruded by OCCT in a
   worker; three.js renders the solid and its B-rep edges, Z-up.
+- Dimension tool: distance (point-to-point / line) and diameter, driving or reference,
+  with inline edit/delete. Floating constraint bar: parallel, perpendicular, equal,
+  point-on-line, coincident, horizontal/vertical, construction.
 - Undo/redo with gesture grouping (`Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`); one drag or slider
   gesture is one step. `Esc` cancels a draft and clears the selection.
 - Click curves/points to select them, Shift-click to multi-select, and Delete/Backspace to
   remove. Deletion cascades to dependent curves and constraints, and leaves no orphaned
   references. A selection card reports length/diameter/position.
 - The example sketch can be loaded, cleared, edited, or replaced by drawing.
-- `npm run verify` (31 unit tests) and `npm run e2e` are green. The e2e asserts exact
-  volumes, drags, dimensions, draws, selects/deletes, and undoes.
+- `npm run verify` (59 unit tests) and `npm run e2e` (7 tests) are green. The e2e asserts
+  exact volumes, drags, dimensions, constraints, draws, selects/deletes, and undoes.
 
 Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
 95 017.7 mm³ and rebuilds in ~35 ms after warm-up.
 
 **Still temporary** (all scheduled below): profile selection is "largest loop"; line
-loops cannot be holes; dimensions exist only on the example and are edited with sliders;
-there is no dimension or constraint tool yet; the feature tree is static; nothing is
-persisted.
+dimension labels cannot be repositioned after placement; angle/tangent/symmetric
+constraints and arcs have no UI yet; **datum planes and sketch-on-face are M4**; the
+feature tree is static; nothing is persisted.
 
 ---
 
 ## Feature coverage vs SolveSpace (sanity check)
 
-Checked against SolveSpace's actual menu/group inventory (not the demo transcript —
-that share requires a Google sign-in). The headline gap was **sketch supports**: a
+Checked against SolveSpace's actual menu/group inventory **and** the 3:13 homepage demo
+video (frames extracted at 2 s intervals). The headline gap was **sketch supports**: a
 sketch is currently always on XY. Datum planes now move into M4 and become a history
-feature, not a sketch property.
+feature, not a sketch property. The demo also makes one more gap explicit: sketch points
+must be constrainable to **existing solid faces and edges**, which is how the gusset is
+anchored between the inner walls.
 
 | SolveSpace feature | Our status |
 | --- | --- |
 | New group: sketch in workplane | **Gap → M4**: datum planes (offset, midplane) |
+| Sketch on a planar face | **Gap → M4**: `PlaneRef.kind = "face"` |
+| Sketch in a midplane / symmetry plane between faces | **Gap → M4**: `midplane` datum plane (or reuse the original plane of a symmetric extrude) |
+| Constrain a point to a solid face/edge ("On Plane", "On Line") | **Gap → M4**: live projected reference edges/points as fixed construction geometry, then point-on-line/coincident |
 | Sketch anywhere in 3D (3D lines) | Out of scope: the solver/model is 2D-plane. Revisit if sweep paths need it. |
 | Datum point / workplane | Planes M4; datum points/axes M6 (needed for through-3-point planes and revolve axes) |
 | Line, construction line, rectangle, circle | Done |
-| Arc (3-point, tangent at point) | M1 |
+| Arc (3-point, tangent at point) | M1 — this is how the demo rounds the L's inner corner |
 | Bezier cubic / text / image | Out of scope for now (arcs first; profile extraction is line+circle only) |
 | Split curves at intersection / trim | M2 sketch editing |
 | Distance/diameter + reference dimensions | Done |
@@ -62,7 +70,10 @@ feature, not a sketch property.
 | Horizontal, vertical, parallel, perpendicular, equal, point-on-line | Done |
 | Midpoint, symmetric, tangent | M1 (midpoint solver exists; UI missing) |
 | Lock point where dragged / fix | M1 (a real "fixed point" constraint) |
-| Extrude | Done |
+| Extrude, one-sided | Done |
+| Two-sided / symmetric extrude | M3 (`symmetric`) |
+| Through-all / up-to-face extrude end condition | M3 blind + through-all; up-to-face in M4 (needs `TopoRef`) |
+| Boolean union / difference (join / cut) | M3 |
 | Revolve / lathe | M6 |
 | Helix | M6 optional (threads/springs) |
 | Link / assemble | M8 |
@@ -74,6 +85,39 @@ feature, not a sketch property.
 Two workflow points from the demo are already explicit in the plan: one sketch reused by
 several operations (M2 regions + M3 feature references) and reading dimensions without
 driving (reference dimensions, done).
+
+### Reference workflow: the demo's angle bracket
+
+This is the end-to-end acceptance scenario we should be able to reproduce. Timestamps are
+from the homepage video.
+
+1. **0:00–0:50 — profile sketch.** Empty XY workplane. Draw the L-shaped profile with
+   line segments; horizontal, vertical, perpendicular, parallel and equal constraints;
+   live distance dimensions. *(Done in M1.)*
+2. **0:50–1:14 — the gusset, sketched "between the walls".** After extruding the bracket
+   two-sided, start a new sketch in the **symmetry plane** of the body — the original
+   profile plane, which is the midplane between the two side faces. (With a one-sided
+   body this would be a datum midplane between the side faces.) Draw a triangle whose
+   vertices are constrained **onto the solid's inner corner and inner flange faces/edges**.
+   The extrude starts one-sided, is switched to **two-sided**, and is **unioned** into the
+   body.
+   *(The triangle is not on a face. It is in a plane in empty space, anchored to the
+   solid. This is the feature the transcript calls "sketch between surfaces".)*
+3. **1:28–2:12 — mounting holes on a face.** New workplane on the upright flange face.
+   Draw two circles with equal radius, symmetry about the face's vertical centreline, and
+   distance dimensions. **Cut** extrude through the flange.
+4. **2:36–3:04 — edit early history.** Return to the first sketch, replace the sharp inner
+   corner with a tangent arc (Ø25), add tangent + perpendicular constraints and a 90°
+   angle dimension. The bracket, gusset and holes rebuild downstream.
+5. **3:10 — group tree.** `g001-#references`, `g002-sketch-in-plane`, `g003-extrude`,
+   `g004-sketch-in-plane`, `g005-extrude`, `g006-sketch-in-plane`, `g007-extrude`: three
+   sketches, three features, all editable.
+
+Our equivalent of SolveSpace's direct "On Face / On Line" constraints is to project the
+referenced faces/edges into the sketch as **live fixed construction geometry** (derived
+from a `TopoRef` on every rebuild, never stored as user geometry), then use ordinary
+point-on-line / coincident constraints. This keeps the 2D solver pure and makes the
+reference survive edits through topological naming.
 
 ## Done: M0 — Skeleton
 
@@ -130,7 +174,8 @@ dimensions and the common constraints work; what is left is refinement.
 - [ ] A real "fix points" constraint (SolveSpace's lock-where-dragged)
 - [ ] Endpoint *coincident constraints* for points that are near but not identical
       (currently only shared points)
-- [ ] Arc tool (three-point + tangent), plus arc loops in profile extraction
+- [ ] Arc tool (three-point + tangent-at-point, as in the demo's corner fillet), plus arc
+      loops in profile extraction
 - [ ] `core/doc`: feature/document schema, ids, migrations — before history lands
 - [ ] Move the sketch out of component state into the document store
 
@@ -173,11 +218,12 @@ edits, not through a "break this constraint" interaction.)
 - [ ] `core/rebuild`: ordered evaluation, per-feature status, prefix cache, generation
       counters, cancellation of stale results
 - [ ] Feature tree UI: select, rename, reorder (drag), suppress, delete
-- [ ] Feature edit dialogs (extrude distance/symmetric/operation)
+- [ ] Feature edit dialogs (extrude distance/symmetric/operation/end condition)
 - [ ] Rebuild-on-edit with stale-while-rebuilding rendering
 - [ ] Error states in the tree with clickable diagnostics
 - [ ] Persistence: autosave to localStorage, `.cad.json` export/import, migrations
 - [ ] Cut/join extrudes; a second feature on the same body
+- [ ] Extrude end conditions: blind, through-all, and (M4) up-to-face; symmetric/two-sided
 - [ ] First `TopoRef` plumbing: `assignRoles` on feature outputs, `captureHint` /
       `createRef` for selections, `updateRoles` on evolution records; refs stored as JSON
 - [ ] Rebuild test: edit sketch 1, assert feature 2's volume changes and nothing else did
@@ -217,6 +263,12 @@ with face sketches.
 - [ ] Sketch on a planar face of a solid; camera aligns to the face normal
 - [ ] Project the supporting face's boundary into the sketch as fixed construction
       geometry (`drawFaceOutline`); project arbitrary edges (`drawProjection`)
+- [ ] **Live reference geometry**: a projected point/line/face outline stores the `TopoRef`
+      it came from and is re-derived on every rebuild, never persisted as sketch geometry.
+      This is our equivalent of SolveSpace's "constrain point On Face / On Line" and is
+      what lets a gusset sit in the midplane and stay welded to the inner walls.
+- [ ] Projected references participate in the solver as fixed (group-0-like) entities, so
+      point-on-line / point-on-point / coincident constraints work against them
 - [ ] `resolveRef` on rebuild: exact → fallback → lost-ref error with "reselect"
 - [ ] Handle flipped face normals and sketches created on the "back" of a face
 - [ ] Topological-naming regression test: change base height, boss on top face follows
@@ -225,6 +277,11 @@ with face sketches.
 **Done when:** sketch on an offset plane in empty space; sketch on a midplane between two
 faces; change the offset or the base plate height and every dependent sketch/feature
 follows; deleting a base face produces a visible, recoverable error.
+
+**Demo acceptance (with M1+M3):** build the angle bracket from the video — L profile →
+extrude → gusset triangle in the symmetry plane, anchored to projected inner edges →
+two-sided union extrude → two holes on the flange face, cut through — then edit the first
+sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correctly.
 
 ## M5 — Refinement features (4–5 days)
 
