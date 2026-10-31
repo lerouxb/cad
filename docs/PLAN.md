@@ -34,7 +34,7 @@ then sketches on faces, then more features.
   remove. Deletion cascades to dependent curves and constraints, and leaves no orphaned
   references. A selection card reports length/diameter/position.
 - The example sketch can be loaded, cleared, edited, or replaced by drawing.
-- `npm run verify` (75 unit tests) and `npm run e2e` (10 tests) are green. The e2e asserts
+- `npm run verify` (75 unit tests) and `npm run e2e` (11 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   draws, selects/deletes, and undoes.
 

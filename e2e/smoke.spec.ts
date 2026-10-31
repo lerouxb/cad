@@ -528,3 +528,34 @@ test("drives an angle dimension and a radius dimension", async ({ page }) => {
 
   expect(errors).toEqual([]);
 });
+
+test("extrudes a filleted profile with a circular hole", async ({ page }) => {
+  const errors = collectErrors(page);
+  await page.goto("/");
+  await expect(page.getByTestId("kernel-status")).toContainText("ready");
+  await enterSketch(page);
+
+  await page.getByTestId("clear-sketch").click();
+  await page.getByTestId("tool-rect").click();
+  await dragSketch(page, [-40, -30], [40, 30]);
+  await page.keyboard.press("Escape");
+
+  await clickSketch(page, -40, 0);
+  await page.keyboard.down("Shift");
+  await clickSketch(page, 0, -30);
+  await page.keyboard.up("Shift");
+  await page.getByTestId("fillet-radius").fill("10");
+  await page.getByTestId("constraint-fillet").click();
+
+  await page.getByTestId("tool-circle").click();
+  await clickSketch(page, 0, 0);
+  await clickSketch(page, 20, 0);
+  await page.keyboard.press("Escape");
+
+  await page.getByTestId("timeline-extrude").click();
+  const cut = 10 * 10 - Math.PI * 10 * 10 / 4;
+  const hole = Math.PI * 20 * 20;
+  await expect.poll(() => volume(page)).toBeCloseTo((80 * 60 - cut - hole) * 12, -1);
+
+  expect(errors).toEqual([]);
+});
