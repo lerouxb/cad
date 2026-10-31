@@ -582,12 +582,13 @@ test("extrudes a filleted profile with a circular hole", async ({ app: page }) =
   expect(errors).toEqual([]);
 });
 
-test("filleting the demo's origin corner reattaches the diagonal and offers to re-anchor", async ({ app: page }) => {
+test("filleting the demo's origin corner keeps the diagonal and anchor", async ({ app: page }) => {
   const errors = collectErrors(page);
   await enterSketch(page);
 
   // The demo starts with the origin at its top-left corner. Filleting that
-  // corner is the interesting case: the construction diagonal uses that point.
+  // corner is the interesting case: the construction diagonal and the origin
+  // coincidence both use that point.
   await clickSketch(page, 30, 0);
   await page.keyboard.down("Shift");
   await clickSketch(page, 0, 20);
@@ -597,15 +598,19 @@ test("filleting the demo's origin corner reattaches the diagonal and offers to r
   await page.getByTestId("fillet-radius").fill("5");
   await page.getByTestId("constraint-fillet").click();
 
-  await expect(page.getByTestId("sketch-notice")).toBeVisible();
-  await expect(page.getByTestId("sketch-notice")).toContainText("anchor");
-  await expect(page.locator('[data-geometry-id="diagonal"]')).toHaveCount(1);
+  // The old corner stays as a construction intersection, so no re-anchor
+  // prompt is needed and the demo remains fully constrained.
+  await expect(page.getByTestId("dof")).toContainText("Fully constrained");
 
-  const before = await page.getByTestId("dof").textContent();
-  await page.getByTestId("fix-fillet-centre").click();
-  await expect(page.getByTestId("sketch-notice")).toHaveCount(0);
-  const after = await page.getByTestId("dof").textContent();
-  expect(after).not.toBe(before);
+  const diagonal = page.locator('[data-geometry-id="diagonal"]');
+  await expect(diagonal).toHaveCount(1);
+  const ends = await diagonal.evaluate((element) => [
+    [Number(element.getAttribute("x1")), Number(element.getAttribute("y1"))],
+    [Number(element.getAttribute("x2")), Number(element.getAttribute("y2"))],
+  ]);
+  expect(
+    ends.some(([x, y]) => Math.abs(x!) < 1e-6 && Math.abs(y!) < 1e-6),
+  ).toBe(true);
 
   expect(errors).toEqual([]);
 });

@@ -1,6 +1,6 @@
 import type { Vec2 } from "../types";
 import { circumcenter, normalizeAngle, updateConstraintValue } from "./geometry";
-import { allPoints, type Sketch, type SketchConstraint, type SketchPoint, type SketchReferences } from "./types";
+import { allPoints, type Sketch, type SketchConstraint, type SketchCurve, type SketchPoint, type SketchReferences } from "./types";
 
 /**
  * Pure sketch edits used by the drawing tools. Keeping them here (instead of
@@ -308,34 +308,46 @@ export function addFillet(
       used.add(curve.end);
     }
   }
-  const referenceCorner = corner.reference === true;
-  const cornerUsed = used.has(shared) || referenceCorner;
+  const externalCurves = sketch.curves.filter(
+    (curve) =>
+      curve.id !== lineA.id &&
+      curve.id !== lineB.id &&
+      curveUsesPoint(curve, shared),
+  );
+  const hasAttachedConstraint = sketch.constraints.some(
+    (constraint) =>
+      referencesPoint(constraint, shared) &&
+      !(
+        constraint.type === "pointOnLine" &&
+        (constraint.line === lineA.id || constraint.line === lineB.id)
+      ),
+  );
+  const cornerFixed = corner.fixed === true || corner.reference === true;
+  const cornerUsed =
+    externalCurves.length > 0 || cornerFixed || hasAttachedConstraint;
+  const constructionCorner =
+    externalCurves.length === 0 ||
+    externalCurves.every((curve) => curve.construction === true);
 
-  // If another curve (e.g. the demo's construction diagonal) still uses the
-  // old corner, do not leave it stranded at the sharp corner. Keep the point
-  // and put it on the new arc, so attached geometry follows the rounded
-  // boundary. Constraints that would contradict that move (a fix, or
-  // point-on-line against either trimmed line) are dropped.
+  // Keep the original corner as a construction point and pin it on both
+  // trimmed lines' *infinite* lines. The sharp intersection is still the
+  // intersection of the two supporting lines, so the diagonal (and the origin)
+  // stay exactly where they were while the boundary uses the arc. A corner
+  // used only by the fillet itself is removed as before.
   const constraints: SketchConstraint[] = sketch.constraints.filter((constraint) => {
     if (!referencesPoint(constraint, shared)) return true;
     if (!cornerUsed) return false;
-    if (constraint.type === "fix") return false;
+    // These referred to the pre-trim segments; add fresh ones below.
     if (constraint.type === "pointOnLine") {
       return constraint.line !== lineA.id && constraint.line !== lineB.id;
     }
-    if (constraint.type === "coincident") {
-      const other = constraint.a === shared ? constraint.b : constraint.a;
-      return !byId.get(other)?.fixed;
-    }
     return true;
   });
-  if (cornerUsed && !referenceCorner) {
-    constraints.push({
-      id: newId("c"),
-      type: "pointOnCircle",
-      point: shared,
-      circle: arcId,
-    });
+  if (cornerUsed) {
+    constraints.push(
+      { id: newId("c"), type: "pointOnLine", point: shared, line: lineA.id },
+      { id: newId("c"), type: "pointOnLine", point: shared, line: lineB.id },
+    );
   }
   constraints.push(
     { id: newId("c"), type: "tangent", a: arcId, b: lineA.id },
@@ -349,9 +361,14 @@ export function addFillet(
     },
   );
 
-  const keptPoints = points.filter((point) => point.id !== shared || cornerUsed);
+  const keptPoints = points.flatMap((point) => {
+    if (point.id !== shared) return [point];
+    if (!cornerUsed) return [];
+    if (!constructionCorner) return [point];
+    return [{ ...point, construction: true }];
+  });
 
-  return { points: keptPoints, curves, constraints };
+  return { ...sketch, points: keptPoints, curves, constraints };
 }
 
 export function addCircle(
@@ -497,6 +514,16 @@ function resolveDraftPoint(
   const id = newId("p");
   points.push({ id, x: vertex.point[0], y: vertex.point[1] });
   return id;
+}
+
+function curveUsesPoint(curve: SketchCurve, point: string): boolean {
+  if (curve.type === "line") return curve.a === point || curve.b === point;
+  if (curve.type === "circle") return curve.center === point;
+  return (
+    curve.center === point ||
+    curve.start === point ||
+    curve.end === point
+  );
 }
 
 function referencesPoint(constraint: SketchConstraint, point: string): boolean {

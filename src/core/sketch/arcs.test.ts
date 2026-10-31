@@ -209,7 +209,7 @@ describe("sketch fillet", () => {
     expect(deleted.curves.filter((curve) => curve.type === "line")).toHaveLength(2);
   });
 
-  it("reattaches a diagonal at the demo's origin corner to the arc", () => {
+  it("keeps the demo's origin corner as a construction intersection", () => {
     const { sketch } = createExampleModel();
     const bottom = sketch.curves.find((curve) => curve.id === "l-bottom");
     const left = sketch.curves.find((curve) => curve.id === "l-left");
@@ -217,35 +217,34 @@ describe("sketch fillet", () => {
       throw new Error("expected the demo's bottom and left lines");
     }
     const filleted = addFillet(sketch, bottom.id, left.id, 5);
-    // The old corner is still there because the diagonal uses it; it is now
-    // constrained to the new arc instead of the origin.
+
+    const corner = filleted.points.find((point) => point.id === "p0");
+    expect(corner?.construction).toBe(true);
     const diagonal = filleted.curves.find(
       (curve): curve is Extract<typeof curve, { type: "line" }> =>
         curve.id === "diagonal" && curve.type === "line",
     );
     expect(diagonal).toBeDefined();
     expect([diagonal!.a, diagonal!.b]).toContain("p0");
+
+    // The sharp corner is still the intersection of both supporting lines.
+    expect(
+      filleted.constraints.filter(
+        (c) => c.type === "pointOnLine" && c.point === "p0",
+      ).map((c) => (c.type === "pointOnLine" ? c.line : "")),
+    ).toEqual(expect.arrayContaining(["l-bottom", "l-left"]));
+
+    // The origin anchor is preserved, not dropped.
     expect(
       filleted.constraints.some(
-        (c) => c.type === "pointOnCircle" && c.point === "p0",
+        (c) => c.type === "coincident" && (c.a === "p0" || c.b === "p0"),
       ),
     ).toBe(true);
-    expect(
-      filleted.constraints.some(
-        (c) =>
-          c.type === "coincident" &&
-          (c.a === "p0" || c.b === "p0"),
-      ),
-    ).toBe(false);
 
     const solved = solveSketch(filleted);
     expect(solved.ok).toBe(true);
-    const arcCurve = filleted.curves.find((curve) => curve.type === "arc");
-    if (!arcCurve || arcCurve.type !== "arc") throw new Error("expected an arc");
-    const center = solved.points[arcCurve.center]!;
-    const corner = solved.points.p0!;
-    const radius = distance(center, solved.points[arcCurve.start]!);
-    expect(distance(center, corner)).toBeCloseTo(radius, 3);
+    expect(solved.points.p0).toEqual([0, 0]);
+    expect(diagonal!.a === "p0" ? solved.points[diagonal!.a] : solved.points[diagonal!.b]).toEqual([0, 0]);
   });
 
   it("extracts a mixed line/arc profile for the kernel", () => {
