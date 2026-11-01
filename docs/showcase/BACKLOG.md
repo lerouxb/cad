@@ -10,7 +10,8 @@ features already done or already scheduled are not repeated.
 
 Several Keep items now have interactive design targets in this folder:
 **combine + split body** ([`body-ops.html`](body-ops.html)), **move/copy + align**
-([`transform.html`](transform.html)), **section analysis**
+([`transform.html`](transform.html)), **extrude start/end/taper/operation**
+([`extrude.html`](extrude.html)), **section analysis**
 ([`inspect.html`](inspect.html)), **sketch pattern/mirror/offset/move**
 ([`index.html`](index.html)), and the **create variants**
 ([`sketch-create.html`](sketch-create.html)).

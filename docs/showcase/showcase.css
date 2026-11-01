@@ -673,6 +673,20 @@
   stroke: none;
 }
 
+/* the source sketch profile on its plane */
+.bo-profile {
+  fill: var(--marker-fill);
+  stroke: var(--marker);
+  stroke-width: 1.4;
+}
+
+.bo-profile-ghost {
+  fill: none;
+  stroke: var(--marker);
+  stroke-width: 1.2;
+  stroke-dasharray: 6 4;
+}
+
 /* the result body of a transform (moved, copied or aligned) */
 .bo-result-top {
   fill: var(--marker-fill);

@@ -801,8 +801,147 @@
     setTool("move");
   }
 
-  function bootSection() {
-    var layer = document.getElementById("sec-layer");
+  /* ------------------------------------------------------------------ */
+  /* extrude options                                                     */
+  /* ------------------------------------------------------------------ */
+
+  var EX_PROFILE = { x0: 34, y0: 22, x1: 74, y1: 50 };
+  var EX_TARGET = { x0: 24, y0: 12, x1: 84, y1: 60, z0: 40, z1: 58 };
+
+  var ex = {
+    start: "plane",
+    startOffset: 14,
+    end: "object",
+    distance: 30,
+    taper: 0,
+    op: "join"
+  };
+
+  function exExtents(p) {
+    var z0 = p.start === "offset" ? p.startOffset : 0;
+    var z1;
+    if (p.end === "blind") z1 = z0 + p.distance;
+    else if (p.end === "all") z1 = EX_TARGET.z1 + 12;
+    else z1 = EX_TARGET.z0;
+    if (z1 <= z0 + 0.5) z1 = z0 + 0.5;
+    return [z0, z1];
+  }
+
+  function exCorners(p) {
+    var e = exExtents(p);
+    var h = e[1] - e[0];
+    var b = EX_PROFILE;
+    var w = b.x1 - b.x0,
+      d = b.y1 - b.y0;
+    var inset = h * Math.tan(((p.taper || 0) * Math.PI) / 180);
+    var lim = Math.min(w, d) / 2 - 1;
+    inset = Math.max(-lim, Math.min(lim, inset));
+    return [
+      [b.x0, b.y0, e[0]],
+      [b.x1, b.y0, e[0]],
+      [b.x1, b.y1, e[0]],
+      [b.x0, b.y1, e[0]],
+      [b.x0 + inset, b.y0 + inset, e[1]],
+      [b.x1 - inset, b.y0 + inset, e[1]],
+      [b.x1 - inset, b.y1 - inset, e[1]],
+      [b.x0 + inset, b.y1 - inset, e[1]]
+    ];
+  }
+
+  function profileQuad(iso, b, z, cls) {
+    return poly(
+      pts3(iso, [
+        [b.x0, b.y0, z],
+        [b.x1, b.y0, z],
+        [b.x1, b.y1, z],
+        [b.x0, b.y1, z]
+      ]),
+      cls
+    );
+  }
+
+  var EX_SPEC = {
+    kicker: "sketch feature",
+    title: "extrude",
+    rows: [
+      { type: "seg", key: "start", label: "start", options: [["plane", "profile"], ["offset", "offset"]] },
+      { type: "input", key: "startOffset", label: "start offset", unit: "mm", when: function (p) { return p.start === "offset"; } },
+      { type: "seg", key: "end", label: "end", options: [["blind", "blind"], ["object", "to object"], ["next", "to next"], ["all", "all"]] },
+      { type: "input", key: "distance", label: "distance", unit: "mm", when: function (p) { return p.end === "blind"; } },
+      { type: "input", key: "taper", label: "taper", unit: "deg" },
+      { type: "seg", key: "op", label: "operation", options: [["new", "new"], ["join", "join"], ["cut", "cut"], ["intersect", "intersect"]] },
+      { type: "static", label: "target", value: "block", when: function (p) { return p.op !== "new"; } }
+    ],
+    hint: "start offset and to-object are the two that are used most",
+    summary: function (p) {
+      var s = p.start === "offset" ? "offset " + fmt1(p.startOffset) : "from profile";
+      var e =
+        p.end === "blind"
+          ? "blind " + fmt1(p.distance)
+          : p.end === "object"
+            ? "to object"
+            : p.end === "next"
+              ? "to next"
+              : "all";
+      var t = p.taper ? " \u00b7 taper " + fmt1(p.taper) + "\u00b0" : "";
+      return s + " \u00b7 " + e + t + " \u00b7 " + p.op;
+    }
+  };
+
+  function exRender(iso, layer, footEl) {
+    var p = ex;
+    var e = exExtents(p);
+    var html = "";
+    // the sketch profile, and the start position when offset
+    html += profileQuad(iso, EX_PROFILE, 0, "bo-profile");
+    if (p.start === "offset") {
+      html += profileQuad(iso, EX_PROFILE, p.startOffset, "bo-profile-ghost");
+    }
+    if (p.op !== "new") {
+      html += drawBox(iso, EX_TARGET, null, p.op === "intersect");
+    }
+    var solid = drawBoxCorners(iso, exCorners(p), "bo-result", false);
+    if (p.op === "cut") {
+      // the extruded solid is the cutter
+      html += drawBoxCorners(iso, exCorners(p), null, true);
+    } else {
+      html += solid;
+    }
+    layer.innerHTML = html;
+    footEl.innerHTML = "<b>extrude</b> \u00b7 " + EX_SPEC.summary(p);
+  }
+
+  function bootExtrude() {
+    var layer = document.getElementById("ex-layer");
+    var panel = document.getElementById("tool-panel");
+    var foot = document.getElementById("ex-foot");
+    var iso = makeIso(540, 380, 2.6);
+
+    function render() {
+      exRender(iso, layer, foot);
+      panel.innerHTML = panelHtml(EX_SPEC, ex);
+      layoutPanel(panel);
+    }
+
+    panel.addEventListener("click", function (e) {
+      var seg = e.target.closest(".seg button");
+      if (seg) {
+        ex[seg.closest(".seg").getAttribute("data-key")] = seg.getAttribute("data-value");
+        render();
+      }
+    });
+    panel.addEventListener("input", function (e) {
+      var inp = e.target.closest("[data-input]");
+      if (inp) {
+        ex[inp.getAttribute("data-input")] = Number(inp.value) || 0;
+        exRender(iso, layer, foot);
+      }
+    });
+
+    render();
+  }
+
+  function bootSection() {    var layer = document.getElementById("sec-layer");
     var panel = document.getElementById("tool-panel");
     var meta = document.getElementById("sec-meta");
     var iso = makeIso(540, 400, 2.6);
@@ -846,6 +985,7 @@
   function boot() {
     if (document.getElementById("bo-layer")) bootBodyOps();
     if (document.getElementById("tr-layer")) bootTransform();
+    if (document.getElementById("ex-layer")) bootExtrude();
     if (document.getElementById("sec-layer")) bootSection();
     if (window.M && window.M.hydrateIcons) window.M.hydrateIcons(document);
   }
