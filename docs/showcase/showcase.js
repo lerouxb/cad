@@ -1461,6 +1461,7 @@
 
   function layoutPanel() {
     if (panel.hidden) return;
+    if (panel.dataset && panel.dataset.dragged) return;
     var scene = SCENES[state.scene];
     var b = selectionScreenBounds(scene);
     var vw = viewport.clientWidth;
@@ -1867,6 +1868,7 @@
 
   function boot() {
     initDom();
+    ShowcaseUI.makeDraggable(panel, viewport);
     wirePanel();
     wireSvg();
     var params = new URLSearchParams(window.location.search);

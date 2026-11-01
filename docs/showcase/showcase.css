@@ -227,6 +227,18 @@
 }
 
 .tool-panel-head {
+  cursor: grab;
+}
+
+.tool-panel-head:active {
+  cursor: grabbing;
+}
+
+.tool-panel-head .text-action {
+  cursor: pointer;
+}
+
+.tool-panel-head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;

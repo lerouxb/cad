@@ -248,7 +248,7 @@
   /* render                                                              */
   /* ------------------------------------------------------------------ */
 
-  var svg, captionEl, optionsEl, layerContext, layerConstruction, layerResult, layerMarkers;
+  var svg, captionEl, panelEl, layerContext, layerConstruction, layerResult, layerMarkers;
   var active = "rect2";
 
   function render() {
@@ -290,25 +290,40 @@
   function renderOptions() {
     var tool = TOOLS[active];
     if (!tool.live) {
-      optionsEl.hidden = true;
-      optionsEl.innerHTML = "";
+      panelEl.hidden = true;
+      panelEl.innerHTML = "";
       return;
     }
-    optionsEl.hidden = false;
-    optionsEl.innerHTML =
-      '<span class="c-opt-label">sides</span>' +
+    panelEl.hidden = false;
+    panelEl.innerHTML =
+      '<div class="tool-panel-head"><div>' +
+      '<div class="tool-panel-kicker">sketch tool</div>' +
+      '<h2 class="tool-panel-title">polygon</h2></div></div>' +
+      '<div class="tool-panel-body">' +
+      '<div class="tool-row"><span class="tool-label">sides</span>' +
       '<div class="stepper" data-poly="sides">' +
       '<button type="button" data-step="-1">\u2212</button>' +
       '<span class="stepper-value">' + poly.sides + "</span>" +
-      '<button type="button" data-step="1">+</button></div>' +
-      '<span class="c-opt-label">mode</span>' +
+      '<button type="button" data-step="1">+</button></div></div>' +
+      '<div class="tool-row"><span class="tool-label">mode</span>' +
       '<div class="seg" data-poly="mode">' +
       '<button type="button" data-value="inscribed" class="' +
       (poly.mode === "inscribed" ? "is-selected" : "") +
       '">inscribed</button>' +
       '<button type="button" data-value="circumscribed" class="' +
       (poly.mode === "circumscribed" ? "is-selected" : "") +
-      '">circumscribed</button></div>';
+      '">circumscribed</button></div></div>' +
+      "</div>" +
+      '<div class="tool-hint">place the centre, then a vertex</div>' +
+      ShowcaseUI.footer(poly.sides + " sides \u00b7 " + poly.mode, [
+        { id: "apply", label: "apply" },
+        { id: "cancel", label: "cancel", quiet: true }
+      ]);
+    if (!panelEl.dataset.dragged) {
+      panelEl.style.left = "auto";
+      panelEl.style.top = "24px";
+      panelEl.style.right = "24px";
+    }
   }
 
   function setActive(id) {
@@ -325,11 +340,13 @@
   function boot() {
     svg = document.getElementById("svg");
     captionEl = document.getElementById("create-caption");
-    optionsEl = document.getElementById("create-options");
+    panelEl = document.getElementById("create-panel");
     layerContext = document.getElementById("layer-context");
     layerConstruction = document.getElementById("layer-construction");
     layerResult = document.getElementById("layer-result");
     layerMarkers = document.getElementById("layer-markers");
+
+    ShowcaseUI.makeDraggable(panelEl, document.getElementById("viewport"));
 
     Array.prototype.forEach.call(document.querySelectorAll("[data-create]"), function (b) {
       b.addEventListener("click", function () {
@@ -337,7 +354,16 @@
       });
     });
 
-    optionsEl.addEventListener("click", function (e) {
+    panelEl.addEventListener("click", function (e) {
+      var act = e.target.closest("[data-action]");
+      if (act) {
+        if (act.getAttribute("data-action") === "cancel") {
+          poly.sides = 6;
+          poly.mode = "inscribed";
+          render();
+        }
+        return;
+      }
       var step = e.target.closest(".stepper button");
       if (step) {
         poly.sides = Math.max(3, Math.min(12, poly.sides + Number(step.getAttribute("data-step"))));

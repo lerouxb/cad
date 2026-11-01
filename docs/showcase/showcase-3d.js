@@ -342,9 +342,10 @@
     });
     html += "</div>";
     if (spec.hint) html += '<div class="tool-hint">' + spec.hint + "</div>";
-    html +=
-      '<div class="tool-panel-foot"><span class="tool-summary">' +
-      spec.summary(p) + "</span></div>";
+    html += ShowcaseUI.footer(spec.summary(p), [
+      { id: "apply", label: spec.primary || "apply" },
+      { id: "cancel", label: "cancel", quiet: true }
+    ]);
     return html;
   }
 
@@ -365,6 +366,7 @@
   }
 
   function layoutPanel(panel, viewport) {
+    if (panel.dataset && panel.dataset.dragged) return;
     panel.style.left = "auto";
     panel.style.top = "24px";
     panel.style.right = "24px";
@@ -387,11 +389,13 @@
 
   var bo = {
     tool: "combine",
+    msg: "",
     params: {
       combine: { op: "cut", keepTools: false },
       split: { tool: "plane1", offset: 40, keepBoth: true }
     }
   };
+  var BO_DEFAULTS = JSON.parse(JSON.stringify(bo.params));
 
   function boSpec(tool) {
     if (tool === "combine") {
@@ -501,7 +505,7 @@
     layer.innerHTML = html;
     footEl.innerHTML =
       "<b>" + (tool === "combine" ? "combine" : "split body") + "</b> \u00b7 " +
-      boSpec(tool).summary(p);
+      boSpec(tool).summary(p) + (bo.msg ? " \u00b7 " + bo.msg : "");
   }
 
   /* ------------------------------------------------------------------ */
@@ -515,7 +519,8 @@
   ];
   var SEC_ENV = { x0: 0, y0: 0, z0: 0, x1: 104, y1: 70, z1: 46 };
 
-  var sec = { pos: 56, flip: false };
+  var sec = { pos: 56, flip: false, msg: "" };
+  var SEC_DEFAULTS = JSON.parse(JSON.stringify(sec));
 
   function secRender(iso, layer, metaEl) {
     var keepLess = !sec.flip;
@@ -543,7 +548,8 @@
     layer.innerHTML = html;
     metaEl.textContent =
       "plane X \u00b7 " + Math.round(sec.pos) + " mm \u00b7 " +
-      (sec.flip ? "keep +x" : "keep \u2212x");
+      (sec.flip ? "keep +x" : "keep \u2212x") +
+      (sec.msg ? " \u00b7 " + sec.msg : "");
   }
 
   /* ------------------------------------------------------------------ */
@@ -553,6 +559,7 @@
   function bootBodyOps() {
     var layer = document.getElementById("bo-layer");
     var panel = document.getElementById("tool-panel");
+    ShowcaseUI.makeDraggable(panel, document.getElementById("viewport"));
     var foot = document.getElementById("bo-foot");
     var iso = makeIso(540, 400, 2.6);
 
@@ -578,6 +585,17 @@
     });
 
     panel.addEventListener("click", function (e) {
+      var act = e.target.closest("[data-action]");
+      if (act) {
+        if (act.getAttribute("data-action") === "cancel") {
+          bo.params = JSON.parse(JSON.stringify(BO_DEFAULTS));
+          bo.msg = "";
+        } else {
+          bo.msg = "applied";
+        }
+        render();
+        return;
+      }
       var listRow = e.target.closest("[data-list]");
       if (listRow) {
         var t = listRow.getAttribute("data-list");
@@ -625,11 +643,13 @@
 
   var tr = {
     tool: "move",
+    msg: "",
     params: {
       move: { dx: 34, dy: 22, dz: 0, rot: 0, copy: true },
       align: { ax: "centre", ay: "centre", az: "ontop" }
     }
   };
+  var TR_DEFAULTS = JSON.parse(JSON.stringify(tr.params));
 
   function alignAxis(bmin, bmax, rmin, rmax, mode) {
     if (mode === "min") return rmin;
@@ -746,12 +766,13 @@
     layer.innerHTML = html;
     footEl.innerHTML =
       "<b>" + (tool === "move" ? "move / copy" : "align") + "</b> \u00b7 " +
-      trSpec(tool).summary(p);
+      trSpec(tool).summary(p) + (tr.msg ? " \u00b7 " + tr.msg : "");
   }
 
   function bootTransform() {
     var layer = document.getElementById("tr-layer");
     var panel = document.getElementById("tool-panel");
+    ShowcaseUI.makeDraggable(panel, document.getElementById("viewport"));
     var foot = document.getElementById("tr-foot");
     var iso = makeIso(540, 400, 2.6);
 
@@ -777,6 +798,17 @@
     });
 
     panel.addEventListener("click", function (e) {
+      var act = e.target.closest("[data-action]");
+      if (act) {
+        if (act.getAttribute("data-action") === "cancel") {
+          tr.params = JSON.parse(JSON.stringify(TR_DEFAULTS));
+          tr.msg = "";
+        } else {
+          tr.msg = "applied";
+        }
+        render();
+        return;
+      }
       var seg = e.target.closest(".seg button");
       if (seg) {
         tr.params[tr.tool][seg.closest(".seg").getAttribute("data-key")] = seg.getAttribute("data-value");
@@ -814,8 +846,10 @@
     end: "object",
     distance: 30,
     taper: 0,
-    op: "join"
+    op: "join",
+    msg: ""
   };
+  var EX_DEFAULTS = JSON.parse(JSON.stringify(ex));
 
   function exExtents(p) {
     var z0 = p.start === "offset" ? p.startOffset : 0;
@@ -908,12 +942,14 @@
       html += solid;
     }
     layer.innerHTML = html;
-    footEl.innerHTML = "<b>extrude</b> \u00b7 " + EX_SPEC.summary(p);
+    footEl.innerHTML = "<b>extrude</b> \u00b7 " + EX_SPEC.summary(p) +
+      (ex.msg ? " \u00b7 " + ex.msg : "");
   }
 
   function bootExtrude() {
     var layer = document.getElementById("ex-layer");
     var panel = document.getElementById("tool-panel");
+    ShowcaseUI.makeDraggable(panel, document.getElementById("viewport"));
     var foot = document.getElementById("ex-foot");
     var iso = makeIso(540, 380, 2.6);
 
@@ -924,6 +960,18 @@
     }
 
     panel.addEventListener("click", function (e) {
+      var act = e.target.closest("[data-action]");
+      if (act) {
+        if (act.getAttribute("data-action") === "cancel") {
+          Object.keys(ex).forEach(function (k) { delete ex[k]; });
+          Object.keys(EX_DEFAULTS).forEach(function (k) { ex[k] = EX_DEFAULTS[k]; });
+          ex.msg = "";
+        } else {
+          ex.msg = "applied";
+        }
+        render();
+        return;
+      }
       var seg = e.target.closest(".seg button");
       if (seg) {
         ex[seg.closest(".seg").getAttribute("data-key")] = seg.getAttribute("data-value");
@@ -943,11 +991,13 @@
 
   function bootSection() {    var layer = document.getElementById("sec-layer");
     var panel = document.getElementById("tool-panel");
+    ShowcaseUI.makeDraggable(panel, document.getElementById("viewport"));
     var meta = document.getElementById("sec-meta");
     var iso = makeIso(540, 400, 2.6);
     var spec = {
       kicker: "inspect",
       title: "section analysis",
+      primary: "done",
       rows: [
         { type: "range", key: "pos", label: "plane X", min: 0, max: 104 },
         { type: "toggle", key: "flip", label: "flip side" }
@@ -965,6 +1015,18 @@
     }
 
     panel.addEventListener("click", function (e) {
+      var act = e.target.closest("[data-action]");
+      if (act) {
+        if (act.getAttribute("data-action") === "cancel") {
+          sec.pos = SEC_DEFAULTS.pos;
+          sec.flip = SEC_DEFAULTS.flip;
+          sec.msg = "";
+        } else {
+          sec.msg = "done";
+        }
+        render();
+        return;
+      }
       var tog = e.target.closest(".toggle");
       if (tog && tog.getAttribute("data-key") === "flip") {
         sec.flip = !sec.flip;

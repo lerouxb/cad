@@ -12,7 +12,9 @@ Interactive design targets for tools that do not exist yet, split into four stud
 | **Inspect** | [`inspect.html`](inspect.html) | **section analysis** | M5 |
 
 The decisions behind these (what to keep, drop, defer) are in
-[`BACKLOG.md`](BACKLOG.md).
+[`BACKLOG.md`](BACKLOG.md). The shared interaction rules — input is a draggable
+popover, actions live in its footer, editing reuses the create controls, and the
+stage foot is a readout — are in [`INTERACTION.md`](INTERACTION.md).
 
 Open the pages directly in a browser. No build step, no server, no dependencies.
 They reuse the shared paper/ink system from [`../mockups/`](../mockups/)
@@ -134,9 +136,11 @@ transform.html       move / copy + align
 extrude.html         extrude options (start, end, taper, operation)
 inspect.html         section analysis
 showcase.css         popup, preview, manipulator and 3D styles (mockup tokens)
+showcase-ui.js       shared draggable popovers + the footer action grammar
 showcase.js          sketch model, preview geometry and interaction
 showcase-create.js   the create-tool atlas
 showcase-3d.js       isometric helpers + body ops + transforms + extrude + section
+INTERACTION.md       the interaction contract (popover, actions, foot)
 BACKLOG.md           the gap decisions (keep / drop / defer) and their homes
 README.md            this file
 ```
