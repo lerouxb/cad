@@ -446,7 +446,9 @@ the shell (header, stage foot, timeline) first, then the sketch view controls.
       one summary line for the selected step; no rounded cards
 - [x] Timeline detail is a **summary + actions**; feature/tool parameters live in one
       draggable stage popover (design rule 6), with a summary + `cancel`/`apply` footer.
-      First use: extrude editing and profile selection.
+- [x] Applied constraints appear as active selection chips; clicking one removes it
+      (including H/V). Clicking a filled region clears a non-empty geometry selection
+      before it can start an extrude draft.
 - [x] Finish the interaction contract on the sketch side: the selection popover replaces
       the selection card + constraint bar; X/Y is an inline editor at the point; a
       dimension value is an inline editor with unit and driving/reference; the fillet is

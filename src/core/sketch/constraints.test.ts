@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { addCircle, addPolyline, emptySketch } from "./create";
 import {
   applicableConstraints,
+  appliedConstraints,
   applyConstraint,
   constructionState,
   toggleConstruction,
@@ -11,7 +12,7 @@ import type { Sketch } from "./types";
 function twoLines(): Sketch {
   const first = addPolyline(
     emptySketch(),
-    [{ point: [0, 0] }, { point: [40, 0] }],
+    [{ point: [0, 0] }, { point: [40, 10] }],
     false,
   );
   return addPolyline(first, [{ point: [0, 20] }, { point: [40, 28] }], false);
@@ -25,6 +26,25 @@ function lineIds(sketch: Sketch): [string, string] {
 }
 
 describe("constraint applicability", () => {
+  it("reports an applied horizontal constraint with its id", () => {
+    const sketch = addPolyline(
+      emptySketch(),
+      [{ point: [0, 0] }, { point: [40, 0] }],
+      false,
+    );
+    const line = sketch.curves[0]!;
+    const applied = appliedConstraints(sketch, [line.id]);
+    expect(applied).toHaveLength(1);
+    expect(applied[0]).toMatchObject({
+      type: "horizontal",
+      applied: true,
+      id: sketch.constraints[0]!.id,
+    });
+    expect(
+      applicableConstraints(sketch, [line.id]).map((action) => action.type),
+    ).toEqual(["horizontal", "vertical"]);
+  });
+
   it("offers horizontal/vertical for one line", () => {
     const sketch = addPolyline(
       emptySketch(),
@@ -72,14 +92,20 @@ describe("constraint applicability", () => {
     ).toEqual(["pointOnLine", "midpoint"]);
   });
 
-  it("hides constraints that are already applied", () => {
+  it("keeps applied constraints visible and hides duplicate actions", () => {
     const sketch = twoLines();
     const [a, b] = lineIds(sketch);
     const withParallel = applyConstraint(sketch, "parallel", [a, b]);
+    const actions = applicableConstraints(withParallel, [a, b]);
 
+    expect(actions.map((action) => action.type)).toEqual([
+      "parallel",
+      "perpendicular",
+      "equal",
+    ]);
     expect(
-      applicableConstraints(withParallel, [a, b]).map((action) => action.type),
-    ).toEqual(["perpendicular", "equal"]);
+      actions.find((action) => action.type === "parallel"),
+    ).toMatchObject({ applied: true });
   });
 });
 

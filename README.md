@@ -43,8 +43,9 @@ selection/dimension inspector; there is no permanent sidebar.
   geometry refuses to move.
 - Dimension distances, point-to-line distances, angles, diameters, and radii; driving or
   reference. Dimension and trim are contextual: select the line/circle/points first, then
-  use the selection popover. Double-click a value to edit it inline; drag a label along a
-  line or radially. The selection popover also adds
+  use the selection popover. Applied constraints appear as active chips; click one to
+  remove it (H/V, parallel, equal, ...). Double-click a value to edit it inline; drag a
+  label along a line or radially. The selection popover also adds
   perpendicular/parallel/equal/tangent/symmetric/midpoint/point-on-
   line/point-on-circle/coincident/fix and toggles construction geometry.
 - A selectable fixed **origin and X/Y axes** are always available for constraints and

@@ -1153,6 +1153,49 @@ test("drags dimension labels along a line and by radial distance", async ({
   expect(errors).toEqual([]);
 });
 
+test("removes an applied constraint from the line selection", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  const horizontal = page.locator('[data-constraint-type="horizontal"]');
+  await expect(horizontal).toHaveCount(2);
+
+  await page.getByTestId("tool-select").click();
+  await clickSketch(page, 30, 40);
+  const chip = page.getByTestId("constraint-horizontal");
+  await expect(chip).toHaveClass(/is-on/);
+  await chip.click();
+  await expect(horizontal).toHaveCount(1);
+
+  await page.getByTestId("undo").click();
+  await expect(horizontal).toHaveCount(2);
+  expect(errors).toEqual([]);
+});
+
+test("clicking outside a selection clears it before starting a draft", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("tool-select").click();
+
+  await clickSketch(page, 30, 40);
+  await expect(page.getByTestId("selection-panel")).toHaveCount(1);
+
+  // A filled region is outside the selected line: the first click deselects.
+  await clickSketch(page, 10, 20);
+  await expect(page.getByTestId("selection-panel")).toHaveCount(0);
+  await expect(page.getByTestId("extrude-draft-popover")).toHaveCount(0);
+
+  // With nothing selected, the same click starts an explicit extrude draft.
+  await clickSketch(page, 10, 20);
+  await expect(page.getByTestId("extrude-draft-popover")).toHaveCount(1);
+  await page.getByTestId("extrude-cancel").click();
+
+  expect(errors).toEqual([]);
+});
+
 test("extrudes a filleted profile with a circular hole", async ({ app: page }) => {
   const errors = collectErrors(page);
   await enterSketch(page);

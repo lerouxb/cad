@@ -1,4 +1,4 @@
-import type { ConstraintType } from "../core/sketch/constraints";
+import type { ConstraintAction } from "../core/sketch/constraints";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
 
 export interface SelectionInfo {
@@ -12,9 +12,9 @@ type ConstructionState = "none" | "mixed" | "all" | null;
 
 interface SelectionPopoverProps {
   info: readonly SelectionInfo[];
-  actions: ReadonlyArray<{ type: ConstraintType; label: string }>;
+  actions: readonly ConstraintAction[];
   construction: ConstructionState;
-  onConstraint: (type: ConstraintType) => void;
+  onConstraint: (action: ConstraintAction) => void;
   onConstruction: () => void;
   onDelete: () => void;
   deletable: boolean;
@@ -96,10 +96,11 @@ export function SelectionPopover({
         <div className="sc-chip-row">
           {actions.map((action) => (
             <button
-              key={action.type}
-              className="sc-chip"
+              key={action.id ?? action.type}
+              className={`sc-chip${action.applied ? " is-on" : ""}`}
               type="button"
-              onClick={() => onConstraint(action.type)}
+              onClick={() => onConstraint(action)}
+              aria-pressed={action.applied === true}
               data-testid={`constraint-${action.type}`}
             >
               {action.label}

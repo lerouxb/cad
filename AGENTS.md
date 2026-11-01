@@ -362,12 +362,16 @@ docs/
 - **A sketch step never owns region editing.** `activeExtrudeFor` returns null for a
   sketch. Select an extrude step to edit its existing regions, or start an extrude draft
   from the sketch step. Without an active extrude or draft, region fills are read-only
-  and the hint explains how to start.
+  and the hint explains how to start. A click on a filled region with a non-empty geometry
+  selection clears that selection first; with nothing selected the same click starts an
+  explicit extrude draft.
 - **Selection opens a popover, not a bottom line.** `SelectionPopover` uses the same
   `StagePopover` chrome: kicker/title, selected rows, a `.sc-chip` palette for immediate
   constraints/construction/dimension/trim/fillet, and a footer summary + quiet delete.
-  Its body is click-through except for the header and controls, so floating over the
-  sketch does not steal point/axis picks. There is no selection card or constraint bar.
+  Applied constraints are included as active chips with their constraint id; clicking one
+  removes it (this is how H/V, parallel, equal, etc. are released). Its body is
+  click-through except for the header and controls, so floating over the sketch does not
+  steal point/axis picks. There is no selection card or constraint bar.
 - **Dimension and trim are contextual.** The top tool line only holds selection and
   creation modes. A selected line, circle/arc or pair of points/lines exposes the
   dimension chip (and a radius chip for a circle/arc); a selected line/arc exposes trim.

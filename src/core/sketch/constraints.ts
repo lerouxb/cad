@@ -18,6 +18,9 @@ export type ConstraintType =
 export interface ConstraintAction {
   type: ConstraintType;
   label: string;
+  /** Present for constraints already on the selected geometry. */
+  id?: string;
+  applied?: boolean;
 }
 
 export type ConstructionState = "none" | "mixed" | "all" | null;
@@ -79,7 +82,7 @@ export function applicableConstraints(
   ids: readonly string[],
 ): ConstraintAction[] {
   const selection = inspect(sketch, ids);
-  const actions: ConstraintAction[] = [];
+  const actions: ConstraintAction[] = appliedConstraints(sketch, ids);
   const push = (type: ConstraintType): void => {
     if (!hasConstraint(sketch, type, selection)) {
       actions.push({ type, label: LABELS[type] });
@@ -170,6 +173,75 @@ export function applicableConstraints(
     push("tangent");
   }
   return actions;
+}
+
+/**
+ * Constraints already attached to exactly the selected entities. The selection
+ * popover shows these as active chips; clicking one removes it, which is the
+ * ordinary way to release an H/V or parallel constraint.
+ */
+export function appliedConstraints(
+  sketch: Sketch,
+  ids: readonly string[],
+): ConstraintAction[] {
+  const wanted = new Set(ids);
+  const actions: ConstraintAction[] = [];
+  for (const constraint of sketch.constraints) {
+    if (isDimensionConstraint(constraint)) continue;
+    let applies = false;
+    switch (constraint.type) {
+      case "horizontal":
+      case "vertical":
+        applies = wanted.has(constraint.line);
+        break;
+      case "parallel":
+      case "perpendicular":
+      case "equal":
+      case "tangent":
+      case "coincident":
+        applies = wanted.has(constraint.a) && wanted.has(constraint.b);
+        break;
+      case "pointOnLine":
+      case "midpoint":
+        applies = wanted.has(constraint.point) && wanted.has(constraint.line);
+        break;
+      case "pointOnCircle":
+        applies = wanted.has(constraint.point) && wanted.has(constraint.circle);
+        break;
+      case "symmetric":
+        applies =
+          wanted.has(constraint.a) &&
+          wanted.has(constraint.b) &&
+          wanted.has(constraint.about);
+        break;
+      case "fix":
+        applies = wanted.has(constraint.point);
+        break;
+    }
+    if (applies) {
+      actions.push({
+        id: constraint.id,
+        type: constraint.type,
+        label: LABELS[constraint.type],
+        applied: true,
+      });
+    }
+  }
+  return actions;
+}
+
+function isDimensionConstraint(
+  constraint: SketchConstraint,
+): constraint is Extract<
+  SketchConstraint,
+  { type: "distance" | "pointLineDistance" | "diameter" | "angle" }
+> {
+  return (
+    constraint.type === "distance" ||
+    constraint.type === "pointLineDistance" ||
+    constraint.type === "diameter" ||
+    constraint.type === "angle"
+  );
 }
 
 export function applyConstraint(

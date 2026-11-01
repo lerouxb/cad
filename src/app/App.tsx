@@ -72,7 +72,7 @@ import {
   applyConstraint,
   constructionState,
   toggleConstruction,
-  type ConstraintType,
+  type ConstraintAction,
 } from "../core/sketch/constraints";
 import {
   addDimension,
@@ -1490,6 +1490,13 @@ export function App() {
   };
 
   const handleSelectRegion = (regionId: string, additive: boolean): void => {
+    // In ordinary sketch editing a click outside the selected geometry clears
+    // the selection. Do not start a draft until the user clicks a profile with
+    // nothing else selected.
+    if (!activeExtrude && !extrudeDraft && selection.length > 0) {
+      setSelection([]);
+      return;
+    }
     setSelection([]);
     if (!activeExtrude && !extrudeDraft) {
       if (activeSketchFeature) beginExtrudeDraft([regionId]);
@@ -1607,9 +1614,15 @@ export function App() {
     solveAndCommit(removeConstraint(currentSketch(), id));
   };
 
-  const handleConstraint = (type: ConstraintType): void => {
+  const handleConstraintAction = (action: ConstraintAction): void => {
     const base = currentSketch();
-    const next = applyConstraint(base, type, selection);
+    if (action.applied && action.id) {
+      const next = removeConstraint(base, action.id);
+      if (next === base) return;
+      solveAndCommit(next);
+      return;
+    }
+    const next = applyConstraint(base, action.type, selection);
     if (next === base) return;
     solveAndCommit(next);
   };
@@ -2319,7 +2332,7 @@ export function App() {
                   info={selectedInfo}
                   actions={constraintActions}
                   construction={construction}
-                  onConstraint={handleConstraint}
+                  onConstraint={handleConstraintAction}
                   onConstruction={handleConstruction}
                   onDelete={deleteSelection}
                   deletable={selectedInfo.some(
