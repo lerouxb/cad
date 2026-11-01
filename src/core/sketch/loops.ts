@@ -1,15 +1,14 @@
 import type { ProfileLoop, ProfileSegment, Vec2 } from "../types";
-import { arcGeometry, arcPointAt } from "./geometry";
+import { arcGeometry, arcPointAt, normalizeAngle } from "./geometry";
 import { allPoints, type Sketch } from "./types";
-import { planarArrangement } from "./arrangement";
+import { planarArrangement, type PlanarArrangement } from "./arrangement";
 
 /**
- * Extract closed loops from a sketch's line segments.
+ * Closed faces of the planar arrangement's line/arc graph.
  *
- * This is deliberately a simple cycle enumeration, not a full planar
- * arrangement: it is exact for the shapes the sketcher can currently draw
- * (rectangles, polylines, holes made of circles) and it is easy to test. M2
- * replaces it with face extraction when arcs and intersecting segments land.
+ * A half-edge walk is used instead of enumerating simple cycles: it naturally
+ * produces faces that share an edge (a plate split by a line through its hole)
+ * and does not mistake the outer cycle of a subdivided face for another face.
  */
 
 export interface SketchProfile {
@@ -58,82 +57,224 @@ export interface SketchLoop {
   area: number;
 }
 
-const MAX_DEPTH = 24;
-const MAX_LOOPS = 500;
+const MAX_FACE_EDGES = 4096;
+const MAX_FACES = 500;
 
+interface HalfEdge {
+  curveId: string;
+  from: string;
+  to: string;
+  /** Outgoing tangent angle at `from`, in [0, 2π). */
+  angle: number;
+  reverse: HalfEdge;
+  /** Previous edge in the destination node's angular order. */
+  prevOut: HalfEdge;
+  /** Next edge in the face on the left of this edge. */
+  next: HalfEdge;
+  visited: boolean;
+}
+
+/**
+ * Extract closed loops from the planar arrangement using a half-edge walk.
+ * The document is untouched; trim materializes cuts only when the user keeps
+ * them.
+ */
 export function findLoops(sketch: Sketch): SketchLoop[] {
-  // Region extraction runs on the planar arrangement, not the raw drawing:
-  // crossing segments are split into real graph edges first. The document is
-  // untouched; trim materializes cuts only when the user keeps them.
-  const arranged = planarArrangement(sketch).sketch;
-  const all = arranged.points;
-  const position = new Map(all.map((point) => [point.id, point]));
+  return findFacesFromArrangement(planarArrangement(sketch));
+}
+
+function findFacesFromArrangement(
+  arrangement: PlanarArrangement,
+): SketchLoop[] {
+  const arranged = arrangement.sketch;
+  const position = new Map(arranged.points.map((point) => [point.id, point]));
   const pointRecord: Record<string, Vec2> = Object.fromEntries(
-    all.map((point) => [point.id, [point.x, point.y] as Vec2]),
+    arranged.points.map((point) => [point.id, [point.x, point.y] as Vec2]),
   );
   const curvesById = new Map(
     arranged.curves.map((curve) => [curve.id, curve] as const),
   );
 
-  // Undirected adjacency over profile lines and arcs. Construction geometry and
-  // circles are not part of a path loop.
-  const adjacency = new Map<string, { curve: string; other: string }[]>();
+  const outgoing = new Map<string, HalfEdge[]>();
+  const halfEdges: HalfEdge[] = [];
+
+  const make = (
+    curveId: string,
+    from: string,
+    to: string,
+    angle: number,
+  ): HalfEdge => {
+    const edge: HalfEdge = {
+      curveId,
+      from,
+      to,
+      angle: normalizeAngle(angle),
+      reverse: undefined as unknown as HalfEdge,
+      prevOut: undefined as unknown as HalfEdge,
+      next: undefined as unknown as HalfEdge,
+      visited: false,
+    };
+    halfEdges.push(edge);
+    const list = outgoing.get(from) ?? [];
+    list.push(edge);
+    outgoing.set(from, list);
+    return edge;
+  };
+
   for (const curve of arranged.curves) {
     if (curve.construction) continue;
     if (curve.type === "line") {
-      if (!position.has(curve.a) || !position.has(curve.b)) continue;
-      addEdge(adjacency, curve.id, curve.a, curve.b);
-      addEdge(adjacency, curve.id, curve.b, curve.a);
-    } else if (curve.type === "arc") {
-      if (!position.has(curve.start) || !position.has(curve.end)) continue;
-      addEdge(adjacency, curve.id, curve.start, curve.end);
-      addEdge(adjacency, curve.id, curve.end, curve.start);
+      const a = position.get(curve.a);
+      const b = position.get(curve.b);
+      if (!a || !b) continue;
+      const angle = Math.atan2(b.y - a.y, b.x - a.x);
+      const forward = make(curve.id, curve.a, curve.b, angle);
+      const reverse = make(
+        curve.id,
+        curve.b,
+        curve.a,
+        angle + Math.PI,
+      );
+      forward.reverse = reverse;
+      reverse.reverse = forward;
+      continue;
     }
-  }
-
-  const loops = new Map<string, SketchLoop>();
-
-  const walk = (
-    start: string,
-    current: string,
-    visited: Set<string>,
-    pointPath: string[],
-    curvePath: string[],
-  ): void => {
-    if (loops.size >= MAX_LOOPS || curvePath.length >= MAX_DEPTH) return;
-
-    for (const edge of adjacency.get(current) ?? []) {
-      if (curvePath.includes(edge.curve)) continue;
-
-      if (edge.other === start) {
-        if (curvePath.length + 1 < 3) continue;
-        recordLoop(
-          loops,
-          pointPath,
-          [...curvePath, edge.curve],
-          position,
-          pointRecord,
-          curvesById,
-        );
+    if (curve.type === "arc") {
+      const geometry = arcGeometry(curve, pointRecord);
+      if (!geometry || !position.has(curve.start) || !position.has(curve.end)) {
         continue;
       }
-
-      if (visited.has(edge.other)) continue;
-      visited.add(edge.other);
-      pointPath.push(edge.other);
-      curvePath.push(edge.curve);
-      walk(start, edge.other, visited, pointPath, curvePath);
-      curvePath.pop();
-      pointPath.pop();
-      visited.delete(edge.other);
+      // CCW arc tangent is the radius rotated +90 degrees.
+      const forward = make(
+        curve.id,
+        curve.start,
+        curve.end,
+        geometry.startAngle + Math.PI / 2,
+      );
+      const reverse = make(
+        curve.id,
+        curve.end,
+        curve.start,
+        geometry.endAngle - Math.PI / 2,
+      );
+      forward.reverse = reverse;
+      reverse.reverse = forward;
     }
-  };
-
-  for (const start of adjacency.keys()) {
-    walk(start, start, new Set([start]), [start], []);
   }
 
-  return [...loops.values()].sort((a, b) => b.area - a.area);
+  for (const list of outgoing.values()) {
+    list.sort(
+      (a, b) =>
+        a.angle - b.angle ||
+        (a.curveId < b.curveId ? -1 : a.curveId > b.curveId ? 1 : 0),
+    );
+    const count = list.length;
+    for (let i = 0; i < count; i++) {
+      list[i]!.prevOut = list[(i - 1 + count) % count]!;
+    }
+  }
+
+  for (const edge of halfEdges) {
+    if (!edge.reverse?.prevOut) continue;
+    edge.next = edge.reverse.prevOut;
+  }
+
+  const loops: SketchLoop[] = [];
+  for (const start of halfEdges) {
+    if (start.visited || !start.next || loops.length >= MAX_FACES) continue;
+    const path: HalfEdge[] = [];
+    let edge: HalfEdge | null = start;
+    let guard = 0;
+    do {
+      if (!edge || edge.visited) {
+        edge = null;
+        break;
+      }
+      edge.visited = true;
+      path.push(edge);
+      edge = edge.next;
+      guard += 1;
+    } while (edge !== start && guard < MAX_FACE_EDGES);
+    if (edge !== start) continue;
+
+    const loop = faceToLoop(path, position, pointRecord, curvesById);
+    if (loop) loops.push(loop);
+  }
+
+  return loops.sort((a, b) => b.area - a.area);
+}
+
+function faceToLoop(
+  path: readonly HalfEdge[],
+  position: Map<string, { id: string; x: number; y: number }>,
+  pointRecord: Record<string, Vec2>,
+  curvesById: Map<string, Sketch["curves"][number]>,
+): SketchLoop | null {
+  const polygon: Vec2[] = [];
+  const segments: ProfileSegment[] = [];
+  const curves: string[] = [];
+  const points: string[] = [];
+  let hasArc = false;
+
+  for (const edge of path) {
+    const from = position.get(edge.from);
+    const to = position.get(edge.to);
+    const definition = curvesById.get(edge.curveId);
+    if (!from || !to || !definition) return null;
+
+    curves.push(edge.curveId);
+    points.push(edge.from);
+
+    if (definition.type === "line") {
+      polygon.push([from.x, from.y]);
+      segments.push({
+        kind: "line",
+        a: [from.x, from.y],
+        b: [to.x, to.y],
+      });
+      continue;
+    }
+
+    if (definition.type !== "arc") return null;
+    hasArc = true;
+    const geometry = arcGeometry(definition, pointRecord);
+    if (!geometry) return null;
+    const forward =
+      edge.from === definition.start && edge.to === definition.end;
+    const backward =
+      edge.from === definition.end && edge.to === definition.start;
+    if (!forward && !backward) return null;
+
+    const steps = Math.max(4, Math.ceil(geometry.sweep / (Math.PI / 36)));
+    polygon.push([from.x, from.y]);
+    for (let step = 1; step < steps; step++) {
+      const t = forward ? step / steps : 1 - step / steps;
+      polygon.push(arcPointAt(geometry, t));
+    }
+    const mid = arcPointAt(geometry, 0.5);
+    segments.push({
+      kind: "arc",
+      center: geometry.center,
+      radius: geometry.radius,
+      start: [from.x, from.y],
+      end: [to.x, to.y],
+      mid,
+    });
+  }
+
+  if (polygon.length < 3) return null;
+  const area = signedArea(polygon);
+  // The half-edge walk keeps the face on the left. Bounded faces are CCW;
+  // the unbounded outside of each component is CW and is discarded.
+  if (area <= 1e-6) return null;
+
+  return {
+    curves,
+    points,
+    polygon,
+    segments: hasArc ? segments : null,
+    area,
+  };
 }
 
 interface Candidate {
@@ -144,14 +285,11 @@ interface Candidate {
 }
 
 /**
- * Pick the largest closed region as the outer profile, then every circle whose
- * centre lies inside it as a hole.
- *
- * A circle is itself a closed region, so a lone circle extrudes to a cylinder;
- * two concentric circles make a tube. Line loops and circles compete by area.
- * M2 replaces this with explicit region selection.
+ * Legacy largest-face helper: pick the largest closed face, then every circle
+ * whose centre lies inside it as a hole.
  */
 export function profileFromSketch(sketch: Sketch): SketchProfile | null {
+  const arrangement = planarArrangement(sketch);
   const circles = sketch.curves.flatMap((curve) =>
     curve.type === "circle" && !curve.construction ? [curve] : [],
   );
@@ -161,15 +299,18 @@ export function profileFromSketch(sketch: Sketch): SketchProfile | null {
     if (center) circleCenters.set(circle.id, [center.x, center.y]);
   }
 
-  const candidates: Candidate[] = findLoops(sketch).map((loop) => ({
-    outer: loop.segments
-      ? { kind: "path", points: loop.polygon, segments: loop.segments }
-      : { kind: "polygon", points: loop.polygon },
-    area: loop.area,
-    loop,
-  }));
+  const candidates: Candidate[] = findFacesFromArrangement(arrangement).map(
+    (loop) => ({
+      outer: loop.segments
+        ? { kind: "path", points: loop.polygon, segments: loop.segments }
+        : { kind: "polygon", points: loop.polygon },
+      area: loop.area,
+      loop,
+    }),
+  );
 
   for (const circle of circles) {
+    if (arrangement.splitCircleIds.has(circle.id)) continue;
     const center = circleCenters.get(circle.id);
     if (!center) continue;
     candidates.push({
@@ -184,20 +325,12 @@ export function profileFromSketch(sketch: Sketch): SketchProfile | null {
   candidates.sort((a, b) => b.area - a.area);
   const winner = candidates[0]!;
 
-  // Every other closed region strictly inside the winner becomes a hole:
-  // circles and line loops alike. A loop that shares edges with the outer is a
-  // subdivision of it, not a hole (think rectangle + diagonal).
   const holeCandidates = candidates
     .filter((candidate) => candidate !== winner)
     .filter((candidate) => regionInside(candidate.outer, winner.outer))
-    .filter(
-      (candidate) =>
-        !(winner.loop && candidate.loop && sharesCurve(winner.loop, candidate.loop)),
-    )
     .sort((a, b) => b.area - a.area);
 
-  // Only one level of nesting: an island inside a hole is ignored rather than
-  // subtracted twice.
+  // Only one level of nesting in the legacy helper; the app uses regions.
   const holes: ProfileLoop[] = [];
   for (const candidate of holeCandidates) {
     if (holes.some((hole) => regionInside(candidate.outer, hole))) continue;
@@ -225,25 +358,22 @@ interface RegionCandidate {
 /**
  * Extract selectable regions from the sketch.
  *
- * The cycle finder returns every simple cycle, so a rectangle with a real
- * diagonal also returns the rectangle. A cycle that contains a smaller cycle
- * sharing one of its curves is a subdivision, not a face: drop it and keep the
- * minimal cycles. Circles are independent face candidates.
+ * The half-edge walk returns the actual faces of the arrangement, including
+ * faces that share an edge: a line through a circular hole yields the two
+ * plate pieces and the two void half-disks, not one circle plus a dropped
+ * material face.
  *
- * The remaining faces are nested into a containment tree. Even depths are
- * material; odd depths are negative space. *All* faces are returned, because
- * the user may extrude either side of the boundary. Each region's direct
- * children are its holes, so:
- *   - a rectangle + circle -> the plate with a hole AND a void disk
- *   - two disjoint rectangles -> two material regions
- *   - concentric circles -> a tube AND the inner void disk
- *   - an island inside a hole -> outer plate, void annulus, and island
+ * Disconnected loops (a circle inside a rectangle) are nested into a
+ * containment tree. Even depths are material; odd depths are negative space.
+ * *All* faces are returned, because the user may extrude either side of the
+ * boundary. Each region's direct children are its holes.
  *
  * Region ids hash the outer and direct-hole curve ids, so a selection survives
  * dimension/constraint edits and invalidates when the boundary itself changes.
  */
 export function regionsFromSketch(sketch: Sketch): SketchRegion[] {
-  const loops = findLoops(sketch);
+  const arrangement = planarArrangement(sketch);
+  const loops = findFacesFromArrangement(arrangement);
   const loopProfiles = new Map<SketchLoop, ProfileLoop>();
   for (const loop of loops) {
     loopProfiles.set(
@@ -254,18 +384,7 @@ export function regionsFromSketch(sketch: Sketch): SketchRegion[] {
     );
   }
 
-  const faces = loops.filter(
-    (loop) =>
-      !loops.some(
-        (other) =>
-          other !== loop &&
-          other.area < loop.area - 1e-9 &&
-          sharesCurve(loop, other) &&
-          loopInsideOrOn(other, loop),
-      ),
-  );
-
-  const candidates: RegionCandidate[] = faces.map((loop) => ({
+  const candidates: RegionCandidate[] = loops.map((loop) => ({
     outer: loopProfiles.get(loop)!,
     area: loop.area,
     loop,
@@ -278,6 +397,7 @@ export function regionsFromSketch(sketch: Sketch): SketchRegion[] {
     curve.type === "circle" && !curve.construction ? [curve] : [],
   );
   for (const circle of circles) {
+    if (arrangement.splitCircleIds.has(circle.id)) continue;
     const center = allPoints(sketch).find((point) => point.id === circle.center);
     if (!center) continue;
     candidates.push({
@@ -363,37 +483,6 @@ function regionInside(inner: ProfileLoop, outer: ProfileLoop): boolean {
   return containsPoint(outer, inner.center);
 }
 
-/** Containment for a loop that touches (shares an edge with) its container. */
-function loopInsideOrOn(inner: SketchLoop, outer: SketchLoop): boolean {
-  return inner.polygon.every(
-    (point) =>
-      pointInPolygon(point, outer.polygon) || pointOnPolygon(point, outer.polygon),
-  );
-}
-
-function pointOnPolygon(point: Vec2, polygon: readonly Vec2[]): boolean {
-  for (let i = 0; i < polygon.length; i++) {
-    const a = polygon[i]!;
-    const b = polygon[(i + 1) % polygon.length]!;
-    const dx = b[0] - a[0];
-    const dy = b[1] - a[1];
-    const lengthSquared = dx * dx + dy * dy;
-    if (lengthSquared < 1e-18) continue;
-    const t = Math.max(
-      0,
-      Math.min(1, ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / lengthSquared),
-    );
-    const x = a[0] + dx * t;
-    const y = a[1] + dy * t;
-    if (Math.hypot(point[0] - x, point[1] - y) < 1e-7) return true;
-  }
-  return false;
-}
-
-function sharesCurve(a: SketchLoop, b: SketchLoop): boolean {
-  return a.curves.some((curve) => b.curves.includes(curve));
-}
-
 function containsPoint(loop: ProfileLoop, point: Vec2): boolean {
   if (loop.kind === "polygon" || loop.kind === "path") {
     return pointInPolygon(point, loop.points);
@@ -401,89 +490,6 @@ function containsPoint(loop: ProfileLoop, point: Vec2): boolean {
   return (
     Math.hypot(point[0] - loop.center[0], point[1] - loop.center[1]) < loop.radius
   );
-}
-
-function addEdge(
-  adjacency: Map<string, { curve: string; other: string }[]>,
-  curve: string,
-  from: string,
-  to: string,
-): void {
-  const list = adjacency.get(from) ?? [];
-  list.push({ curve, other: to });
-  adjacency.set(from, list);
-}
-
-function recordLoop(
-  loops: Map<string, SketchLoop>,
-  pointPath: string[],
-  curvePath: string[],
-  position: Map<string, { x: number; y: number }>,
-  pointRecord: Record<string, Vec2>,
-  curvesById: Map<string, Sketch["curves"][number]>,
-): void {
-  const key = [...curvePath].sort().join("|");
-  if (loops.has(key)) return;
-
-  const polygon: Vec2[] = [];
-  const segments: ProfileSegment[] = [];
-  let hasArc = false;
-
-  for (let i = 0; i < curvePath.length; i++) {
-    const from = pointPath[i];
-    const to = i + 1 < pointPath.length ? pointPath[i + 1] : pointPath[0];
-    if (!from || !to) return;
-    const start = position.get(from);
-    const end = position.get(to);
-    if (!start || !end) return;
-    const curve = curvePath[i];
-    if (!curve) return;
-    const definition = curvesById.get(curve);
-    if (!definition) return;
-
-    if (definition.type === "line") {
-      polygon.push([start.x, start.y]);
-      segments.push({
-        kind: "line",
-        a: [start.x, start.y],
-        b: [end.x, end.y],
-      });
-      continue;
-    }
-
-    if (definition.type === "arc") {
-      hasArc = true;
-      const geometry = arcGeometry(definition, pointRecord);
-      if (!geometry) return;
-      const forward = from === definition.start && to === definition.end;
-      const backward = from === definition.end && to === definition.start;
-      if (!forward && !backward) return;
-      const steps = Math.max(4, Math.ceil(geometry.sweep / (Math.PI / 36)));
-      polygon.push([start.x, start.y]);
-      for (let step = 1; step < steps; step++) {
-        const t = forward ? step / steps : 1 - step / steps;
-        polygon.push(arcPointAt(geometry, t));
-      }
-      const mid = arcPointAt(geometry, 0.5);
-      segments.push({
-        kind: "arc",
-        center: geometry.center,
-        radius: geometry.radius,
-        start: [start.x, start.y],
-        end: [end.x, end.y],
-        mid,
-      });
-    }
-  }
-
-  if (polygon.length < 3) return;
-  loops.set(key, {
-    curves: [...curvePath],
-    points: [...pointPath],
-    polygon,
-    segments: hasArc ? segments : null,
-    area: Math.abs(signedArea(polygon)),
-  });
 }
 
 function signedArea(points: readonly Vec2[]): number {

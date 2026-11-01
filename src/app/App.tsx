@@ -816,8 +816,10 @@ export function App() {
 
   const hint =
     tool === "dimension"
-      ? "Click two points, a line, or a circle, then click to place the dimension. Double-click a value to edit it."
-      : regions.length > 1
+      ? "Click two points, a line, or a circle, then click to place the dimension. Drag a placed label to move it; double-click a value to edit it."
+      : tool === "line"
+        ? "Click to add points · Enter or double-click finishes the line · Esc cancels."
+        : regions.length > 1
         ? "Click a filled region to choose the extrude profile; Shift adds. L line · R rectangle · C circle · A arc · D dimension · T trim."
         : "Select to inspect. L line · R rectangle · C circle · A arc · D dimension · T trim · Delete removes. Cmd/Ctrl+Z undoes.";
 

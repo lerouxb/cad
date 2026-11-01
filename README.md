@@ -39,7 +39,7 @@ selection/dimension inspector; there is no permanent sidebar.
   (or stretch, if their endpoints are constrained differently). Fully constrained
   geometry refuses to move.
 - Dimension distances, point-to-line distances, angles, diameters, and radii; driving or
-  reference; double-click to edit and drag the label to reposition it. The floating
+  reference; double-click to edit and drag the label anywhere out of the way. The floating
   constraint bar adds perpendicular/parallel/equal/tangent/symmetric/midpoint/point-on-
   line/point-on-circle/coincident/fix and toggles construction geometry.
 - A selectable fixed **origin and X/Y axes** are always available for constraints and
@@ -50,14 +50,17 @@ selection/dimension inspector; there is no permanent sidebar.
   Click filled regions to choose one or more profiles (Shift adds; All, Voids and Auto are
   in the corner panel); selected regions are fused into one body. A hole is selectable
   too: it is the parent's cutout and, when clicked, a positive disk/void profile of its
-  own. Arc edges stay exact through the kernel. OCCT runs in a Web Worker; three.js renders the solid with its B-rep edges
+  own. A line or arc that crosses a circle splits it into selectable faces (a chord
+  through a hole yields two plate pieces and two half-disks). Arc edges stay exact
+  through the kernel. OCCT runs in a Web Worker; three.js renders the solid with its B-rep edges
   (Z-up, mm).
 - **Select and delete**: click a curve or point, Shift-click to multi-select, Delete to
   remove. Deletion cascades through dependent curves/constraints; undo restores it. In
   the 3D view, hover and click faces or edges for a highlighter selection readout; the
   selection is ephemeral UI state, cleared by Escape or a new mesh.
 - **Undo/redo** with gesture grouping (`Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`), `Esc` to cancel a
-  draft and clear the selection, `V/L/R/C/A/D` for tools.
+  draft and clear the selection, `V/L/R/C/A/D` and `T` for tools. While drawing a line,
+  **Enter** (or a double-click) finishes the open chain.
 - **Split profiles and trim**: region extraction runs on a planar arrangement of the
   sketch, so crossing segments and T-junctions become real faces (two crossing diagonals
   produce four selectable triangles). The trim tool removes the clicked line/arc segment

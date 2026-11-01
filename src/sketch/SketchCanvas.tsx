@@ -233,7 +233,16 @@ export function SketchCanvas({
         matrix.inverse(),
       );
       const box = viewBoxRef.current;
-      const factor = Math.exp(event.deltaY * 0.0015);
+      // Trackpad pinch arrives as ctrl+wheel with small pixel deltas. Mouse
+      // wheels send much larger deltas, so clamp the pinch case instead of
+      // making one notch jump several zoom levels.
+      const modeScale =
+        event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1;
+      const rawDelta = event.deltaY * modeScale;
+      const delta = event.ctrlKey
+        ? Math.max(-30, Math.min(30, rawDelta))
+        : rawDelta;
+      const factor = Math.exp(delta * (event.ctrlKey ? 0.006 : 0.0015));
       const w = clamp(box.w * factor, 5, 600);
       const h = box.h * (w / box.w);
       setViewBox({
@@ -247,6 +256,28 @@ export function SketchCanvas({
     svg.addEventListener("wheel", onWheel, { passive: false });
     return () => svg.removeEventListener("wheel", onWheel);
   }, [svgRef]);
+
+  useEffect(() => {
+    if (tool !== "line") return;
+    const finish = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (event.key !== "Enter" || draft.length < 2) return;
+      event.preventDefault();
+      onCreatePolyline(draft, false);
+      setDraft([]);
+      setHover(null);
+    };
+    window.addEventListener("keydown", finish);
+    return () => window.removeEventListener("keydown", finish);
+  }, [draft, onCreatePolyline, tool]);
 
   const toSketch = (event: ReactPointerEvent): Vec2 => {
     const svg = svgRef.current;
@@ -1726,7 +1757,7 @@ function LinearDimension({
       stroke={color}
       fill={color}
       opacity={preview ? 0.7 : 1}
-      style={{ cursor: onEdit && !preview ? "text" : "default" }}
+      style={{ cursor: onEdit && !preview ? "grab" : "default" }}
       onPointerDown={(event) => {
         if (preview) return;
         event.stopPropagation();
@@ -1738,6 +1769,7 @@ function LinearDimension({
           : undefined
       }
     >
+      <title>{`Dimension ${label}. Drag to move; double-click to edit.`}</title>
       <line
         x1={a[0]}
         y1={a[1]}
@@ -1784,7 +1816,8 @@ function LinearDimension({
         strokeWidth={3 * px}
         paintOrder="stroke"
         data-dimension-id={preview ? undefined : id}
-        style={{ cursor: onEdit && !preview ? "text" : "default" }}
+        aria-label={`Dimension ${label}. Drag to move; double-click to edit.`}
+        style={{ cursor: onEdit && !preview ? "grab" : "default" }}
         onPointerDown={(event) => {
           if (preview) return;
           event.stopPropagation();
@@ -1846,7 +1879,7 @@ function DiameterDimension({
       stroke={color}
       fill={color}
       opacity={preview ? 0.7 : 1}
-      style={{ cursor: onEdit && !preview ? "text" : "default" }}
+      style={{ cursor: onEdit && !preview ? "grab" : "default" }}
       onPointerDown={(event) => {
         if (preview) return;
         event.stopPropagation();
@@ -1858,6 +1891,7 @@ function DiameterDimension({
           : undefined
       }
     >
+      <title>{`Dimension ${label}. Drag to move; double-click to edit.`}</title>
       <line
         x1={start[0]}
         y1={start[1]}
@@ -1875,7 +1909,8 @@ function DiameterDimension({
         strokeWidth={3 * px}
         paintOrder="stroke"
         data-dimension-id={preview ? undefined : id}
-        style={{ cursor: onEdit && !preview ? "text" : "default" }}
+        aria-label={`Dimension ${label}. Drag to move; double-click to edit.`}
+        style={{ cursor: onEdit && !preview ? "grab" : "default" }}
         onPointerDown={(event) => {
           if (preview) return;
           event.stopPropagation();
@@ -1937,7 +1972,7 @@ function AngleDimension({
       stroke={color}
       fill={color}
       opacity={preview ? 0.7 : 1}
-      style={{ cursor: onEdit && !preview ? "text" : "default" }}
+      style={{ cursor: onEdit && !preview ? "grab" : "default" }}
       onPointerDown={(event) => {
         if (preview) return;
         event.stopPropagation();
@@ -1949,6 +1984,7 @@ function AngleDimension({
           : undefined
       }
     >
+      <title>{`Dimension ${text}. Drag to move; double-click to edit.`}</title>
       <line
         x1={vertex[0]}
         y1={vertex[1]}
@@ -1982,7 +2018,8 @@ function AngleDimension({
         strokeWidth={3 * px}
         paintOrder="stroke"
         data-dimension-id={preview ? undefined : id}
-        style={{ cursor: onEdit && !preview ? "text" : "default" }}
+        aria-label={`Dimension ${text}. Drag to move; double-click to edit.`}
+        style={{ cursor: onEdit && !preview ? "grab" : "default" }}
         onPointerDown={(event) => {
           if (preview) return;
           event.stopPropagation();

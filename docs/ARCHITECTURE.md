@@ -349,21 +349,24 @@ placed at the visible arc's midpoint, not at the default 45° point on its full 
 
 1. Build a planar arrangement of non-construction line/arc segments: split at
    line/line, line/arc and arc/arc crossings, at T-junctions, and where a line/arc meets
-   a circle. This is derived geometry; the document keeps the curves the user drew.
-2. Enumerate simple cycles over the split segments and treat each non-construction
-   circle as a closed loop.
-3. Drop a cycle when a smaller cycle that shares one of its curves lies inside it. That
-   is a **subdivision**, not a face: a rectangle with a real diagonal yields two
-   triangles, not the rectangle plus two holes.
-4. Build a containment tree from the remaining faces and circles. **Every face is a
-   selectable profile**: even depth is material, odd depth is the negative space of its
+   a circle. A circle with at least two contacts is replaced by arc segments around the
+   same centre; an untouched circle remains a closed circle candidate. This is derived
+   geometry; the document keeps the curves the user drew.
+2. Walk the **directed half-edges** of the split graph. At each node, outgoing edges are
+   sorted by tangent; the next edge in a face is the one immediately clockwise from the
+   reverse edge. Bounded faces come out CCW; the unbounded CW outside is discarded. This
+   handles faces that share an edge (a line through a circular hole) without a
+   cycle/subdivision heuristic.
+3. Build a containment tree from the bounded faces and untouched circles. **Every face is
+   a selectable profile**: even depth is material, odd depth is the negative space of its
    parent, and each region uses its **direct** children as holes. This yields both sides
    of every boundary:
    - rectangle + circle → the plate with a hole, plus a void disk,
+   - a line through that circle → two plate faces plus two half-disks,
    - two disjoint rectangles → two material regions,
    - concentric circles → a tube, plus the inner void disk,
    - an island inside a hole → outer plate, void annulus, and island.
-5. `regionId = hash(sorted outer + direct-hole curve ids)`. It is stable across dimension
+4. `regionId = hash(sorted outer + direct-hole curve ids)`. It is stable across dimension
    and constraint edits and invalidates when a boundary changes. The selected ids live in
    UI state (not the document) until M3 stores them on an extrude feature.
 
@@ -381,8 +384,10 @@ polygon is only for containment/validation. `profileFromSketch` remains as the l
 single-largest-loop helper used by older tests.
 
 **M2.6 split/trim** closes the old M2 boundary. Region extraction runs on the planar
-arrangement, so two crossing diagonals become four faces. `trimCurveAt` uses the same
-pieces to remove the clicked segment; it materializes only the kept boundaries, replaces
+arrangement, so two crossing diagonals become four faces. A line through a circular hole
+splits the circle into arcs; the half-edge walk returns both plate faces and both
+half-disks. The reported circle-through-hole part is a regression fixture.
+`trimCurveAt` uses the same pieces to remove the clicked segment; it materializes only the kept boundaries, replaces
 the source curve, remaps constraints that still apply, adds collinearity/equal-radius
 links between kept pieces, and reports constraints it had to remove. Circles still act as
 whole closed loops; turning one into an arc is tracked in M9.

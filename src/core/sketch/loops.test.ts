@@ -41,7 +41,7 @@ describe("loop extraction", () => {
     expect(loops[0]!.area).toBeGreaterThan(loops[1]!.area);
   });
 
-  it("ignores construction geometry", () => {
+  it("splits a real diagonal and ignores construction geometry", () => {
     const withDiagonal = addPolyline(
       emptySketch(),
       [
@@ -54,10 +54,10 @@ describe("loop extraction", () => {
       ],
       false,
     );
-    // The last segment is diagonal, so it creates triangles plus the outer
-    // rectangle. That is fine: the largest loop is still the rectangle.
     const loops = findLoops(withDiagonal);
-    expect(loops[0]!.area).toBeCloseTo(2400);
+    expect(loops).toHaveLength(2);
+    for (const loop of loops) expect(loop.area).toBeCloseTo(1200);
+
     // A construction diagonal is excluded entirely.
     const demo = createDemoModel();
     expect(findLoops(demo.sketch)).toHaveLength(1);

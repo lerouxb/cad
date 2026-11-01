@@ -55,7 +55,10 @@ an editable sketcher driving an exact extrude:
   hand-authored (`core/sketch/demo.ts`); **datum planes and sketch-on-face are not
   implemented (M4)**; the timeline is still the fixed two-step list
   (rename/reorder/suppress, feature dialogs and creating a second feature are next).
-  Join/cut works for saved multi-feature documents, but the UI cannot add one yet. Free 3D sketches, splines/text/images and drawing exports are out of scope.
+  Join/cut works for saved multi-feature documents, but the UI cannot add one yet. A
+  standalone point tool is not implemented yet (points appear only as curve endpoints,
+  centres or fillet/reference geometry). Free 3D sketches, splines/text/images and
+  drawing exports are out of scope.
 
 Next: **finish M3** (feature tree editing and feature creation), then **M4** (datum
 planes + face supports). Read `docs/PLAN.md`; it is the source of truth
@@ -198,7 +201,15 @@ docs/
 - Dimension labels stop `pointerdown` propagation. Without that the SVG's pan handler
   captures the pointer on press and the label never receives a `dblclick`; this is subtle
   and easy to regress. Label dragging only captures the pointer after a 3 px movement, for
-  the same reason.
+  the same reason. Dimension groups use a `grab` cursor and a `<title>` because the
+  labels are draggable; don't change that to `text` without keeping the affordance.
+- **Finishing a sketch line:** Enter commits an open polyline with at least two points;
+  double-click also commits; Escape cancels. The Enter listener lives in `SketchCanvas`
+  because the draft is canvas-local. Touchpad pinch is `ctrl+wheel` with small deltas;
+  the SVG zoom clamps that case separately from a mouse wheel.
+- The fixed origin/reference points are included in the arrangement's position map: a
+  user can start a line or centre a circle on the origin, and the graph must still
+  connect it. Circle centres that are reference points still get synthetic arc nodes.
 - **Arcs are CCW from `start` to `end` around a group-0 +Z normal.** `addArc` flips the
   endpoints so the clicked through-point lies on that sweep; there is no `clockwise`
   flag. The solver's arc entity enforces equal radius, and the drag projection adds the
@@ -261,11 +272,16 @@ docs/
 - **`BodyStats.bounds` is tessellation bounds.** It is exact for axis-aligned planar
   profiles but curved meshes sample inside the true circle; round golden comparisons.
 - **Regions are faces, not every cycle.** `planarArrangement` splits line/arc segments at
-  crossings, T-junctions and circle crossings without touching the document. `findLoops`
-  enumerates cycles on that split graph, `regionsFromSketch` drops a cycle when a smaller
-  cycle sharing one of its curves sits inside it (rectangle + diagonal → two triangles),
-  then builds a containment tree. **Every depth is a selectable profile**: even depth is
-  material, odd depth is the negative space of its parent, and each region's direct
+  crossings, T-junctions and circle crossings without touching the document. A circle with
+  at least two contacts is replaced by arc segments around the same centre (so a chord
+  through a hole becomes two half-disks); an untouched circle stays a whole circle
+  candidate. `findLoops` is a **half-edge walk** over the split graph: it keeps bounded
+  CCW faces and discards the unbounded CW face. Do not reintroduce simple-cycle
+  enumeration or the old "smaller cycle sharing a curve means subdivision" filter — that
+  dropped real material faces when a line cut a hole (see the
+  `circle-through-hole.cad.json` regression). A containment tree is only needed for
+  disconnected nested loops/circles. **Every depth is a selectable profile**: even depth
+  is material, odd depth is the negative space of its parent, and each region's direct
   children are its holes. A circle inside a rectangle is therefore both the rectangle's
   hole and a disk-shaped void profile. Auto falls back to the largest *material* region;
   **All** selects material regions, **Voids** selects the negative-space profiles, and

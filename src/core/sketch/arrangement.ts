@@ -4,7 +4,7 @@ import {
   normalizeAngle,
   type ArcGeometry,
 } from "./geometry";
-import type { Sketch, SketchArc, SketchLine } from "./types";
+import { allPoints, type Sketch, type SketchArc, type SketchLine } from "./types";
 
 /**
  * A planar arrangement of the sketch's line and arc segments.
@@ -40,6 +40,8 @@ export interface PlanarArrangement {
   nodes: Map<string, Vec2>;
   /** The resolved source curve records, keyed by original curve id. */
   records: Map<string, CurveRecord>;
+  /** Circles that were replaced by arc segments because they were split. */
+  splitCircleIds: Set<string>;
 }
 
 type ProfileLine = SketchLine;
@@ -64,6 +66,7 @@ type CurveRecord = LineRecord | ArcRecord;
 
 interface CircleRecord {
   id: string;
+  centerId: string;
   center: Vec2;
   radius: number;
 }
@@ -92,7 +95,9 @@ const KEY_SCALE = 1e6;
  */
 export function planarArrangement(sketch: Sketch): PlanarArrangement {
   const positions = new Map<string, Vec2>();
-  for (const point of sketch.points) {
+  // Include the fixed origin/axes: a line or circle may reuse the origin as a
+  // real point, and the arrangement needs its coordinates to connect it.
+  for (const point of allPoints(sketch)) {
     positions.set(point.id, [point.x, point.y]);
   }
 
@@ -122,10 +127,19 @@ export function planarArrangement(sketch: Sketch): PlanarArrangement {
     } else {
       const center = positions.get(curve.center);
       if (center) {
-        circles.push({ id: curve.id, center, radius: curve.radius });
+        circles.push({
+          id: curve.id,
+          centerId: curve.center,
+          center,
+          radius: curve.radius,
+        });
+        centerIds.add(curve.center);
       }
     }
   }
+
+  const circleSplits = new Map<string, Vec2[]>();
+  for (const circle of circles) circleSplits.set(circle.id, []);
 
   const params = new Map<string, ParamEntry[]>();
   for (const record of records) {
@@ -155,6 +169,33 @@ export function planarArrangement(sketch: Sketch): PlanarArrangement {
     for (const circle of circles) {
       for (const t of intersectCurveCircle(record, circle)) {
         add(record.curve.id, { t });
+        circleSplits.get(circle.id)?.push(pointAt(record, t));
+      }
+    }
+  }
+
+  // Two circles crossing split each other into arcs (a lens or overlapping
+  // disks). Tangency leaves one split point and therefore keeps both circles
+  // whole.
+  for (let i = 0; i < circles.length; i++) {
+    const a = circles[i]!;
+    for (let j = i + 1; j < circles.length; j++) {
+      const b = circles[j]!;
+      for (const point of intersectCircles(a, b)) {
+        circleSplits.get(a.id)?.push(point);
+        circleSplits.get(b.id)?.push(point);
+      }
+    }
+  }
+
+  // An endpoint sitting on a circle is a T-junction. It only becomes a split
+  // when the circle has at least two such/contact points.
+  for (const circle of circles) {
+    for (const pointId of usedPointIds) {
+      const point = positions.get(pointId);
+      if (!point) continue;
+      if (Math.abs(distance(circle.center, point) - circle.radius) <= ON_CURVE_EPS) {
+        circleSplits.get(circle.id)?.push(point);
       }
     }
   }
@@ -230,6 +271,46 @@ export function planarArrangement(sketch: Sketch): PlanarArrangement {
     bySource.set(record.curve.id, sourcePieces);
   }
 
+  const splitCircleIds = new Set<string>();
+
+  for (const circle of circles) {
+    const splits = dedupeCircleSplits(circle, circleSplits.get(circle.id) ?? []);
+    if (splits.length < 2) continue;
+    splitCircleIds.add(circle.id);
+
+    const sourcePieces: PlanarPiece[] = [];
+    for (let i = 0; i < splits.length; i++) {
+      const from = splits[i]!;
+      const to = splits[(i + 1) % splits.length]!;
+      const sweep = normalizeAngle(to.angle - from.angle) || Math.PI * 2;
+      const start = from.point;
+      const end = to.point;
+      const id = `${circle.id}~${i}`;
+      const startNode = nodeForPoint(start);
+      const endNode = nodeForPoint(end);
+      splitCurves.push({
+        id,
+        type: "arc",
+        center: circle.centerId,
+        start: startNode,
+        end: endNode,
+      });
+      const piece: PlanarPiece = {
+        id,
+        sourceId: circle.id,
+        sourceType: "arc",
+        t0: from.angle / (Math.PI * 2),
+        t1: from.angle / (Math.PI * 2) + sweep / (Math.PI * 2),
+        start: startNode,
+        end: endNode,
+        midpoint: circlePoint(circle, from.angle + sweep / 2),
+      };
+      pieces.push(piece);
+      sourcePieces.push(piece);
+    }
+    bySource.set(circle.id, sourcePieces);
+  }
+
   return {
     sketch: {
       points: [...nodes].map(([id, point]) => ({ id, x: point[0], y: point[1] })),
@@ -240,7 +321,19 @@ export function planarArrangement(sketch: Sketch): PlanarArrangement {
     bySource,
     nodes,
     records: new Map(records.map((record) => [record.curve.id, record])),
+    splitCircleIds,
   };
+
+  function nodeForPoint(point: Vec2, preferredId?: string): string {
+    const key = coordinateKey(point);
+    let nodeId = nodeByKey.get(key);
+    if (!nodeId) {
+      nodeId = preferredId ?? `arr-${key}`;
+      nodeByKey.set(key, nodeId);
+    }
+    if (!nodes.has(nodeId)) nodes.set(nodeId, point);
+    return nodeId;
+  }
 
   function resolveParams(record: CurveRecord, entries: ParamEntry[]): ResolvedParam[] {
     const resolved: ResolvedParam[] = [];
@@ -461,6 +554,62 @@ function intersectArcs(
     hits.push({ a: at, b: bt });
   }
   return hits;
+}
+
+interface CircleSplit {
+  point: Vec2;
+  angle: number;
+}
+
+function dedupeCircleSplits(
+  circle: CircleRecord,
+  points: readonly Vec2[],
+): CircleSplit[] {
+  const splits: CircleSplit[] = [];
+  for (const point of points) {
+    const angle = normalizeAngle(
+      Math.atan2(point[1] - circle.center[1], point[0] - circle.center[0]),
+    );
+    if (splits.some((split) => angleDistance(split.angle, angle) < 1e-6)) {
+      continue;
+    }
+    splits.push({ point: circlePoint(circle, angle), angle });
+  }
+  return splits.sort((a, b) => a.angle - b.angle);
+}
+
+function circlePoint(circle: CircleRecord, angle: number): Vec2 {
+  return [
+    circle.center[0] + Math.cos(angle) * circle.radius,
+    circle.center[1] + Math.sin(angle) * circle.radius,
+  ];
+}
+
+function angleDistance(a: number, b: number): number {
+  const delta = Math.abs(normalizeAngle(a - b));
+  return Math.min(delta, Math.PI * 2 - delta);
+}
+
+function intersectCircles(a: CircleRecord, b: CircleRecord): Vec2[] {
+  const dx = b.center[0] - a.center[0];
+  const dy = b.center[1] - a.center[1];
+  const gap = Math.hypot(dx, dy);
+  if (gap < 1e-12) return [];
+  if (gap > a.radius + b.radius + GEOM_EPS) return [];
+  if (gap < Math.abs(a.radius - b.radius) - GEOM_EPS) return [];
+  const along =
+    (a.radius * a.radius - b.radius * b.radius + gap * gap) / (2 * gap);
+  const heightSquared = a.radius * a.radius - along * along;
+  if (heightSquared < -GEOM_EPS) return [];
+  const height = Math.sqrt(Math.max(0, heightSquared));
+  const mx = a.center[0] + (dx * along) / gap;
+  const my = a.center[1] + (dy * along) / gap;
+  const ox = (-dy * height) / gap;
+  const oy = (dx * height) / gap;
+  return [
+    [mx + ox, my + oy] as Vec2,
+    [mx - ox, my - oy] as Vec2,
+  ];
 }
 
 function intersectCurveCircle(record: CurveRecord, circle: CircleRecord): number[] {

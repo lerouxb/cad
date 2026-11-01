@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
 import { createDocument } from "../src/core/doc/create";
 import type { ExtrudeFeature, SketchFeature } from "../src/core/doc/types";
@@ -550,6 +551,36 @@ test("applies constraints and construction from the floating bar", async ({ app:
   expect(errors).toEqual([]);
 });
 
+test("finishes an open line with Enter and cancels with Escape", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, 0, 0);
+  await clickSketch(page, 30, 0);
+  await page.keyboard.press("Enter");
+
+  const lines = page.locator("line[data-geometry-id]");
+  await expect(lines).toHaveCount(1);
+  await expect(page.getByTestId("tool-line")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  await page.keyboard.press("Enter");
+  await expect(lines).toHaveCount(1);
+
+  // A lone draft point is cancelled, not committed.
+  await clickSketch(page, 0, 10);
+  await page.keyboard.press("Escape");
+  await expect(lines).toHaveCount(1);
+
+  expect(errors).toEqual([]);
+});
+
 test("drags a line as a whole", async ({ app: page }) => {
   const errors = collectErrors(page);
   await enterSketch(page);
@@ -693,6 +724,31 @@ test("drives an angle dimension and a radius dimension", async ({ app: page }) =
   await radiusLabel.dblclick();
   await page.getByTestId("dimension-input").fill("25");
   await page.getByTestId("dimension-input").press("Enter");
+  await expect(page.locator("[data-dimension-id]").filter({ hasText: "R 25" })).toHaveCount(1);
+
+  // Radius/diameter labels are draggable without changing the measurement.
+  const radiusBox = await radiusLabel.boundingBox();
+  expect(radiusBox).not.toBeNull();
+  if (radiusBox) {
+    await page.mouse.move(
+      radiusBox.x + radiusBox.width / 2,
+      radiusBox.y + radiusBox.height / 2,
+    );
+    await page.mouse.down();
+    await page.mouse.move(
+      radiusBox.x + radiusBox.width / 2 - 30,
+      radiusBox.y + radiusBox.height / 2 + 20,
+      { steps: 6 },
+    );
+    await page.mouse.up();
+  }
+  const movedRadius = await radiusLabel.boundingBox();
+  expect(movedRadius).not.toBeNull();
+  if (radiusBox && movedRadius) {
+    expect(
+      Math.hypot(movedRadius.x - radiusBox.x, movedRadius.y - radiusBox.y),
+    ).toBeGreaterThan(5);
+  }
   await expect(page.locator("[data-dimension-id]").filter({ hasText: "R 25" })).toHaveCount(1);
 
   await page.getByTestId("timeline-extrude").click();
@@ -881,6 +937,35 @@ test("selects and fuses multiple sketch regions", async ({ app: page }) => {
   expect(errors).toEqual([]);
 });
 
+test("splits a circle crossed by a line into selectable halves", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+
+  await page.getByTestId("tool-circle").click();
+  await clickSketch(page, 0, 0);
+  await clickSketch(page, 20, 0);
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, -30, 0);
+  await clickSketch(page, 30, 0);
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
+
+  await expect(page.locator("[data-region-id]")).toHaveCount(2);
+  await page.getByTestId("tool-select").click();
+  // Top half, clear of the axes and the chord.
+  await clickSketch(page, 10, 10);
+  await expect(page.getByTestId("region-panel")).toContainText("1 of 2 regions");
+
+  await page.getByTestId("timeline-extrude").click();
+  const halfCylinder = (Math.PI * 20 * 20 * 12) / 2;
+  await expect.poll(() => volume(page)).toBeCloseTo(halfCylinder, -1);
+
+  expect(errors).toEqual([]);
+});
+
 test("splits crossing diagonals into four selectable regions", async ({ app: page }) => {
   const errors = collectErrors(page);
   await enterSketch(page);
@@ -985,6 +1070,46 @@ test("autosaves the document and reopens it", async ({ app: page }) => {
   await second.close();
 
   await setSlider(page.getByTestId("height-slider"), 12);
+});
+
+test("rebuilds the reported circle-through-hole part without an invalid profile", async ({
+  browser,
+}) => {
+  const doc = readFileSync(
+    new URL(
+      "../src/core/sketch/__fixtures__/circle-through-hole.cad.json",
+      import.meta.url,
+    ),
+    "utf8",
+  );
+  const context = await browser.newContext({
+    baseURL: "http://127.0.0.1:4173",
+    viewport: { width: 1280, height: 720 },
+  });
+  const page = await context.newPage();
+  await page.addInitScript((json) => {
+    localStorage.setItem("cad.doc", json);
+  }, doc);
+  await page.goto("/");
+  await expect(page.getByTestId("solver-status")).toContainText("ready", {
+    timeout: 60_000,
+  });
+  await expect(page.getByTestId("kernel-status")).toContainText("ready", {
+    timeout: 60_000,
+  });
+  await expect(page.getByTestId("mesh-stats")).toBeVisible();
+  await expect.poll(() => volume(page)).toBeGreaterThan(0);
+  await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
+    "data-status",
+    "ok",
+  );
+  // The old region id is invalid, so the engine visibly falls back instead of
+  // sending an invalid profile to the kernel.
+  await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
+    "title",
+    /stored region selection no longer exists/,
+  );
+  await context.close();
 });
 
 test("builds a cut and join from a saved multi-feature document", async ({

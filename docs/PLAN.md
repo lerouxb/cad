@@ -49,7 +49,7 @@ then sketches on faces, then more features.
   solids by feature cache key, applies new/join/cut booleans, and returns per-feature
   build statuses.
 - The example sketch can be loaded, cleared, edited, or replaced by drawing.
-- `npm run verify` (132 unit tests) and `npm run e2e` (22 tests) are green. The e2e asserts
+- `npm run verify` (137 unit tests) and `npm run e2e` (25 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -247,9 +247,11 @@ rebuild exist; they are tracked at the top of M3.
       (`fuseAll`), so disjoint regions become one body
 - [x] Deeper nesting: a hole can contain an island, which is a separate depth-2 region
 - [x] Split curves at intersections / trim while sketching — implemented in M2.6
-- [x] Full planar face traversal: M2.6's arrangement splits crossings and T-junctions;
-      crossing diagonals produce real faces. Circles are still whole loops for face
-      traversal (trimming a circle into an arc is M9)
+- [x] Full planar face traversal: the arrangement splits lines/arcs at crossings,
+      T-junctions and circle intersections; a half-edge walk extracts faces that share an
+      edge. A circle crossed by a line/arc is converted into arcs, so a chord through a
+      hole yields two plate faces and two half-disks. Trim still does not turn a circle
+      into arcs (M9)
 - [x] Rebuild goldens: representative profiles assert bbox and face count, not just volume;
       `BodyStats.bounds` comes from the tessellated mesh, so curved goldens round
 - [x] Face/edge picking + hover/selection highlight: raycast `faceGroups`/`edgeGroups`,
@@ -260,7 +262,8 @@ rebuild exist; they are tracked at the top of M3.
 defaults to the largest material region until you click; M2.6 adds split/trim.
 
 **M2 is complete.** The 3D view picks faces and edges with hover/selection highlights;
-the profile path handles crossings, T-junctions, holes, void profiles, and trim.
+the profile path handles crossings, T-junctions, holes, void profiles, circle splitting,
+and trim. The reported circle-through-hole part is a unit fixture and an e2e regression.
 
 ## M2.5 — UI foundations: paper/ink visual system (2–3 days)
 

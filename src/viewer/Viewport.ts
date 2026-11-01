@@ -83,7 +83,7 @@ export class Viewport {
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.09;
     this.controls.rotateSpeed = 0.8;
-    this.controls.zoomSpeed = 0.9;
+    this.controls.zoomSpeed = 1.5;
     this.controls.minDistance = 5;
     this.controls.maxDistance = 2000;
     this.controls.target.set(30, 20, 0);

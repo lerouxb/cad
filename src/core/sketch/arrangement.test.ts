@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { planarArrangement } from "./arrangement";
-import { addArc, addPolyline, emptySketch } from "./create";
+import { addArc, addCircle, addPolyline, emptySketch } from "./create";
 import { regionsFromSketch } from "./loops";
 import { allPoints, type Sketch } from "./types";
 
@@ -103,6 +103,120 @@ describe("planar arrangement", () => {
     expect(arrangement.bySource.get(arc.id)).toHaveLength(3);
     expect(arrangement.bySource.get(line.id)).toHaveLength(3);
     expect(arrangement.pieces).toHaveLength(6);
+  });
+
+  it("splits a circle crossed by a line into two selectable half-disks", () => {
+    let sketch = emptySketch();
+    sketch = addCircle(sketch, { point: [0, 0] }, 10);
+    const circle = sketch.curves[0]!;
+    sketch = addPolyline(
+      sketch,
+      [
+        { point: [-15, 0] },
+        { point: [15, 0] },
+      ],
+      false,
+    );
+    const line = sketch.curves[1]!;
+
+    const arrangement = planarArrangement(sketch);
+    expect(arrangement.splitCircleIds.has(circle.id)).toBe(true);
+    expect(arrangement.bySource.get(circle.id)).toHaveLength(2);
+    expect(arrangement.bySource.get(line.id)).toHaveLength(3);
+
+    const regions = regionsFromSketch(sketch);
+    expect(regions).toHaveLength(2);
+    for (const region of regions) {
+      expect(region.area).toBeCloseTo((Math.PI * 10 * 10) / 2, 0);
+    }
+  });
+
+  it("keeps a tangent circle whole", () => {
+    let sketch = emptySketch();
+    sketch = addCircle(sketch, { point: [0, 0] }, 10);
+    const circle = sketch.curves[0]!;
+    sketch = addPolyline(
+      sketch,
+      [
+        { point: [-15, 10] },
+        { point: [15, 10] },
+      ],
+      false,
+    );
+
+    const arrangement = planarArrangement(sketch);
+    expect(arrangement.splitCircleIds.has(circle.id)).toBe(false);
+    const regions = regionsFromSketch(sketch);
+    expect(regions).toHaveLength(1);
+    expect(regions[0]!.outer.kind).toBe("circle");
+  });
+
+  it("keeps the plate faces when a line crosses a circular hole", () => {
+    let sketch = addPolyline(
+      emptySketch(),
+      [
+        { point: [0, 0] },
+        { point: [60, 0] },
+        { point: [60, 40] },
+        { point: [0, 40] },
+      ],
+      true,
+    );
+    sketch = addCircle(sketch, { point: [30, 20] }, 10);
+    sketch = addPolyline(
+      sketch,
+      [
+        { point: [45, 0] },
+        { point: [20, 40] },
+      ],
+      false,
+    );
+
+    const regions = regionsFromSketch(sketch);
+    const large = regions.filter(
+      (region) => region.kind === "material" && region.area > 500,
+    );
+    const holes = regions.filter(
+      (region) => region.kind === "material" && region.area < 500,
+    );
+
+    // The line through the hole splits the plate into two real material faces,
+    // each with the half-circle as part of its boundary, plus two half-disks.
+    expect(large).toHaveLength(2);
+    expect(holes).toHaveLength(2);
+    for (const region of large) {
+      expect(region.holes).toHaveLength(0);
+      expect(region.outer.kind).toBe("path");
+    }
+    for (const region of holes) {
+      expect(region.outer.kind).toBe("path");
+      expect(region.area).toBeLessThan(Math.PI * 10 * 10);
+    }
+  });
+
+  it("splits a rectangle when a line crosses two opposite sides", () => {
+    let sketch = addPolyline(
+      emptySketch(),
+      [
+        { point: [-40, -20] },
+        { point: [40, -20] },
+        { point: [40, 20] },
+        { point: [-40, 20] },
+      ],
+      true,
+    );
+    sketch = addPolyline(
+      sketch,
+      [
+        { point: [0, -30] },
+        { point: [0, 30] },
+      ],
+      false,
+    );
+
+    const regions = regionsFromSketch(sketch);
+    expect(regions).toHaveLength(2);
+    for (const region of regions) expect(region.area).toBeCloseTo(1600, 0);
   });
 
   it("splits at a T-junction without a curve/curve crossing", () => {
