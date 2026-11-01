@@ -31,6 +31,10 @@ will happen on the left, and the **actions** on the right.
 - **Destructive:** `delete`, quiet and separated from the primary.
 - No icon buttons for actions. Actions are words in mono, uppercase.
 
+The single-value **inline editor** is the one exception: it has no buttons at all
+(Enter commits, Escape cancels). Everything with more than one field uses the
+footer.
+
 ### 3. Editing reuses the controls that created it
 
 Reopening a thing for edit shows the **identical** popover, pre-filled with its
@@ -95,9 +99,12 @@ is**) — but not the same box:
    (extrude, pattern, combine). Full anatomy: kicker, title, rows, hint, footer.
    Has a commit pair.
 2. **Inline editor** — a *single value* edited at the thing it belongs to: a
-   dimension's value, a point's X/Y. Compact, anchored, with the same `apply` /
-   `cancel` pair. It must not be lifted into a popover: the value belongs to the
-   annotation, and moving it away is worse.
+   dimension's value, a point's X/Y. It **replaces the annotation's label** (the
+   value is never shown twice), and it carries the value's own options — a
+   dimension's driving/reference lives in the same control, not a second surface.
+   Commit with **Enter**; cancel with **Escape** or by tapping outside. There are
+   **no apply/cancel buttons**: the value is already the thing you are looking at,
+   and on touch the keyboard's return is the commit.
 3. **Selection popover** — the actions for the *current selection*: the
    constraints that apply, `construction`, `fix`, `delete`. It is a palette of
    immediate actions, not a form, so it has **no commit pair** — each chip acts
@@ -141,7 +148,7 @@ The kicker says what *kind* of thing this is (`sketch tool`, `body op`,
 | --- | --- | --- | --- |
 | Sketch layout (`index.html`) | popover ✓ | popover footer | keep (its selection line should become a selection popover) |
 | Sketch constraints (app) | **selection card + constraint bar ✗** | immediate chips | **one selection popover** |
-| Dimension edit (app, study 02) | inline editor ✓ | `apply` / `cancel` ✓ | keep |
+| Dimension edit (app, study 02) | inline editor ✓ | Enter / Escape, no buttons | keep |
 | Point X/Y (app) | **selection card ✗** | — | **inline editor, or rows in the selection popover** |
 | Sketch create (`sketch-create.html`) | popover ✓ | popover footer ✓ | keep |
 | Body ops (`body-ops.html`) | popover ✓ | popover footer ✓ | keep |

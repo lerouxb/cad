@@ -7,6 +7,13 @@ Open [`index.html`](index.html) directly in a browser. No build step, no server,
 dependencies. The shared files are plain HTML/CSS/JS and are **not imported by
 `src/`**; they exist to make design decisions visible before implementation.
 
+These are one half of the design system. The other half is
+[`../showcase/`](../showcase/): interactive pages for tools that do not exist yet
+(pattern, mirror, offset, move/copy, combine, split, transforms, extrude,
+inspect, and the sketch selection inputs). The
+[study index](index.html) lists both, and the rules the two folders share are in
+[`../showcase/INTERACTION.md`](../showcase/INTERACTION.md).
+
 ## The eight studies
 
 | # | Study | What it tests |

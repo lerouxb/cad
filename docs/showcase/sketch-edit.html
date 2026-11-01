@@ -82,7 +82,7 @@
               <g id="edit-wash"></g>
             </svg>
             <div class="tool-panel" id="edit-panel" role="dialog" aria-label="Selection"></div>
-            <div class="dim-editor" id="edit-inline" hidden></div>
+            <div class="dim-editor is-selected" id="edit-inline" hidden></div>
           </div>
 
           <div class="stage-foot">
@@ -118,12 +118,12 @@
       <h3>The three shapes</h3>
       <ul>
         <li><b>Selection popover</b> — the actions for what is selected: constraints, construction, fix, delete. Chips act immediately, so there is no apply/cancel. Draggable, like every popover.</li>
-        <li><b>Inline editor</b> — a single value at the thing it belongs to. Select the dimension and the editor sits at the dimension, not in a panel.</li>
+        <li><b>Inline editor</b> — a single value at the thing it belongs to. Select the dimension and the editor <em>replaces its label</em>, carrying the value, the unit and driving/reference in one control. Enter commits, Escape or a tap outside cancels; there are no buttons.</li>
         <li><b>Operation popover</b> — the multi-parameter forms (extrude, pattern, combine), with a commit pair.</li>
       </ul>
       <h3>Open questions</h3>
       <ul>
-        <li>Selecting a dimension: does it open the selection popover (for <b>make reference</b> / delete) <em>and</em> the inline editor, or only the inline editor?</li>
+        <li>On touch, is “tap outside cancels” discoverable enough, or does the dimension editor need a visible done affordance?</li>
         <li>Do the constraint chips need grouping (position / size / pattern), or is one wrapped row enough?</li>
         <li>Should the popover show the full selection list, or just the count and the geometry?</li>
       </ul>

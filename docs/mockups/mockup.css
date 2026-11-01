@@ -2275,6 +2275,32 @@ body.is-embed .app {
   background: var(--bg);
 }
 
+.dim-editor.is-selected {
+  background: var(--bg);
+  border-bottom: 2px solid var(--marker);
+}
+
+.dim-editor.is-selected input {
+  background: var(--marker-fill);
+}
+
+.dim-kind {
+  margin-left: auto;
+  padding: 1px 6px;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-control);
+  text-transform: uppercase;
+}
+
+.dim-kind.is-active {
+  background: var(--marker);
+  color: var(--marker-ink);
+}
+
 .dim-editor input {
   width: 52px;
   padding: 0;

@@ -71,10 +71,12 @@
     html += line(DIM.a, [DIM.a[0], y - 3], "dim-ext");
     html += line(DIM.b, [DIM.b[0], y - 3], "dim-ext");
     html += line(a, b, "dim-line");
-    var mid = px([(a[0] + b[0]) / 2, y]);
-    html +=
-      '<text class="dim-text" x="' + mid[0].toFixed(1) + '" y="' +
-      (mid[1] - 8).toFixed(1) + '" text-anchor="middle">' + DIM.text + "</text>";
+    if (state.sel !== "dimension") {
+      var mid = px([(a[0] + b[0]) / 2, y]);
+      html +=
+        '<text class="dim-text" x="' + mid[0].toFixed(1) + '" y="' +
+        (mid[1] - 8).toFixed(1) + '" text-anchor="middle">' + DIM.text + "</text>";
+    }
     layerDim.innerHTML = html;
   }
 
@@ -95,11 +97,6 @@
         (C1.r * VB.s).toFixed(1) + '" class="sketch-line"/>';
     } else if (state.sel === "point") {
       html += dot(P1, "sc-point-wash");
-    } else if (state.sel === "dimension") {
-      var mid = px([(DIM.a[0] + DIM.b[0]) / 2, DIM.y]);
-      html +=
-        '<rect class="marker-wash" x="' + (mid[0] - 24).toFixed(1) + '" y="' +
-        (mid[1] - 22).toFixed(1) + '" width="48" height="16"/>';
     }
     layerWash.innerHTML = html;
   }
@@ -183,14 +180,13 @@
     var mid = px([(DIM.a[0] + DIM.b[0]) / 2, DIM.y]);
     var q = viewToCss(mid[0], mid[1]);
     inline.hidden = false;
-    inline.style.left = q[0] - 60 + "px";
+    inline.style.width = "148px";
+    inline.style.left = q[0] - 74 + "px";
     inline.style.top = q[1] - 34 + "px";
     inline.innerHTML =
       '<input type="text" value="' + DIM.text + '" aria-label="Dimension value">' +
       '<span class="dim-unit">mm</span>' +
-      '<span class="dim-actions">' +
-      '<button class="text-action" type="button">apply</button>' +
-      '<button class="text-action is-quiet" type="button">cancel</button></span>';
+      '<button class="dim-kind is-active" type="button">driving</button>';
   }
 
   function render() {

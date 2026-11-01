@@ -1,6 +1,18 @@
 # Tool showcase
 
-Interactive design targets for tools that do not exist yet, split into four studies:
+Interactive design targets for tools that do not exist yet, split into seven pages.
+
+This folder and [`../mockups/`](../mockups/) are the two halves of one design
+system:
+
+- the **[studies](../mockups/index.html)** fix the surfaces — timeline, sketch,
+  model, support, export, errors, files, body;
+- the **showcase** (here) makes the interactions work — pattern, mirror, offset,
+  move/copy, combine, split, transforms, extrude, inspect, and the sketch
+  selection inputs.
+
+The [study index](../mockups/index.html) lists both, and the shared interaction
+rules are in [`INTERACTION.md`](INTERACTION.md).
 
 | Study | Page | What it covers | Milestone |
 | --- | --- | --- | --- |
@@ -13,14 +25,12 @@ Interactive design targets for tools that do not exist yet, split into four stud
 | **Inspect** | [`inspect.html`](inspect.html) | **section analysis** | M5 |
 
 The decisions behind these (what to keep, drop, defer) are in
-[`BACKLOG.md`](BACKLOG.md). The shared interaction rules — input is a draggable
-popover, actions live in its footer, editing reuses the create controls, and the
-stage foot is a readout — are in [`INTERACTION.md`](INTERACTION.md).
+[`BACKLOG.md`](BACKLOG.md).
 
 Open the pages directly in a browser. No build step, no server, no dependencies.
-They reuse the shared paper/ink system from [`../mockups/`](../mockups/)
-(`mockup.css`, `mockups.js`, `theme-init.js`) but do not modify it, and are never
-imported by `src/`.
+They share the paper/ink system in [`../mockups/`](../mockups/) (`mockup.css`,
+`mockups.js`, `theme-init.js`); the two folders cross-link and evolve together,
+and neither is imported by `src/`.
 
 ## What the sketch-layout study explores
 

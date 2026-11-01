@@ -24,6 +24,7 @@
         <a href="index.html">index</a>
       </nav>
       <div class="mockbar-right">
+        <a class="mockbar-btn" href="../showcase/index.html">showcase</a>
         <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
       </div>
     </div>
@@ -126,12 +127,17 @@
               <path class="dim-line" d="M430 565v10M790 565v10" />
               <text class="dim-text" x="600" y="588">70.0</text>
 
-              <!-- height 55.0, selected -->
+              <!-- height 55.0, selected: the editor replaces the label -->
               <path class="dim-ext" d="M430 250h-80M430 520h-80" />
               <path class="dim-line" d="M370 250v270" />
               <path class="dim-line" d="M365 250h10M365 520h10" />
-              <rect class="marker-wash" x="355" y="379" width="40" height="16" />
-              <text class="dim-text is-selected" x="359" y="392">55.0</text>
+              <foreignObject x="338" y="374" width="156" height="26">
+                <div xmlns="http://www.w3.org/1999/xhtml" class="dim-editor is-inline is-selected">
+                  <input type="text" value="55.0" aria-label="Dimension value" />
+                  <span class="dim-unit">mm</span>
+                  <button class="dim-kind is-active" type="button">driving</button>
+                </div>
+              </foreignObject>
 
               <!-- angle 45.0° -->
               <path
@@ -150,39 +156,7 @@
                 (89.0)
               </text>
             </g>
-
-            <!-- inline dimension edit, positioned in sketch coordinates -->
-            <foreignObject x="292" y="342" width="166" height="38">
-              <div xmlns="http://www.w3.org/1999/xhtml" class="dim-editor is-inline">
-                <input type="text" value="55.0" aria-label="Dimension value" />
-                <span class="dim-unit">mm</span>
-                <span class="dim-actions">
-                  <button class="text-action" type="button">apply</button>
-                  <button class="text-action is-quiet" type="button">cancel</button>
-                </span>
-              </div>
-            </foreignObject>
             </svg>
-          </div>
-
-          <div class="floating-note selection-popover" data-drag style="right: 26px; top: 96px">
-            <div class="picker-kicker">selection</div>
-            <h2 class="picker-title">dimension</h2>
-            <div class="picker-section">type</div>
-            <button class="picker-row is-selected" type="button" data-select-option>
-              <span class="row-name">driving</span>
-              <span class="row-meta">sets 55.0 mm</span>
-            </button>
-            <button class="picker-row" type="button" data-select-option>
-              <span class="row-name">reference</span>
-              <span class="row-meta">measures only</span>
-            </button>
-            <div class="picker-foot">
-              <span class="hint">the value is edited at the dimension</span>
-              <span class="picker-actions">
-                <button class="text-action is-quiet" type="button">delete</button>
-              </span>
-            </div>
           </div>
 
           <div class="stage-foot">
@@ -308,17 +282,16 @@
       <h3>What this study tests</h3>
       <ul>
         <li><b>Tools are a line of words, not a toolbar.</b> They appear only in sketch mode, with the shortcut beside each one.</li>
-        <li><b>The dimension editor is in place.</b> It sits next to the dimension, not in a properties panel.</li>
+        <li><b>The dimension editor replaces the label.</b> One control holds the value, the unit, and driving/reference. Enter commits, Escape or a tap outside cancels — no apply/cancel buttons, because the value is the thing you are already looking at.</li>
         <li><b>Projected reference geometry is visibly different.</b> Dashed, labelled, fixed, and never selectable as user geometry.</li>
         <li><b>The background is the snap grid.</b> Change the spacing from the footer; the scale bar shows one cell at the current zoom (100%). Snap can be switched off without hiding the grid.</li>
         <li><b>The view footer is real.</b> 100% opens 50 / 100 / 200 / fit. The grid and scale bar follow the zoom. Every control is focusable; coarse pointers get larger targets.</li>
-        <li><b>Selection opens a popover.</b> The selected dimension gets a draggable popover with its type and actions; the value itself is still edited at the dimension, because it belongs to the annotation.</li>
         <li><b>The timeline is still here.</b> Sketching is a step in history, not a separate application. The step name is the identifier; “rename” lives in the timeline detail.</li>
       </ul>
       <h3>Open questions</h3>
       <ul>
         <li>Should the tool line stay visible for the whole sketch, or fade once a tool is chosen?</li>
-        <li>Does driving vs. reference live in the selection popover (as here) or as a modifier on the inline editor?</li>
+        <li>On touch, is “tap outside cancels” discoverable enough, or does the editor need a visible done affordance?</li>
         <li>Do projected edges need a global show/hide control, or is the dashed style enough?</li>
         <li>Should the grid hide automatically when zooming out makes the cells too dense?</li>
       </ul>
