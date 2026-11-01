@@ -22,6 +22,9 @@ export interface SketchRebuildOutput {
   regions: SketchRegion[];
   dof: number;
   solveStatus: SolveStatus;
+  /** Constraint ids the solver could not satisfy, for the DOF/conflict UI. */
+  conflicting: string[];
+  message?: string;
 }
 
 export interface ExtrudeRebuildOutput {
@@ -34,6 +37,8 @@ export interface ExtrudeRebuildOutput {
   /** True when the largest material face was used instead of stored ids. */
   auto: boolean;
   operation: ExtrudeOperation;
+  symmetric: boolean;
+  end: "blind" | "throughAll";
 }
 
 export type FeatureOutput = SketchRebuildOutput | ExtrudeRebuildOutput;
@@ -58,8 +63,13 @@ export interface RebuildResult {
   features: FeatureResult[];
   /** The current kernel input: the last successful extrude. */
   params: ExtrudeParams | null;
-  /** The first sketch's solved output, for the sketch canvas. */
+  /** The first sketch's solved output, kept for the legacy single-sketch canvas. */
   sketch: SketchRebuildOutput | null;
+  /**
+   * Every successful sketch output by feature id. The editor can target any
+   * sketch feature, not just the first one.
+   */
+  sketchById: ReadonlyMap<string, SketchRebuildOutput>;
 }
 
 export interface RebuildInputs {
@@ -79,6 +89,7 @@ export interface RebuildDeps {
   extrudeParams: (
     regions: readonly SketchRegion[],
     height: number,
+    options?: { symmetric?: boolean; end?: "blind" | "throughAll" },
   ) => ExtrudeParams;
 }
 

@@ -4,19 +4,45 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from "react";
-import { createDocument } from "../core/doc/create";
-import { loadDoc, saveDoc } from "../core/doc/persistence";
+import { copyDocument, createBlankDocument } from "../core/doc/create";
+import { createExampleDocument } from "../core/doc/example";
 import {
+  deleteLocalFile,
+  deserializeDoc,
+  loadDoc,
+  loadFileIndex,
+  loadLocalFile,
+  saveDoc,
+  saveLocalFile,
+  serializeDoc,
+  type LocalFileEntry,
+} from "../core/doc/persistence";
+import {
+  addExtrudeFeature,
+  addSketchFeature,
+  deleteFeature,
+  extrudesForSketch,
+  findFeature,
+  moveFeature,
   primaryExtrudeFeature,
   primarySketch,
   primarySketchFeature,
-  updateExtrudeHeight,
-  updateExtrudeRegions,
-  updatePrimarySketch,
+  renameDocument,
+  renameFeature,
+  setFeatureSuppressed,
+  sketchFeatureById,
+  updateExtrudeFeature,
+  updateSketchFeature,
 } from "../core/doc/selectors";
-import type { Doc } from "../core/doc/types";
+import {
+  isExtrudeFeature,
+  isSketchFeature,
+  type Doc,
+  type ExtrudeFeature,
+  type Feature,
+  type SketchFeature,
+} from "../core/doc/types";
 import { extrudeParams, selectExtrudeRegions } from "../core/features/extrude";
 import { KernelClient } from "../core/kernel/client";
 import type {
@@ -26,11 +52,16 @@ import type {
 } from "../core/kernel/protocol";
 import { extractKernelFeatures, rebuildDocument } from "../core/rebuild/engine";
 import { canonicalJson, stableHash } from "../core/rebuild/hash";
-import { RebuildCache } from "../core/rebuild/types";
+import {
+  RebuildCache,
+  type FeatureResult,
+  type FeatureStatus,
+} from "../core/rebuild/types";
 import {
   addArc,
   addCircle,
   addFillet,
+  addPoint,
   addPolyline,
   addRectangle,
   emptySketch,
@@ -45,20 +76,25 @@ import {
 } from "../core/sketch/constraints";
 import {
   addDimension,
+  dimensionTargetForSelection,
   removeConstraint,
+  setDimensionDriving,
   setDimensionPlacement,
   type DimensionPlacement,
   type DimensionTarget,
 } from "../core/sketch/dimensions";
-import { clampDemoDrag, createExampleModel, isDemoSketch } from "../core/sketch/demo";
+import { clampDemoDrag, isDemoSketch } from "../core/sketch/demo";
 import { deleteEntities } from "../core/sketch/edit";
 import {
   applySolution,
+  arcGeometry,
+  arcPointAt,
   curveRadius,
   distance,
   sketchGeometry,
   updateConstraintValue,
 } from "../core/sketch/geometry";
+import { formatGridStep, type GridStep } from "../core/sketch/grid";
 import { regionsFromSketch } from "../core/sketch/loops";
 import {
   initSolver,
@@ -71,10 +107,9 @@ import {
 } from "../core/sketch/solver";
 import { trimCurveAt } from "../core/sketch/trim";
 import { findSketchPoint, type Sketch } from "../core/sketch/types";
-import type { Vec2 } from "../core/types";
+import type { ProfileLoop, Vec2 } from "../core/types";
 import {
   SketchCanvas,
-  type DimensionMode,
   type SketchTool,
   type SketchTone,
 } from "../sketch/SketchCanvas";
@@ -86,45 +121,159 @@ import {
   sketchPalette,
   type ThemeSettings,
 } from "./theme";
-import { Viewport, type BodyPick } from "../viewer/Viewport";
+import {
+  Viewport,
+  type BodyPick,
+  type SketchOverlayData,
+} from "../viewer/Viewport";
+import { FeaturePopover } from "./FeaturePopover";
+import { SupportPopover } from "./SupportPopover";
+import { SelectionPopover } from "./SelectionPopover";
+import { FilletPopover } from "./FilletPopover";
+import type { PopoverPosition } from "./StagePopover";
 
 type LoadState = "loading" | "ready" | "error";
 
 interface EditorState {
   doc: Doc;
-  /** Solver output for the active sketch. Derived, not persisted. */
+  /** Solver output for the sketch the editor last solved. Derived, not persisted. */
   solved: SolveOutcome | null;
+  /** Which sketch feature `solved` belongs to. */
+  solvedFor: string | null;
+}
+
+interface TreeFeatureState {
+  status: FeatureStatus | "pending";
+  messages: string[];
+  result: FeatureResult | null;
+  worker: FeatureBuildStatus | null;
+  cached: boolean;
+}
+
+/** Start on the first extrude (model view), or the first feature if none. */
+function initialActiveFeatureId(doc: Doc): string | null {
+  return (doc.features.find(isExtrudeFeature) ?? doc.features[0])?.id ?? null;
+}
+
+/** Resolve the selected feature, falling back to the base extrude/first feature. */
+function resolveActiveFeature(doc: Doc, featureId: string | null): Feature | null {
+  return (
+    (featureId ? findFeature(doc, featureId) : null) ??
+    doc.features.find(isExtrudeFeature) ??
+    doc.features[0] ??
+    null
+  );
+}
+
+/** A sketch feature is edited directly; an extrude edits the sketch it consumes. */
+function sketchForFeature(doc: Doc, feature: Feature | null): SketchFeature | null {
+  if (feature?.type === "sketch") return feature;
+  if (feature?.type === "extrude") {
+    return sketchFeatureById(doc, feature.sketchId) ?? primarySketchFeature(doc);
+  }
+  return primarySketchFeature(doc);
+}
+
+/**
+ * The extrude whose parameters the toolbar/region picker edits. Only an active
+ * extrude step owns profile selection. A sketch step does not silently edit its
+ * first consumer; use `extrude` to start a new draft or select the extrude step.
+ */
+function activeExtrudeFor(
+  doc: Doc,
+  feature: Feature | null,
+  _sketchFeature: SketchFeature | null,
+): ExtrudeFeature | null {
+  if (feature?.type === "extrude") return feature;
+  if (feature?.type === "sketch") return null;
+  return primaryExtrudeFeature(doc);
+}
+
+/**
+ * What the feature popover should restore if the user cancels: the feature's
+ * parameters and the mode from when the popover opened.
+ */
+type EditorBaseline = {
+  feature: ExtrudeFeature;
+  returnMode: "model" | "sketch";
+};
+
+/** A new extrude that exists only in the UI until profiles and parameters are
+ * chosen. Nothing is written to the document until `extrude` is applied. */
+interface ExtrudeDraft {
+  sketchId: string;
+  regions: string[];
+  height: number;
+  symmetric: boolean;
+  operation: ExtrudeFeature["operation"];
+  end: ExtrudeFeature["end"];
 }
 
 export function App() {
   const [initialEditor] = useState<EditorState>(() => {
     const saved = loadDoc();
-    if (saved) return { doc: saved, solved: null };
+    if (saved) return { doc: saved, solved: null, solvedFor: null };
     return {
-      doc: createDocument(createExampleModel().sketch, { name: "Example" }),
+      doc: createExampleDocument(),
       solved: null,
+      solvedFor: null,
     };
   });
   const history = useHistory<EditorState>(initialEditor);
-  const { state: editor, getState, commit, replace, undo, redo, endMerge } = history;
+  const { state: editor, getState, commit, replace, reset, undo, redo, endMerge } =
+    history;
   const doc = editor.doc;
-  const sketch = primarySketch(doc);
-  const sketchFeature = primarySketchFeature(doc);
-  const extrudeFeature = primaryExtrudeFeature(doc);
-  const extrudeHeight = extrudeFeature?.height ?? 12;
-  const storedRegionIds = extrudeFeature?.regions;
+  const [activeFeatureId, setActiveFeatureId] = useState<string | null>(() =>
+    initialActiveFeatureId(initialEditor.doc),
+  );
+  const activeFeature = useMemo(
+    () => resolveActiveFeature(doc, activeFeatureId),
+    [doc, activeFeatureId],
+  );
+  const activeSketchFeature = useMemo(
+    () => sketchForFeature(doc, activeFeature),
+    [doc, activeFeature],
+  );
+  const activeExtrude = useMemo(
+    () => activeExtrudeFor(doc, activeFeature, activeSketchFeature),
+    [doc, activeFeature, activeSketchFeature],
+  );
+  const sketch = activeSketchFeature?.sketch ?? primarySketch(doc);
+  const primarySketchId = primarySketchFeature(doc)?.id ?? null;
+  const primaryExtrudeId = primaryExtrudeFeature(doc)?.id ?? null;
+  const [extrudeDraft, setExtrudeDraft] = useState<ExtrudeDraft | null>(null);
+  const extrudeHeight = activeExtrude?.height ?? 12;
+  const storedRegionIds = extrudeDraft
+    ? extrudeDraft.regions
+    : activeExtrude?.regions;
 
   const [themeSettings, setThemeSettings] = useState<ThemeSettings>(() => loadTheme());
   const palette = useMemo(() => sketchPalette(themeSettings), [themeSettings]);
   const [mode, setMode] = useState<"model" | "sketch">("model");
   const [tool, setTool] = useState<SketchTool>("select");
-  const [dimensionMode, setDimensionMode] = useState<DimensionMode>("distance");
-  const [radiusDimensions, setRadiusDimensions] = useState(false);
+  const [dimensionRequest, setDimensionRequest] = useState<{
+    target: DimensionTarget;
+    seq: number;
+  } | null>(null);
+  const dimensionRequestSeq = useRef(0);
   const [filletRadius, setFilletRadius] = useState(5);
+  const [filletOpen, setFilletOpen] = useState(false);
+  const [filletRadiusBefore, setFilletRadiusBefore] = useState<number | null>(
+    null,
+  );
   const [selection, setSelection] = useState<string[]>([]);
   const [cancelToken, setCancelToken] = useState(0);
   const [fitToken, setFitToken] = useState(0);
   const [referenceDimensions, setReferenceDimensions] = useState(false);
+  const [gridStep, setGridStep] = useState<GridStep>("auto");
+  const [resolvedGridStep, setResolvedGridStep] = useState(10);
+  const [gridPixels, setGridPixels] = useState(20);
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [zoomPreset, setZoomPreset] = useState("fit");
+  const [zoomRequest, setZoomRequest] = useState<{
+    seq: number;
+    value: "fit" | number;
+  } | null>(null);
   const [solveError, setSolveError] = useState<SolveOutcome | null>(null);
   const [trimNotice, setTrimNotice] = useState<string | null>(null);
   const [solverState, setSolverState] = useState<LoadState>("loading");
@@ -135,6 +284,31 @@ export function App() {
   const [kernelError, setKernelError] = useState<string | null>(null);
   const [workerStatuses, setWorkerStatuses] = useState<FeatureBuildStatus[]>([]);
   const [bodyPick, setBodyPick] = useState<BodyPick | null>(null);
+  const [rollbackIndex, setRollbackIndex] = useState<number | null>(null);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
+  const [editorBaseline, setEditorBaseline] = useState<EditorBaseline | null>(
+    null,
+  );
+  const [popoverPosition, setPopoverPosition] = useState<PopoverPosition>({
+    x: 22,
+    y: 72,
+  });
+  const [draggingFeatureId, setDraggingFeatureId] = useState<string | null>(
+    null,
+  );
+  const [historyNotice, setHistoryNotice] = useState<string | null>(null);
+  const [fileMenuOpen, setFileMenuOpen] = useState(false);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [docRename, setDocRename] = useState<string | null>(null);
+  const [fileIndex, setFileIndex] = useState<LocalFileEntry[]>(() =>
+    loadFileIndex(),
+  );
+  const [fileDeleteId, setFileDeleteId] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(
+    null,
+  );
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const clientRef = useRef<KernelClient | null>(null);
@@ -147,27 +321,179 @@ export function App() {
   const localRegions = useMemo(() => regionsFromSketch(sketch), [sketch]);
   const sketchOutcomes = useMemo(() => {
     const outcomes = new Map<string, SolveOutcome>();
-    if (sketchFeature && editor.solved) outcomes.set(sketchFeature.id, editor.solved);
+    if (activeSketchFeature && editor.solvedFor === activeSketchFeature.id && editor.solved) {
+      outcomes.set(activeSketchFeature.id, editor.solved);
+    }
     return outcomes;
-  }, [sketchFeature, editor.solved]);
+  }, [activeSketchFeature, editor.solved, editor.solvedFor]);
+  const buildDoc = useMemo(
+    () =>
+      rollbackIndex === null
+        ? doc
+        : {
+            ...doc,
+            features: doc.features.slice(0, rollbackIndex + 1),
+          },
+    [doc, rollbackIndex],
+  );
   const rebuild = useMemo(() => {
     if (solverState !== "ready") return null;
-    return rebuildDocument(doc, {
+    return rebuildDocument(buildDoc, {
       cache: rebuildCache,
       sketchOutcomes,
     });
-  }, [doc, solverState, sketchOutcomes, rebuildCache]);
-  const regions = rebuild?.sketch?.regions ?? localRegions;
-  const regionSelection = useMemo(
-    () => selectExtrudeRegions(regions, storedRegionIds ?? []),
-    [regions, storedRegionIds],
-  );
+  }, [buildDoc, solverState, sketchOutcomes, rebuildCache]);
+  const activeSketchBuild = activeSketchFeature
+    ? rebuild?.sketchById.get(activeSketchFeature.id) ?? null
+    : null;
+  const regions = activeSketchBuild?.regions ?? localRegions;
+  const regionSelection = useMemo(() => {
+    if (extrudeDraft) {
+      const wanted = new Set(extrudeDraft.regions);
+      const selected = regions.filter((region) => wanted.has(region.id));
+      return {
+        ids: selected.map((region) => region.id),
+        regions: selected,
+        auto: false,
+        stale: false,
+      };
+    }
+    return selectExtrudeRegions(regions, storedRegionIds ?? []);
+  }, [regions, storedRegionIds, extrudeDraft]);
   const activeRegionIds = regionSelection.ids;
   const activeRegions = regionSelection.regions;
   const selectedRegions = useMemo(
-    () => new Set(activeRegionIds),
-    [activeRegionIds],
+    () =>
+      new Set(activeExtrude || extrudeDraft ? activeRegionIds : []),
+    [activeExtrude, extrudeDraft, activeRegionIds],
   );
+  const modelSketchOverlay = useMemo<SketchOverlayData | null>(() => {
+    if (mode !== "model" || !activeSketchFeature || activeSketchFeature.suppressed) {
+      return null;
+    }
+    const points = geometry.points;
+    const curves: Array<SketchOverlayData["curves"][number]> = [];
+
+    // When an extrude step is active, show only the profile loops that extrude
+    // actually uses. The full sketch is still visible in profile-selection mode.
+    const usedProfiles =
+      activeFeature?.type === "extrude" && activeRegions.length > 0;
+    if (usedProfiles) {
+      const seen = new Set<string>();
+      const closeRing = (
+        source: ReadonlyArray<Vec2>,
+      ): Array<[number, number]> => {
+        const closed = source.map(([x, y]) => [x, y] as [number, number]);
+        if (closed.length > 1) {
+          const first = closed[0]!;
+          const last = closed[closed.length - 1]!;
+          if (first[0] !== last[0] || first[1] !== last[1]) {
+            closed.push([first[0], first[1]]);
+          }
+        }
+        return closed;
+      };
+      const loopPoints = (loop: ProfileLoop): Vec2[] => {
+        if (loop.kind === "circle") {
+          return Array.from({ length: 65 }, (_, index) => {
+            const angle = (index / 64) * Math.PI * 2;
+            return [
+              loop.center[0] + Math.cos(angle) * loop.radius,
+              loop.center[1] + Math.sin(angle) * loop.radius,
+            ];
+          });
+        }
+        return loop.points;
+      };
+      const pushCurve = (source: ReadonlyArray<Vec2>): void => {
+        if (source.length < 2) return;
+        const closed = closeRing(source);
+        const key = closed
+          .map(([x, y]) => `${x.toFixed(4)},${y.toFixed(4)}`)
+          .join(";");
+        if (seen.has(key)) return;
+        seen.add(key);
+        curves.push({ points: closed });
+      };
+      const fills: Array<{
+        outer: Array<[number, number]>;
+        holes: Array<Array<[number, number]>>;
+      }> = [];
+      for (const region of activeRegions) {
+        const outer = loopPoints(region.outer);
+        const holes = region.holes.map(loopPoints);
+        if (outer.length >= 3) {
+          fills.push({
+            outer: closeRing(outer),
+            holes: holes
+              .filter((hole) => hole.length >= 3)
+              .map(closeRing),
+          });
+        }
+        pushCurve(outer);
+        for (const hole of holes) pushCurve(hole);
+      }
+      return { curves, points: [], fills };
+    }
+
+    for (const curve of activeSketchFeature.sketch.curves) {
+      if (curve.type === "line") {
+        const a = points[curve.a];
+        const b = points[curve.b];
+        if (a && b) {
+          curves.push({
+            points: [a, b],
+            ...(curve.construction ? { construction: true } : {}),
+          });
+        }
+      } else if (curve.type === "circle") {
+        const center = points[curve.center];
+        const radius = geometry.radii[curve.id] ?? curve.radius;
+        if (!center) continue;
+        const samples: Array<[number, number]> = [];
+        for (let index = 0; index <= 64; index++) {
+          const angle = (index / 64) * Math.PI * 2;
+          samples.push([
+            center[0] + Math.cos(angle) * radius,
+            center[1] + Math.sin(angle) * radius,
+          ]);
+        }
+        curves.push({
+          points: samples,
+          ...(curve.construction ? { construction: true } : {}),
+        });
+      } else {
+        const arc = arcGeometry(curve, points);
+        if (!arc) continue;
+        curves.push({
+          points: Array.from({ length: 33 }, (_, index) =>
+            arcPointAt(arc, index / 32),
+          ),
+          ...(curve.construction ? { construction: true } : {}),
+        });
+      }
+    }
+    return {
+      curves,
+      points: activeSketchFeature.sketch.points.flatMap((point) => {
+        const position = points[point.id];
+        return position
+          ? [
+              {
+                position,
+                ...(point.construction ? { construction: true } : {}),
+              },
+            ]
+          : [];
+      }),
+    };
+  }, [
+    mode,
+    activeSketchFeature,
+    activeFeature,
+    activeRegions,
+    geometry,
+  ]);
   const activeVoidCount = useMemo(
     () => activeRegions.filter((region) => region.kind === "void").length,
     [activeRegions],
@@ -178,18 +504,21 @@ export function App() {
   );
   const fallbackParams = useMemo(
     () =>
-      activeRegions.length > 0
-        ? extrudeParams(activeRegions, extrudeHeight)
+      activeExtrude && activeRegions.length > 0
+        ? extrudeParams(activeRegions, extrudeHeight, {
+            symmetric: activeExtrude.symmetric,
+            end: activeExtrude.end,
+          })
         : null,
-    [activeRegions, extrudeHeight],
+    [activeExtrude, activeRegions, extrudeHeight],
   );
   const solidFeatures = useMemo<KernelFeature[]>(() => {
     if (rebuild) return extractKernelFeatures(rebuild);
-    if (!fallbackParams) return [];
-    const operation = extrudeFeature?.operation ?? "new";
+    if (!fallbackParams || !activeExtrude) return [];
+    const operation = activeExtrude.operation;
     return [
       {
-        featureId: extrudeFeature?.id ?? "extrude",
+        featureId: activeExtrude.id,
         cacheKey: `fallback-${stableHash(
           canonicalJson({ params: fallbackParams, operation }),
         )}`,
@@ -197,7 +526,7 @@ export function App() {
         operation,
       },
     ];
-  }, [rebuild, fallbackParams, extrudeFeature]);
+  }, [rebuild, fallbackParams, activeExtrude]);
   const rebuildDiagnostics = useMemo(
     () =>
       rebuild?.features
@@ -216,6 +545,40 @@ export function App() {
       ),
     [workerStatuses, solidFeatures],
   );
+  const featureStates = useMemo(() => {
+    const states = new Map<string, TreeFeatureState>();
+    for (const feature of doc.features) {
+      const result =
+        rebuild?.features.find((candidate) => candidate.featureId === feature.id) ??
+        null;
+      const worker =
+        activeWorkerStatuses.find((status) => status.featureId === feature.id) ??
+        null;
+      const messages: string[] = [];
+      for (const diagnostic of result?.diagnostics ?? []) {
+        if (diagnostic.severity === "error") messages.push(diagnostic.message);
+      }
+      if (worker && worker.status !== "ok") {
+        messages.push(worker.message ?? `Solid build ${worker.status}.`);
+      }
+      const status: TreeFeatureState["status"] =
+        worker && worker.status !== "ok"
+          ? worker.status
+          : result
+            ? result.status
+            : worker
+              ? worker.status
+              : "pending";
+      states.set(feature.id, {
+        status,
+        messages,
+        result,
+        worker,
+        cached: result?.cached ?? worker?.cached ?? false,
+      });
+    }
+    return states;
+  }, [doc.features, rebuild, activeWorkerStatuses]);
   const workerDiagnostics = useMemo(
     () =>
       activeWorkerStatuses
@@ -267,14 +630,6 @@ export function App() {
   );
 
   const selectedSet = useMemo(() => new Set(selectedInfo.map((info) => info.id)), [selectedInfo]);
-  const selectedPoint = useMemo(() => {
-    if (selection.length !== 1) return null;
-    const id = selection[0]!;
-    const point = sketch.points.find((candidate) => candidate.id === id);
-    if (!point || point.fixed) return null;
-    const position = geometry.points[id] ?? [point.x, point.y];
-    return { id, x: position[0], y: position[1] };
-  }, [selection, sketch.points, geometry.points]);
   const constraintActions = useMemo(
     () => applicableConstraints(sketch, selection),
     [sketch, selection],
@@ -283,6 +638,21 @@ export function App() {
     () => constructionState(sketch, selection),
     [sketch, selection],
   );
+  const dimensionTarget = useMemo(
+    () => dimensionTargetForSelection(sketch, selection),
+    [sketch, selection],
+  );
+  const radiusTarget = useMemo(
+    () => dimensionTargetForSelection(sketch, selection, true),
+    [sketch, selection],
+  );
+  const trimCurve = useMemo(() => {
+    if (selection.length !== 1) return null;
+    const curve = sketch.curves.find((candidate) => candidate.id === selection[0]);
+    if (!curve) return null;
+    if (curve.type === "line" && curve.reference) return null;
+    return curve.type === "line" || curve.type === "arc" ? curve : null;
+  }, [sketch.curves, selection]);
   const filletSelection = useMemo(() => {
     const lines = sketch.curves.filter(
       (curve): curve is Extract<typeof curve, { type: "line" }> =>
@@ -295,16 +665,33 @@ export function App() {
     return shared ? { a, b } : null;
   }, [sketch, selectedSet]);
 
-  const currentSketch = (): Sketch => primarySketch(getState().doc);
+  const resolveCurrent = () => {
+    const current = getState();
+    const feature = resolveActiveFeature(current.doc, activeFeatureId);
+    const sketchFeature = sketchForFeature(current.doc, feature);
+    const extrude = activeExtrudeFor(current.doc, feature, sketchFeature);
+    return { current, feature, sketchFeature, extrude };
+  };
+  const currentSketch = (): Sketch =>
+    resolveCurrent().sketchFeature?.sketch ?? emptySketch();
+  const currentSolve = (): SolveOutcome | null => {
+    const { current, sketchFeature: target } = resolveCurrent();
+    return target && current.solvedFor === target.id ? current.solved : null;
+  };
 
   const commitDoc = (
     nextSketch: Sketch,
     outcome: SolveOutcome | null,
     mergeKey?: string,
   ): void => {
-    const current = getState();
+    const { current, sketchFeature: target } = resolveCurrent();
+    if (!target) return;
     commit(
-      { doc: updatePrimarySketch(current.doc, nextSketch), solved: outcome },
+      {
+        doc: updateSketchFeature(current.doc, target.id, nextSketch),
+        solved: outcome,
+        solvedFor: target.id,
+      },
       mergeKey,
     );
     setSolveError(null);
@@ -324,18 +711,350 @@ export function App() {
 
   const changeTool = (next: SketchTool): void => {
     setTool(next);
+    setDimensionRequest(null);
     setSelection([]);
     setTrimNotice(null);
   };
 
+  const requestZoom = (value: string): void => {
+    setZoomPreset(value);
+    setZoomRequest((current) => ({
+      seq: (current?.seq ?? 0) + 1,
+      value: value === "fit" ? "fit" : Number(value),
+    }));
+  };
+
   const handleExtrudeHeight = (height: number): void => {
-    const current = getState();
-    const next = updateExtrudeHeight(current.doc, height);
+    const { current, extrude } = resolveCurrent();
+    if (!extrude) return;
+    const next = updateExtrudeFeature(current.doc, extrude.id, (feature) =>
+      feature.height === height ? feature : { ...feature, height },
+    );
     if (next === current.doc) return;
-    commit({ doc: next, solved: current.solved }, "extrude-height");
+    commit(
+      { doc: next, solved: current.solved, solvedFor: current.solvedFor },
+      "extrude-height",
+    );
+  };
+
+  const updateActiveExtrude = (
+    update: (feature: ExtrudeFeature) => ExtrudeFeature,
+    mergeKey?: string,
+  ): void => {
+    const { current, extrude } = resolveCurrent();
+    if (!extrude) return;
+    const next = updateExtrudeFeature(current.doc, extrude.id, update);
+    if (next === current.doc) return;
+    commit(
+      { doc: next, solved: current.solved, solvedFor: current.solvedFor },
+      mergeKey,
+    );
+  };
+
+  const dismissEditor = (): void => {
+    setEditorOpen(false);
+    setEditorBaseline(null);
+    setExtrudeDraft(null);
+  };
+
+  const openExtrudeEditor = (feature: ExtrudeFeature): void => {
+    setEditorBaseline({ feature, returnMode: mode });
+    setEditorOpen(true);
+  };
+
+  /** Cancel restores the feature as it was when the popover opened. */
+  const cancelFeatureEditor = (): void => {
+    const baseline = editorBaseline;
+    setEditorOpen(false);
+    setEditorBaseline(null);
+    if (!baseline) return;
+    const current = getState();
+    const next = updateExtrudeFeature(
+      current.doc,
+      baseline.feature.id,
+      () => baseline.feature,
+    );
+    if (next !== current.doc) {
+      commit({ doc: next, solved: current.solved, solvedFor: current.solvedFor });
+    }
+    setMode(baseline.returnMode);
+    setSelection([]);
+    setFitToken((token) => token + 1);
+  };
+
+  const handleExtrudeOperation = (
+    operation: ExtrudeFeature["operation"],
+  ): void => {
+    updateActiveExtrude((feature) => ({
+      ...feature,
+      operation,
+      // Through-all is only meaningful for a cut.
+      end: operation === "cut" ? feature.end : "blind",
+    }));
+  };
+
+  const handleExtrudeSketch = (sketchId: string): void => {
+    updateActiveExtrude((feature) =>
+      feature.sketchId === sketchId
+        ? feature
+        : { ...feature, sketchId, regions: [] },
+    );
+    setSelection([]);
+    setFitToken((token) => token + 1);
+  };
+
+  const handleToggleSymmetric = (): void => {
+    updateActiveExtrude((feature) => ({
+      ...feature,
+      symmetric: !feature.symmetric,
+    }));
+  };
+
+  const handleExtrudeEnd = (end: ExtrudeFeature["end"]): void => {
+    if (end === "throughAll") {
+      updateActiveExtrude((feature) => ({
+        ...feature,
+        operation: "cut",
+        end,
+      }));
+      return;
+    }
+    updateActiveExtrude((feature) => ({ ...feature, end }));
+  };
+
+  const handleToggleSuppress = (feature: Feature): void => {
+    const current = getState();
+    const next = setFeatureSuppressed(
+      current.doc,
+      feature.id,
+      feature.suppressed !== true,
+    );
+    if (next === current.doc) return;
+    commit({ doc: next, solved: current.solved, solvedFor: current.solvedFor });
+  };
+
+  const handleDeleteFeature = (feature: Feature): void => {
+    const current = getState();
+    const result = deleteFeature(current.doc, feature.id);
+    if (result.removedIds.length === 0) return;
+    commit({
+      doc: result.doc,
+      solved: current.solved,
+      solvedFor: current.solvedFor,
+    });
+    setRollbackIndex((index) =>
+      index === null
+        ? null
+        : Math.min(index, Math.max(0, result.doc.features.length - 1)),
+    );
+    if (activeFeatureId && result.removedIds.includes(activeFeatureId)) {
+      const fallback =
+        result.doc.features.find(isExtrudeFeature) ??
+        result.doc.features[0] ??
+        null;
+      setActiveFeatureId(fallback?.id ?? null);
+    }
+    if (result.removedIds.length > 1) {
+      setHistoryNotice(
+        `Deleted ${result.removedIds.length} features including dependent extrudes.`,
+      );
+    }
+  };
+
+  const handleMoveFeature = (featureId: string, toIndex: number): void => {
+    const current = getState();
+    const result = moveFeature(current.doc, featureId, toIndex);
+    if ("error" in result) {
+      setHistoryNotice(result.error);
+      return;
+    }
+    commit({
+      doc: result.doc,
+      solved: current.solved,
+      solvedFor: current.solvedFor,
+    });
+    setHistoryNotice(null);
+  };
+
+  const rollForward = (): void => setRollbackIndex(null);
+
+  const activateFeature = (feature: Feature): void => {
+    dismissEditor();
+    setSupportOpen(false);
+    setActiveFeatureId(feature.id);
+    setMode(feature.type === "sketch" ? "sketch" : "model");
+    setSelection([]);
+    setTrimNotice(null);
+    setBodyPick(null);
+    viewportRef.current?.clearPick();
+    if (feature.type === "sketch") {
+      setTool("select");
+      setCancelToken((token) => token + 1);
+    }
+  };
+
+  const finishSketch = (): void => {
+    const { current, sketchFeature: currentSketchFeatureValue } = resolveCurrent();
+    const consumers = currentSketchFeatureValue
+      ? extrudesForSketch(current.doc, currentSketchFeatureValue.id).filter(
+          (extrude) => extrude.suppressed !== true,
+        )
+      : [];
+    // Only auto-select an extrude when the sketch has one clear consumer.
+    // With multiple, staying on the sketch avoids editing a random extrude.
+    if (consumers.length === 1) setActiveFeatureId(consumers[0]!.id);
+    dismissEditor();
+    setMode("model");
+    setSelection([]);
+  };
+
+  /** Enter/Done while an extrude is active returns to the model without
+   * switching the active feature to a different consuming extrude. */
+  const finishActiveMode = (): void => {
+    if (extrudeDraft) {
+      commitExtrudeDraft();
+      return;
+    }
+    if (activeFeature?.type === "extrude") {
+      dismissEditor();
+      setMode("model");
+      setSelection([]);
+      return;
+    }
+    finishSketch();
+  };
+
+  const selectExtrudeProfiles = (): void => {
+    if (extrudeDraft) {
+      setMode("sketch");
+      setTool("select");
+      setSelection([]);
+      setCancelToken((token) => token + 1);
+      setFitToken((token) => token + 1);
+      return;
+    }
+    if (!editorOpen && activeFeature?.type === "extrude") {
+      openExtrudeEditor(activeFeature);
+    }
+    setEditorOpen(true);
+    setMode("sketch");
+    setTool("select");
+    setSelection([]);
+    setCancelToken((token) => token + 1);
+    setFitToken((token) => token + 1);
+  };
+
+  const openFeatureEditor = (): void => {
+    if (activeFeature?.type !== "extrude" || editorOpen) return;
+    openExtrudeEditor(activeFeature);
+  };
+
+  const handleNewSketch = (): void => {
+    const current = getState();
+    const { doc: nextDoc, feature } = addSketchFeature(current.doc);
+    const outcome = isSolverReady() ? solveSketch(feature.sketch) : null;
+    commit({ doc: nextDoc, solved: outcome, solvedFor: feature.id });
+    setActiveFeatureId(feature.id);
+    dismissEditor();
+    setSupportOpen(false);
+    setMode("sketch");
+    setRollbackIndex(null);
+    setSelection([]);
+    setSolveError(null);
+    setTool("select");
+    setZoomPreset("fit");
+    setFitToken((token) => token + 1);
+  };
+
+  const beginExtrudeDraft = (regions: readonly string[] = []): void => {
+    const { current, sketchFeature: source } = resolveCurrent();
+    if (!source) return;
+    dismissEditor();
+    setSupportOpen(false);
+    setActiveFeatureId(source.id);
+    setExtrudeDraft({
+      sketchId: source.id,
+      regions: [...regions],
+      height: primaryExtrudeFeature(current.doc)?.height ?? 12,
+      symmetric: false,
+      operation: current.doc.features.some(isExtrudeFeature) ? "join" : "new",
+      end: "blind",
+    });
+    // Stay in the sketch to choose profiles and edit the extrude parameters.
+    setMode("sketch");
+    setTool("select");
+    setRollbackIndex(null);
+    setSelection([]);
+    setTrimNotice(null);
+    setBodyPick(null);
+    viewportRef.current?.clearPick();
+  };
+
+  const handleNewExtrude = (): void => {
+    beginExtrudeDraft();
+    setCancelToken((token) => token + 1);
+    setZoomPreset("fit");
+    setFitToken((token) => token + 1);
+  };
+
+  const updateExtrudeDraft = (
+    update: (draft: ExtrudeDraft) => ExtrudeDraft,
+  ): void => {
+    setExtrudeDraft((draft) => (draft ? update(draft) : draft));
+  };
+
+  const commitExtrudeDraft = (): void => {
+    const draft = extrudeDraft;
+    // A profile is the one thing a new extrude cannot infer. Do not create the
+    // feature until the user has explicitly chosen at least one region.
+    if (!draft || draft.regions.length === 0) return;
+    const current = getState();
+    const result = addExtrudeFeature(current.doc, draft.sketchId, {
+      height: draft.height,
+      operation: draft.operation,
+    });
+    if (!result) return;
+    const doc = updateExtrudeFeature(result.doc, result.feature.id, (feature) => ({
+      ...feature,
+      regions: [...draft.regions],
+      symmetric: draft.symmetric,
+      end: draft.end,
+    }));
+    commit({ doc, solved: current.solved, solvedFor: current.solvedFor });
+    setExtrudeDraft(null);
+    setActiveFeatureId(result.feature.id);
+    setMode("model");
+    setSelection([]);
+  };
+
+  const cancelExtrudeDraft = (): void => {
+    setExtrudeDraft(null);
+    setMode("model");
+    setSelection([]);
+  };
+
+  const beginRename = (feature: Feature): void => {
+    setRenaming({ id: feature.id, value: feature.name });
+  };
+
+  const commitRename = (): void => {
+    if (!renaming) return;
+    const current = getState();
+    const next = renameFeature(current.doc, renaming.id, renaming.value);
+    setRenaming(null);
+    if (next === current.doc) return;
+    commit({
+      doc: next,
+      solved: current.solved,
+      solvedFor: current.solvedFor,
+    });
   };
 
   const handleSelect = (entityId: string | null, additive: boolean): void => {
+    if (filletOpen) {
+      setFilletOpen(false);
+      setFilletRadiusBefore(null);
+    }
     if (entityId === null) {
       setSelection((current) => (current.length === 0 ? current : []));
       return;
@@ -351,20 +1070,30 @@ export function App() {
   };
 
   const deleteSelection = (): void => {
+    if (filletOpen) {
+      setFilletOpen(false);
+      setFilletRadiusBefore(null);
+    }
     const deletable = selectedInfo.filter((info) => info.kind !== "reference");
     if (deletable.length === 0) return;
-    const current = getState();
+    const base = currentSketch();
     const next = deleteEntities(
-      primarySketch(current.doc),
+      base,
       deletable.map((info) => info.id),
     );
-    if (next === primarySketch(current.doc)) return;
+    if (next === base) return;
     setSelection([]);
     solveAndCommit(next);
   };
 
-  // Key handlers are registered once but must see the current selection.
+  // Key handlers are registered once but must see the current selection and
+  // active feature. Tool shortcuts enter the active sketch (or its source).
   const deleteKey = useEffectEvent(() => deleteSelection());
+  const enterSketchMode = useEffectEvent(() => {
+    const { sketchFeature: target } = resolveCurrent();
+    if (target) setActiveFeatureId(target.id);
+    setMode("sketch");
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -372,18 +1101,28 @@ export function App() {
       .then(() => {
         if (cancelled) return;
         const current = getState();
-        const currentSketchValue = primarySketch(current.doc);
-        const outcome = solveSketch(currentSketchValue);
+        const outcomes = new Map<string, SolveOutcome>();
+        let nextDoc = current.doc;
+        for (const feature of current.doc.features) {
+          if (!isSketchFeature(feature)) continue;
+          const outcome = solveSketch(feature.sketch);
+          outcomes.set(feature.id, outcome);
+          nextDoc = updateSketchFeature(
+            nextDoc,
+            feature.id,
+            outcome.ok ? applySolution(feature.sketch, outcome) : feature.sketch,
+          );
+        }
         if (cancelled) return;
+        // The model view starts on the first extrude, so solve its sketch last
+        // for the editor's cached outcome.
+        const firstExtrude = current.doc.features.find(isExtrudeFeature);
+        const preferred =
+          firstExtrude?.sketchId ?? outcomes.keys().next().value ?? null;
         replace({
-          ...current,
-          doc: updatePrimarySketch(
-            current.doc,
-            outcome.ok
-              ? applySolution(currentSketchValue, outcome)
-              : currentSketchValue,
-          ),
-          solved: outcome,
+          doc: nextDoc,
+          solved: preferred ? outcomes.get(preferred) ?? null : null,
+          solvedFor: preferred ?? null,
         });
         setSolverState("ready");
       })
@@ -455,6 +1194,10 @@ export function App() {
   }, [mode]);
 
   useEffect(() => {
+    viewportRef.current?.setSketchOverlay(modelSketchOverlay);
+  }, [modelSketchOverlay]);
+
+  useEffect(() => {
     applyTheme(themeSettings);
   }, [themeSettings]);
 
@@ -471,12 +1214,32 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [trimNotice]);
 
+  useEffect(() => {
+    if (!historyNotice) return;
+    const timer = window.setTimeout(() => setHistoryNotice(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [historyNotice]);
+
+  useEffect(() => {
+    if (!fileMenuOpen) return;
+    const close = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest(".doc-left")) setFileMenuOpen(false);
+    };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [fileMenuOpen]);
+
   // The document is the source of truth; keep a local copy for reopening.
   // Debounce because a drag commits a new document on every pointer move.
   useEffect(() => {
-    const timer = window.setTimeout(() => saveDoc(doc), 200);
+    const timer = window.setTimeout(() => {
+      saveDoc(doc);
+      saveLocalFile(doc);
+      if (fileMenuOpen) setFileIndex(loadFileIndex());
+    }, 200);
     return () => window.clearTimeout(timer);
-  }, [doc]);
+  }, [doc, fileMenuOpen]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -506,6 +1269,9 @@ export function App() {
       }
       if (event.key === "Escape") {
         setTool("select");
+        setDimensionRequest(null);
+        setFilletOpen(false);
+        setFilletRadiusBefore(null);
         setSelection([]);
         setCancelToken((token) => token + 1);
         setBodyPick(null);
@@ -521,37 +1287,52 @@ export function App() {
 
       switch (event.key.toLowerCase()) {
         case "v":
-          setMode("sketch");
+          enterSketchMode();
           setTool("select");
           setSelection([]);
           break;
+        case "b":
+          enterSketchMode();
+          setTool("box");
+          setSelection([]);
+          break;
+        case "g":
+          enterSketchMode();
+          setTool("lasso");
+          setSelection([]);
+          break;
         case "l":
-          setMode("sketch");
+          enterSketchMode();
           setTool("line");
           setSelection([]);
           break;
+        case "p":
+          enterSketchMode();
+          setTool("point");
+          setSelection([]);
+          break;
         case "r":
-          setMode("sketch");
+          enterSketchMode();
           setTool("rect");
           setSelection([]);
           break;
         case "c":
-          setMode("sketch");
+          enterSketchMode();
           setTool("circle");
           setSelection([]);
           break;
         case "a":
-          setMode("sketch");
+          enterSketchMode();
           setTool("arc");
           setSelection([]);
           break;
         case "d":
-          setMode("sketch");
+          enterSketchMode();
           setTool("dimension");
           setSelection([]);
           break;
         case "t":
-          setMode("sketch");
+          enterSketchMode();
           setTool("trim");
           setSelection([]);
           break;
@@ -564,32 +1345,32 @@ export function App() {
 
   const handleSetPointPosition = (pointId: string, x: number, y: number): void => {
     if (!isSolverReady()) return;
-    const current = getState();
-    const outcome = solveDrag(primarySketch(current.doc), { pointId, x, y });
+    const base = currentSketch();
+    const outcome = solveDrag(base, { pointId, x, y });
     if (!outcome) return;
-    commitDoc(applySolution(primarySketch(current.doc), outcome), outcome, `point:${pointId}`);
+    commitDoc(applySolution(base, outcome), outcome, `point:${pointId}`);
   };
 
   const handleDragPoint = (pointId: string, x: number, y: number): void => {
     if (!isSolverReady()) return;
-    const current = getState();
+    const base = currentSketch();
     const target: Vec2 =
-      isDemoSketch(primarySketch(current.doc)) ? clampDemoDrag(primarySketch(current.doc), pointId, [x, y]) : [x, y];
-    const outcome = solveDrag(primarySketch(current.doc), {
+      isDemoSketch(base) ? clampDemoDrag(base, pointId, [x, y]) : [x, y];
+    const outcome = solveDrag(base, {
       pointId,
       x: target[0],
       y: target[1],
     });
     if (!outcome) return;
-    commitDoc(applySolution(primarySketch(current.doc), outcome), outcome, `drag:${pointId}`);
+    commitDoc(applySolution(base, outcome), outcome, `drag:${pointId}`);
   };
 
   const handleDragLine = (lineId: string, targets: DragTarget[]): void => {
     if (!isSolverReady()) return;
-    const current = getState();
-    const outcome = solveDragTargets(primarySketch(current.doc), targets);
+    const base = currentSketch();
+    const outcome = solveDragTargets(base, targets);
     if (!outcome) return;
-    commitDoc(applySolution(primarySketch(current.doc), outcome), outcome, `drag:${lineId}`);
+    commitDoc(applySolution(base, outcome), outcome, `drag:${lineId}`);
   };
 
   const drawAndCommit = (base: Sketch, next: Sketch): void => {
@@ -606,6 +1387,11 @@ export function App() {
         : { point: vertex.point },
     );
     drawAndCommit(base, addPolyline(base, valid, closed));
+  };
+
+  const handlePoint = (point: Vec2): void => {
+    solveAndCommit(addPoint(currentSketch(), point));
+    setSelection([]);
   };
 
   const handleRectangle = (a: Vec2, b: Vec2): void => {
@@ -637,21 +1423,38 @@ export function App() {
 
   const handleFillet = (): void => {
     if (!filletSelection) return;
-    const current = getState();
+    const base = currentSketch();
     const next = addFillet(
-      primarySketch(current.doc),
+      base,
       filletSelection.a.id,
       filletSelection.b.id,
       filletRadius,
     );
-    if (next === primarySketch(current.doc)) return;
+    if (next === base) return;
     setSelection([]);
     solveAndCommit(next);
   };
 
+  const openFillet = (): void => {
+    setFilletRadiusBefore(filletRadius);
+    setFilletOpen(true);
+  };
+
+  const cancelFillet = (): void => {
+    setFilletOpen(false);
+    if (filletRadiusBefore !== null) setFilletRadius(filletRadiusBefore);
+    setFilletRadiusBefore(null);
+  };
+
+  const applyFillet = (): void => {
+    handleFillet();
+    setFilletOpen(false);
+    setFilletRadiusBefore(null);
+  };
+
   const handleTrimCurve = (curveId: string, point: Vec2): void => {
-    const current = getState();
-    const result = trimCurveAt(primarySketch(current.doc), curveId, point);
+    const base = currentSketch();
+    const result = trimCurveAt(base, curveId, point);
     if (!result.removed) return;
     setSelection([]);
     if (!solveAndCommit(result.sketch)) return;
@@ -665,14 +1468,33 @@ export function App() {
   };
 
   const commitRegions = (next: readonly string[]): void => {
-    const current = getState();
-    const doc = updateExtrudeRegions(current.doc, next);
+    if (extrudeDraft) {
+      setExtrudeDraft((draft) =>
+        draft ? { ...draft, regions: [...next] } : draft,
+      );
+      return;
+    }
+    const { current, extrude } = resolveCurrent();
+    if (!extrude) return;
+    const doc = updateExtrudeFeature(current.doc, extrude.id, (feature) => {
+      if (
+        next.length === feature.regions.length &&
+        next.every((id, index) => id === feature.regions[index])
+      ) {
+        return feature;
+      }
+      return { ...feature, regions: [...next] };
+    });
     if (doc === current.doc) return;
-    commit({ doc, solved: current.solved });
+    commit({ doc, solved: current.solved, solvedFor: current.solvedFor });
   };
 
   const handleSelectRegion = (regionId: string, additive: boolean): void => {
     setSelection([]);
+    if (!activeExtrude && !extrudeDraft) {
+      if (activeSketchFeature) beginExtrudeDraft([regionId]);
+      return;
+    }
     const current = storedRegionIds ?? [];
     if (!additive) {
       commitRegions([regionId]);
@@ -683,6 +1505,30 @@ export function App() {
         ? current.filter((id) => id !== regionId)
         : [...current, regionId],
     );
+  };
+
+  const handleMarqueeSelectRegions = (
+    regionIds: string[],
+    additive: boolean,
+  ): void => {
+    // An empty marquee is a no-op. Committing an empty list would fall back to
+    // auto/largest material, which reads as "selected the wrong profile".
+    if (regionIds.length === 0) return;
+    setSelection([]);
+    if (!activeExtrude && !extrudeDraft) {
+      if (activeSketchFeature) beginExtrudeDraft(regionIds);
+      return;
+    }
+    if (!additive) {
+      commitRegions(regionIds);
+      return;
+    }
+    const next = new Set(storedRegionIds ?? []);
+    for (const id of regionIds) {
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+    }
+    commitRegions([...next]);
   };
 
   const selectAllRegions = (): void => {
@@ -712,73 +1558,230 @@ export function App() {
     id: string,
     placement: DimensionPlacement,
   ): void => {
-    const current = getState();
-    const next = setDimensionPlacement(primarySketch(current.doc), id, placement);
-    if (next === primarySketch(current.doc)) return;
+    const base = currentSketch();
+    const next = setDimensionPlacement(base, id, placement);
+    if (next === base) return;
     // Moving a label does not change geometry; keep the last solution and group
     // the whole pointer gesture into one undo entry.
-    commitDoc(next, current.solved, `dim:${id}`);
+    commitDoc(next, currentSolve(), `dim:${id}`);
+  };
+
+  const startDimension = (target: DimensionTarget): void => {
+    dimensionRequestSeq.current += 1;
+    setDimensionRequest({ target, seq: dimensionRequestSeq.current });
+    setTool("dimension");
+    setSelection([]);
+  };
+
+  const startTrim = (): void => {
+    setTool("trim");
+    setSelection([]);
   };
 
   const handleCreateDimension = (
     target: DimensionTarget,
     placement: DimensionPlacement,
   ): void => {
-    const current = getState();
-    solveAndCommit(addDimension(primarySketch(current.doc), target, !referenceDimensions, placement));
+    const base = currentSketch();
+    const next = addDimension(base, target, !referenceDimensions, placement);
+    if (next === base) return;
+    setDimensionRequest(null);
+    setTool("select");
+    setSelection([]);
+    solveAndCommit(next);
   };
 
-  const handleChangeDimension = (id: string, value: number): void => {
-    const current = getState();
-    solveAndCommit(updateConstraintValue(primarySketch(current.doc), id, value));
+  const handleChangeDimension = (
+    id: string,
+    value: number,
+    driving: boolean,
+  ): void => {
+    let next = currentSketch();
+    if (driving) next = updateConstraintValue(next, id, value);
+    next = setDimensionDriving(next, id, driving);
+    if (next === currentSketch()) return;
+    solveAndCommit(next);
   };
 
   const handleDeleteDimension = (id: string): void => {
-    const current = getState();
-    solveAndCommit(removeConstraint(primarySketch(current.doc), id));
+    solveAndCommit(removeConstraint(currentSketch(), id));
   };
 
   const handleConstraint = (type: ConstraintType): void => {
-    const current = getState();
-    const next = applyConstraint(primarySketch(current.doc), type, selection);
-    if (next === primarySketch(current.doc)) return;
+    const base = currentSketch();
+    const next = applyConstraint(base, type, selection);
+    if (next === base) return;
     solveAndCommit(next);
   };
 
   const handleConstruction = (): void => {
-    const current = getState();
-    const next = toggleConstruction(primarySketch(current.doc), selection);
-    if (next === primarySketch(current.doc)) return;
+    const base = currentSketch();
+    const next = toggleConstruction(base, selection);
+    if (next === base) return;
     solveAndCommit(next);
+  };
+
+  const replaceActiveSketch = (
+    nextSketch: Sketch,
+    outcome: SolveOutcome | null,
+  ): void => {
+    const { current, sketchFeature: target, extrude } = resolveCurrent();
+    if (!target) return;
+    let nextDoc = updateSketchFeature(current.doc, target.id, nextSketch);
+    if (extrude) {
+      nextDoc = updateExtrudeFeature(nextDoc, extrude.id, (feature) =>
+        feature.regions.length === 0 ? feature : { ...feature, regions: [] },
+      );
+    }
+    commit({ doc: nextDoc, solved: outcome, solvedFor: target.id });
   };
 
   const clearSketch = (): void => {
     const empty = emptySketch();
     const outcome = isSolverReady() ? solveSketch(empty) : null;
-    const current = getState();
-    commit({
-      doc: updateExtrudeRegions(updatePrimarySketch(current.doc, empty), []),
-      solved: outcome,
-    });
+    replaceActiveSketch(empty, outcome);
     setSolveError(null);
     setSelection([]);
     setTool("select");
+    setZoomPreset("fit");
     setFitToken((token) => token + 1);
   };
 
   const loadExample = (): void => {
-    const fresh = createExampleModel();
-    const outcome = isSolverReady() ? solveSketch(fresh.sketch) : null;
-    const applied = outcome?.ok ? applySolution(fresh.sketch, outcome) : fresh.sketch;
-    const current = getState();
+    // "Load the example" is a full reset, not an edit of the current sketch:
+    // created features and document names must not survive it.
+    const fresh = createExampleDocument();
+    const firstSketch = primarySketchFeature(fresh);
+    const outcome =
+      firstSketch && isSolverReady() ? solveSketch(firstSketch.sketch) : null;
+    const nextDoc =
+      firstSketch && outcome?.ok
+        ? updateSketchFeature(
+            fresh,
+            firstSketch.id,
+            applySolution(firstSketch.sketch, outcome),
+          )
+        : fresh;
     commit({
-      doc: updateExtrudeRegions(updatePrimarySketch(current.doc, applied), []),
+      doc: nextDoc,
       solved: outcome,
+      solvedFor: firstSketch?.id ?? null,
     });
+    if (firstSketch) setActiveFeatureId(firstSketch.id);
+    dismissEditor();
+    setSupportOpen(false);
+    setMode("sketch");
+    setRollbackIndex(null);
     setSolveError(null);
     setSelection([]);
+    setDimensionRequest(null);
+    setReferenceDimensions(false);
+    setFilletOpen(false);
+    setFilletRadiusBefore(null);
+    setTool("select");
+    setZoomPreset("fit");
+    setFitToken((token) => token + 1);
+  };
+
+  const openDocument = (next: Doc): void => {
+    rebuildCache.clear();
+    reset({ doc: next, solved: null, solvedFor: null });
+    const active = initialActiveFeatureId(next);
+    setActiveFeatureId(active);
+    const feature = active ? findFeature(next, active) : null;
+    dismissEditor();
+    setSupportOpen(false);
+    setMode(feature?.type === "sketch" ? "sketch" : "model");
+    setRollbackIndex(null);
+    setSelection([]);
+    setSolveError(null);
+    setFileError(null);
+    setFileMenuOpen(false);
+    setBodyPick(null);
+    viewportRef.current?.clearPick();
+    saveDoc(next);
+    saveLocalFile(next);
+    setFileIndex(loadFileIndex());
+  };
+
+  const toggleFileMenu = (): void => {
+    if (!fileMenuOpen) setFileIndex(loadFileIndex());
+    setFileDeleteId(null);
+    setFileMenuOpen((open) => !open);
+  };
+
+  const openLocalDocument = (entry: LocalFileEntry): void => {
+    const next = loadLocalFile(entry.id);
+    if (!next) {
+      setFileError(`Could not open "${entry.name}".`);
+      return;
+    }
+    setFileDeleteId(null);
+    openDocument(next);
+  };
+
+  const requestDeleteLocalFile = (entry: LocalFileEntry): void => {
+    if (fileDeleteId !== entry.id) {
+      setFileDeleteId(entry.id);
+      return;
+    }
+    deleteLocalFile(entry.id);
+    setFileDeleteId(null);
+    setFileIndex(loadFileIndex());
+    setFileError(null);
+  };
+
+  const makeDocumentCopy = (): void => {
+    const current = getState();
+    const copy = copyDocument(current.doc);
+    saveLocalFile(copy);
+    openDocument(copy);
+  };
+
+  const downloadDocument = (): void => {
+    const current = getState();
+    const blob = new Blob([serializeDoc(current.doc)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${current.doc.name || "part"}.cad`;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    setFileMenuOpen(false);
+  };
+
+  const openDocumentFile = async (file: File): Promise<void> => {
+    try {
+      const next = deserializeDoc(await file.text());
+      if (!next) {
+        setFileError("That file is not a valid .cad document.");
+        return;
+      }
+      openDocument(next);
+    } catch (error) {
+      setFileError(
+        error instanceof Error ? error.message : "Could not open the file.",
+      );
+    }
+  };
+
+  const newDocument = (): void => {
+    const next = createBlankDocument();
+    openDocument(next);
+    setMode("sketch");
     setTool("select");
     setFitToken((token) => token + 1);
+  };
+
+  const commitDocumentRename = (): void => {
+    if (docRename === null) return;
+    const current = getState();
+    const next = renameDocument(current.doc, docRename);
+    setDocRename(null);
+    if (next === current.doc) return;
+    commit({ doc: next, solved: current.solved, solvedFor: current.solvedFor });
   };
 
   const goBack = (): void => {
@@ -793,7 +1796,23 @@ export function App() {
 
   const shownMesh = solidFeatures.length > 0 ? mesh : null;
   const shownRoundTrip = solidFeatures.length > 0 ? roundTripMs : null;
-  const shown = solveError ?? editor.solved;
+  const matchedSolve =
+    editor.solved && editor.solvedFor === activeSketchFeature?.id
+      ? editor.solved
+      : null;
+  const shown =
+    solveError ??
+    matchedSolve ??
+    (activeSketchBuild
+      ? {
+          status: activeSketchBuild.solveStatus,
+          dof: activeSketchBuild.dof,
+          conflicting: activeSketchBuild.conflicting,
+          ...(activeSketchBuild.message
+            ? { message: activeSketchBuild.message }
+            : {}),
+        }
+      : null);
   const tone: SketchTone =
     shown?.status === "inconsistent"
       ? "conflict"
@@ -814,107 +1833,292 @@ export function App() {
               ? "Fully constrained"
               : `${shown?.dof ?? "?"} DOF`;
 
-  const hint =
-    tool === "dimension"
-      ? "Click two points, a line, or a circle, then click to place the dimension. Drag a placed label to move it; double-click a value to edit it."
-      : tool === "line"
-        ? "Click to add points · Enter or double-click finishes the line · Esc cancels."
-        : regions.length > 1
-        ? "Click a filled region to choose the extrude profile; Shift adds. L line · R rectangle · C circle · A arc · D dimension · T trim."
-        : "Select to inspect. L line · R rectangle · C circle · A arc · D dimension · T trim · Delete removes. Cmd/Ctrl+Z undoes.";
+  const profileMode =
+    mode === "sketch" &&
+    (activeFeature?.type === "extrude" || extrudeDraft !== null);
+  const hint = extrudeDraft
+    ? extrudeDraft.regions.length === 0
+      ? "Pick at least one filled region for the new extrude; Shift adds. Set distance, direction and operation in the popover."
+      : "Click filled regions to add or remove profiles; Shift adds. Extrude in the popover creates the feature."
+    : profileMode
+      ? "Click filled regions to choose this extrude's profiles; Shift adds. Height, operation, direction and end are in the feature popover. Enter or Done returns to the model."
+      : tool === "dimension"
+        ? "Click two points, a line, or a circle, then click to place the dimension. Drag a placed label to move it; double-click a value to edit it."
+        : tool === "line"
+          ? "Click to add points · Enter or double-click finishes the line · Esc cancels."
+          : tool === "select" && activeFeature?.type === "sketch"
+            ? "Click a filled region to start an extrude draft; Shift adds. Select an extrude step to edit its existing profiles."
+            : "Select to inspect, or drag a box/lasso around profiles. L line · P point · B box · G lasso · R rectangle · C circle · A arc · D dimension · T trim · Delete removes.";
+
+  const activeState = activeFeature
+    ? featureStates.get(activeFeature.id)
+    : undefined;
+  const activeExtrudeOutput =
+    activeState?.result?.output?.kind === "extrude"
+      ? activeState.result.output
+      : null;
+  const activeRegionCount = extrudeDraft
+    ? extrudeDraft.regions.length
+    : activeExtrudeOutput?.regionIds.length ??
+      (activeFeature && isExtrudeFeature(activeFeature)
+        ? activeFeature.regions.length
+        : 0);
+  const activeSketchDof = activeSketchBuild?.dof ?? shown?.dof ?? null;
+  const activeFeatureIndex = activeFeature
+    ? doc.features.findIndex((feature) => feature.id === activeFeature.id)
+    : -1;
+  const canRollBack =
+    activeFeatureIndex >= 0 &&
+    activeFeatureIndex < doc.features.length - 1 &&
+    rollbackIndex !== activeFeatureIndex;
+  const sourceSketches =
+    activeFeatureIndex > 0
+      ? doc.features
+          .slice(0, activeFeatureIndex)
+          .filter((feature) => isSketchFeature(feature))
+      : [];
+  const draftFeature: ExtrudeFeature | null = extrudeDraft
+    ? {
+        id: "extrude-draft",
+        type: "extrude",
+        name: "New extrude",
+        sketchId: extrudeDraft.sketchId,
+        regions: extrudeDraft.regions,
+        height: extrudeDraft.height,
+        operation: extrudeDraft.operation,
+        symmetric: extrudeDraft.symmetric,
+        end: extrudeDraft.end,
+      }
+    : null;
 
   return (
     <div className="app">
-      <header className="toolbar">
-        <div className="brand">
-          <LogoMark />
-          <span className="brand-name">cad</span>
-          <span className="chip">{doc.name}</span>
-        </div>
-
-        <div className="toolbar-group">
-          <span className="toolbar-label">Extrude</span>
-          <input
-            className="slider"
-            type="range"
-            min={2}
-            max={40}
-            step={1}
-            value={extrudeHeight}
-            onChange={(event) => handleExtrudeHeight(Number(event.target.value))}
-            onPointerUp={endMerge}
-            onKeyUp={endMerge}
-            data-testid="height-slider"
-            aria-label="Extrude height"
-          />
-          <span className="mono toolbar-value">{extrudeHeight} mm</span>
-        </div>
-
-        <div className="toolbar-spacer" />
-
-        <div className="toolbar-actions">
-          <IconButton label="Undo" disabled={!history.canUndo} onClick={goBack} testId="undo">
-            <UndoIcon />
-          </IconButton>
-          <IconButton label="Redo" disabled={!history.canRedo} onClick={goForward} testId="redo">
-            <RedoIcon />
-          </IconButton>
-        </div>
-
-        <div className="badges">
-          <StatusBadge
-            label="solver"
-            state={solverState}
-            title={solverError ?? undefined}
-            testId="solver-status"
-          />
-          <StatusBadge
-            label="kernel"
-            state={kernelState}
-            title={kernelError ?? undefined}
-            testId="kernel-status"
-          />
-        </div>
-
-        <div className="appearance-controls" data-testid="appearance-controls">
+      <header className="doc-head">
+        <div className="doc-left">
           <button
-            className={`appearance-theme${themeSettings.mode === "day" ? " is-active" : ""}`}
+            className={`doc-file${fileMenuOpen ? " is-open" : ""}`}
             type="button"
-            onClick={() => setThemeSettings((settings) => ({ ...settings, mode: "day" }))}
-            aria-label="Day appearance"
-            aria-pressed={themeSettings.mode === "day"}
-            data-testid="theme-day"
+            onClick={toggleFileMenu}
+            aria-expanded={fileMenuOpen}
+            title="File menu"
+            data-testid="file-menu"
           >
-            <SunIcon />
+            <span className="doc-name">{doc.name}</span>
+            <span className="doc-ext">.cad</span>
+            <span className="doc-caret">▾</span>
           </button>
-          <button
-            className={`appearance-theme${themeSettings.mode === "night" ? " is-active" : ""}`}
-            type="button"
-            onClick={() => setThemeSettings((settings) => ({ ...settings, mode: "night" }))}
-            aria-label="Night appearance"
-            aria-pressed={themeSettings.mode === "night"}
-            data-testid="theme-night"
-          >
-            <MoonIcon />
-          </button>
-          <div className="highlight-dots" role="group" aria-label="Highlighter colour">
-            {(["yellow", "pink", "blue", "green"] as const).map((highlight) => {
-              const color = highlighterColor(highlight, themeSettings.mode);
-              return (
-                <button
-                  key={highlight}
-                  className={`highlight-dot${themeSettings.highlight === highlight ? " is-active" : ""}`}
-                  type="button"
-                  style={{ background: color.color }}
-                  onClick={() =>
-                    setThemeSettings((settings) => ({ ...settings, highlight }))
-                  }
-                  aria-label={`${highlight} highlighter`}
-                  aria-pressed={themeSettings.highlight === highlight}
-                  data-testid={`highlight-${highlight}`}
+          {fileMenuOpen ? (
+            <div className="file-menu" data-testid="file-menu-popover">
+              {docRename !== null ? (
+                <input
+                  className="file-rename"
+                  value={docRename}
+                  autoFocus
+                  aria-label="Document name"
+                  data-testid="doc-rename-input"
+                  onChange={(event) => setDocRename(event.target.value)}
+                  onBlur={commitDocumentRename}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      commitDocumentRename();
+                    } else if (event.key === "Escape") {
+                      event.preventDefault();
+                      setDocRename(null);
+                    }
+                  }}
                 />
-              );
-            })}
+              ) : null}
+              <button
+                className="text-action"
+                type="button"
+                onClick={downloadDocument}
+                data-testid="download-doc"
+              >
+                download .cad
+              </button>
+              <button
+                className="text-action"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                data-testid="open-doc"
+              >
+                open .cad…
+              </button>
+              <button
+                className="text-action"
+                type="button"
+                onClick={() => setDocRename(doc.name)}
+                data-testid="rename-doc"
+              >
+                rename
+              </button>
+              <button
+                className="text-action"
+                type="button"
+                onClick={makeDocumentCopy}
+                data-testid="copy-doc"
+              >
+                make a copy
+              </button>
+              <button
+                className="text-action"
+                type="button"
+                onClick={newDocument}
+                data-testid="new-file"
+              >
+                new file
+              </button>
+              <div className="file-list" data-testid="local-file-list">
+                <span className="file-list-head">
+                  local files · {fileIndex.length}
+                </span>
+                {fileIndex.map((entry) => (
+                  <div className="file-entry" key={entry.id}>
+                    <button
+                      className={`file-row${entry.id === doc.id ? " is-current" : ""}`}
+                      type="button"
+                      onClick={() => openLocalDocument(entry)}
+                      data-testid={`local-file-${entry.id}`}
+                    >
+                      <span className="file-row-name">{entry.name}.cad</span>
+                      <span className="file-row-meta">
+                        {entry.featureCount} step
+                        {entry.featureCount === 1 ? "" : "s"} ·{" "}
+                        {formatFileWhen(entry.updatedAt)}
+                      </span>
+                    </button>
+                    {entry.id !== doc.id ? (
+                      <button
+                        className="text-action is-quiet file-row-delete"
+                        type="button"
+                        onClick={() => requestDeleteLocalFile(entry)}
+                        data-testid={`delete-file-${entry.id}`}
+                      >
+                        {fileDeleteId === entry.id ? "confirm" : "delete"}
+                      </button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+              <span className="file-note">offline · no sharing</span>
+              {fileError ? (
+                <span className="file-error" role="alert">
+                  {fileError}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".cad,.json,application/json"
+            hidden
+            data-testid="file-open-input"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void openDocumentFile(file);
+              event.currentTarget.value = "";
+            }}
+          />
+        </div>
+
+        <div className="doc-actions" role="group" aria-label="Document actions">
+          <button
+            className="text-action"
+            type="button"
+            onClick={goBack}
+            disabled={!history.canUndo}
+            data-testid="undo"
+          >
+            undo
+          </button>
+          <button
+            className="text-action"
+            type="button"
+            onClick={goForward}
+            disabled={!history.canRedo}
+            data-testid="redo"
+          >
+            redo
+          </button>
+          {mode === "sketch" ? (
+            <>
+              <span className="doc-sep" aria-hidden="true" />
+              <button
+                className="text-action is-primary"
+                type="button"
+                onClick={finishActiveMode}
+                title={
+                  activeFeature?.type === "extrude"
+                    ? "Done selecting this extrude's profiles"
+                    : "Finish the sketch"
+                }
+                data-testid="finish-sketch"
+              >
+                {activeFeature?.type === "extrude" ? "done" : "finish sketch"}{" "}
+                <span className="key">↵</span>
+              </button>
+            </>
+          ) : null}
+          {rollbackIndex !== null ? (
+            <>
+              <span className="doc-sep" aria-hidden="true" />
+              <button
+                className="text-action is-primary"
+                type="button"
+                onClick={rollForward}
+                data-testid="roll-forward"
+              >
+                roll forward →
+              </button>
+            </>
+          ) : null}
+        </div>
+
+        <div className="doc-right">
+          <div className="appearance-controls" data-testid="appearance-controls">
+            <div className="theme-switch" role="group" aria-label="Theme">
+              <button
+                className={`appearance-theme${themeSettings.mode === "day" ? " is-active" : ""}`}
+                type="button"
+                onClick={() => setThemeSettings((settings) => ({ ...settings, mode: "day" }))}
+                aria-label="Day appearance"
+                aria-pressed={themeSettings.mode === "day"}
+                data-testid="theme-day"
+              >
+                <span className="theme-swatch is-day" />
+              </button>
+              <button
+                className={`appearance-theme${themeSettings.mode === "night" ? " is-active" : ""}`}
+                type="button"
+                onClick={() => setThemeSettings((settings) => ({ ...settings, mode: "night" }))}
+                aria-label="Night appearance"
+                aria-pressed={themeSettings.mode === "night"}
+                data-testid="theme-night"
+              >
+                <span className="theme-swatch is-night" />
+              </button>
+            </div>
+            <div className="highlight-dots" role="group" aria-label="Highlighter colour">
+              {(["yellow", "pink", "blue", "green"] as const).map((highlight) => {
+                const color = highlighterColor(highlight, themeSettings.mode);
+                return (
+                  <button
+                    key={highlight}
+                    className={`highlight-dot${themeSettings.highlight === highlight ? " is-active" : ""}`}
+                    type="button"
+                    style={{ background: color.color }}
+                    onClick={() =>
+                      setThemeSettings((settings) => ({ ...settings, highlight }))
+                    }
+                    aria-label={`${highlight} highlighter`}
+                    aria-pressed={themeSettings.highlight === highlight}
+                    data-testid={`highlight-${highlight}`}
+                  />
+                );
+              })}
+            </div>
           </div>
         </div>
       </header>
@@ -924,42 +2128,23 @@ export function App() {
           <div className={`model-layer${mode === "model" ? "" : " is-hidden"}`}>
             <canvas ref={canvasRef} className="viewport-canvas" />
 
-            <div className="viewport-top">
-              <span className="overlay-chip">
-                Extrude 1<span className="overlay-sep">·</span>
-                <span className="mono">{extrudeHeight} mm</span>
-              </span>
-              <button
-                className="button button-small"
-                type="button"
-                onClick={() => viewportRef.current?.frameAll()}
-              >
-                Fit view
-              </button>
-            </div>
-
             {bodyPick ? (
               <div
                 className="body-pick"
                 data-testid="body-pick"
                 data-kind={bodyPick.kind}
                 data-id={bodyPick.id}
+                data-ref-role={bodyPick.ref?.role}
+                data-ref={
+                  bodyPick.ref ? JSON.stringify(bodyPick.ref) : undefined
+                }
                 role="status"
               >
                 <span className="body-pick-dot" />
                 <span>
                   {bodyPick.kind === "face" ? "Face selected" : "Edge selected"}
+                  {bodyPick.ref ? ` · ${bodyPick.ref.role}` : ""}
                 </span>
-                <button
-                  className="body-pick-clear"
-                  type="button"
-                  onClick={() => {
-                    setBodyPick(null);
-                    viewportRef.current?.clearPick();
-                  }}
-                >
-                  Clear
-                </button>
               </div>
             ) : null}
 
@@ -987,147 +2172,130 @@ export function App() {
               </div>
             ) : null}
 
-            <div className="viewport-stats">
-              {shownMesh ? (
-                <span
-                  className="mono"
-                  data-testid="mesh-stats"
-                  data-volume={shownMesh.stats.volume.toFixed(2)}
-                  data-faces={shownMesh.stats.faces}
-                  data-edges={shownMesh.stats.edges}
-                  data-triangles={shownMesh.stats.triangles}
-                  data-bbox={shownMesh.stats.bounds
-                    .map((value) => Number(value.toFixed(3)))
-                    .join(",")}
-                >
-                  {formatInt(shownMesh.stats.triangles)} tris
-                  <span className="overlay-sep">·</span>
-                  {shownMesh.stats.faces} faces
-                  <span className="overlay-sep">·</span>
-                  {formatVolume(shownMesh.stats.volume)} mm³
-                  <span className="overlay-sep">·</span>
-                  {shownRoundTrip === null ? "—" : `${shownRoundTrip.toFixed(0)} ms`}
-                </span>
-              ) : (
-                <span className="mono dim">no body</span>
-              )}
-              <span className="overlay-sub">Z-up · millimetres</span>
-            </div>
           </div>
 
           <div className={`sketch-layer${mode === "sketch" ? "" : " is-hidden"}`}>
             <div className="sketch-stage">
-              <SketchCanvas
-                sketch={sketch}
-                points={geometry.points}
-                radii={geometry.radii}
-                tone={tone}
-                palette={palette}
-                regions={regions}
-                selectedRegions={selectedRegions}
-                onSelectRegion={handleSelectRegion}
-                tool={tool}
-                dimensionMode={dimensionMode}
-                radiusDimensions={radiusDimensions}
-                cancelToken={cancelToken}
-                fitToken={fitToken}
-                selected={selectedSet}
-                onSelect={handleSelect}
-                onDragPoint={handleDragPoint}
-                onDragLine={handleDragLine}
-                onDragEnd={endMerge}
-                onCreatePolyline={handlePolyline}
-                onCreateRectangle={handleRectangle}
-                onCreateCircle={handleCircle}
-                onCreateArc={handleArc}
-                onTrimCurve={handleTrimCurve}
-                onCreateDimension={handleCreateDimension}
-                onChangeDimension={handleChangeDimension}
-                onMoveDimension={handleMoveDimension}
-                onDeleteDimension={handleDeleteDimension}
-              />
-            </div>
-
-            <div className="sketch-topbar">
-              <div className="tool-strip" role="toolbar" aria-label="Sketch tools">
+              <div className="tool-line" role="toolbar" aria-label="Sketch tools">
                 <ToolButton
-                  label="Select (V)"
+                  label="select"
+                  shortcut="v"
                   active={tool === "select"}
                   onClick={() => changeTool("select")}
                   testId="tool-select"
-                >
-                  <CursorIcon />
-                </ToolButton>
+                />
                 <ToolButton
-                  label="Line (L)"
+                  label="box"
+                  shortcut="b"
+                  active={tool === "box"}
+                  onClick={() => changeTool("box")}
+                  testId="tool-box"
+                />
+                <ToolButton
+                  label="lasso"
+                  shortcut="g"
+                  active={tool === "lasso"}
+                  onClick={() => changeTool("lasso")}
+                  testId="tool-lasso"
+                />
+                <span className="tool-separator" />
+                <ToolButton
+                  label="line"
+                  shortcut="l"
                   active={tool === "line"}
                   onClick={() => changeTool("line")}
                   testId="tool-line"
-                >
-                  <LineIcon />
-                </ToolButton>
+                />
                 <ToolButton
-                  label="Rectangle (R)"
+                  label="point"
+                  shortcut="p"
+                  active={tool === "point"}
+                  onClick={() => changeTool("point")}
+                  testId="tool-point"
+                />
+                <ToolButton
+                  label="rect"
+                  shortcut="r"
                   active={tool === "rect"}
                   onClick={() => changeTool("rect")}
                   testId="tool-rect"
-                >
-                  <RectIcon />
-                </ToolButton>
+                />
                 <ToolButton
-                  label="Circle (C)"
+                  label="circle"
+                  shortcut="c"
                   active={tool === "circle"}
                   onClick={() => changeTool("circle")}
                   testId="tool-circle"
-                >
-                  <CircleIcon />
-                </ToolButton>
+                />
                 <ToolButton
-                  label="Arc (A)"
+                  label="arc"
+                  shortcut="a"
                   active={tool === "arc"}
                   onClick={() => changeTool("arc")}
                   testId="tool-arc"
-                >
-                  <ArcIcon />
-                </ToolButton>
-                <ToolButton
-                  label="Dimension (D)"
-                  active={tool === "dimension"}
-                  onClick={() => changeTool("dimension")}
-                  testId="tool-dimension"
-                >
-                  <DimensionIcon />
-                </ToolButton>
-                <ToolButton
-                  label="Trim (T)"
-                  active={tool === "trim"}
-                  onClick={() => changeTool("trim")}
-                  testId="tool-trim"
-                >
-                  <TrimIcon />
-                </ToolButton>
+                />
 
                 <span className="tool-separator" />
 
-                <ToolButton label="Load the example" onClick={loadExample} testId="load-example">
-                  <ExampleIcon />
-                </ToolButton>
-                <ToolButton label="Clear sketch" onClick={clearSketch} testId="clear-sketch">
-                  <TrashIcon />
-                </ToolButton>
+                <ToolButton
+                  label="example"
+                  onClick={loadExample}
+                  testId="load-example"
+                />
+                <ToolButton
+                  label="clear"
+                  onClick={clearSketch}
+                  testId="clear-sketch"
+                />
               </div>
 
-              <button className="button button-primary" type="button" onClick={() => setMode("model")}>
-                Finish sketch
-              </button>
-            </div>
-
-            <div className={`dof-pill ${tone}`} data-testid="dof" data-tone={tone}>
-              <span className="dot" />
-              <span>{statusLabel}</span>
-              {shown && shown.conflicting.length > 0 ? (
-                <span className="mono conflict-list">{shown.conflicting.join(", ")}</span>
-              ) : null}
+              <div className="sketch-canvas-wrap">
+                <SketchCanvas
+                  sketch={sketch}
+                  points={geometry.points}
+                  radii={geometry.radii}
+                  tone={tone}
+                  palette={palette}
+                  regions={regions}
+                  selectedRegions={selectedRegions}
+                  profileSelection={profileMode}
+                  regionsSelectable={
+                    activeExtrude !== null ||
+                    extrudeDraft !== null ||
+                    (mode === "sketch" && tool === "select")
+                  }
+                  onSelectRegion={handleSelectRegion}
+                  onMarqueeSelectRegions={handleMarqueeSelectRegions}
+                  tool={tool}
+                  dimensionMode="distance"
+                  radiusDimensions={false}
+                  cancelToken={cancelToken}
+                  fitToken={fitToken}
+                  gridStep={gridStep}
+                  snapEnabled={snapEnabled}
+                  onGridStepResolved={setResolvedGridStep}
+                  onGridScaleResolved={setGridPixels}
+                  zoomRequest={zoomRequest}
+                  selected={selectedSet}
+                  onSelect={handleSelect}
+                  onSetPointPosition={handleSetPointPosition}
+                  dimensionRequest={dimensionRequest}
+                  onDragPoint={handleDragPoint}
+                  onDragLine={handleDragLine}
+                  onDragEnd={endMerge}
+                  onCreatePolyline={handlePolyline}
+                  onCreateRectangle={handleRectangle}
+                  onCreateCircle={handleCircle}
+                  onCreateArc={handleArc}
+                  onCreatePoint={handlePoint}
+                  onTrimCurve={handleTrimCurve}
+                  onCreateDimension={handleCreateDimension}
+                  onChangeDimension={handleChangeDimension}
+                  onMoveDimension={handleMoveDimension}
+                  onDeleteDimension={handleDeleteDimension}
+                  onFinishSketch={finishActiveMode}
+                />
+              </div>
             </div>
 
             {trimNotice ? (
@@ -1137,66 +2305,55 @@ export function App() {
             ) : null}
 
             {selectedInfo.length > 0 ? (
-              <div className="selection-float">
-                <SelectionPanel
+              filletOpen && filletSelection ? (
+                <FilletPopover
+                  radius={filletRadius}
+                  onRadius={setFilletRadius}
+                  onApply={applyFillet}
+                  onCancel={cancelFillet}
+                  position={popoverPosition}
+                  onMove={setPopoverPosition}
+                />
+              ) : (
+                <SelectionPopover
                   info={selectedInfo}
                   actions={constraintActions}
                   construction={construction}
                   onConstraint={handleConstraint}
                   onConstruction={handleConstruction}
                   onDelete={deleteSelection}
-                  deletable={selectedInfo.some((info) => info.kind !== "reference")}
-                  pointPosition={
-                    selectedPoint
+                  deletable={selectedInfo.some(
+                    (info) => info.kind !== "reference",
+                  )}
+                  onOpenFillet={filletSelection ? openFillet : undefined}
+                  dimension={
+                    dimensionTarget
                       ? {
-                          id: selectedPoint.id,
-                          x: selectedPoint.x,
-                          y: selectedPoint.y,
-                          onSet: (x, y) =>
-                            handleSetPointPosition(selectedPoint.id, x, y),
+                          label:
+                            dimensionTarget.kind === "angle"
+                              ? "angle"
+                              : dimensionTarget.kind === "diameter"
+                                ? "diameter"
+                                : "distance",
+                          onSelect: () => startDimension(dimensionTarget),
+                          ...(dimensionTarget.kind === "diameter" &&
+                          radiusTarget
+                            ? {
+                                onRadius: () => startDimension(radiusTarget),
+                              }
+                            : {}),
                         }
-                      : null
+                      : undefined
                   }
-                  fillet={filletSelection ? {
-                    radius: filletRadius,
-                    onRadius: setFilletRadius,
-                    onApply: handleFillet,
-                  } : null}
+                  trim={trimCurve ? { onClick: startTrim } : undefined}
+                  position={popoverPosition}
+                  onMove={setPopoverPosition}
                 />
-              </div>
+              )
             ) : null}
 
             {tool === "dimension" ? (
               <div className="sketch-flyout">
-                <div className="toggle-field" role="group" aria-label="Dimension mode">
-                  <button
-                    className={`constraint-chip${dimensionMode === "distance" ? " is-active" : ""}`}
-                    type="button"
-                    onClick={() => setDimensionMode("distance")}
-                    data-testid="dimension-distance"
-                  >
-                    Distance
-                  </button>
-                  <button
-                    className={`constraint-chip${dimensionMode === "angle" ? " is-active" : ""}`}
-                    type="button"
-                    onClick={() => setDimensionMode("angle")}
-                    data-testid="dimension-angle"
-                  >
-                    Angle
-                  </button>
-                  <button
-                    className={`constraint-chip${radiusDimensions ? " is-active" : ""}`}
-                    type="button"
-                    onClick={() => {
-                      setDimensionMode("distance");
-                      setRadiusDimensions((value) => !value);
-                    }}
-                    data-testid="dimension-radius"
-                  >
-                    Radius
-                  </button>
-                </div>
                 <label className="toggle-field">
                   <input
                     type="checkbox"
@@ -1209,18 +2366,28 @@ export function App() {
               </div>
             ) : null}
 
-            {regions.length > 1 ? (
+            {(activeExtrude || extrudeDraft) && regions.length > 1 ? (
               <div className="region-panel" data-testid="region-panel">
                 <span>
-                  {!regionSelection.auto
-                    ? `${activeRegionIds.length} of ${regions.length} regions${
-                        activeVoidCount > 0
-                          ? activeVoidCount === activeRegionIds.length
-                            ? " · void"
-                            : " · includes void"
-                          : ""
-                      }`
-                    : "auto: largest material"}
+                  {extrudeDraft
+                    ? extrudeDraft.regions.length === 0
+                      ? "select profiles"
+                      : `${activeRegionIds.length} of ${regions.length} regions${
+                          activeVoidCount > 0
+                            ? activeVoidCount === activeRegionIds.length
+                              ? " · void"
+                              : " · includes void"
+                            : ""
+                        }`
+                    : !regionSelection.auto
+                      ? `${activeRegionIds.length} of ${regions.length} regions${
+                          activeVoidCount > 0
+                            ? activeVoidCount === activeRegionIds.length
+                              ? " · void"
+                              : " · includes void"
+                            : ""
+                        }`
+                      : "auto: largest material"}
                 </span>
                 <button
                   className="constraint-chip"
@@ -1240,7 +2407,7 @@ export function App() {
                     Voids
                   </button>
                 ) : null}
-                {!regionSelection.auto ? (
+                {!extrudeDraft && !regionSelection.auto ? (
                   <button
                     className="constraint-chip"
                     type="button"
@@ -1255,39 +2422,539 @@ export function App() {
 
             <div className="sketch-hint">{hint}</div>
           </div>
+
+          <div className="stage-foot">
+            <div className="stage-foot-left">
+              <StatusBadge
+                label="solver"
+                state={solverState}
+                title={solverError ?? undefined}
+                testId="solver-status"
+              />
+              <StatusBadge
+                label="kernel"
+                state={kernelState}
+                title={kernelError ?? undefined}
+                testId="kernel-status"
+              />
+              <span className="stage-sep" aria-hidden="true" />
+              {mode === "sketch" ? (
+                <span className={`dof-row ${tone}`} data-testid="dof" data-tone={tone}>
+                  <span className="dot" />
+                  <span>{statusLabel}</span>
+                  {shown && shown.conflicting.length > 0 ? (
+                    <span className="mono conflict-list">
+                      {shown.conflicting.join(", ")}
+                    </span>
+                  ) : null}
+                </span>
+              ) : null}
+              {shownMesh ? (
+                <span
+                  className="mono stage-stats"
+                  data-testid="mesh-stats"
+                  data-volume={shownMesh.stats.volume.toFixed(2)}
+                  data-faces={shownMesh.stats.faces}
+                  data-edges={shownMesh.stats.edges}
+                  data-triangles={shownMesh.stats.triangles}
+                  data-bbox={shownMesh.stats.bounds
+                    .map((value) => Number(value.toFixed(3)))
+                    .join(",")}
+                >
+                  {formatVolume(shownMesh.stats.volume)} mm³ · {shownMesh.stats.faces}{" "}
+                  faces · {formatInt(shownMesh.stats.triangles)} tris
+                </span>
+              ) : (
+                <span className="mono stage-stats dim">no body</span>
+              )}
+              {shownRoundTrip !== null && mode === "model" ? (
+                <span className="stage-meta">{shownRoundTrip.toFixed(0)} ms</span>
+              ) : null}
+            </div>
+            <div className="stage-foot-right">
+              {mode === "model" ? (
+                <>
+                  <span className="stage-meta">Z-up · mm</span>
+                  <span className="stage-meta">front iso</span>
+                  <button
+                    className="text-action"
+                    type="button"
+                    onClick={() => viewportRef.current?.frameAll()}
+                    aria-label="Fit view"
+                  >
+                    fit
+                  </button>
+                </>
+              ) : (
+                <>
+                  <label className="grid-control">
+                    <span className="stage-meta">grid</span>
+                    <input
+                      className="grid-input"
+                      type="number"
+                      min="0.001"
+                      step="any"
+                      value={
+                        gridStep === "auto"
+                          ? formatGridStep(resolvedGridStep)
+                          : String(gridStep)
+                      }
+                      onChange={(event) => {
+                        const value = Number(event.target.value);
+                        if (Number.isFinite(value) && value > 0) {
+                          setGridStep(value);
+                        }
+                      }}
+                      aria-label="Grid step in millimetres"
+                      data-testid="grid-step"
+                    />
+                    <span className="stage-meta">mm</span>
+                  </label>
+                  <span
+                    className="scale-bar"
+                    data-testid="grid-scale"
+                    aria-hidden="true"
+                  >
+                    <i style={{ width: `${gridPixels}px` }} />
+                    <em>{formatGridStep(resolvedGridStep)} mm</em>
+                  </span>
+                  <button
+                    className={`text-action${gridStep === "auto" ? " is-primary" : ""}`}
+                    type="button"
+                    onClick={() => setGridStep("auto")}
+                    data-testid="grid-auto"
+                  >
+                    auto
+                  </button>
+                  <button
+                    className="text-action"
+                    type="button"
+                    onClick={() => setSnapEnabled((enabled) => !enabled)}
+                    data-testid="snap-toggle"
+                  >
+                    snap {snapEnabled ? "on" : "off"}
+                  </button>
+                  <label className="zoom-control">
+                    <span className="stage-meta">zoom</span>
+                    <select
+                      className="zoom-select"
+                      value={zoomPreset}
+                      onChange={(event) => requestZoom(event.target.value)}
+                      aria-label="Zoom"
+                      data-testid="zoom-select"
+                    >
+                      <option value="fit">fit</option>
+                      <option value="50">50%</option>
+                      <option value="100">100%</option>
+                      <option value="200">200%</option>
+                    </select>
+                  </label>
+                  <span className="stage-meta">front ortho</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {supportOpen ? (
+            <SupportPopover
+              position={popoverPosition}
+              onMove={setPopoverPosition}
+              onCancel={() => setSupportOpen(false)}
+              onApply={() => {
+                handleNewSketch();
+                setSupportOpen(false);
+              }}
+              faceLabel={
+                bodyPick?.kind === "face"
+                  ? bodyPick.ref?.role ?? "Selected face"
+                  : undefined
+              }
+            />
+          ) : null}
+
+          {extrudeDraft && draftFeature ? (
+            <FeaturePopover
+              feature={draftFeature}
+              sketches={activeSketchFeature ? [activeSketchFeature] : []}
+              regionCount={extrudeDraft.regions.length}
+              mode={mode}
+              position={popoverPosition}
+              onMove={setPopoverPosition}
+              onCancel={cancelExtrudeDraft}
+              onApply={commitExtrudeDraft}
+              onHeight={(height) =>
+                updateExtrudeDraft((draft) => ({ ...draft, height }))
+              }
+              onHeightEnd={() => undefined}
+              onSketchChange={() => undefined}
+              showSketchRow={false}
+              onToggleSymmetric={() =>
+                updateExtrudeDraft((draft) => ({
+                  ...draft,
+                  symmetric: !draft.symmetric,
+                }))
+              }
+              onOperation={(operation) =>
+                updateExtrudeDraft((draft) => ({
+                  ...draft,
+                  operation,
+                  end: operation === "cut" ? draft.end : "blind",
+                }))
+              }
+              onEnd={(end) =>
+                updateExtrudeDraft((draft) =>
+                  end === "throughAll"
+                    ? { ...draft, operation: "cut", end }
+                    : { ...draft, end },
+                )
+              }
+              onSelectProfiles={selectExtrudeProfiles}
+              kicker="new feature"
+              title={`Extrude ${activeSketchFeature?.name ?? ""}`.trim()}
+              testId="extrude-draft-popover"
+              primaryLabel="extrude"
+              primaryDisabled={extrudeDraft.regions.length === 0}
+              primaryTestId="extrude-apply"
+              cancelTestId="extrude-cancel"
+              hint={
+                extrudeDraft.regions.length === 0
+                  ? "pick at least one filled region; Shift adds"
+                  : "draft only · extrude creates the feature"
+              }
+              summaryOverride={
+                extrudeDraft.regions.length === 0
+                  ? "no profile selected"
+                  : undefined
+              }
+            />
+          ) : null}
+
+          {editorOpen && activeFeature?.type === "extrude" ? (
+            <FeaturePopover
+              feature={activeFeature}
+              sketches={sourceSketches}
+              regionCount={activeRegionCount}
+              mode={mode}
+              position={popoverPosition}
+              onMove={setPopoverPosition}
+              onCancel={cancelFeatureEditor}
+              onApply={finishActiveMode}
+              onHeight={handleExtrudeHeight}
+              onHeightEnd={endMerge}
+              onSketchChange={handleExtrudeSketch}
+              onToggleSymmetric={handleToggleSymmetric}
+              onOperation={handleExtrudeOperation}
+              onEnd={handleExtrudeEnd}
+              onSelectProfiles={selectExtrudeProfiles}
+            />
+          ) : null}
         </section>
 
-        <footer className="timeline">
-          <div className="timeline-title">History</div>
+        <footer
+          className="timeline"
+          data-testid="timeline"
+          data-active-feature={activeFeature?.id ?? ""}
+          data-active-sketch={activeSketchFeature?.id ?? ""}
+          data-active-extrude={activeExtrude?.id ?? ""}
+        >
           <div className="timeline-track">
+            {doc.features.map((feature, index) => {
+              const state = featureStates.get(feature.id);
+              const paused = rollbackIndex !== null && index > rollbackIndex;
+              const status = paused ? "paused" : (state?.status ?? "pending");
+              const extrudeOutput =
+                state?.result?.output?.kind === "extrude"
+                  ? state.result.output
+                  : null;
+              const regionCount =
+                extrudeOutput?.regionIds.length ??
+                (isExtrudeFeature(feature) ? feature.regions.length : 0);
+              const meta = isSketchFeature(feature)
+                ? `${feature.support.plane} · ${feature.sketch.curves.length} curves`
+                : `${feature.height} mm · ${feature.operation} · ${regionCount} region${
+                    regionCount === 1 ? "" : "s"
+                  }`;
+              const metaSuffix =
+                status === "paused"
+                  ? " · paused"
+                  : status === "error"
+                    ? " · error"
+                    : status === "skipped"
+                      ? " · skipped"
+                      : feature.suppressed
+                        ? " · suppressed"
+                        : "";
+              const statusClass =
+                status === "paused"
+                  ? " is-paused"
+                  : status === "error"
+                    ? " is-error"
+                    : status === "skipped"
+                      ? " is-skipped"
+                      : feature.suppressed
+                        ? " is-suppressed"
+                        : "";
+              const testId =
+                feature.id === primarySketchId
+                  ? "timeline-sketch"
+                  : feature.id === primaryExtrudeId
+                    ? "timeline-extrude"
+                    : `feature-${feature.id}`;
+              return (
+                <div
+                  key={feature.id}
+                  className={`timeline-item${feature.id === activeFeature?.id ? " is-active" : ""}${statusClass}${draggingFeatureId === feature.id ? " is-dragging" : ""}`}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={feature.id === activeFeature?.id}
+                  draggable
+                  onClick={() => activateFeature(feature)}
+                  onDoubleClick={() => beginRename(feature)}
+                  onDragStart={(event) => {
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", feature.id);
+                    setDraggingFeatureId(feature.id);
+                  }}
+                  onDragEnd={() => setDraggingFeatureId(null)}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                  }}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    const sourceId =
+                      event.dataTransfer.getData("text/plain") ||
+                      draggingFeatureId;
+                    setDraggingFeatureId(null);
+                    if (!sourceId || sourceId === feature.id) return;
+                    handleMoveFeature(sourceId, index);
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.target !== event.currentTarget) return;
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      activateFeature(feature);
+                    }
+                  }}
+                  data-testid={testId}
+                  data-feature-id={feature.id}
+                  data-feature-type={feature.type}
+                  data-status={status}
+                  title={
+                    paused
+                      ? "Paused by rollback"
+                      : state?.messages.length
+                        ? state.messages.join("\n")
+                        : "Double-click to rename"
+                  }
+                >
+                  <span className="timeline-index">
+                    {String(index + 1).padStart(2, "0")}
+                  </span>
+                  <span className="step-type">
+                    {isSketchFeature(feature) ? "sketch" : "extrude"}
+                  </span>
+                  {renaming?.id === feature.id ? (
+                    <input
+                      className="timeline-rename"
+                      value={renaming.value}
+                      autoFocus
+                      data-testid="feature-rename"
+                      onChange={(event) =>
+                        setRenaming({ id: feature.id, value: event.target.value })
+                      }
+                      onBlur={commitRename}
+                      onClick={(event) => event.stopPropagation()}
+                      onDoubleClick={(event) => event.stopPropagation()}
+                      onKeyDown={(event) => {
+                        event.stopPropagation();
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          commitRename();
+                        } else if (event.key === "Escape") {
+                          event.preventDefault();
+                          setRenaming(null);
+                        }
+                      }}
+                    />
+                  ) : (
+                    <span className="step-name">
+                      {status === "error" ? (
+                        <span className="step-bang" aria-hidden="true">
+                          !
+                        </span>
+                      ) : null}
+                      {feature.name}
+                    </span>
+                  )}
+                  <span className="tree-meta">
+                    {meta}
+                    {metaSuffix}
+                  </span>
+                </div>
+              );
+            })}
             <button
-              className={`timeline-item${mode === "sketch" ? " is-active" : ""}`}
+              className="timeline-add"
               type="button"
-              onClick={() => setMode("sketch")}
-              data-testid="timeline-sketch"
+              onClick={() => {
+                setSupportOpen(true);
+                setFileMenuOpen(false);
+              }}
+              data-testid="add-sketch"
             >
-              <SketchIcon />
-              <span className="timeline-index">01</span>
-              <span>{sketchFeature?.name ?? "Sketch 1"}</span>
-              <span className="tree-meta">XY · {sketch.curves.length} curves</span>
-            </button>
-            <span className="timeline-arrow" aria-hidden="true">›</span>
-            <button
-              className={`timeline-item${mode === "model" ? " is-active" : ""}`}
-              type="button"
-              onClick={() => setMode("model")}
-              data-testid="timeline-extrude"
-            >
-              <ExtrudeIcon />
-              <span className="timeline-index">02</span>
-              <span>{extrudeFeature?.name ?? "Extrude 1"}</span>
-              <span className="tree-meta">
-                {extrudeHeight} mm · {activeRegionIds.length} region
-                {activeRegionIds.length === 1 ? "" : "s"}
-              </span>
+              + sketch
             </button>
           </div>
-          <div className="timeline-actions">
+
+          <div className="timeline-detail" data-testid="timeline-detail">
+            {activeFeature ? (
+              <>
+                {isSketchFeature(activeFeature) ? (
+                  <>
+                    <span className="detail-item">
+                      <span className="detail-key">plane</span>
+                      <span className="detail-value">
+                        {activeFeature.support.plane}
+                      </span>
+                    </span>
+                    <span className="detail-item">
+                      <span className="detail-key">curves</span>
+                      <span className="detail-value">
+                        {activeFeature.sketch.curves.length}
+                      </span>
+                    </span>
+                    <span className="detail-item">
+                      <span className="detail-key">dof</span>
+                      <span className="detail-value">
+                        {activeSketchDof ?? "?"}
+                      </span>
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="detail-item">
+                      <span className="detail-key">sketch</span>
+                      <span className="detail-value">
+                        {activeSketchFeature?.name ?? "—"}
+                      </span>
+                    </span>
+                    <span className="detail-item">
+                      <span className="detail-key">distance</span>
+                      <span className="detail-value">
+                        {activeFeature.end === "throughAll"
+                          ? "through all"
+                          : `${activeFeature.height} mm`}
+                      </span>
+                    </span>
+                    <span className="detail-item">
+                      <span className="detail-key">direction</span>
+                      <span className="detail-value">
+                        {activeFeature.symmetric ? "symmetric" : "one side"}
+                      </span>
+                    </span>
+                    <span className="detail-item">
+                      <span className="detail-key">operation</span>
+                      <span className="detail-value">
+                        {activeFeature.operation}
+                      </span>
+                    </span>
+                    <span className="detail-item">
+                      <span className="detail-key">profile</span>
+                      <span className="detail-value">
+                        {activeRegionCount} region
+                        {activeRegionCount === 1 ? "" : "s"}
+                      </span>
+                    </span>
+                  </>
+                )}
+                <span className="detail-actions">
+                  {isExtrudeFeature(activeFeature) ? (
+                    <button
+                      className="text-action"
+                      type="button"
+                      onClick={openFeatureEditor}
+                      data-testid="edit-feature"
+                    >
+                      edit
+                    </button>
+                  ) : null}
+                  <button
+                    className="text-action"
+                    type="button"
+                    onClick={() => beginRename(activeFeature)}
+                  >
+                    rename
+                  </button>
+                  {isSketchFeature(activeFeature) && !extrudeDraft ? (
+                    <button
+                      className="text-action"
+                      type="button"
+                      onClick={handleNewExtrude}
+                      data-testid="new-extrude"
+                    >
+                      extrude
+                    </button>
+                  ) : null}
+                  {mode === "model" && isExtrudeFeature(activeFeature) ? (
+                    <button
+                      className="text-action"
+                      type="button"
+                      onClick={selectExtrudeProfiles}
+                      data-testid="extrude-profiles"
+                    >
+                      select profiles
+                    </button>
+                  ) : null}
+                  {activeSketchFeature ? (
+                    <button
+                      className="text-action"
+                      type="button"
+                      onClick={() => activateFeature(activeSketchFeature)}
+                    >
+                      open sketch
+                    </button>
+                  ) : null}
+                  {canRollBack ? (
+                    <button
+                      className="text-action"
+                      type="button"
+                      onClick={() => setRollbackIndex(activeFeatureIndex)}
+                      data-testid="roll-back"
+                    >
+                      roll back to here
+                    </button>
+                  ) : null}
+                  <button
+                    className="text-action"
+                    type="button"
+                    onClick={() => handleToggleSuppress(activeFeature)}
+                    aria-pressed={activeFeature.suppressed === true}
+                    data-testid="feature-suppress"
+                  >
+                    {activeFeature.suppressed ? "unsuppress" : "suppress"}
+                  </button>
+                  <button
+                    className="text-action"
+                    type="button"
+                    onClick={() => handleDeleteFeature(activeFeature)}
+                    data-testid="feature-delete"
+                  >
+                    delete
+                  </button>
+                </span>
+              </>
+            ) : (
+              <span className="detail-empty">No features</span>
+            )}
+            {activeState?.messages.length ? (
+              <span className="timeline-note is-error">
+                {activeState.messages.join(" · ")}
+              </span>
+            ) : null}
+            {historyNotice ? (
+              <span className="timeline-note is-error">{historyNotice}</span>
+            ) : null}
             <span
               className={`timeline-note${firstRebuildError ? " is-error" : ""}`}
               data-testid="rebuild-status"
@@ -1305,7 +2972,9 @@ export function App() {
             >
               {firstRebuildError
                 ? firstRebuildError.diagnostic.message
-                : "Autosaved locally"}
+                : rollbackIndex !== null
+                  ? "Rolled back"
+                  : "Autosaved locally"}
             </span>
           </div>
         </footer>
@@ -1390,248 +3059,32 @@ function describeSelection(
   return result;
 }
 
-function PointPositionEditor({
-  x,
-  y,
-  onSet,
-}: {
-  x: number;
-  y: number;
-  onSet: (x: number, y: number) => void;
-}) {
-  const [xText, setXText] = useState(() => formatEditable(x));
-  const [yText, setYText] = useState(() => formatEditable(y));
-
-  const commit = (): void => {
-    const nextX = Number(xText);
-    const nextY = Number(yText);
-    if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) return;
-    if (nextX !== x || nextY !== y) onSet(nextX, nextY);
-  };
-
-  return (
-    <div
-      className="point-position"
-      data-testid="point-position"
-      onBlur={(event) => {
-        const next = event.relatedTarget as Node | null;
-        if (!next || !event.currentTarget.contains(next)) commit();
-      }}
-    >
-      <label>
-        <span>X</span>
-        <input
-          value={xText}
-          inputMode="decimal"
-          data-testid="point-x"
-          onChange={(event) => setXText(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              commit();
-            } else if (event.key === "Escape") {
-              setXText(formatEditable(x));
-              setYText(formatEditable(y));
-            }
-          }}
-        />
-      </label>
-      <label>
-        <span>Y</span>
-        <input
-          value={yText}
-          inputMode="decimal"
-          data-testid="point-y"
-          onChange={(event) => setYText(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter") {
-              event.preventDefault();
-              commit();
-            } else if (event.key === "Escape") {
-              setXText(formatEditable(x));
-              setYText(formatEditable(y));
-            }
-          }}
-        />
-      </label>
-      <span className="point-position-unit">mm</span>
-    </div>
-  );
-}
-
-function formatEditable(value: number): string {
-  return String(Math.round(value * 1000) / 1000);
-}
-
-function SelectionPanel({
-  info,
-  actions,
-  construction,
-  onConstraint,
-  onConstruction,
-  onDelete,
-  deletable,
-  pointPosition,
-  fillet,
-}: {
-  info: SelectedEntity[];
-  actions: { type: ConstraintType; label: string }[];
-  construction: "none" | "mixed" | "all" | null;
-  onConstraint: (type: ConstraintType) => void;
-  onConstruction: () => void;
-  onDelete: () => void;
-  deletable: boolean;
-  pointPosition: {
-    id: string;
-    x: number;
-    y: number;
-    onSet: (x: number, y: number) => void;
-  } | null;
-  fillet: {
-    radius: number;
-    onRadius: (value: number) => void;
-    onApply: () => void;
-  } | null;
-}) {
-  return (
-    <div className="selection-card" data-testid="selection-panel" data-count={info.length}>
-      <div className="selection-head">
-        <span className="selection-title">
-          {info.length === 1 ? "Selection" : `${info.length} selected`}
-        </span>
-        {deletable ? (
-          <button
-            className="button button-small"
-            type="button"
-            onClick={onDelete}
-            data-testid="delete-selection"
-          >
-            Delete
-          </button>
-        ) : null}
-      </div>
-      <div className="selection-list">
-        {info.map((item) => (
-          <div className="selection-item" key={item.id} data-selection-id={item.id}>
-            <span>{item.label}</span>
-            <span className="mono">{item.detail}</span>
-          </div>
-        ))}
-      </div>
-      {pointPosition ? (
-        <PointPositionEditor
-          key={`${pointPosition.id}:${pointPosition.x}:${pointPosition.y}`}
-          {...pointPosition}
-        />
-      ) : null}
-      {actions.length > 0 || construction !== null ? (
-        <div className="constraint-bar">
-          {actions.map((action) => (
-            <button
-              key={action.type}
-              className="constraint-chip"
-              type="button"
-              onClick={() => onConstraint(action.type)}
-              data-testid={`constraint-${action.type}`}
-            >
-              {action.label}
-            </button>
-          ))}
-          {construction !== null ? (
-            <button
-              className="constraint-chip"
-              type="button"
-              onClick={onConstruction}
-              data-testid="toggle-construction"
-            >
-              {construction === "all" ? "Make normal" : "Construction"}
-            </button>
-          ) : null}
-          {fillet ? (
-            <span className="fillet-control">
-              <input
-                type="number"
-                min={0.5}
-                step={1}
-                value={fillet.radius}
-                onChange={(event) => {
-                  const value = Number(event.target.value);
-                  if (Number.isFinite(value) && value > 0) fillet.onRadius(value);
-                }}
-                aria-label="Fillet radius"
-                data-testid="fillet-radius"
-              />
-              <button
-                className="constraint-chip"
-                type="button"
-                onClick={fillet.onApply}
-                data-testid="constraint-fillet"
-              >
-                Fillet
-              </button>
-            </span>
-          ) : null}
-        </div>
-      ) : null}
-      <p className="selection-hint">
-        Shift-click to add · pick a constraint above · Delete removes
-      </p>
-    </div>
-  );
-}
-
 function ToolButton({
   label,
+  shortcut,
   active,
   onClick,
   testId,
-  children,
 }: {
   label: string;
+  shortcut?: string;
   active?: boolean;
   onClick: () => void;
   testId: string;
-  children: ReactNode;
 }) {
+  const title = shortcut ? `${label} (${shortcut})` : label;
   return (
     <button
       className={`tool-button${active ? " is-active" : ""}`}
       type="button"
-      title={label}
-      aria-label={label}
+      title={title}
+      aria-label={title}
       aria-pressed={active}
       onClick={onClick}
       data-testid={testId}
     >
-      {children}
-    </button>
-  );
-}
-
-function IconButton({
-  label,
-  disabled,
-  onClick,
-  testId,
-  children,
-}: {
-  label: string;
-  disabled?: boolean;
-  onClick: () => void;
-  testId: string;
-  children: ReactNode;
-}) {
-  return (
-    <button
-      className="icon-button"
-      type="button"
-      title={label}
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-      data-testid={testId}
-    >
-      {children}
+      <span className="tool-label">{label}</span>
+      {shortcut ? <kbd className="tool-key">{shortcut}</kbd> : null}
     </button>
   );
 }
@@ -1658,200 +3111,6 @@ function StatusBadge({
   );
 }
 
-/* ---------- icons ---------- */
-
-function svgProps(size = 16) {
-  return {
-    width: size,
-    height: size,
-    viewBox: "0 0 24 24",
-    fill: "none",
-    stroke: "currentColor",
-    strokeWidth: 1.7,
-    strokeLinecap: "round" as const,
-    strokeLinejoin: "round" as const,
-    "aria-hidden": true,
-  };
-}
-
-function LogoMark() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M12 2.6 21 7.4v9.2L12 21.4 3 16.6V7.4L12 2.6Z"
-        fill="none"
-        stroke="#74a9ff"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M3 7.4 12 12l9-4.6M12 12v9.4"
-        fill="none"
-        stroke="#74a9ff"
-        strokeWidth="1.2"
-        strokeLinejoin="round"
-        opacity="0.7"
-      />
-    </svg>
-  );
-}
-
-function SunIcon() {
-  return (
-    <svg {...svgProps()} viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="4" />
-      <path d="M12 2v3M12 19v3M2 12h3M19 12h3M5 5l2 2M17 17l2 2M19 5l-2 2M7 17l-2 2" />
-    </svg>
-  );
-}
-
-function MoonIcon() {
-  return (
-    <svg {...svgProps()} viewBox="0 0 24 24">
-      <path d="M20 15.5A8 8 0 0 1 8.5 4 8.5 8.5 0 1 0 20 15.5Z" />
-    </svg>
-  );
-}
-
-function CursorIcon() {
-  return (
-    <svg {...svgProps()}>
-      <path d="M5 3l6.5 17 2.4-6.6 6.6-2.4L5 3Z" />
-    </svg>
-  );
-}
-
-function LineIcon() {
-  return (
-    <svg {...svgProps()}>
-      <path d="M4 19 19 5" />
-      <circle cx="4" cy="19" r="1.6" fill="currentColor" />
-      <circle cx="19" cy="5" r="1.6" fill="currentColor" />
-      <path d="M7 19h4M4 16v3" opacity="0.5" />
-    </svg>
-  );
-}
-
-function RectIcon() {
-  return (
-    <svg {...svgProps()}>
-      <rect x="4" y="6" width="16" height="12" rx="1" />
-      <circle cx="4" cy="6" r="1.4" fill="currentColor" />
-      <circle cx="20" cy="18" r="1.4" fill="currentColor" />
-    </svg>
-  );
-}
-
-function CircleIcon() {
-  return (
-    <svg {...svgProps()}>
-      <circle cx="12" cy="12" r="8" />
-      <circle cx="12" cy="12" r="1.4" fill="currentColor" />
-    </svg>
-  );
-}
-
-function ArcIcon() {
-  return (
-    <svg {...svgProps()}>
-      <path d="M4 18A10 10 0 0 1 18 4" />
-      <circle cx="4" cy="18" r="1.4" fill="currentColor" />
-      <circle cx="18" cy="4" r="1.4" fill="currentColor" />
-    </svg>
-  );
-}
-
-function TrimIcon() {
-  return (
-    <svg {...svgProps()} viewBox="0 0 24 24">
-      <circle cx="6" cy="6" r="3" />
-      <circle cx="6" cy="18" r="3" />
-      <path d="M8.1 8.1 20 20M8.1 15.9 20 4" />
-    </svg>
-  );
-}
-
-function DimensionIcon() {
-  return (
-    <svg {...svgProps()}>
-      <path d="M4 6v12M20 6v12" />
-      <path d="M4 12h16" />
-      <path d="m8 9-4 3 4 3M16 9l4 3-4 3" />
-    </svg>
-  );
-}
-
-function UndoIcon() {
-  return (
-    <svg {...svgProps(15)}>
-      <path d="M9 5 4 10l5 5" />
-      <path d="M4 10h9a6 6 0 0 1 0 12" transform="translate(0 -2)" />
-    </svg>
-  );
-}
-
-function RedoIcon() {
-  return (
-    <svg {...svgProps(15)}>
-      <path d="m15 5 5 5-5 5" />
-      <path d="M20 10h-9a6 6 0 0 0 0 12" transform="translate(0 -2)" />
-    </svg>
-  );
-}
-
-function ExampleIcon() {
-  return (
-    <svg {...svgProps()}>
-      <rect x="3.5" y="5" width="17" height="14" rx="1.5" />
-      <circle cx="12" cy="12" r="3.2" />
-      <path d="M3.5 19 20.5 5" opacity="0.45" strokeDasharray="3 3" />
-    </svg>
-  );
-}
-
-function TrashIcon() {
-  return (
-    <svg {...svgProps()}>
-      <path d="M4 7h16M10 4h4M6 7l1 13h10l1-13M10 11v6M14 11v6" />
-    </svg>
-  );
-}
-
-function SketchIcon() {
-  return (
-    <svg className="tree-icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M4 20h16M6 16 16.5 5.5a2.1 2.1 0 0 1 3 3L9 19l-4 1 1-4Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
-}
-
-function ExtrudeIcon() {
-  return (
-    <svg className="tree-icon" width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
-      <path
-        d="M4 9.5 12 5l8 4.5v7L12 21l-8-4.5v-7Z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.6"
-        strokeLinejoin="round"
-      />
-      <path
-        d="M4 9.5 12 14l8-4.5M12 14v7"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        opacity="0.65"
-      />
-    </svg>
-  );
-}
-
 function formatInt(value: number): string {
   return Math.round(value).toLocaleString("en-US");
 }
@@ -1862,5 +3121,20 @@ function formatVolume(value: number): string {
 
 function formatLength(value: number): string {
   return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+}
+
+function formatFileWhen(updatedAt: number): string {
+  const elapsed = Math.max(0, Date.now() - updatedAt);
+  if (elapsed < 60_000) return "just now";
+  if (elapsed < 3_600_000) {
+    return `${Math.max(1, Math.floor(elapsed / 60_000))} min ago`;
+  }
+  if (elapsed < 86_400_000) {
+    return `${Math.floor(elapsed / 3_600_000)} h ago`;
+  }
+  return new Date(updatedAt).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+  });
 }
 

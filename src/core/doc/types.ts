@@ -1,9 +1,11 @@
 import type { Sketch } from "../sketch/types";
 
 /** The document schema version. Bump this on every shape change. */
-export const CURRENT_SCHEMA_VERSION = 1;
+export const CURRENT_SCHEMA_VERSION = 4;
 
 export type WorldPlane = "XY" | "XZ" | "YZ";
+
+export type ExtrudeEnd = "blind" | "throughAll";
 
 /**
  * Where a sketch lives. M3 only resolves world planes; M4 adds datum planes and
@@ -18,6 +20,7 @@ export interface SketchFeature {
   name: string;
   support: PlaneRef;
   sketch: Sketch;
+  suppressed?: boolean;
 }
 
 export type ExtrudeOperation = "new" | "join" | "cut";
@@ -32,8 +35,11 @@ export interface ExtrudeFeature {
   regions: string[];
   height: number;
   operation: ExtrudeOperation;
-  /** Two-sided extrude, reserved for M3's feature edit pass. */
+  /** Two-sided extrude (the sketch plane is the midplane). */
   symmetric: boolean;
+  /** Blind uses `height`; throughAll cuts through the current body. */
+  end: ExtrudeEnd;
+  suppressed?: boolean;
 }
 
 export type Feature = SketchFeature | ExtrudeFeature;

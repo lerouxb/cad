@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { addPolyline, emptySketch } from "./create";
+import { addPoint, addPolyline, addRectangle, emptySketch } from "./create";
 import { createDemoModel } from "./demo";
-import { deleteEntities, isSketchEntity } from "./edit";
+import { deleteEntities, isSketchEntity, pruneSketch } from "./edit";
 
 describe("deleteEntities", () => {
   const sketch = createDemoModel().sketch;
@@ -65,6 +65,23 @@ describe("deleteEntities", () => {
       "axis-x",
       "axis-y",
     ]);
+  });
+
+  it("keeps standalone points when curves are deleted or pruned", () => {
+    const pointed = addPoint(emptySketch(), [10, 10]);
+    const pointId = pointed.points[0]!.id;
+    const rectangle = addRectangle(pointed, [0, 0], [20, 20]);
+    const lineId = rectangle.curves[0]!.id;
+
+    const deleted = deleteEntities(rectangle, [lineId]);
+    expect(deleted.points.map((point) => point.id)).toContain(pointId);
+    expect(pruneSketch(rectangle).points.map((point) => point.id)).toContain(
+      pointId,
+    );
+
+    // Selecting the point itself still removes it.
+    const removed = deleteEntities(rectangle, [pointId]);
+    expect(removed.points.map((point) => point.id)).not.toContain(pointId);
   });
 
   it("keeps point-on-line constraints when unrelated geometry is deleted", () => {

@@ -3,11 +3,16 @@ import {
   useMemo,
   useRef,
   useState,
+  type FocusEvent as ReactFocusEvent,
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import type { ProfileLoop, Vec2 } from "../core/types";
-import type { SketchRegion } from "../core/sketch/loops";
+import {
+  regionsFullyInside,
+  regionsIntersectingPolygon,
+  type SketchRegion,
+} from "../core/sketch/loops";
 import type { SketchPalette } from "../app/theme";
 import type { DraftVertex } from "../core/sketch/create";
 import type { DimensionPlacement, DimensionTarget } from "../core/sketch/dimensions";
@@ -28,11 +33,15 @@ import {
   loopBounds,
   normalizeAngle,
 } from "../core/sketch/geometry";
+import { niceGridStep, type GridStep } from "../core/sketch/grid";
 import { useElementSize } from "../ui/useElementSize";
 
 export type SketchTool =
   | "select"
+  | "box"
+  | "lasso"
   | "line"
+  | "point"
   | "rect"
   | "circle"
   | "arc"
@@ -51,7 +60,13 @@ export interface SketchCanvasProps {
   regions: SketchRegion[];
   /** The regions currently used by the (single) extrude. */
   selectedRegions: ReadonlySet<string>;
+  /** Profile mode gives region fills priority over points/curves. */
+  profileSelection?: boolean;
+  /** When false, region fills are decoration; there is no extrude owner to edit. */
+  regionsSelectable?: boolean;
   onSelectRegion: (regionId: string, additive: boolean) => void;
+  /** Rectangular selection: region ids fully inside the marquee. */
+  onMarqueeSelectRegions: (regionIds: string[], additive: boolean) => void;
   tool: SketchTool;
   dimensionMode: DimensionMode;
   /** Measure circles as a radius instead of a diameter. */
@@ -60,10 +75,22 @@ export interface SketchCanvasProps {
   cancelToken: number;
   /** Increment to re-fit the view. */
   fitToken: number;
+  /** Current grid step; "auto" adapts it to the zoom. */
+  gridStep: GridStep;
+  /** Whether grid/point snapping is enabled (the grid stays visible either way). */
+  snapEnabled: boolean;
+  /** Reports the step actually used, for the stage-foot scale readout. */
+  onGridStepResolved?: (step: number) => void;
+  /** Reports one grid cell in screen pixels, for the stage-foot scale bar. */
+  onGridScaleResolved?: (pixels: number) => void;
+  /** A new zoom preset request; `seq` makes repeated picks re-apply. */
+  zoomRequest?: { seq: number; value: "fit" | number } | null;
   /** Ids of the selected curves/points (ephemeral UI state, not the document). */
   selected: ReadonlySet<string>;
   /** Select one entity, clear the selection, or add/toggle with `additive`. */
   onSelect: (entityId: string | null, additive: boolean) => void;
+  /** Commit an exact point position from the inline X/Y editor. */
+  onSetPointPosition?: (pointId: string, x: number, y: number) => void;
   onDragPoint: (pointId: string, x: number, y: number) => void;
   onDragLine: (lineId: string, targets: DragTarget[]) => void;
   onDragEnd: () => void;
@@ -71,11 +98,16 @@ export interface SketchCanvasProps {
   onCreateRectangle: (a: Vec2, b: Vec2) => void;
   onCreateCircle: (center: DraftVertex, radius: number) => void;
   onCreateArc: (start: DraftVertex, end: DraftVertex, through: Vec2) => void;
+  onCreatePoint: (point: Vec2) => void;
   onTrimCurve: (curveId: string, point: Vec2) => void;
   onCreateDimension: (target: DimensionTarget, placement: DimensionPlacement) => void;
-  onChangeDimension: (id: string, value: number) => void;
+  /** A contextual dimension target chosen from the selection popover. */
+  dimensionRequest?: { target: DimensionTarget; seq: number } | null;
+  onChangeDimension: (id: string, value: number, driving: boolean) => void;
   onMoveDimension: (id: string, placement: DimensionPlacement) => void;
   onDeleteDimension: (id: string) => void;
+  /** Enter with no draft open finishes the sketch (Fusion-style). */
+  onFinishSketch: () => void;
 }
 
 interface ViewBox {
@@ -88,13 +120,11 @@ interface ViewBox {
 interface Snap {
   point: Vec2;
   existingPointId?: string;
-  kind: "point" | "axis" | "grid";
+  kind: "point" | "axis" | "grid" | "free";
 }
 
 /** Selection is deliberately not the tone colour: it must read as "picked". */
-const GRID_STEP = 10;
 const MAJOR_EVERY = 5;
-const DRAW_GRID = 5;
 
 export function SketchCanvas({
   sketch,
@@ -104,14 +134,23 @@ export function SketchCanvas({
   palette,
   regions,
   selectedRegions,
+  profileSelection = false,
+  regionsSelectable = true,
   onSelectRegion,
+  onMarqueeSelectRegions,
   tool,
   dimensionMode,
   radiusDimensions,
   cancelToken,
   fitToken,
+  gridStep,
+  snapEnabled,
+  onGridStepResolved,
+  onGridScaleResolved,
+  zoomRequest,
   selected,
   onSelect,
+  onSetPointPosition,
   onDragPoint,
   onDragLine,
   onDragEnd,
@@ -119,11 +158,14 @@ export function SketchCanvas({
   onCreateRectangle,
   onCreateCircle,
   onCreateArc,
+  onCreatePoint,
   onTrimCurve,
   onCreateDimension,
+  dimensionRequest,
   onChangeDimension,
   onMoveDimension,
   onDeleteDimension,
+  onFinishSketch,
 }: SketchCanvasProps) {
   const [svgRef, size] = useElementSize<SVGSVGElement>();
   const [viewBox, setViewBox] = useState<ViewBox>(() => fitView(sketch, radii));
@@ -156,8 +198,18 @@ export function SketchCanvas({
   } | null>(null);
   const panRef = useRef<{ clientX: number; clientY: number; box: ViewBox } | null>(null);
   const [rectStart, setRectStart] = useState<Vec2 | null>(null);
+  const [boxStart, setBoxStart] = useState<Vec2 | null>(null);
+  const [boxEnd, setBoxEnd] = useState<Vec2 | null>(null);
+  const lassoRef = useRef<Vec2[]>([]);
+  const [lassoPoints, setLassoPoints] = useState<Vec2[]>([]);
   const [dragging, setDragging] = useState<string | null>(null);
   const [draft, setDraft] = useState<DraftVertex[]>([]);
+  /** Synchronous mirror of `draft` for key/pointer handlers. */
+  const draftRef = useRef<DraftVertex[]>([]);
+  const updateDraft = (next: DraftVertex[]): void => {
+    draftRef.current = next;
+    setDraft(next);
+  };
   const [hover, setHover] = useState<Snap | null>(null);
   const [rect, setRect] = useState<{ a: Vec2; b: Vec2 } | null>(null);
   const [circleCenter, setCircleCenter] = useState<DraftVertex | null>(null);
@@ -166,32 +218,66 @@ export function SketchCanvas({
   const [dimPoint, setDimPoint] = useState<string | null>(null);
   const [dimLine, setDimLine] = useState<string | null>(null);
   const [dimTarget, setDimTarget] = useState<DimensionTarget | null>(null);
+  const activeDimTarget = dimensionRequest?.target ?? dimTarget;
   const [dimPlacement, setDimPlacement] = useState<DimensionPlacement | null>(null);
   const [editor, setEditor] = useState<{
     id: string;
     value: string;
+    /** The value measured when the editor opened; shown when reference. */
+    measured: string;
     reference: boolean;
     asRadius?: boolean;
     x: number;
     y: number;
   } | null>(null);
+  const [pointEditorScreen, setPointEditorScreen] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const lastFitToken = useRef(fitToken);
+  const lastZoomSeq = useRef(0);
 
   const scale = Math.min(size.width / viewBox.w, size.height / viewBox.h) || 1;
   const px = 1 / scale;
   const color = palette[tone];
   const selectColor = palette.selected;
   const snapTolerance = 11 * px;
+  const effectiveGridStep =
+    gridStep === "auto" ? niceGridStep(scale) : gridStep;
 
   useEffect(() => {
     viewBoxRef.current = viewBox;
   }, [viewBox]);
 
   useEffect(() => {
+    onGridStepResolved?.(effectiveGridStep);
+    onGridScaleResolved?.(effectiveGridStep * scale);
+  }, [effectiveGridStep, scale, onGridStepResolved, onGridScaleResolved]);
+
+  useEffect(() => {
     if (lastFitToken.current === fitToken) return;
     lastFitToken.current = fitToken;
     setViewBox(fitView(sketch, radii));
   }, [fitToken, sketch, radii]);
+
+  // 100% is the current fit scale; 50/200 zoom around the centre of the fitted
+  // view. A repeated pick increments `seq` so it still re-applies.
+  useEffect(() => {
+    if (!zoomRequest || zoomRequest.seq === lastZoomSeq.current) return;
+    lastZoomSeq.current = zoomRequest.seq;
+    const base = fitView(sketch, radii);
+    if (zoomRequest.value === "fit") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setViewBox(base);
+      return;
+    }
+    const factor = 100 / zoomRequest.value;
+    const cx = base.x + base.w / 2;
+    const cy = base.y + base.h / 2;
+    const w = base.w * factor;
+    const h = base.h * factor;
+    setViewBox({ x: cx - w / 2, y: cy - h / 2, w, h });
+  }, [zoomRequest, sketch, radii]);
 
   // Any tool change or explicit cancel abandons the current draft. This is a
   // deliberate render-time reset (the React "adjust state on prop change"
@@ -201,6 +287,9 @@ export function SketchCanvas({
   if (lastInteractionKey !== interactionKey) {
     setLastInteractionKey(interactionKey);
     setDraft([]);
+    setLassoPoints([]);
+    setBoxStart(null);
+    setBoxEnd(null);
     setRect(null);
     setRectStart(null);
     setCircleCenter(null);
@@ -215,6 +304,8 @@ export function SketchCanvas({
   }
 
   useEffect(() => {
+    draftRef.current = [];
+    lassoRef.current = [];
     lineDragRef.current = null;
     circleDragRef.current = null;
     arcDragRef.current = null;
@@ -258,7 +349,6 @@ export function SketchCanvas({
   }, [svgRef]);
 
   useEffect(() => {
-    if (tool !== "line") return;
     const finish = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (
@@ -269,15 +359,25 @@ export function SketchCanvas({
       ) {
         return;
       }
-      if (event.key !== "Enter" || draft.length < 2) return;
-      event.preventDefault();
-      onCreatePolyline(draft, false);
-      setDraft([]);
-      setHover(null);
+      if (event.key !== "Enter") return;
+      const current = draftRef.current;
+      if (current.length >= 2) {
+        event.preventDefault();
+        onCreatePolyline(current, false);
+        draftRef.current = [];
+        setDraft([]);
+        setHover(null);
+        return;
+      }
+      // A half-finished line keeps Enter for itself; a clean sketch finishes.
+      if (current.length === 0) {
+        event.preventDefault();
+        onFinishSketch();
+      }
     };
     window.addEventListener("keydown", finish);
     return () => window.removeEventListener("keydown", finish);
-  }, [draft, onCreatePolyline, tool]);
+  }, [onCreatePolyline, onFinishSketch]);
 
   const toSketch = (event: ReactPointerEvent): Vec2 => {
     const svg = svgRef.current;
@@ -289,26 +389,32 @@ export function SketchCanvas({
 
   const snapPoint = (raw: Vec2, axisFrom?: Vec2): Snap => {
     let best: { snap: Snap; distance: number } | null = null;
-    const snapCandidates = sketch.references
-      ? [...sketch.points, sketch.references.origin]
-      : sketch.points;
-    for (const point of snapCandidates) {
-      if (point.construction) continue;
-      const position = points[point.id];
-      if (!position) continue;
-      const distance = Math.hypot(position[0] - raw[0], position[1] - raw[1]);
-      if (distance <= snapTolerance && (!best || distance < best.distance)) {
-        best = {
-          snap: { point: position, existingPointId: point.id, kind: "point" },
-          distance,
-        };
+    if (snapEnabled) {
+      const snapCandidates = sketch.references
+        ? [...sketch.points, sketch.references.origin]
+        : sketch.points;
+      for (const point of snapCandidates) {
+        if (point.construction) continue;
+        const position = points[point.id];
+        if (!position) continue;
+        const distance = Math.hypot(position[0] - raw[0], position[1] - raw[1]);
+        if (distance <= snapTolerance && (!best || distance < best.distance)) {
+          best = {
+            snap: { point: position, existingPointId: point.id, kind: "point" },
+            distance,
+          };
+        }
       }
+      if (best) return best.snap;
     }
-    if (best) return best.snap;
 
-    let x = Math.round(raw[0] / DRAW_GRID) * DRAW_GRID;
-    let y = Math.round(raw[1] / DRAW_GRID) * DRAW_GRID;
-    let kind: Snap["kind"] = "grid";
+    let x = snapEnabled
+      ? Math.round(raw[0] / effectiveGridStep) * effectiveGridStep
+      : raw[0];
+    let y = snapEnabled
+      ? Math.round(raw[1] / effectiveGridStep) * effectiveGridStep
+      : raw[1];
+    let kind: Snap["kind"] = snapEnabled ? "grid" : "free";
     if (axisFrom) {
       if (Math.abs(raw[1] - axisFrom[1]) < 9 * px) {
         y = axisFrom[1];
@@ -321,10 +427,13 @@ export function SketchCanvas({
     return { point: [x, y], kind };
   };
 
-  const snapGrid = (raw: Vec2): Vec2 => [
-    Math.round(raw[0] / DRAW_GRID) * DRAW_GRID,
-    Math.round(raw[1] / DRAW_GRID) * DRAW_GRID,
-  ];
+  const snapGrid = (raw: Vec2): Vec2 =>
+    snapEnabled
+      ? [
+          Math.round(raw[0] / effectiveGridStep) * effectiveGridStep,
+          Math.round(raw[1] / effectiveGridStep) * effectiveGridStep,
+        ]
+      : raw;
 
   const distanceBetween = (a: Vec2, b: Vec2): number =>
     Math.hypot(b[0] - a[0], b[1] - a[1]);
@@ -347,29 +456,52 @@ export function SketchCanvas({
     value: number,
     reference: boolean,
     asRadius = false,
+    anchor?: Vec2,
   ) => {
     event.stopPropagation();
     event.preventDefault();
-    const rect = svgRef.current?.getBoundingClientRect();
+    const svg = svgRef.current;
+    const rect = svg?.getBoundingClientRect();
+    const matrix = svg?.getScreenCTM();
+    let x = event.clientX - (rect?.left ?? 0);
+    let y = event.clientY - (rect?.top ?? 0);
+    if (anchor && matrix && rect) {
+      const screen = new DOMPoint(anchor[0], anchor[1]).matrixTransform(matrix);
+      x = screen.x - rect.left;
+      y = screen.y - rect.top;
+    }
+    const measured = formatEditable(asRadius ? value / 2 : value);
     setEditor({
       id,
-      value: formatEditable(asRadius ? value / 2 : value),
+      value: measured,
+      measured,
       reference,
       asRadius,
-      x: event.clientX - (rect?.left ?? 0),
-      y: event.clientY - (rect?.top ?? 0),
+      x,
+      y,
     });
   };
 
   const commitEditor = () => {
     if (!editor) return;
-    if (!editor.reference) {
-      const value = Number(editor.value);
-      if (Number.isFinite(value) && value > 0) {
-        onChangeDimension(editor.id, editor.asRadius ? value * 2 : value);
-      }
+    const value = Number(editor.value);
+    // A reference dimension measures geometry; only driving dimensions commit
+    // the typed value. The kind itself always commits.
+    if (!editor.reference && Number.isFinite(value) && value > 0) {
+      onChangeDimension(editor.id, editor.asRadius ? value * 2 : value, true);
+    } else if (editor.reference) {
+      onChangeDimension(editor.id, Number(editor.measured), false);
     }
     setEditor(null);
+  };
+
+  const handleEditorBlur = (
+    event: ReactFocusEvent<HTMLDivElement>,
+  ): void => {
+    const next = event.relatedTarget as Node | null;
+    if (!next || !event.currentTarget.contains(next)) {
+      setEditor(null);
+    }
   };
 
   const circleLike = (
@@ -484,29 +616,30 @@ export function SketchCanvas({
   };
 
   const placeDimension = (cursor: Vec2) => {
-    if (!dimTarget) return;
-    if (dimTarget.kind === "distance") {
-      const a = points[dimTarget.a];
-      const b = points[dimTarget.b];
+    const target = activeDimTarget;
+    if (!target) return;
+    if (target.kind === "distance") {
+      const a = points[target.a];
+      const b = points[target.b];
       if (!a || !b) {
         setDimTarget(null);
         return;
       }
-      onCreateDimension(dimTarget, { offset: dimensionOffset(a, b, cursor) });
-    } else if (dimTarget.kind === "pointLineDistance") {
-      const point = points[dimTarget.point];
-      const line = lineThrough(dimTarget.line);
+      onCreateDimension(target, { offset: dimensionOffset(a, b, cursor) });
+    } else if (target.kind === "pointLineDistance") {
+      const point = points[target.point];
+      const line = lineThrough(target.line);
       if (!point || !line) {
         setDimTarget(null);
         return;
       }
       const projection = projectPointOnLine(line.a, line.b, point);
-      onCreateDimension(dimTarget, {
+      onCreateDimension(target, {
         offset: dimensionOffset(point, projection, cursor),
       });
-    } else if (dimTarget.kind === "angle") {
-      const a = lineThrough(dimTarget.a);
-      const b = lineThrough(dimTarget.b);
+    } else if (target.kind === "angle") {
+      const a = lineThrough(target.a);
+      const b = lineThrough(target.b);
       if (!a || !b) {
         setDimTarget(null);
         return;
@@ -515,14 +648,15 @@ export function SketchCanvas({
       const offset = vertex
         ? Math.max(8, Math.hypot(cursor[0] - vertex[0], cursor[1] - vertex[1]))
         : 30;
-      onCreateDimension(dimTarget, { offset });
+      onCreateDimension(target, { offset });
     } else {
-      const circle = circleLike(dimTarget.circle);
+      const circle = circleLike(target.circle);
       const angle = circle
         ? (Math.atan2(cursor[1] - circle.center[1], cursor[0] - circle.center[0]) *
-            180)           / Math.PI
+            180) /
+          Math.PI
         : 45;
-      onCreateDimension(dimTarget, { angle });
+      onCreateDimension(target, { angle });
     }
     setDimPoint(null);
     setDimLine(null);
@@ -561,6 +695,17 @@ export function SketchCanvas({
     return circle ? { angle: circleAngle(circle, cursor) } : null;
   };
 
+  /** Fraction of the way from a to b nearest the cursor. */
+  const alongAtCursor = (a: Vec2, b: Vec2, cursor: Vec2): number => {
+    const dx = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const lengthSquared = dx * dx + dy * dy;
+    if (lengthSquared < 1e-9) return 0.5;
+    const t =
+      ((cursor[0] - a[0]) * dx + (cursor[1] - a[1]) * dy) / lengthSquared;
+    return Math.max(0.05, Math.min(0.95, t));
+  };
+
   const placementAtCursor = (
     constraint: SketchConstraint,
     cursor: Vec2,
@@ -568,18 +713,34 @@ export function SketchCanvas({
     if (constraint.type === "distance") {
       const a = points[constraint.a];
       const b = points[constraint.b];
-      return a && b ? { offset: dimensionOffset(a, b, cursor) } : null;
+      return a && b
+        ? {
+            offset: dimensionOffset(a, b, cursor),
+            along: alongAtCursor(a, b, cursor),
+          }
+        : null;
     }
     if (constraint.type === "pointLineDistance") {
       const point = points[constraint.point];
       const line = lineThrough(constraint.line);
       if (!point || !line) return null;
       const projection = projectPointOnLine(line.a, line.b, point);
-      return { offset: dimensionOffset(point, projection, cursor) };
+      return {
+        offset: dimensionOffset(point, projection, cursor),
+        along: alongAtCursor(point, projection, cursor),
+      };
     }
     if (constraint.type === "diameter") {
       const circle = circleLike(constraint.circle);
-      return circle ? { angle: circleAngle(circle, cursor) } : null;
+      if (!circle) return null;
+      const radiusToCursor = Math.hypot(
+        cursor[0] - circle.center[0],
+        cursor[1] - circle.center[1],
+      );
+      return {
+        angle: circleAngle(circle, cursor),
+        distance: Math.max(2, radiusToCursor - circle.radius),
+      };
     }
     if (constraint.type === "angle") {
       const a = lineThrough(constraint.a);
@@ -645,22 +806,25 @@ export function SketchCanvas({
   };
 
   const placeLineVertex = (raw: Vec2) => {
-    const last = draft[draft.length - 1];
+    const current = draftRef.current;
+    const last = current[current.length - 1];
     const snap = snapPoint(raw, last?.point);
 
-    if (draft.length === 0) {
-      setDraft([{ point: snap.point, existingPointId: snap.existingPointId }]);
+    if (current.length === 0) {
+      updateDraft([
+        { point: snap.point, existingPointId: snap.existingPointId },
+      ]);
       return;
     }
 
-    const first = draft[0]!;
+    const first = current[0]!;
     const closes =
-      draft.length >= 3 &&
+      current.length >= 3 &&
       Math.hypot(snap.point[0] - first.point[0], snap.point[1] - first.point[1]) <
         snapTolerance;
     if (closes) {
-      onCreatePolyline(draft, true);
-      setDraft([]);
+      onCreatePolyline(current, true);
+      updateDraft([]);
       return;
     }
 
@@ -670,7 +834,10 @@ export function SketchCanvas({
     ) {
       return;
     }
-    setDraft([...draft, { point: snap.point, existingPointId: snap.existingPointId }]);
+    updateDraft([
+      ...current,
+      { point: snap.point, existingPointId: snap.existingPointId },
+    ]);
   };
 
   const onPointerDown = (event: ReactPointerEvent<SVGSVGElement>) => {
@@ -683,7 +850,7 @@ export function SketchCanvas({
     const raw = toSketch(event);
 
     if (tool === "dimension") {
-      if (dimTarget) {
+      if (activeDimTarget) {
         placeDimension(raw);
       } else {
         setDimPoint(null);
@@ -693,6 +860,20 @@ export function SketchCanvas({
     }
     if (tool === "trim") {
       startPan(event);
+      return;
+    }
+    if (tool === "box") {
+      event.preventDefault();
+      setBoxStart(raw);
+      setBoxEnd(raw);
+      svgRef.current?.setPointerCapture(event.pointerId);
+      return;
+    }
+    if (tool === "lasso") {
+      event.preventDefault();
+      lassoRef.current = [raw];
+      setLassoPoints([raw]);
+      svgRef.current?.setPointerCapture(event.pointerId);
       return;
     }
     if (tool === "select") {
@@ -705,6 +886,13 @@ export function SketchCanvas({
     }
     if (tool === "line") {
       placeLineVertex(raw);
+      return;
+    }
+    if (tool === "point") {
+      const snap = snapPoint(raw);
+      // Clicking an existing point selects it instead of stacking a duplicate.
+      if (snap.existingPointId) onSelect(snap.existingPointId, false);
+      else onCreatePoint(snap.point);
       return;
     }
     if (tool === "rect") {
@@ -755,6 +943,22 @@ export function SketchCanvas({
 
   const onPointerMove = (event: ReactPointerEvent<SVGSVGElement>) => {
     const raw = toSketch(event);
+
+    if (lassoRef.current.length > 0) {
+      const points = lassoRef.current;
+      const last = points[points.length - 1]!;
+      if (Math.hypot(raw[0] - last[0], raw[1] - last[1]) * scale >= 2) {
+        const next = [...points, raw];
+        lassoRef.current = next;
+        setLassoPoints(next);
+      }
+      return;
+    }
+
+    if (boxStart) {
+      setBoxEnd(raw);
+      return;
+    }
 
     if (dimensionDragRef.current) {
       const drag = dimensionDragRef.current;
@@ -832,8 +1036,8 @@ export function SketchCanvas({
     }
 
     if (tool === "dimension") {
-      if (dimTarget) {
-        const placement = placementForTarget(dimTarget, raw);
+      if (activeDimTarget) {
+        const placement = placementForTarget(activeDimTarget, raw);
         if (placement) setDimPlacement(placement);
       } else if (dimPoint) {
         setHover(snapPoint(raw));
@@ -844,7 +1048,7 @@ export function SketchCanvas({
 
     const axisFrom =
       tool === "line"
-        ? draft[draft.length - 1]?.point
+        ? draftRef.current[draftRef.current.length - 1]?.point
         : tool === "arc"
           ? arcStart?.point
           : undefined;
@@ -862,6 +1066,32 @@ export function SketchCanvas({
   const finishInteraction = (event: ReactPointerEvent<SVGSVGElement>) => {
     if (svgRef.current?.hasPointerCapture(event.pointerId)) {
       svgRef.current.releasePointerCapture(event.pointerId);
+    }
+
+    if (lassoRef.current.length > 0) {
+      const points = lassoRef.current;
+      lassoRef.current = [];
+      setLassoPoints([]);
+      if (points.length >= 3) {
+        const ids = regionsIntersectingPolygon(regions, points).map(
+          (region) => region.id,
+        );
+        onMarqueeSelectRegions(ids, event.shiftKey);
+      }
+    }
+
+    if (boxStart) {
+      const end = toSketch(event);
+      const box = {
+        minX: Math.min(boxStart[0], end[0]),
+        minY: Math.min(boxStart[1], end[1]),
+        maxX: Math.max(boxStart[0], end[0]),
+        maxY: Math.max(boxStart[1], end[1]),
+      };
+      const ids = regionsFullyInside(regions, box).map((region) => region.id);
+      setBoxStart(null);
+      setBoxEnd(null);
+      onMarqueeSelectRegions(ids, event.shiftKey);
     }
 
     if (rectStart) {
@@ -987,13 +1217,18 @@ export function SketchCanvas({
   };
 
   const onDoubleClick = () => {
-    if (tool === "line" && draft.length >= 2) {
-      onCreatePolyline(draft, false);
+    const current = draftRef.current;
+    if (tool === "line" && current.length >= 2) {
+      onCreatePolyline(current, false);
+      draftRef.current = [];
       setDraft([]);
     }
   };
 
-  const grid = useMemo(() => makeGrid(viewBox), [viewBox]);
+  const grid = useMemo(
+    () => makeGrid(viewBox, effectiveGridStep, scale),
+    [viewBox, effectiveGridStep, scale],
+  );
   const circles = sketch.curves.filter(
     (curve): curve is SketchCircle => curve.type === "circle",
   );
@@ -1017,6 +1252,34 @@ export function SketchCanvas({
           hover.point[1] - circleCenter.point[1],
         )
       : 0;
+  const soleSelectedId = selected.size === 1 ? [...selected][0] : null;
+  const pointForEditor =
+    soleSelectedId !== null
+      ? sketch.points.find(
+          (candidate) =>
+            candidate.id === soleSelectedId &&
+            !candidate.fixed &&
+            !candidate.construction,
+        ) ?? null
+      : null;
+  useEffect(() => {
+    if (!pointForEditor) return;
+    const frame = requestAnimationFrame(() => {
+      const svg = svgRef.current;
+      const matrix = svg?.getScreenCTM();
+      const rect = svg?.getBoundingClientRect();
+      if (!svg || !matrix || !rect) return;
+      const position = points[pointForEditor.id] ?? [
+        pointForEditor.x,
+        pointForEditor.y,
+      ];
+      const screen = new DOMPoint(position[0], position[1]).matrixTransform(
+        matrix,
+      );
+      setPointEditorScreen({ x: screen.x - rect.left, y: screen.y - rect.top });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [pointForEditor, points, viewBox, size.width, size.height, svgRef]);
 
   return (
     <div className="sketch-surface">
@@ -1084,6 +1347,7 @@ export function SketchCanvas({
             key={region.id}
             d={d}
             fillRule="evenodd"
+            fillOpacity={active ? 0.55 : 1}
             fill={
               active
                 ? palette.markerSoft
@@ -1097,10 +1361,15 @@ export function SketchCanvas({
             data-region-id={region.id}
             data-region-kind={region.kind}
             data-region-bounds={`${bounds.minX},${bounds.minY},${bounds.maxX},${bounds.maxY}`}
-            pointerEvents={tool === "select" ? "fill" : "none"}
-            style={{ cursor: tool === "select" ? "pointer" : "default" }}
+            pointerEvents={
+              tool === "select" && regionsSelectable ? "fill" : "none"
+            }
+            style={{
+              cursor:
+                tool === "select" && regionsSelectable ? "pointer" : "default",
+            }}
             onPointerDown={(event) => {
-              if (tool !== "select") return;
+              if (tool !== "select" || !regionsSelectable) return;
               event.stopPropagation();
               event.preventDefault();
               onSelectRegion(region.id, additiveSelection(event));
@@ -1311,11 +1580,13 @@ export function SketchCanvas({
                 a={a}
                 b={b}
                 offset={constraint.offset ?? 12}
+                along={constraint.along}
                 value={distanceBetween(a, b)}
                 reference={constraint.driving === false}
                 px={px}
                 fontSize={fontSize}
                 palette={palette}
+                editingId={editor?.id ?? null}
                 onEdit={openDimensionEditor}
                 onDrag={(event) => startDimensionDrag(event, constraint)}
               />
@@ -1331,11 +1602,13 @@ export function SketchCanvas({
                 a={info.point}
                 b={info.projection}
                 offset={constraint.offset ?? 10}
+                along={constraint.along}
                 value={distanceBetween(info.point, info.projection)}
                 reference={constraint.driving === false}
                 px={px}
                 fontSize={fontSize}
                 palette={palette}
+                editingId={editor?.id ?? null}
                 onEdit={openDimensionEditor}
                 onDrag={(event) => startDimensionDrag(event, constraint)}
               />
@@ -1351,6 +1624,7 @@ export function SketchCanvas({
                 center={circle.center}
                 radius={circle.radius}
                 angle={constraint.angle ?? 45}
+                distance={constraint.distance}
                 arcStartAngle={circle.startAngle}
                 arcSweep={circle.sweep}
                 value={constraint.radius ? circle.radius : circle.radius * 2}
@@ -1359,6 +1633,7 @@ export function SketchCanvas({
                 px={px}
                 fontSize={fontSize}
                 palette={palette}
+                editingId={editor?.id ?? null}
                 onEdit={openDimensionEditor}
                 onDrag={(event) => startDimensionDrag(event, constraint)}
               />
@@ -1380,6 +1655,7 @@ export function SketchCanvas({
                 palette={palette}
                 px={px}
                 fontSize={fontSize}
+                editingId={editor?.id ?? null}
                 onEdit={openDimensionEditor}
                 onDrag={(event) => startDimensionDrag(event, constraint)}
               />
@@ -1389,17 +1665,17 @@ export function SketchCanvas({
         })}
       </g>
 
-      {tool === "dimension" && dimTarget && dimPlacement ? (
+      {tool === "dimension" && activeDimTarget && dimPlacement ? (
         <g opacity={0.65}>
-          {dimTarget.kind === "distance" &&
-          points[dimTarget.a] &&
-          points[dimTarget.b] ? (
+          {activeDimTarget.kind === "distance" &&
+          points[activeDimTarget.a] &&
+          points[activeDimTarget.b] ? (
             <LinearDimension
               id="preview"
-              a={points[dimTarget.a]!}
-              b={points[dimTarget.b]!}
+              a={points[activeDimTarget.a]!}
+              b={points[activeDimTarget.b]!}
               offset={dimPlacement.offset ?? 12}
-              value={distanceBetween(points[dimTarget.a]!, points[dimTarget.b]!)}
+              value={distanceBetween(points[activeDimTarget.a]!, points[activeDimTarget.b]!)}
               reference={false}
               preview
               palette={palette}
@@ -1407,9 +1683,9 @@ export function SketchCanvas({
               fontSize={fontSize}
             />
           ) : null}
-          {dimTarget.kind === "pointLineDistance" &&
+          {activeDimTarget.kind === "pointLineDistance" &&
           (() => {
-            const info = pointLineInfo(dimTarget.point, dimTarget.line);
+            const info = pointLineInfo(activeDimTarget.point, activeDimTarget.line);
             if (!info) return null;
             return (
               <LinearDimension
@@ -1426,9 +1702,9 @@ export function SketchCanvas({
               />
             );
           })()}
-          {(dimTarget.kind === "diameter" || dimTarget.kind === "radius") &&
+          {(activeDimTarget.kind === "diameter" || activeDimTarget.kind === "radius") &&
           (() => {
-            const circle = circleLike(dimTarget.circle);
+            const circle = circleLike(activeDimTarget.circle);
             if (!circle) return null;
             return (
               <DiameterDimension
@@ -1439,9 +1715,9 @@ export function SketchCanvas({
                 arcStartAngle={circle.startAngle}
                 arcSweep={circle.sweep}
                 value={
-                  dimTarget.kind === "radius" ? circle.radius : circle.radius * 2
+                  activeDimTarget.kind === "radius" ? circle.radius : circle.radius * 2
                 }
-                asRadius={dimTarget.kind === "radius"}
+                asRadius={activeDimTarget.kind === "radius"}
                 reference={false}
                 preview
                 palette={palette}
@@ -1450,9 +1726,9 @@ export function SketchCanvas({
               />
             );
           })()}
-          {dimTarget.kind === "angle" &&
+          {activeDimTarget.kind === "angle" &&
           (() => {
-            const info = angleInfo(dimTarget.a, dimTarget.b);
+            const info = angleInfo(activeDimTarget.a, activeDimTarget.b);
             if (!info) return null;
             return (
               <AngleDimension
@@ -1530,11 +1806,20 @@ export function SketchCanvas({
               cx={position[0]}
               cy={position[1]}
               r={active ? pointRadius * 1.35 : pointRadius}
-              fill={isSelected ? selectColor : active ? color : palette.pointFill}
+              fill={
+                isSelected
+                  ? selectColor
+                  : point.standalone
+                    ? palette.halo
+                    : active
+                      ? color
+                      : palette.pointFill
+              }
               stroke={isSelected ? selectColor : color}
               strokeWidth={1.6}
               vectorEffect="non-scaling-stroke"
               pointerEvents="none"
+              data-standalone={point.standalone ? "true" : undefined}
             />
           </g>
         );
@@ -1653,6 +1938,29 @@ export function SketchCanvas({
         />
       ) : null}
 
+      {profileSelection && tool === "select"
+        ? regions.map((region) => {
+            const d = regionPathData(region);
+            if (!d) return null;
+            return (
+              <path
+                key={`profile-hit-${region.id}`}
+                d={d}
+                fill="transparent"
+                fillRule="evenodd"
+                pointerEvents="fill"
+                data-region-hit={region.id}
+                onPointerDown={(event) => {
+                  event.stopPropagation();
+                  event.preventDefault();
+                  onSelectRegion(region.id, additiveSelection(event));
+                  startPan(event);
+                }}
+              />
+            );
+          })
+        : null}
+
       {hover && tool !== "select" ? (
         <circle
           cx={hover.point[0]}
@@ -1665,44 +1973,109 @@ export function SketchCanvas({
           pointerEvents="none"
         />
       ) : null}
+
+      {boxStart && boxEnd ? (
+        <rect
+          x={Math.min(boxStart[0], boxEnd[0])}
+          y={Math.min(boxStart[1], boxEnd[1])}
+          width={Math.abs(boxEnd[0] - boxStart[0])}
+          height={Math.abs(boxEnd[1] - boxStart[1])}
+          fill={palette.markerSoft}
+          fillOpacity={0.35}
+          stroke={palette.ink}
+          strokeWidth={1}
+          strokeDasharray="4 3"
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+          data-testid="box-marquee"
+        />
+      ) : null}
+
+      {lassoPoints.length > 1 ? (
+        <polygon
+          points={lassoPoints
+            .map((point) => `${point[0]},${point[1]}`)
+            .join(" ")}
+          fill={palette.markerSoft}
+          fillOpacity={0.25}
+          stroke={palette.ink}
+          strokeWidth={1}
+          strokeDasharray="4 3"
+          vectorEffect="non-scaling-stroke"
+          pointerEvents="none"
+          data-testid="lasso-marquee"
+        />
+      ) : null}
     </svg>
       {editor ? (
-        <div className="dimension-editor" style={{ left: editor.x, top: editor.y }}>
-          {editor.reference ? (
-            <span className="mono dimension-readonly">{editor.value} mm · reference</span>
-          ) : (
-            <input
-              autoFocus
-              className="mono"
-              data-testid="dimension-input"
-              value={editor.value}
-              inputMode="decimal"
-              onChange={(event) => setEditor({ ...editor, value: event.target.value })}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  commitEditor();
-                } else if (event.key === "Escape") {
-                  event.preventDefault();
-                  setEditor(null);
-                }
-              }}
-              onBlur={commitEditor}
-            />
-          )}
+        <div
+          className="dim-editor is-selected"
+          style={{ left: editor.x, top: editor.y }}
+          onBlur={handleEditorBlur}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <input
+            autoFocus
+            data-testid="dimension-input"
+            value={editor.value}
+            readOnly={editor.reference}
+            inputMode="decimal"
+            aria-label="Dimension value"
+            onChange={(event) => setEditor({ ...editor, value: event.target.value })}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                commitEditor();
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                setEditor(null);
+              }
+            }}
+          />
+          <span className="dim-unit">mm</span>
           <button
-            className="dimension-delete"
+            className={`dim-kind${editor.reference ? "" : " is-active"}`}
             type="button"
-            data-testid="dimension-delete"
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() =>
+              setEditor({
+                ...editor,
+                reference: !editor.reference,
+                value: !editor.reference ? editor.measured : editor.value,
+              })
+            }
+            aria-pressed={!editor.reference}
+            data-testid="dimension-kind"
+          >
+            {editor.reference ? "reference" : "driving"}
+          </button>
+          <button
+            className="text-action is-quiet"
+            type="button"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
               onDeleteDimension(editor.id);
               setEditor(null);
             }}
+            data-testid="dimension-delete"
           >
-            Delete
+            delete
           </button>
         </div>
+      ) : null}
+      {pointForEditor && pointEditorScreen && onSetPointPosition ? (
+        <PointInlineEditor
+          key={`${pointForEditor.id}:${points[pointForEditor.id]?.[0] ?? pointForEditor.x}:${points[pointForEditor.id]?.[1] ?? pointForEditor.y}`}
+          id={pointForEditor.id}
+          x={
+            points[pointForEditor.id]?.[0] ?? pointForEditor.x
+          }
+          y={
+            points[pointForEditor.id]?.[1] ?? pointForEditor.y
+          }
+          screen={pointEditorScreen}
+          onSet={onSetPointPosition}
+        />
       ) : null}
     </div>
   );
@@ -1722,8 +2095,11 @@ interface DimensionHandlers {
     value: number,
     reference: boolean,
     asRadius?: boolean,
+    anchor?: Vec2,
   ) => void;
   onDrag?: (event: ReactPointerEvent) => void;
+  /** The dimension whose inline editor is open; its SVG label is hidden. */
+  editingId?: string | null;
 }
 
 function LinearDimension({
@@ -1731,6 +2107,7 @@ function LinearDimension({
   a,
   b,
   offset,
+  along,
   value,
   reference,
   preview,
@@ -1739,7 +2116,13 @@ function LinearDimension({
   palette,
   onEdit,
   onDrag,
-}: DimensionHandlers & { a: Vec2; b: Vec2; offset: number }) {
+  editingId,
+}: DimensionHandlers & {
+  a: Vec2;
+  b: Vec2;
+  offset: number;
+  along?: number;
+}) {
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];
   const length = Math.hypot(dx, dy) || 1;
@@ -1747,7 +2130,8 @@ function LinearDimension({
   const ny = -dx / length;
   const A: Vec2 = [a[0] + nx * offset, a[1] + ny * offset];
   const B: Vec2 = [b[0] + nx * offset, b[1] + ny * offset];
-  const mid: Vec2 = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2];
+  const t = along ?? 0.5;
+  const mid: Vec2 = [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t];
   const tick = 3.5 * px;
   const color = reference ? palette.dim : palette.dimension;
   const label = `${reference ? "(" : ""}${formatLength(value)}${reference ? ")" : ""}`;
@@ -1765,7 +2149,8 @@ function LinearDimension({
       }}
       onDoubleClick={
         onEdit && !preview
-          ? (event) => onEdit(event, id, value, reference)
+          ? (event) =>
+              onEdit(event, id, value, reference, undefined, mid)
           : undefined
       }
     >
@@ -1807,30 +2192,33 @@ function LinearDimension({
           vectorEffect="non-scaling-stroke"
         />
       ))}
-      <text
-        x={mid[0]}
-        y={mid[1] + fontSize * 0.35}
-        fontSize={fontSize}
-        textAnchor="middle"
-        stroke={palette.halo}
-        strokeWidth={3 * px}
-        paintOrder="stroke"
-        data-dimension-id={preview ? undefined : id}
-        aria-label={`Dimension ${label}. Drag to move; double-click to edit.`}
-        style={{ cursor: onEdit && !preview ? "grab" : "default" }}
-        onPointerDown={(event) => {
-          if (preview) return;
-          event.stopPropagation();
-          onDrag?.(event);
-        }}
-        onDoubleClick={
-          onEdit && !preview
-            ? (event) => onEdit(event, id, value, reference)
-            : undefined
-        }
-      >
-        {label}
-      </text>
+      {editingId !== id ? (
+        <text
+          x={mid[0]}
+          y={mid[1] + fontSize * 0.35}
+          fontSize={fontSize}
+          textAnchor="middle"
+          stroke={palette.halo}
+          strokeWidth={3 * px}
+          paintOrder="stroke"
+          data-dimension-id={preview ? undefined : id}
+          aria-label={`Dimension ${label}. Drag to move; double-click to edit.`}
+          style={{ cursor: onEdit && !preview ? "grab" : "default" }}
+          onPointerDown={(event) => {
+            if (preview) return;
+            event.stopPropagation();
+            onDrag?.(event);
+          }}
+          onDoubleClick={
+            onEdit && !preview
+              ? (event) =>
+                  onEdit(event, id, value, reference, undefined, mid)
+              : undefined
+          }
+        >
+          {label}
+        </text>
+      ) : null}
     </g>
   );
 }
@@ -1851,10 +2239,13 @@ function DiameterDimension({
   asRadius,
   arcStartAngle,
   arcSweep,
+  distance,
+  editingId,
 }: DimensionHandlers & {
   center: Vec2;
   radius: number;
   angle: number;
+  distance?: number;
   asRadius?: boolean;
   arcStartAngle?: number;
   arcSweep?: number;
@@ -1866,8 +2257,12 @@ function DiameterDimension({
       : rawTheta;
   const dx = Math.cos(theta);
   const dy = Math.sin(theta);
+  const leader = distance ?? 12;
   const start: Vec2 = [center[0] + dx * radius, center[1] + dy * radius];
-  const end: Vec2 = [center[0] + dx * (radius + 12), center[1] + dy * (radius + 12)];
+  const end: Vec2 = [
+    center[0] + dx * (radius + leader),
+    center[1] + dy * (radius + leader),
+  ];
   const textX = end[0] + dx * 1.5 * px;
   const textY = end[1] + dy * 1.5 * px + fontSize * 0.35;
   const anchor = dx < -0.3 ? "end" : dx > 0.3 ? "start" : "middle";
@@ -1887,7 +2282,11 @@ function DiameterDimension({
       }}
       onDoubleClick={
         onEdit && !preview
-          ? (event) => onEdit(event, id, value, reference, asRadius)
+          ? (event) =>
+              onEdit(event, id, value, reference, asRadius, [
+                textX,
+                textY - fontSize * 0.35,
+              ])
           : undefined
       }
     >
@@ -1900,30 +2299,36 @@ function DiameterDimension({
         strokeWidth={1}
         vectorEffect="non-scaling-stroke"
       />
-      <text
-        x={textX}
-        y={textY}
-        fontSize={fontSize}
-        textAnchor={anchor}
-        stroke={palette.halo}
-        strokeWidth={3 * px}
-        paintOrder="stroke"
-        data-dimension-id={preview ? undefined : id}
-        aria-label={`Dimension ${label}. Drag to move; double-click to edit.`}
-        style={{ cursor: onEdit && !preview ? "grab" : "default" }}
-        onPointerDown={(event) => {
-          if (preview) return;
-          event.stopPropagation();
-          onDrag?.(event);
-        }}
-        onDoubleClick={
-          onEdit && !preview
-            ? (event) => onEdit(event, id, value, reference, asRadius)
-            : undefined
-        }
-      >
-        {label}
-      </text>
+      {editingId !== id ? (
+        <text
+          x={textX}
+          y={textY}
+          fontSize={fontSize}
+          textAnchor={anchor}
+          stroke={palette.halo}
+          strokeWidth={3 * px}
+          paintOrder="stroke"
+          data-dimension-id={preview ? undefined : id}
+          aria-label={`Dimension ${label}. Drag to move; double-click to edit.`}
+          style={{ cursor: onEdit && !preview ? "grab" : "default" }}
+          onPointerDown={(event) => {
+            if (preview) return;
+            event.stopPropagation();
+            onDrag?.(event);
+          }}
+          onDoubleClick={
+            onEdit && !preview
+              ? (event) =>
+                  onEdit(event, id, value, reference, asRadius, [
+                    textX,
+                    textY - fontSize * 0.35,
+                  ])
+              : undefined
+          }
+        >
+          {label}
+        </text>
+      ) : null}
     </g>
   );
 }
@@ -1942,6 +2347,7 @@ function AngleDimension({
   palette,
   onEdit,
   onDrag,
+  editingId,
 }: DimensionHandlers & { vertex: Vec2; rayA: Vec2; rayB: Vec2; radius: number }) {
   let startAngle = Math.atan2(rayA[1] - vertex[1], rayA[0] - vertex[0]);
   let endAngle = Math.atan2(rayB[1] - vertex[1], rayB[0] - vertex[0]);
@@ -1980,7 +2386,8 @@ function AngleDimension({
       }}
       onDoubleClick={
         onEdit && !preview
-          ? (event) => onEdit(event, id, value, reference)
+          ? (event) =>
+              onEdit(event, id, value, reference, undefined, label)
           : undefined
       }
     >
@@ -2009,30 +2416,33 @@ function AngleDimension({
         strokeWidth={1.1}
         vectorEffect="non-scaling-stroke"
       />
-      <text
-        x={label[0]}
-        y={label[1] + fontSize * 0.35}
-        fontSize={fontSize}
-        textAnchor="middle"
-        stroke={palette.halo}
-        strokeWidth={3 * px}
-        paintOrder="stroke"
-        data-dimension-id={preview ? undefined : id}
-        aria-label={`Dimension ${text}. Drag to move; double-click to edit.`}
-        style={{ cursor: onEdit && !preview ? "grab" : "default" }}
-        onPointerDown={(event) => {
-          if (preview) return;
-          event.stopPropagation();
-          onDrag?.(event);
-        }}
-        onDoubleClick={
-          onEdit && !preview
-            ? (event) => onEdit(event, id, value, reference)
-            : undefined
-        }
-      >
-        {text}
-      </text>
+      {editingId !== id ? (
+        <text
+          x={label[0]}
+          y={label[1] + fontSize * 0.35}
+          fontSize={fontSize}
+          textAnchor="middle"
+          stroke={palette.halo}
+          strokeWidth={3 * px}
+          paintOrder="stroke"
+          data-dimension-id={preview ? undefined : id}
+          aria-label={`Dimension ${text}. Drag to move; double-click to edit.`}
+          style={{ cursor: onEdit && !preview ? "grab" : "default" }}
+          onPointerDown={(event) => {
+            if (preview) return;
+            event.stopPropagation();
+            onDrag?.(event);
+          }}
+          onDoubleClick={
+            onEdit && !preview
+              ? (event) =>
+                  onEdit(event, id, value, reference, undefined, label)
+              : undefined
+          }
+        >
+          {text}
+        </text>
+      ) : null}
     </g>
   );
 }
@@ -2168,20 +2578,26 @@ function ConstraintBadges({
   );
 }
 
-function makeGrid(box: ViewBox) {
+function makeGrid(box: ViewBox, step: number, scale: number) {
   const lines: { key: string; x1: number; y1: number; x2: number; y2: number; major: boolean }[] =
     [];
-  const x0 = Math.floor(box.x / GRID_STEP) * GRID_STEP;
+  // A manual step can be too dense to read; hide the grid rather than turning
+  // the page into wallpaper.
+  if (!Number.isFinite(step) || step <= 0 || step * scale < 2) return lines;
+  const minorVisible = step * scale >= 5;
+  const x0 = Math.floor(box.x / step) * step;
   const x1 = box.x + box.w;
-  const y0 = Math.floor(box.y / GRID_STEP) * GRID_STEP;
+  const y0 = Math.floor(box.y / step) * step;
   const y1 = box.y + box.h;
 
-  for (let x = x0, i = 0; x <= x1 && i < 400; x += GRID_STEP, i++) {
-    const major = Math.round(x / GRID_STEP) % MAJOR_EVERY === 0;
+  for (let x = x0, i = 0; x <= x1 && i < 400; x += step, i++) {
+    const major = Math.round(x / step) % MAJOR_EVERY === 0;
+    if (!minorVisible && !major) continue;
     lines.push({ key: `x${x}`, x1: x, y1: box.y, x2: x, y2: y1, major });
   }
-  for (let y = y0, i = 0; y <= y1 && i < 400; y += GRID_STEP, i++) {
-    const major = Math.round(y / GRID_STEP) % MAJOR_EVERY === 0;
+  for (let y = y0, i = 0; y <= y1 && i < 400; y += step, i++) {
+    const major = Math.round(y / step) % MAJOR_EVERY === 0;
+    if (!minorVisible && !major) continue;
     lines.push({ key: `y${y}`, x1: box.x, y1: y, x2: x1, y2: y, major });
   }
   return lines;
@@ -2250,6 +2666,89 @@ function roundTo(value: number, step: number): number {
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
+}
+
+function PointInlineEditor({
+  id,
+  x,
+  y,
+  screen,
+  onSet,
+}: {
+  id: string;
+  x: number;
+  y: number;
+  screen: { x: number; y: number };
+  onSet: (pointId: string, x: number, y: number) => void;
+}) {
+  const [xText, setXText] = useState(() => formatEditable(x));
+  const [yText, setYText] = useState(() => formatEditable(y));
+
+  const reset = (): void => {
+    setXText(formatEditable(x));
+    setYText(formatEditable(y));
+  };
+
+  const commit = (): void => {
+    const nextX = Number(xText);
+    const nextY = Number(yText);
+    if (!Number.isFinite(nextX) || !Number.isFinite(nextY)) return;
+    if (nextX !== x || nextY !== y) onSet(id, nextX, nextY);
+  };
+
+  return (
+    <div
+      className="dim-editor point-inline-editor"
+      style={{ left: screen.x, top: screen.y - 12 }}
+      data-testid="point-position"
+      onBlur={(event) => {
+        const next = event.relatedTarget as Node | null;
+        if (!next || !event.currentTarget.contains(next)) reset();
+      }}
+      onPointerDown={(event) => event.stopPropagation()}
+    >
+      <label className="point-field">
+        <span>X</span>
+        <input
+          autoFocus
+          value={xText}
+          inputMode="decimal"
+          data-testid="point-x"
+          aria-label="Point X"
+          onChange={(event) => setXText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commit();
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              reset();
+            }
+          }}
+        />
+      </label>
+      <label className="point-field">
+        <span>Y</span>
+        <input
+          value={yText}
+          inputMode="decimal"
+          data-testid="point-y"
+          aria-label="Point Y"
+          onChange={(event) => setYText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              commit();
+            } else if (event.key === "Escape") {
+              event.preventDefault();
+              reset();
+            }
+          }}
+        />
+      </label>
+      <span className="dim-unit">mm</span>
+    </div>
+  );
 }
 
 function formatEditable(value: number): string {

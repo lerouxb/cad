@@ -457,6 +457,173 @@ export function regionsFromSketch(sketch: Sketch): SketchRegion[] {
   return regions.sort((a, b) => b.area - a.area);
 }
 
+export interface SketchBox {
+  minX: number;
+  minY: number;
+  maxX: number;
+  maxY: number;
+}
+
+/**
+ * Regions whose entire outer boundary lies inside the box. This is the v1 box
+ * selection rule ("fully inside"); crossing selection is a separate decision.
+ */
+export function regionsFullyInside(
+  regions: readonly SketchRegion[],
+  box: SketchBox,
+): SketchRegion[] {
+  return regions.filter((region) => loopFullyInside(region.outer, box));
+}
+
+function loopFullyInside(loop: ProfileLoop, box: SketchBox): boolean {
+  const eps = 1e-6;
+  const inside = (x: number, y: number): boolean =>
+    x >= box.minX - eps &&
+    x <= box.maxX + eps &&
+    y >= box.minY - eps &&
+    y <= box.maxY + eps;
+  if (loop.kind === "circle") {
+    const [cx, cy] = loop.center;
+    return (
+      inside(cx - loop.radius, cy - loop.radius) &&
+      inside(cx + loop.radius, cy + loop.radius)
+    );
+  }
+  return loop.points.every(([x, y]) => inside(x, y));
+}
+
+/** Regions whose entire outer boundary lies insides a freehand lasso polygon. */
+export function regionsFullyInsidePolygon(
+  regions: readonly SketchRegion[],
+  polygon: readonly Vec2[],
+): SketchRegion[] {
+  if (polygon.length < 3) return [];
+  return regions.filter((region) =>
+    loopFullyInsidePolygon(region.outer, polygon),
+  );
+}
+
+function loopFullyInsidePolygon(
+  loop: ProfileLoop,
+  polygon: readonly Vec2[],
+): boolean {
+  if (loop.kind === "circle") {
+    const [cx, cy] = loop.center;
+    const samples = 32;
+    for (let i = 0; i < samples; i++) {
+      const angle = (i / samples) * Math.PI * 2;
+      if (
+        !pointInPolygon(
+          [cx + Math.cos(angle) * loop.radius, cy + Math.sin(angle) * loop.radius],
+          polygon,
+        )
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+  return loop.points.every((point) => pointInPolygon(point, polygon));
+}
+
+/**
+ * Regions touched by a freehand lasso. Unlike the box's fully-inside rule, a
+ * lasso selects a profile when it crosses or encloses any of its material (a
+ * corner loop around a profile is a selection, not an empty gesture). A lasso
+ * entirely inside a hole does not select the parent material.
+ */
+export function regionsIntersectingPolygon(
+  regions: readonly SketchRegion[],
+  polygon: readonly Vec2[],
+): SketchRegion[] {
+  if (polygon.length < 3) return [];
+  return regions.filter((region) => regionIntersectsPolygon(region, polygon));
+}
+
+function regionIntersectsPolygon(
+  region: SketchRegion,
+  polygon: readonly Vec2[],
+): boolean {
+  const outer = loopPolygon(region.outer);
+  if (polygonsCross(polygon, outer)) return true;
+  for (const hole of region.holes) {
+    if (polygonsCross(polygon, loopPolygon(hole))) return true;
+  }
+  if (polygon.some((point) => regionFilledContains(region, point))) return true;
+  // The lasso can also enclose the whole region without containing its
+  // boundary vertices in the material check above.
+  return outer.some((point) => pointInPolygon(point, polygon));
+}
+
+function regionFilledContains(region: SketchRegion, point: Vec2): boolean {
+  if (!loopContainsPoint(region.outer, point)) return false;
+  return !region.holes.some((hole) => loopContainsPoint(hole, point));
+}
+
+function loopContainsPoint(loop: ProfileLoop, point: Vec2): boolean {
+  if (loop.kind === "circle") {
+    return (
+      Math.hypot(point[0] - loop.center[0], point[1] - loop.center[1]) <
+      loop.radius
+    );
+  }
+  return pointInPolygon(point, loop.points);
+}
+
+function loopPolygon(loop: ProfileLoop): Vec2[] {
+  if (loop.kind === "circle") {
+    const [cx, cy] = loop.center;
+    return Array.from({ length: 32 }, (_, index): Vec2 => {
+      const angle = (index / 32) * Math.PI * 2;
+      return [
+        cx + Math.cos(angle) * loop.radius,
+        cy + Math.sin(angle) * loop.radius,
+      ];
+    });
+  }
+  return loop.points;
+}
+
+/** True when any edge of the two closed polygons crosses or touches. */
+function polygonsCross(a: readonly Vec2[], b: readonly Vec2[]): boolean {
+  for (let i = 0; i < a.length; i++) {
+    const a0 = a[i]!;
+    const a1 = a[(i + 1) % a.length]!;
+    for (let j = 0; j < b.length; j++) {
+      if (segmentsIntersect(a0, a1, b[j]!, b[(j + 1) % b.length]!)) return true;
+    }
+  }
+  return false;
+}
+
+function segmentsIntersect(a: Vec2, b: Vec2, c: Vec2, d: Vec2): boolean {
+  const cross = (p: Vec2, q: Vec2, r: Vec2): number =>
+    (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  const d1 = cross(c, d, a);
+  const d2 = cross(c, d, b);
+  const d3 = cross(a, b, c);
+  const d4 = cross(a, b, d);
+  if (
+    ((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) &&
+    ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))
+  ) {
+    return true;
+  }
+  const eps = 1e-9;
+  const onSegment = (p: Vec2, q: Vec2, r: Vec2): boolean =>
+    Math.abs(cross(p, q, r)) < eps &&
+    r[0] >= Math.min(p[0], q[0]) - eps &&
+    r[0] <= Math.max(p[0], q[0]) + eps &&
+    r[1] >= Math.min(p[1], q[1]) - eps &&
+    r[1] <= Math.max(p[1], q[1]) + eps;
+  return (
+    onSegment(c, d, a) ||
+    onSegment(c, d, b) ||
+    onSegment(a, b, c) ||
+    onSegment(a, b, d)
+  );
+}
+
 function hashKey(value: string): string {
   let hash = 2166136261;
   for (let i = 0; i < value.length; i++) {
@@ -502,7 +669,8 @@ function signedArea(points: readonly Vec2[]): number {
   return area / 2;
 }
 
-function pointInPolygon(point: Vec2, polygon: readonly Vec2[]): boolean {
+/** Ray-casting point-in-polygon test; boundary cases are not important here. */
+export function pointInPolygon(point: Vec2, polygon: readonly Vec2[]): boolean {
   let inside = false;
   for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
     const a = polygon[i]!;
@@ -514,5 +682,3 @@ function pointInPolygon(point: Vec2, polygon: readonly Vec2[]): boolean {
   }
   return inside;
 }
-
-export { pointInPolygon as pointInSketchPolygon };

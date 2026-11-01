@@ -41,7 +41,7 @@ const EXPECTED_TYPES = [
 
 const violations = [];
 
-function auditCss(file) {
+function auditCss(file, { requireEditorial = true } = {}) {
   const lines = readFileSync(file, "utf8").split("\n");
   let insideTokens = false;
   let sawStart = false;
@@ -50,6 +50,9 @@ function auditCss(file) {
   const types = new Set();
   const weights = new Set();
   const defined = new Set();
+  const expectedTypes = requireEditorial
+    ? EXPECTED_TYPES
+    : EXPECTED_TYPES.filter((type) => !type.startsWith("--type-editorial-"));
 
   lines.forEach((line, index) => {
     if (line.includes("typography tokens: start")) {
@@ -131,7 +134,7 @@ function auditCss(file) {
       });
     }
   }
-  for (const type of EXPECTED_TYPES) {
+  for (const type of expectedTypes) {
     if (!types.has(type)) {
       violations.push({
         file,
@@ -204,6 +207,11 @@ for (const name of readdirSync(here)) {
   if (name.endsWith(".css")) cssLines += auditCss(join(here, name));
   if (name.endsWith(".html")) auditHtml(join(here, name));
 }
+// The React app shares the same token contract. It does not use the editorial
+// layer, so only the eight app roles are required there.
+cssLines += auditCss(join(here, "..", "..", "src", "app", "app.css"), {
+  requireEditorial: false,
+});
 
 if (violations.length > 0) {
   console.error(`Typography audit failed: ${violations.length} raw declaration(s).\n`);

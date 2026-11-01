@@ -1,4 +1,9 @@
-import type { BodyMesh, EdgeGroup, FaceGroup } from "../core/kernel/protocol";
+import type {
+  BodyMesh,
+  EdgeGroup,
+  FaceGroup,
+  TopoRef,
+} from "../core/kernel/protocol";
 
 /** Ephemeral body selection. Never persisted in the document. */
 export interface BodyPick {
@@ -8,6 +13,8 @@ export interface BodyPick {
   faceId?: number;
   origin?: number;
   edgeId?: number;
+  /** Stable role+hint reference created by the worker for a face. */
+  ref?: TopoRef;
 }
 
 export type EdgeUnit = "segment" | "vertex";
@@ -84,6 +91,7 @@ export function facePick(group: FaceGroup): BodyPick {
     id: `face-${group.faceId}`,
     faceId: group.faceId,
     origin: group.origin,
+    ...(group.ref ? { ref: group.ref } : {}),
   };
 }
 

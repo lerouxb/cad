@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { addCircle, addRectangle, emptySketch } from "./create";
-import { addDimension, removeConstraint } from "./dimensions";
+import { addDimension, removeConstraint, setDimensionPlacement } from "./dimensions";
 
 describe("dimensions", () => {
   const rectangle = addRectangle(emptySketch(), [0, 0], [60, 40]);
@@ -19,6 +19,43 @@ describe("dimensions", () => {
       driving: true,
       offset: 14,
     });
+  });
+
+  it("moves a linear label along its dimension line", () => {
+    const sketch = addDimension(rectangle, { kind: "distance", a, b }, true, {
+      offset: 14,
+    });
+    const dimension = sketch.constraints.find(
+      (constraint) => constraint.type === "distance",
+    )!;
+    const moved = setDimensionPlacement(sketch, dimension.id, {
+      offset: 18,
+      along: 0.25,
+    });
+    expect(
+      moved.constraints.find((constraint) => constraint.id === dimension.id),
+    ).toMatchObject({ offset: 18, along: 0.25 });
+  });
+
+  it("moves a diameter label by angle and leader distance", () => {
+    const circleSketch = addCircle(emptySketch(), { point: [0, 0] }, 10);
+    const circle = circleSketch.curves.find((curve) => curve.type === "circle")!;
+    const sketch = addDimension(
+      circleSketch,
+      { kind: "diameter", circle: circle.id },
+      true,
+      { angle: 45, distance: 12 },
+    );
+    const dimension = sketch.constraints.find(
+      (constraint) => constraint.type === "diameter",
+    )!;
+    const moved = setDimensionPlacement(sketch, dimension.id, {
+      angle: 90,
+      distance: 30,
+    });
+    expect(
+      moved.constraints.find((constraint) => constraint.id === dimension.id),
+    ).toMatchObject({ angle: 90, distance: 30 });
   });
 
   it("updates the existing dimension instead of stacking a second one", () => {

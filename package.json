@@ -14,12 +14,13 @@
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
+    "check:typography": "node docs/mockups/check-typography.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "verify": "npm run typecheck && npm run lint && npm test"
+    "verify": "npm run typecheck && npm run lint && npm run check:typography && npm test"
   },
   "dependencies": {
     "brepjs": "20.11.0",
@@ -46,5 +47,8 @@
     "typescript-eslint": "^8.72.0",
     "vite": "^8.3.5",
     "vitest": "^5.0.5"
+  },
+  "allowScripts": {
+    "fsevents@2.3.3": true
   }
 }

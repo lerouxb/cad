@@ -16,6 +16,12 @@ export interface SketchPoint {
   fixed?: boolean;
   /** Part of the sketch coordinate frame (origin/axis endpoints). */
   reference?: boolean;
+  /**
+   * A user-placed point that is not a curve endpoint or centre. It is a normal
+   * solver point (draggable/constrainable/dimensionable) but survives pruning;
+   * points alone never form a profile.
+   */
+  standalone?: boolean;
 }
 
 export interface SketchLine {
@@ -74,6 +80,8 @@ export type SketchConstraint =
       driving?: boolean;
       /** Signed perpendicular offset of the dimension line, mm. */
       offset?: number;
+      /** Label position along the dimension line, 0 = a, 1 = b. Default 0.5. */
+      along?: number;
     }
   | {
       id: string;
@@ -84,6 +92,8 @@ export type SketchConstraint =
       driving?: boolean;
       /** Signed perpendicular offset of the dimension line, mm. */
       offset?: number;
+      /** Label position along the dimension line, 0 = point, 1 = projection. */
+      along?: number;
     }
   | {
       id: string;
@@ -93,6 +103,8 @@ export type SketchConstraint =
       driving?: boolean;
       /** Leader angle in degrees. */
       angle?: number;
+      /** Leader length beyond the circle edge, mm. Default 12. */
+      distance?: number;
       /** Display as a radius (the solver still constrains the diameter). */
       radius?: boolean;
     }

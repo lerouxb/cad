@@ -42,6 +42,7 @@ export function createExtrudeFeature(
     height: options.height ?? 12,
     operation: "new",
     symmetric: false,
+    end: "blind",
   };
 }
 
@@ -49,6 +50,21 @@ export function createExtrudeFeature(
  * A new part with one sketch and one extrude. This is deliberately the same
  * two-step shape the spike had; history grows from here.
  */
+/** A new local part: one empty sketch and no extrude yet. */
+export function createBlankDocument(name = "Untitled"): Doc {
+  return {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    id: newId("doc"),
+    name,
+    features: [createSketchFeature(emptySketch(), { name: "Sketch 1" })],
+  };
+}
+
+/** An independent local copy: new document id, same immutable features. */
+export function copyDocument(doc: Doc, name = `${doc.name} copy`): Doc {
+  return { ...doc, id: newId("doc"), name };
+}
+
 export function createDocument(
   sketch: Sketch = emptySketch(),
   options: CreateDocOptions = {},

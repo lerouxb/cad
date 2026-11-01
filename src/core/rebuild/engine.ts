@@ -45,6 +45,7 @@ export function rebuildDocument(
   const cache = inputs.cache ?? new RebuildCache();
   const results: FeatureResult[] = [];
   const byId = new Map<string, FeatureResult>();
+  const sketchById = new Map<string, SketchRebuildOutput>();
   let upstreamKey = "root";
   let params: RebuildResult["params"] = null;
   let sketch: SketchRebuildOutput | null = null;
@@ -57,6 +58,25 @@ export function rebuildDocument(
     let result: FeatureResult;
     if (cached) {
       result = { ...cached, cached: true };
+    } else if (feature.suppressed) {
+      result = {
+        featureId: feature.id,
+        type: feature.type,
+        name: feature.name,
+        cacheKey,
+        upstreamKey,
+        cached: false,
+        status: "skipped",
+        output: null,
+        diagnostics: [
+          {
+            severity: "info",
+            code: "suppressed",
+            message: "Suppressed in the history.",
+          },
+        ],
+      };
+      cache.set(cacheKey, result);
     } else {
       result = evaluateFeature(
         feature,
@@ -75,17 +95,21 @@ export function rebuildDocument(
     if (result.status === "ok" && result.output?.kind === "extrude") {
       params = result.output.params;
     }
-    if (!sketch && result.output?.kind === "sketch") {
-      sketch = result.output;
+    if (result.output?.kind === "sketch") {
+      sketchById.set(feature.id, result.output);
+      if (!sketch) sketch = result.output;
     }
   }
 
   return {
     generation: inputs.generation ?? 0,
-    status: results.every((result) => result.status === "ok") ? "ok" : "error",
+    // A suppressed/skipped step is an intentional state, not a rebuild error;
+    // the step that actually failed (if any) still makes this "error".
+    status: results.every((result) => result.status !== "error") ? "ok" : "error",
     features: results,
     params,
     sketch,
+    sketchById,
   };
 }
 
@@ -203,6 +227,8 @@ function evaluateSketch(
     regions,
     dof: outcome.dof,
     solveStatus: outcome.status,
+    conflicting: outcome.conflicting,
+    ...(outcome.message ? { message: outcome.message } : {}),
   };
   return { ...base, status: "ok", output, diagnostics };
 }
@@ -242,7 +268,7 @@ function evaluateExtrude(
       ],
     };
   }
-  if (feature.symmetric) {
+  if (feature.end === "throughAll" && feature.operation !== "cut") {
     return {
       ...base,
       status: "error",
@@ -250,13 +276,16 @@ function evaluateExtrude(
       diagnostics: [
         {
           severity: "error",
-          code: "symmetric-not-implemented",
-          message: "Symmetric extrudes are not implemented yet.",
+          code: "through-all-needs-cut",
+          message: "Through-all is only available for a cut extrude.",
         },
       ],
     };
   }
-  if (!Number.isFinite(feature.height) || feature.height <= 0) {
+  if (
+    feature.end !== "throughAll" &&
+    (!Number.isFinite(feature.height) || feature.height <= 0)
+  ) {
     return {
       ...base,
       status: "error",
@@ -300,11 +329,16 @@ function evaluateExtrude(
 
   const output: ExtrudeRebuildOutput = {
     kind: "extrude",
-    params: deps.extrudeParams(selection.regions, feature.height),
+    params: deps.extrudeParams(selection.regions, feature.height, {
+      symmetric: feature.symmetric,
+      end: feature.end,
+    }),
     sketchId: feature.sketchId,
     regionIds: selection.ids,
     auto: selection.auto,
     operation: feature.operation,
+    symmetric: feature.symmetric,
+    end: feature.end,
   };
   return { ...base, status: "ok", output, diagnostics };
 }

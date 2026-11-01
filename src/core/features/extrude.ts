@@ -48,6 +48,7 @@ export function selectExtrudeRegions(
 export function extrudeParams(
   regions: readonly SketchRegion[],
   height: number,
+  options: { symmetric?: boolean; end?: "blind" | "throughAll" } = {},
 ): ExtrudeParams {
   return {
     regions: regions.map(
@@ -57,6 +58,8 @@ export function extrudeParams(
       }),
     ),
     height,
+    ...(options.symmetric ? { symmetric: true } : {}),
+    ...(options.end === "throughAll" ? { end: "throughAll" } : {}),
   };
 }
 

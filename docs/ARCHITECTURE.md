@@ -87,7 +87,7 @@ Everything OCCT runs in the worker (slow, can take 100s of ms).
 type Id = string; // nanoid, opaque, stable forever
 
 interface Doc {
-  schemaVersion: 1;
+  schemaVersion: 4;
   units: "mm";
   name: string;
   features: Feature[];        // ordered history, single body in v1
@@ -132,7 +132,14 @@ interface SketchFeature extends FeatureBase {
   constraints: Record<Id, SketchConstraint>;
 }
 
-interface SketchPoint { id: Id; x: number; y: number; construction?: boolean }
+interface SketchPoint {
+  id: Id;
+  x: number;
+  y: number;
+  construction?: boolean;
+  /** User-placed point not used by a curve; kept by pruning, ignored by profiles. */
+  standalone?: boolean;
+}
 
 type SketchCurve =
   | { id: Id; type: "line"; a: Id; b: Id }                      // point ids
@@ -180,13 +187,11 @@ interface ExtrudeFeature extends FeatureBase {
   type: "extrude";
   sketch: Id;
   regions: string[];      // region ids, derived from the sorted curve ids that form the loop
-  /** How far the profile travels. */
-  end:
-    | { kind: "blind"; distance: Expr }
-    | { kind: "throughAll" }          // M3: both ways for a cut, one way for a join
-    | { kind: "upTo"; ref: TopoRef }; // M4: stop at a face/vertex, resolved at rebuild
-  symmetric?: boolean;                 // two-sided; the sketch plane is the midplane
-  operation: "new" | "join" | "cut" | "intersect";
+  height: number;
+  /** blind uses height; throughAll cuts through the current body (M3). */
+  end: "blind" | "throughAll"; // M4 adds up-to-face TopoRef
+  symmetric: boolean;                 // two-sided; the sketch plane is the midplane
+  operation: "new" | "join" | "cut";
 }
 ```
 
@@ -253,7 +258,7 @@ resolve either kind by id.
   geometry itself cannot be deleted or have its construction state toggled.
 - Profiles: `findLoops`/`sketchGeometry` include reference points for coordinates, but
   reference lines are construction and never part of a loop.
-- Exact point editing: the X/Y fields in the selection card call the same `solveDrag`
+- Exact point editing: the inline X/Y editor at the point calls the same `solveDrag`
   target used by pointer dragging, so the result respects every constraint (and a fully
   constrained point is a no-op).
 
@@ -392,6 +397,17 @@ the source curve, remaps constraints that still apply, adds collinearity/equal-r
 links between kept pieces, and reports constraints it had to remove. Circles still act as
 whole closed loops; turning one into an arc is tracked in M9.
 
+### Sketch layout operations (M6.0, ADR-0004)
+
+Pattern, mirror and offset are **stored parametric sketch operations**, not materialised
+copies. `SketchFeature` will carry operation records (source ids + kind-specific params);
+the derived instances are regenerated from the solved source on every rebuild and then
+feed region extraction/extrude. They are fixed derived geometry like projected
+references: not individually draggable or constrainable in v1, so the user constrains the
+source and re-edits the operation itself. The sketch stays one history step. Feature/body
+patterns and mirror (M6) are separate B-rep operations and reuse the same popup/preview
+grammar rather than this engine.
+
 ## 5.5 Document and persistence
 
 `Doc` is the source of truth for a part: `schemaVersion`, an opaque document id, a name,
@@ -402,9 +418,11 @@ symmetric). The sketch is no longer React component state.
 - **Plain JSON only.** Solver output (`SolveOutcome`), meshes and kernel handles are
   derived UI/kernel state. `Doc` must survive `JSON.stringify` -> `JSON.parse` and still
   rebuild identically.
-- **Migrate on open.** `migrateDoc` accepts the current schema, migrates the legacy
-  `{ sketch, height }` shape, and returns `null` for malformed or newer documents. App
-  falls back to a fresh example rather than opening a corrupt part.
+- **Migrate on open.** `migrateDoc` accepts the current schema (v2), upgrades the
+  shape-compatible v1 documents, migrates the legacy `{ sketch, height }` shape, and
+  returns `null` for malformed or newer documents. App falls back to a fresh example
+  rather than opening a corrupt part. v2 adds the optional `SketchPoint.standalone` flag
+  used by the point tool.
 - **Autosave.** `persistence.ts` writes `cad.doc` on every committed document change.
   The next load re-solves the active sketch, so derived geometry never enters storage.
 - **Feature parameters are undoable.** Extrude height and selected region ids are
@@ -421,8 +439,30 @@ symmetric). The sketch is no longer React component state.
   extrudes as `KernelFeature[]` (cacheKey, params, operation). The worker caches the
   prefix solid per cacheKey, applies new/join/cut, and returns per-feature build
   statuses. It is still a single body: `new` after a base is an error, and multiple bodies
-  are later. The timeline cannot create/edit a second feature yet; that is the next M3
-  slice.
+  are later.
+- **The history is a real feature tree.** The timeline renders `doc.features` in order.
+  Clicking a feature makes it active: a sketch opens the sketch editor, an extrude opens
+  the model and makes that extrude's parameters live. Editing a sketch updates that
+  feature by id (not the first sketch). A sketch step never owns region editing: select
+  an extrude step to edit its existing regions, or start a new extrude draft from the
+  sketch step. A shared sketch therefore cannot silently rewrite another extrude's
+  profiles. Double-click renames through `renameFeature` as one undo
+  entry. Each row shows its rebuild/worker status, diagnostic tooltip and paused/
+  suppressed state. `+ sketch` at the end of the timeline opens `SupportPopover` and
+  creates a sketch on the explicit support (XY today; XZ/YZ and faces are M4). `extrude`
+  on a selected sketch starts a UI-only `extrudeDraft` with no profile selected; it
+  becomes a history feature only when at least one profile and the parameters are
+  applied. The first extrude is `new`, later ones default to `join`. A draggable popover
+  (`FeaturePopover`) edits height/symmetric/operation/end over the stage; its footer is a
+  one-line summary plus quiet `cancel` and primary `apply`, and cancel restores an
+  existing feature as it was when the popover opened. The detail line is a summary plus
+  actions (extrude, edit, rename, select profiles, open sketch, rollback, suppress,
+  delete). Steps are
+  drag-reordered; an invalid order (extrude before its sketch) is refused with a notice.
+  Rollback builds only the prefix and pauses downstream steps until “roll forward”. The
+  file menu handles `.cad` download/open/rename/new; the local file list supports open,
+  copy and a two-step delete, and the built-in example keeps a stable id so reloading
+  updates one entry.
 
 ## 6. Rebuild engine
 
@@ -503,6 +543,14 @@ Rules:
 - Role assignment must be deterministic: sort by geometric position, never by kernel
   iteration order.
 - Face normals can flip during booleans; compare directions up to sign where sensible.
+
+**First plumbing (M3).** The worker keeps a `RoleTable` per cached prefix solid. It
+assigns roles to each tool with `assignRoles(tool, "extrude")`, uses
+`fuseWithEvolution`/`cutWithEvolution`, and advances every origin's roles with
+`updateRoles` before caching the prefix. `captureHint`/`createRef` then produce JSON-safe
+`TopoRef`s for the final body's faces; `FaceGroup.ref` and `BodyPick.ref` carry them to
+the main thread. Storing refs on features (face/datum supports) and resolving `PlaneRef`s
+is the first M4 task.
 
 This is the part to test hardest. Every kernel test that edits an upstream feature and
 re-runs a downstream fillet is a topological-naming regression test.
@@ -589,6 +637,14 @@ solver has no 3D sketch representation.
 - **Body selection is ephemeral.** `BodyPick` lives in App UI state, uses `faceId`/`origin`
   or `edgeId` rather than array indices, and never enters the document or undo history.
   It is cleared when a new mesh arrives and by Escape.
+- **Active-extrude sketch overlay.** In model mode, the active extrude's source sketch
+  is drawn on its plane with a thick highlighter underlay plus a dark ink centerline
+  (`Line2`). Only the region loops that extrude uses are drawn, and their outer/hole
+  loops are also shaded with a transparent highlighter fill (the hole stays open).
+  Construction/unused curves and all points are hidden until profile-selection mode,
+  where the full sketch and every region return. It is `depthTest:false` so it reads
+  through the body, and it is separate from the mesh/raycast groups. It is hidden in
+  sketch mode and for a suppressed source sketch.
 - **Sketch mode:** a full-stage 2D surface rather than a sidebar. The timeline switches
   between this and the 3D model; the 3D renderer is paused while the sketch is active.
   `slvs` stays on the main thread, and a **separate SVG surface** carries sketch curves,
@@ -641,9 +697,10 @@ edits and show stale geometry with a spinner rather than blocking.
   (`drag:p1`, `demo-size`, `hole`) so consecutive commits replace the top entry; the
   canvas calls `endMerge()` on pointer-up (sliders do the same on pointer-up/blur).
   Drawing a shape is a single commit.
-- **Persistence:** not implemented. The intended design is `localStorage` autosave
-  (debounced) + `.cad.json` export/import, with `schemaVersion` and migrations. An
-  unparseable document must produce a readable error, never a blank screen.
+- **Persistence:** `localStorage` autosave (debounced) and migrate-on-load are in;
+  `.cad.json` export/import is still to come. The schema version and migrations guard the
+  stored shape, and an unparseable document falls back to a fresh example rather than a
+  blank screen.
 
 ## 12. Errors and diagnostics
 
@@ -686,6 +743,21 @@ in the feature tree with a clickable "why".
 Parameters/expressions UI (M7), patterns/mirror/sweep/loft (M6), multi-body and
 components, assemblies, drawings, STEP import, curved-face sketches, direct editing.
 
+### Scripted features and AI access (M8.5, ADR-0005)
+
+The planned machine surface is a serializable **command/query layer** in `core/commands`.
+The UI becomes a client of it, and so do a headless `cad` runner and an AI bridge; no
+client drives the DOM or receives kernel handles. A sketch or feature gets a generated
+**code view** (canonical builder calls, stable ids, mm/degrees) that can be edited and
+applied as one undoable replace. Normal features keep JSON as the source of truth; only a
+distinct `script` feature stores source as its truth and derives geometry on rebuild. Code
+runs in an isolated deterministic worker/iframe with no DOM, kernel, network, clock or
+randomness; failures are per-feature diagnostics, never a crashed tab. The code editor is
+a stage mode (not a permanent panel) and follows the same summary + `cancel`/`apply`
+footer as the popover. Scenario files built from the same commands can create demo parts
+and drive camera/recording. The sandbox choice and builder syntax remain open; see
+ADR-0005.
+
 ## 16. What the spike actually implements
 
 This document describes the target design. The current code is a vertical slice; here is
@@ -699,13 +771,13 @@ the honest map, so nobody assumes a layer exists because it is described above.
 | `core/rebuild` | Real: ordered sketch/extrude evaluation, prefix cache, per-feature diagnostics. Worker solid cache + new/join/cut are in; feature-tree creation UI is M3. |
 | `core/kernel` | Real: typed protocol, worker client, OCCT worker, feature cache, hole validation, exact stats + bounds. |
 | `viewer` | Real: Z-up scene, framing, meshing, edges, face/edge raycast picking, hover/selection highlights. |
-| `sketch` UI | Real: full-stage sketch editor toggled from the timeline, with a floating tool strip, DOF pill, and selection/dimension/constraint inspector. Select/drag, line/rectangle/circle/arc, fillet, explicit region fills (material and void, with All/Voids/Auto), dimension tool with inline editing, constraint bar, construction toggle, snapping, auto H/V, undo/redo. |
-| Feature tree | Static two-step markup; creating/editing/reordering features is the next M3 slice. |
-| Persistence | Autosave to `localStorage` with migration-on-load. No explicit `.cad` export/import UI yet. |
+| `sketch` UI | Real: full-stage sketch editor with a grouped text tool line, stage-foot DOF/status, contextual selection popover, adaptive/free-form grid, scale bar and fit/50/100/200 zoom. Select/drag, box-select profile regions, line/point/rectangle/circle/arc, fillet, explicit region fills (material and void, with All/Voids/Auto), contextual dimension/trim chips, inline dimension and point editors, construction toggle, snapping, auto H/V, Enter-to-finish, undo/redo. Standalone points are normal solver geometry but never profiles. |
+| Feature tree | Real: lists all `doc.features`, selects/renames/creates/edits, drag-reorders, suppresses, deletes with cascade, rolls back/forward, and shows per-feature status/diagnostics. |
+| Persistence | Autosave to `localStorage` with migration-on-load, a local file index/list (open/copy/delete/download/rename/new), and `.cad` import/export. |
 
-Known shortcuts, all scheduled: auto region selection defaults to the largest material
-region until a fill is clicked; datum planes and sketch-on-face are not implemented yet
-(M4); the timeline is still a fixed two-step list and cannot create/edit a second feature
-(M3). Unsupported geometry and kernel features are collected in PLAN M9 with current
+Known shortcuts, all scheduled: existing extrude features with an empty region list still
+resolve to the largest material region for legacy documents, while new extrude drafts
+require an explicit profile; datum planes and sketch-on-face are not implemented yet
+(M4). Unsupported geometry and kernel features are collected in PLAN M9 with current
 workarounds and the upstream SolveSpace/OCCT work each would need.
 

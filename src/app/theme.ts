@@ -104,7 +104,7 @@ export function sketchPalette(settings: ThemeSettings): SketchPalette {
     return {
       under: "#c4c0b4",
       full: "#f2efe3",
-      conflict: "#ff8a80",
+      conflict: "#f2efe3",
       selected: "#f2efe3",
       ink: "#f2efe3",
       muted: "#c4c0b4",
@@ -123,13 +123,13 @@ export function sketchPalette(settings: ThemeSettings): SketchPalette {
       marker: marker.night,
       markerSoft: marker.nightSoft,
       markerInk: marker.ink,
-      danger: "#ff8a80",
+      danger: "#f2efe3",
     };
   }
   return {
     under: "#47453e",
     full: "#141412",
-    conflict: "#b3261e",
+    conflict: "#141412",
     selected: "#141412",
     ink: "#141412",
     muted: "#47453e",
@@ -148,7 +148,7 @@ export function sketchPalette(settings: ThemeSettings): SketchPalette {
     marker: marker.day,
     markerSoft: marker.daySoft,
     markerInk: marker.ink,
-    danger: "#b3261e",
+    danger: "#141412",
   };
 }
 

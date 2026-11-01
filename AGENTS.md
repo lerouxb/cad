@@ -23,7 +23,8 @@ face/edge picking. M3's document store and ordered rebuild are in progress.** Th
 an editable sketcher driving an exact extrude:
 
 - Real: `slvs` adapter, tangent-space constrained dragging of points, whole lines, circles
-  and arcs, line/rectangle/circle/three-point-arc tools and a parametric corner fillet,
+  and arcs, line/point/rectangle/circle/three-point-arc tools and a parametric corner
+  fillet,
   grid + point snapping, automatic horizontal/vertical constraints, exact profile
   extraction (line/arc loops or circles as the body, nested loops/circles as holes;
   arcs extrude as OCCT arc edges, not tessellated), click/shift-click selection,
@@ -45,32 +46,46 @@ an editable sketcher driving an exact extrude:
   successful extrudes, caches prefix solids by cache key, and applies new/join/cut
   booleans with per-feature build statuses.
 - UI: one main stage. The bottom timeline switches between the full-stage sketch editor
-  and the 3D model; the sketch has floating tools, a DOF pill, and a floating selection /
-  dimension inspector. No permanent sidebar. The paper/ink theme has day/night modes and
-  one highlighter colour (yellow/pink/blue/green), persisted in `localStorage`; the
-  static studies in `docs/mockups/` are the design target and are never imported.
-- Temporary: auto mode still defaults to the largest material region until a region is
-  clicked; trim supports lines and arcs but not turning a circle into an arc; body
-  selection is ephemeral and cannot start a sketch yet; the example sketch is
-  hand-authored (`core/sketch/demo.ts`); **datum planes and sketch-on-face are not
-  implemented (M4)**; the timeline is still the fixed two-step list
-  (rename/reorder/suppress, feature dialogs and creating a second feature are next).
-  Join/cut works for saved multi-feature documents, but the UI cannot add one yet. A
-  standalone point tool is not implemented yet (points appear only as curve endpoints,
-  centres or fillet/reference geometry). Free 3D sketches, splines/text/images and
-  drawing exports are out of scope.
+  and the 3D model. The shell follows the studies: a document header (filename,
+  appearance), one stage status line (solver/kernel health, DOF, body stats, view
+  controls), numbered timeline steps with a selected-step summary line, a draggable
+  feature popover for parameters, a text tool line
+  in sketch mode and a contextual selection popover. No permanent sidebar. The paper/ink
+  theme has day/night modes and one highlighter colour (yellow/pink/blue/green), persisted
+  in `localStorage`; the static studies in `docs/mockups/` are illustrative and are never
+  imported, while their index/notes prose is the design contract in `docs/PLAN.md`.
+- Temporary: existing extrudes with an empty region list still resolve to the largest
+  material region (legacy documents); new extrude drafts require an explicit profile.
+  Trim supports lines and arcs but not turning a circle into an arc; body
+  selection is ephemeral and cannot start a sketch yet; the example part is
+  hand-authored (`core/sketch/demo.ts` + `core/doc/example.ts`, including a suppressed
+  center-pin extrude from the same sketch and a suppressed mounting-holes cut); **datum
+  planes and sketch-on-face are not
+  implemented (M4)**; the timeline now lists the real feature history with select,
+  inline rename, create, edit, drag-reorder, suppress, delete-cascade, rollback and
+  per-feature status/diagnostics. `.cad` download/open/rename/new, blind/symmetric/
+  through-all extrudes, a local file list with copy/delete/open/download/rename/new, and
+  JSON-safe TopoRefs on face picks are in. Role tables now survive joins/cuts via
+  `updateRoles`. Free 3D sketches, splines/text/images and drawing exports are out of
+  scope.
 
-Next: **finish M3** (feature tree editing and feature creation), then **M4** (datum
-planes + face supports). Read `docs/PLAN.md`; it is the source of truth
+Next: **M4** — store `TopoRef`s on features and resolve face/datum supports (projected
+face-boundary reference geometry), then **M6.0** (re-editable sketch
+pattern/mirror/offset, ADR-0004). Read `docs/PLAN.md`; it is the source of truth
 for done. Unsupported geometry/features (ellipses, conics, B-splines, free
 3D sketches, 3D fillets, lofts/sweeps, patterns/mirror, drafts, shelling/offsets,
 expressions, threads) and the upstream SolveSpace/OCCT work are documented in **PLAN M9**.
+Scripted features (editable code behind a sketch/feature) and the command/AI layer are
+planned in **M8.5 / ADR-0005**.
 
 **E2E**: tests reuse one worker-scoped page per worker and reset the app through its UI;
 do not add `page.goto()` per test. The WASM stays warm, which takes the suite from ~1 min
 to ~30 s locally (2 workers; 1 in CI). Reset modes, the demo and the height slider in the
 shared `beforeEach`; if state leaks between tests, extend that reset. That reset now
-includes day mode and the yellow highlighter, since both persist in `localStorage`.
+includes day mode and the yellow highlighter (both persist in `localStorage`), plus the
+sketch grid step (auto), snap on, and zoom fit, since those are ephemeral view controls.
+The shared-page reset leaks are what made the crossing-diagonals test flaky: a previous
+test left snap off, so the diagonals no longer snapped to the rectangle corners.
 
 ## Stack (decided)
 
@@ -97,9 +112,10 @@ npm run dev        # vite dev server
 npm run build      # typecheck + production build
 npm run typecheck  # tsc --noEmit
 npm run lint       # eslint
+npm run check:typography  # typography token audit (mockups + src/app/app.css)
 npm test           # vitest run
 npm run e2e        # playwright (chromium); starts its own dev server
-npm run verify     # typecheck + lint + test  <-- run this before saying you're done
+npm run verify     # typecheck + lint + typography audit + test  <-- run this before saying you're done
 ```
 
 ## Repo map
@@ -314,9 +330,75 @@ docs/
   locators do not count them. The origin hit target sits above the axes but below user
   geometry, so grabbing a curve/point at (0,0) still wins; select the origin where no user
   geometry overlaps it.
+- **Standalone points are real solver geometry, not reference geometry.**
+  `SketchPoint.standalone` (schema v2) is set by the point tool so `deleteEntities` and
+  `pruneSketch` keep a point that no curve uses. They are normal points (selectable,
+  draggable, constrainable, dimensionable, hollow-styled) and are ignored by
+  `regionsFromSketch`. Do not mark them `fixed` or `construction`: both are hidden from
+  selection/snapping. Clicking an existing point with the point tool must not stack a
+  duplicate.
 - The point coordinate editor calls `solveDrag` with the typed X/Y, exactly like dropping
   the cursor there. An unconstrained point moves exactly; a constrained point projects
   onto its feasible set; a fully constrained point returns `null` and stays put.
+- **The sketch grid is adaptive and the snap grid.** `core/sketch/grid.ts` picks a
+  1/2/5 × 10ⁿ step so minor cells stay roughly 16–40 px; the stage-foot input overrides
+  it with any mm value and `auto` restores it. Snap is independent of grid visibility.
+  Do not reintroduce a fixed 10 mm grid.
+- **Feature forms live in the draggable popover, not the timeline.** `FeaturePopover`
+  holds the extrude sketch picker, height, direction, operation and end; the timeline
+  detail is a summary plus actions (`extrude`, edit, rename, select profiles, open sketch,
+  roll back, suppress, delete). The popover footer is a summary + quiet `cancel` + primary
+  `apply`; editing reopens the same controls and `cancel` restores the feature as it was
+  when the popover opened. A **new extrude is a UI-only draft** (`extrudeDraft`) started
+  from the selected sketch step: it is not written to the document and its `extrude`
+  primary stays disabled until at least one profile is picked. The draft's own test ids
+  are `extrude-draft-popover`, `extrude-apply` and `extrude-cancel`; existing features
+  keep `feature-popover-apply` / `...-cancel`.
+- **Creation is contextual, never a header default.** `+ sketch` at the end of the
+  timeline opens `SupportPopover`; it shows the support explicitly (XY today, XZ/YZ and
+  faces with M4) and the primary is `new-sketch`. `new-extrude` lives on the selected
+  sketch step. There is no header New Sketch/New Extrude button and no implicit XY or
+  first-consumer fallback.
+- **A sketch step never owns region editing.** `activeExtrudeFor` returns null for a
+  sketch. Select an extrude step to edit its existing regions, or start an extrude draft
+  from the sketch step. Without an active extrude or draft, region fills are read-only
+  and the hint explains how to start.
+- **Selection opens a popover, not a bottom line.** `SelectionPopover` uses the same
+  `StagePopover` chrome: kicker/title, selected rows, a `.sc-chip` palette for immediate
+  constraints/construction/dimension/trim/fillet, and a footer summary + quiet delete.
+  Its body is click-through except for the header and controls, so floating over the
+  sketch does not steal point/axis picks. There is no selection card or constraint bar.
+- **Dimension and trim are contextual.** The top tool line only holds selection and
+  creation modes. A selected line, circle/arc or pair of points/lines exposes the
+  dimension chip (and a radius chip for a circle/arc); a selected line/arc exposes trim.
+  Selecting a dimension opens the inline editor at its label: value + unit + driving/
+  reference, Enter commits, Escape or click outside cancels, no apply/cancel pair. Point
+  X/Y uses the same inline shape at the point.
+- **Active-extrude overlay is the used profile, not the whole sketch.** In model mode,
+  `modelSketchOverlay` draws and shades only the region loops the active extrude uses
+  (outer + holes, hole left open). Construction/unused curves and points are hidden until
+  profile-selection mode, where all regions are visible.
+- **Dimension label placement is document state.** Linear labels store `offset` + `along`
+  (fraction between the anchors); radial labels store `angle` + `distance` (leader length
+  beyond the circle). Schema v4 adds these optional fields; do not reset them on unrelated
+  edits.
+- **Box/lasso selection is a sketch tool, not a pan gesture.** `tool === "box"` uses
+  `regionsFullyInside` (fully enclosed); `tool === "lasso"` uses
+  `regionsIntersectingPolygon` (touched/crossing, including a freehand loop inside a
+  profile's corner). A lasso entirely inside a hole selects the void profile, not the
+  parent material. Both select profile regions only, not curves/points. Shift toggles, a
+  plain gesture replaces, and an **empty marquee is a no-op** — committing an empty list
+  would fall back to auto/largest and look like the wrong profile was selected. Do not
+  steal select-drag panning for this.
+- **Enter finishes the sketch after a line draft.** The SketchCanvas window listener
+  commits a 2+ point draft first; with no draft it calls `onFinishSketch`. Do not add a
+  second global Enter handler or it will race the line commit.
+- **The active-extrude sketch overlay is a highlighter mark plus ink.** The model view
+  draws the source sketch on its plane with a thick highlighter underlay and a dark ink
+  centerline (`Viewport.setSketchOverlay`, `Line2` because WebGL ignores
+  `LineBasicMaterial.linewidth`). Highlighter alone was unreadable over the body; keep
+  the centerline. Construction is dashed. It is `depthTest:false`, does not participate
+  in picking, and is hidden in sketch mode/suppressed sketches.
 - Every new constraint type also needs a row in `core/sketch/drag.ts`: arc equal-radius,
   point-on-circle, point-line distance, angle, tangent, symmetric, and fixed points (which
   are omitted from the parameter vector). If it is missing, the solver still cleans up,

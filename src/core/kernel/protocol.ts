@@ -12,6 +12,31 @@ export interface ExtrudeParams {
   /** Selected regions; each becomes a solid and the solids are fused. */
   regions: ProfileRegion[];
   height: number;
+  /** Two-sided extrude around the sketch plane. */
+  symmetric?: boolean;
+  /** `blind` uses height; `throughAll` cuts the current body's full extent. */
+  end?: "blind" | "throughAll";
+}
+
+/** Plain-JSON geometric hint for fallback matching when a role dies. */
+export interface TopoHint {
+  entityType: "face";
+  surfaceType?: string;
+  normal?: [number, number, number];
+  centroid?: [number, number, number];
+  area?: number;
+}
+
+/**
+ * A stable reference to a face, never a kernel hash or an array index. The
+ * worker creates it with `assignRoles` + `captureHint`/`createRef`; the main
+ * thread may store it as JSON in a document later (M4).
+ */
+export interface TopoRef {
+  source: string;
+  kind: "face";
+  role: string;
+  hint: TopoHint;
 }
 
 export interface FaceGroup {
@@ -22,6 +47,8 @@ export interface FaceGroup {
   faceId: number;
   /** brepjs face-origin id, the basis for stable references later. */
   origin: number;
+  /** Stable face reference for selections; JSON-safe. */
+  ref?: TopoRef;
 }
 
 export interface EdgeGroup {

@@ -81,6 +81,21 @@ export function addPolyline(
   return { ...sketch, points, curves, constraints };
 }
 
+/**
+ * Add a standalone user point. It is a normal solver point (not fixed and not
+ * construction) so it can be dragged, constrained and dimensioned; `standalone`
+ * keeps it through pruning because no curve refers to it.
+ */
+export function addPoint(sketch: Sketch, point: Vec2): Sketch {
+  return {
+    ...sketch,
+    points: [
+      ...sketch.points,
+      { id: newId("p"), x: point[0], y: point[1], standalone: true },
+    ],
+  };
+}
+
 export function addRectangle(sketch: Sketch, a: Vec2, b: Vec2): Sketch {
   const x0 = Math.min(a[0], b[0]);
   const x1 = Math.max(a[0], b[0]);

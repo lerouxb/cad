@@ -2,6 +2,8 @@ import { newId } from "./create";
 import { distance, updateConstraintValue } from "./geometry";
 import type { Vec2 } from "../types";
 import {
+  allCurves,
+  allPoints,
   findSketchCurve,
   findSketchPoint,
   type Sketch,
@@ -23,11 +25,68 @@ export type DimensionTarget =
   | { kind: "radius"; circle: string }
   | { kind: "angle"; a: string; b: string };
 
+/**
+ * Infer the dimension a selection asks for. Dimension creation is contextual:
+ * select the entities, then choose dimension/radius in the selection popover.
+ */
+export function dimensionTargetForSelection(
+  sketch: Sketch,
+  ids: readonly string[],
+  radius = false,
+): DimensionTarget | null {
+  const wanted = new Set(ids);
+  const curves = allCurves(sketch).filter((curve) => wanted.has(curve.id));
+  const points = allPoints(sketch).filter((point) => wanted.has(point.id));
+  if (curves.length === 0 && points.length === 2) {
+    return { kind: "distance", a: points[0]!.id, b: points[1]!.id };
+  }
+  if (curves.length === 1) {
+    const curve = curves[0]!;
+    if (curve.type === "line") {
+      const point = points[0];
+      if (
+        points.length === 1 &&
+        point &&
+        point.id !== curve.a &&
+        point.id !== curve.b
+      ) {
+        return { kind: "pointLineDistance", point: point.id, line: curve.id };
+      }
+      if (points.length === 0) {
+        return { kind: "distance", a: curve.a, b: curve.b };
+      }
+    }
+    if (curve.type === "circle" || curve.type === "arc") {
+      if (points.length === 0) {
+        return radius
+          ? { kind: "radius", circle: curve.id }
+          : { kind: "diameter", circle: curve.id };
+      }
+    }
+  }
+  if (
+    curves.length === 2 &&
+    points.length === 0 &&
+    curves.every((curve) => curve.type === "line")
+  ) {
+    return {
+      kind: "angle",
+      a: curves[0]!.id,
+      b: curves[1]!.id,
+    };
+  }
+  return null;
+}
+
 export interface DimensionPlacement {
   /** Signed perpendicular offset of the dimension line, in mm. */
   offset?: number;
+  /** Label position along a linear dimension, 0 = start, 1 = end. */
+  along?: number;
   /** Leader angle for a diameter/radius, in degrees. */
   angle?: number;
+  /** Leader length beyond the circle edge, in mm. */
+  distance?: number;
 }
 
 /**
@@ -56,6 +115,7 @@ export function addDimension(
       value: distance([a.x, a.y], [b.x, b.y]),
       driving,
       offset: placement.offset ?? 12,
+      ...(placement.along !== undefined ? { along: placement.along } : {}),
     });
   }
 
@@ -73,6 +133,7 @@ export function addDimension(
       value,
       driving,
       offset: placement.offset ?? 10,
+      ...(placement.along !== undefined ? { along: placement.along } : {}),
     });
   }
 
@@ -119,6 +180,9 @@ export function addDimension(
     value: radius * 2,
     driving,
     angle: placement.angle ?? 45,
+    ...(placement.distance !== undefined
+      ? { distance: placement.distance }
+      : {}),
     ...(target.kind === "radius" ? { radius: true } : {}),
   });
 }
@@ -139,6 +203,24 @@ export function setDimensionValue(
   );
 }
 
+/** Change an existing dimension between driving and reference. */
+export function setDimensionDriving(
+  sketch: Sketch,
+  id: string,
+  driving: boolean,
+): Sketch {
+  return {
+    ...sketch,
+    constraints: sketch.constraints.map((constraint) => {
+      if (constraint.id !== id) return constraint;
+      if (!("driving" in constraint)) return constraint;
+      return constraint.driving === driving
+        ? constraint
+        : { ...constraint, driving };
+    }),
+  };
+}
+
 /** Move a dimension's label without changing its measurement. */
 export function setDimensionPlacement(
   sketch: Sketch,
@@ -150,11 +232,29 @@ export function setDimensionPlacement(
     constraints: sketch.constraints.map((constraint) => {
       if (constraint.id !== id) return constraint;
       if (constraint.type === "distance" || constraint.type === "pointLineDistance") {
-        if (placement.offset === undefined) return constraint;
-        return { ...constraint, offset: placement.offset };
+        const offset =
+          placement.offset !== undefined ? placement.offset : constraint.offset;
+        const along =
+          placement.along !== undefined ? placement.along : constraint.along;
+        if (offset === constraint.offset && along === constraint.along) {
+          return constraint;
+        }
+        return { ...constraint, offset, along };
       }
-      if (constraint.type === "diameter" && placement.angle !== undefined) {
-        return { ...constraint, angle: placement.angle };
+      if (constraint.type === "diameter") {
+        const angle =
+          placement.angle !== undefined ? placement.angle : constraint.angle;
+        const distance =
+          placement.distance !== undefined
+            ? placement.distance
+            : constraint.distance;
+        if (
+          angle === constraint.angle &&
+          distance === constraint.distance
+        ) {
+          return constraint;
+        }
+        return { ...constraint, angle, distance };
       }
       if (constraint.type === "angle" && placement.offset !== undefined) {
         return { ...constraint, offset: placement.offset };

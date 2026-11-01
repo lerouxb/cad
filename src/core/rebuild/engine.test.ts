@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { createDocument } from "../doc/create";
-import { updateExtrudeHeight, updateExtrudeRegions, updatePrimarySketch } from "../doc/selectors";
+import {
+  updateExtrudeFeature,
+  updateExtrudeHeight,
+  updateExtrudeRegions,
+  updatePrimarySketch,
+} from "../doc/selectors";
 import { extrudeParams } from "../features/extrude";
 import { addCircle, emptySketch } from "../sketch/create";
 import { createDemoModel } from "../sketch/demo";
@@ -41,9 +46,9 @@ function countingDeps(): {
         calls.regions += 1;
         return regionsFromSketch(sketch);
       },
-      extrudeParams: (regions, height) => {
+      extrudeParams: (regions, height, options) => {
         calls.extrude += 1;
-        return extrudeParams(regions, height);
+        return extrudeParams(regions, height, options);
       },
     },
   };
@@ -225,6 +230,10 @@ describe("ordered rebuild", () => {
     expect(result.status).toBe("ok");
     expect(result.features).toHaveLength(4);
     expect(result.features.every((feature) => feature.status === "ok")).toBe(true);
+    expect(result.sketchById.size).toBe(2);
+    expect(result.sketchById.get("sketch")?.regions).toHaveLength(2);
+    expect(result.sketchById.get("sketch-2")?.regions).toHaveLength(1);
+    expect(result.sketch?.sketch.curves.length).toBeGreaterThan(0);
     const kernelFeatures = extractKernelFeatures(result);
     expect(kernelFeatures.map((feature) => feature.operation)).toEqual([
       "new",
@@ -232,6 +241,67 @@ describe("ordered rebuild", () => {
     ]);
     expect(kernelFeatures[1]?.params.regions[0]?.outer.kind).toBe("circle");
     expect(calls).toEqual({ solve: 2, regions: 2, extrude: 2 });
+  });
+
+  it("skips suppressed features and their dependants", () => {
+    const { deps } = countingDeps();
+    const suppressedExtrude = updateExtrudeFeature(
+      exampleDoc(),
+      "extrude",
+      (feature) => ({ ...feature, suppressed: true }),
+    );
+    const extruded = rebuildDocument(suppressedExtrude, {}, deps);
+    expect(extruded.status).toBe("ok");
+    expect(extruded.features[1]?.status).toBe("skipped");
+    expect(extruded.features[1]?.diagnostics[0]?.code).toBe("suppressed");
+    expect(extruded.params).toBeNull();
+
+    const doc = exampleDoc();
+    const first = doc.features[0]!;
+    if (first.type !== "sketch") throw new Error("Expected a sketch");
+    const withSuppressedSketch = {
+      ...doc,
+      features: [{ ...first, suppressed: true }, doc.features[1]!],
+    };
+    const skipped = rebuildDocument(withSuppressedSketch, {}, deps);
+    expect(skipped.features[0]?.status).toBe("skipped");
+    expect(skipped.features[1]?.status).toBe("skipped");
+    expect(skipped.sketchById.size).toBe(0);
+  });
+
+  it("passes symmetric and through-all end conditions to the kernel", () => {
+    const { deps } = countingDeps();
+    const symmetric = rebuildDocument(
+      updateExtrudeFeature(exampleDoc(), "extrude", (feature) => ({
+        ...feature,
+        symmetric: true,
+      })),
+      {},
+      deps,
+    );
+    expect(symmetric.params?.symmetric).toBe(true);
+
+    const throughAll = updateExtrudeFeature(
+      exampleDoc(),
+      "extrude",
+      (feature) => ({ ...feature, operation: "cut", end: "throughAll" }),
+    );
+    const cut = rebuildDocument(throughAll, {}, deps);
+    expect(cut.status).toBe("ok");
+    expect(cut.params?.end).toBe("throughAll");
+
+    const invalid = rebuildDocument(
+      updateExtrudeFeature(exampleDoc(), "extrude", (feature) => ({
+        ...feature,
+        end: "throughAll",
+      })),
+      {},
+      deps,
+    );
+    expect(invalid.status).toBe("error");
+    expect(invalid.features[1]?.diagnostics[0]?.code).toBe(
+      "through-all-needs-cut",
+    );
   });
 
   it("reports an extrude whose source sketch is missing", () => {

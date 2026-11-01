@@ -1,5 +1,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { Line2 } from "three/addons/lines/Line2.js";
+import { LineGeometry } from "three/addons/lines/LineGeometry.js";
+import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import type { BodyMesh } from "../core/kernel/protocol";
 import {
   edgeGroupForVertex,
@@ -28,6 +31,23 @@ export interface ViewportOptions {
   onPick?: (pick: BodyPick | null) => void;
 }
 
+/** A sketch rendered on its plane in the model view. Plain data, no three.js. */
+export interface SketchOverlayData {
+  curves: ReadonlyArray<{
+    points: ReadonlyArray<readonly [number, number]>;
+    construction?: boolean;
+  }>;
+  points: ReadonlyArray<{
+    position: readonly [number, number];
+    construction?: boolean;
+  }>;
+  /** Filled profile loops used by the active extrude, with holes. */
+  fills?: ReadonlyArray<{
+    outer: ReadonlyArray<readonly [number, number]>;
+    holes?: ReadonlyArray<ReadonlyArray<readonly [number, number]>>;
+  }>;
+}
+
 export type { BodyPick };
 
 export class Viewport {
@@ -36,6 +56,9 @@ export class Viewport {
   private camera: THREE.PerspectiveCamera;
   private controls: OrbitControls;
   private body = new THREE.Group();
+  private sketch = new THREE.Group();
+  private sketchOverlay: SketchOverlayData | null = null;
+  private readonly sketchLineMaterials = new Set<LineMaterial>();
   private environment = new THREE.Group();
   private hoverGroup = new THREE.Group();
   private selectionGroup = new THREE.Group();
@@ -90,6 +113,7 @@ export class Viewport {
     this.controls.update();
 
     this.scene.add(this.body);
+    this.scene.add(this.sketch);
     this.scene.add(this.environment);
     this.scene.add(this.hoverGroup);
     this.scene.add(this.selectionGroup);
@@ -114,6 +138,7 @@ export class Viewport {
     this.scene.background = new THREE.Color(this.background());
     this.addEnvironment();
     this.applyBodyTheme();
+    this.rebuildSketchOverlay();
     this.dirty = true;
   }
 
@@ -121,6 +146,22 @@ export class Viewport {
     if (this.highlightColor === color || this.disposed) return;
     this.highlightColor = color;
     this.rebuildSelectionOverlays();
+    this.rebuildSketchOverlay();
+  }
+
+  /**
+   * Show the active extrude's source sketch on its plane. Lines are drawn over
+   * the body (depthTest false), like Fusion's sketch preview, so the sketch
+   * plane and the one-sided/symmetric direction are readable.
+   */
+  setSketchOverlay(overlay: SketchOverlayData | null): void {
+    if (this.disposed) return;
+    this.sketchOverlay = overlay;
+    this.canvas.dataset.sketchOverlay = overlay ? "on" : "off";
+    this.canvas.dataset.sketchCurves = String(overlay?.curves.length ?? 0);
+    this.canvas.dataset.sketchFills = String(overlay?.fills?.length ?? 0);
+    this.rebuildSketchOverlay();
+    this.dirty = true;
   }
 
   /** Pause rendering while the 3D view is hidden (sketch mode). */
@@ -150,8 +191,8 @@ export class Viewport {
 
     const material = new THREE.MeshStandardMaterial({
       color: this.bodyColor(),
-      metalness: 0.05,
-      roughness: 0.72,
+      metalness: 0,
+      roughness: 0.94,
       polygonOffset: true,
       polygonOffsetFactor: 1,
       polygonOffsetUnits: 1,
@@ -199,6 +240,7 @@ export class Viewport {
 
   frameAll(): void {
     const box = new THREE.Box3().setFromObject(this.body);
+    if (box.isEmpty()) box.setFromObject(this.sketch);
     if (box.isEmpty()) return;
 
     const center = box.getCenter(new THREE.Vector3());
@@ -224,6 +266,7 @@ export class Viewport {
     this.canvas.removeEventListener("pointercancel", this.onPointerCancel);
     this.canvas.removeEventListener("pointerleave", this.onPointerLeave);
     this.clearBody();
+    this.clearSketchOverlay();
     this.clearEnvironment();
     this.renderer.dispose();
   }
@@ -429,36 +472,24 @@ export class Viewport {
       new THREE.HemisphereLight(
         day ? 0xffffff : 0xa5a396,
         day ? 0xf0efe8 : 0x1a1a17,
-        day ? 1.15 : 1.05,
+        day ? 1.25 : 1.05,
       ),
     );
 
-    const key = new THREE.DirectionalLight(0xffffff, day ? 1.5 : 1.85);
+    const key = new THREE.DirectionalLight(0xffffff, day ? 1.15 : 1.85);
     key.position.set(120, -90, 180);
     this.environment.add(key);
 
     const fill = new THREE.DirectionalLight(
       day ? 0xffffff : 0xb9b6a8,
-      day ? 0.45 : 0.55,
+      day ? 0.55 : 0.55,
     );
     fill.position.set(-140, 120, 40);
     this.environment.add(fill);
 
-    const grid = new THREE.GridHelper(
-      600,
-      60,
-      day ? 0xc9c8bf : 0x4e4d45,
-      day ? 0xe2e1d9 : 0x2d2d28,
-    );
-    grid.rotation.x = Math.PI / 2;
-    grid.material.transparent = true;
-    grid.material.opacity = day ? 0.85 : 0.8;
-    grid.position.z = -0.05;
-    this.environment.add(grid);
-
-    const axes = new THREE.AxesHelper(22);
-    axes.position.z = 0.01;
-    this.environment.add(axes);
+    // The model is a drawing on paper, not a viewport with wallpaper. The
+    // sketch grid is the snap grid; the 3D stage keeps only the body and its
+    // B-rep edges. Orientation is stated in the stage foot (Z-up · mm).
   }
 
   private clearEnvironment(): void {
@@ -503,11 +534,142 @@ export class Viewport {
   }
 
   private bodyColor(): number {
-    return this.theme === "day" ? 0xefeee7 : 0x77756b;
+    return this.theme === "day" ? 0xf5f2e8 : 0x77756b;
   }
 
   private edgeColor(): number {
     return this.theme === "day" ? 0x161614 : 0xf2efe3;
+  }
+
+  private rebuildSketchOverlay(): void {
+    this.clearSketchOverlay();
+    const overlay = this.sketchOverlay;
+    if (!overlay) return;
+    const highlighter = this.highlightColor;
+    const ink = this.theme === "day" ? "#141412" : "#f2efe3";
+    const dim = this.theme === "day" ? "#87847a" : "#807d72";
+    const resolution = new THREE.Vector2(
+      Math.max(1, this.canvas.clientWidth),
+      Math.max(1, this.canvas.clientHeight),
+    );
+
+    const lineMaterial = (
+      color: string,
+      width: number,
+      opacity: number,
+      dashed = false,
+    ): LineMaterial => {
+      const material = new LineMaterial({
+        color,
+        linewidth: width,
+        transparent: true,
+        opacity,
+        depthTest: false,
+        depthWrite: false,
+        dashed,
+        dashSize: 3,
+        gapSize: 2,
+        resolution,
+      });
+      this.sketchLineMaterials.add(material);
+      return material;
+    };
+
+    for (const fill of overlay.fills ?? []) {
+      const ring = (
+        points: ReadonlyArray<readonly [number, number]>,
+      ): THREE.Vector2[] => {
+        const out = points.map(([x, y]) => new THREE.Vector2(x, y));
+        if (out.length > 1) {
+          const first = out[0]!;
+          const last = out[out.length - 1]!;
+          if (first.distanceTo(last) < 1e-9) out.pop();
+        }
+        return out;
+      };
+      const outer = ring(fill.outer);
+      if (outer.length < 3) continue;
+      const shape = new THREE.Shape(outer);
+      for (const hole of fill.holes ?? []) {
+        const loop = ring(hole);
+        if (loop.length >= 3) shape.holes.push(new THREE.Path(loop));
+      }
+      const geometry = new THREE.ShapeGeometry(shape);
+      const material = new THREE.MeshBasicMaterial({
+        color: highlighter,
+        transparent: true,
+        opacity: 0.18,
+        depthTest: false,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.renderOrder = 19;
+      this.sketch.add(mesh);
+    }
+
+    for (const curve of overlay.curves) {
+      if (curve.points.length < 2) continue;
+      const positions = curve.points.flatMap(([x, y]) => [x, y, 0]);
+      const makeLine = (material: LineMaterial, order: number): Line2 => {
+        const geometry = new LineGeometry();
+        geometry.setPositions(positions);
+        const line = new Line2(geometry, material);
+        if (material.dashed) line.computeLineDistances();
+        line.renderOrder = order;
+        this.sketch.add(line);
+        return line;
+      };
+      if (curve.construction) {
+        makeLine(lineMaterial(dim, 1.2, 0.85, true), 20);
+      } else {
+        // The highlighter is the mark; the ink centerline is what makes it
+        // readable over the solid. Never rely on linewidth alone.
+        makeLine(lineMaterial(highlighter, 8, 0.42), 20);
+        makeLine(lineMaterial(ink, 1.6, 0.95), 21);
+      }
+    }
+
+    if (overlay.points.length > 0) {
+      const positions = new Float32Array(overlay.points.length * 3);
+      overlay.points.forEach((point, index) => {
+        positions[index * 3] = point.position[0];
+        positions[index * 3 + 1] = point.position[1];
+        positions[index * 3 + 2] = 0;
+      });
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      const material = new THREE.PointsMaterial({
+        color: ink,
+        size: 3.5,
+        sizeAttenuation: false,
+        transparent: true,
+        opacity: 0.95,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const points = new THREE.Points(geometry, material);
+      points.renderOrder = 22;
+      this.sketch.add(points);
+    }
+  }
+
+  private clearSketchOverlay(): void {
+    for (const child of [...this.sketch.children]) {
+      this.sketch.remove(child);
+      const disposable = child as unknown as {
+        geometry?: { dispose: () => void };
+        material?: { dispose: () => void } | Array<{ dispose: () => void }>;
+      };
+      disposable.geometry?.dispose();
+      if (Array.isArray(disposable.material)) {
+        disposable.material.forEach((material) => material.dispose());
+      } else {
+        disposable.material?.dispose();
+      }
+    }
+    for (const material of this.sketchLineMaterials) material.dispose();
+    this.sketchLineMaterials.clear();
   }
 
   private clearBody(): void {
@@ -554,6 +716,9 @@ export class Viewport {
     this.renderer.setSize(width, height, false);
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
+    for (const material of this.sketchLineMaterials) {
+      material.resolution.set(width, height);
+    }
     this.dirty = true;
   }
 }

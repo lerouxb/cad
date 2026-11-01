@@ -23,6 +23,11 @@ export function migrateDoc(raw: unknown): Doc | null {
   const version = raw.schemaVersion;
 
   if (version === CURRENT_SCHEMA_VERSION) return validateDoc(raw);
+  // Shape-compatible upgrades:
+  // v1 → v2 adds the optional `standalone` point flag;
+  // v2 → v3 adds extrude `end` (defaults to blind) and `suppressed` (defaults off);
+  // v3 → v4 adds optional dimension label placement (`along`/`distance`).
+  if (version === 1 || version === 2 || version === 3) return validateDoc(raw);
   if (version === 0 || (version === undefined && "sketch" in raw)) {
     return migrateLegacy(raw);
   }
@@ -92,6 +97,7 @@ function validateFeature(raw: unknown): Feature | null {
       name,
       support: validateSupport(raw.support),
       sketch,
+      ...(raw.suppressed === true ? { suppressed: true } : {}),
     };
   }
 
@@ -111,6 +117,8 @@ function validateFeature(raw: unknown): Feature | null {
       height: raw.height,
       operation: isOperation(raw.operation) ? raw.operation : "new",
       symmetric: raw.symmetric === true,
+      end: isEnd(raw.end) ? raw.end : "blind",
+      ...(raw.suppressed === true ? { suppressed: true } : {}),
     };
   }
 
@@ -132,6 +140,10 @@ function isWorldPlane(value: unknown): value is WorldPlane {
 
 function isOperation(value: unknown): value is ExtrudeOperation {
   return value === "new" || value === "join" || value === "cut";
+}
+
+function isEnd(value: unknown): value is "blind" | "throughAll" {
+  return value === "blind" || value === "throughAll";
 }
 
 function isSketch(raw: unknown): raw is Sketch {

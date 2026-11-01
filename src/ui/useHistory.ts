@@ -7,6 +7,8 @@ export interface History<T> {
   commit: (next: T, mergeKey?: string) => void;
   /** Replace without creating an undo entry (initial load, external sync). */
   replace: (next: T) => void;
+  /** Replace and discard undo/redo history (open/new document). */
+  reset: (next: T) => void;
   undo: () => void;
   redo: () => void;
   /** Stop merging subsequent commits into the current undo entry. */
@@ -90,6 +92,18 @@ export function useHistory<T>(initial: T): History<T> {
     [sync],
   );
 
+  const reset = useCallback(
+    (next: T) => {
+      const current = store.current;
+      current.past.length = 0;
+      current.future.length = 0;
+      current.present = next;
+      current.merge = null;
+      sync();
+    },
+    [sync],
+  );
+
   const undo = useCallback(() => {
     const current = store.current;
     const previous = current.past.pop();
@@ -119,6 +133,7 @@ export function useHistory<T>(initial: T): History<T> {
     getState,
     commit,
     replace,
+    reset,
     undo,
     redo,
     endMerge,

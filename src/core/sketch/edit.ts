@@ -54,12 +54,14 @@ export function deleteEntities(sketch: Sketch, ids: readonly string[]): Sketch {
     }
   }
 
-  // Fixed points are reference geometry (the sketch origin, projected edges):
-  // they stay even when nothing currently uses them. Everything else survives
-  // only if a remaining curve still refers to it.
+  // Fixed points are reference geometry (the sketch origin, projected edges)
+  // and standalone points are intentional user geometry: both stay even when no
+  // curve uses them. Everything else survives only if a remaining curve does.
   const points = sketch.points.filter((point) => {
     if (selectedPoints.has(point.id)) return false;
-    return point.fixed === true || usedPoints.has(point.id);
+    return (
+      point.fixed === true || point.standalone === true || usedPoints.has(point.id)
+    );
   });
   const keptPoints = new Set([
     ...points.map((point) => point.id),
@@ -134,7 +136,8 @@ export function pruneSketch(sketch: Sketch): Sketch {
   }
 
   const points = sketch.points.filter(
-    (point) => point.fixed === true || usedPoints.has(point.id),
+    (point) =>
+      point.fixed === true || point.standalone === true || usedPoints.has(point.id),
   );
   const pointIds = new Set([
     ...points.map((point) => point.id),

@@ -1,25 +1,34 @@
 import {
   OcctWasmAdapter,
   addHoles,
+  assignRoles,
+  captureHint,
   circle,
   clearMeshCache,
   clone,
-  cut,
+  createRef,
+  cutWithEvolution,
   extrude,
   face,
-  fuse,
   fuseAll,
+  fuseWithEvolution,
+  getBounds,
+  getFaces,
+  getHashCode,
   line,
   measureVolume,
   registerKernel,
   shape,
   threePointArc,
   toBufferGeometryData,
+  translate,
+  updateRoles,
   unwrap,
   wireLoop,
   withScope,
   type ClosedWire,
   type PlanarWire,
+  type RoleTable,
   type Solid,
 } from "brepjs";
 import { OcctKernel } from "occt-wasm";
@@ -32,6 +41,7 @@ import type {
   ProfileRegion,
   KernelResponse,
   ProfileLoop,
+  TopoRef,
 } from "../core/kernel/protocol";
 
 // This file only runs inside a dedicated worker.
@@ -99,15 +109,17 @@ function buildFeatures(features: KernelFeature[]): {
 } {
   const statuses: FeatureBuildStatus[] = [];
   const protectedKeys = new Set<string>();
-  const pending: { key: string; solid: Solid }[] = [];
+  const pending: Array<PrefixEntry & { key: string }> = [];
   let base: Solid | null = null;
   let baseKey: string | null = null;
+  let baseRoles: RoleTable = new Map();
   let cacheInvalid = false;
 
   for (const feature of features) {
     const cached = solidCache.get(feature.cacheKey);
     if (cached) {
-      base = cached;
+      base = cached.solid;
+      baseRoles = cached.roles;
       baseKey = feature.cacheKey;
       protectedKeys.add(feature.cacheKey);
       statuses.push({
@@ -120,7 +132,10 @@ function buildFeatures(features: KernelFeature[]): {
 
     let tool: Solid;
     try {
-      tool = buildSolid(feature.params);
+      if (feature.params.end === "throughAll" && feature.operation !== "cut") {
+        throw new Error("Through-all is only available for a cut extrude.");
+      }
+      tool = buildSolid(feature.params, base);
     } catch (error) {
       cacheInvalid = true;
       statuses.push({
@@ -146,9 +161,16 @@ function buildFeatures(features: KernelFeature[]): {
           continue;
         }
         base = tool;
+        baseRoles = new Map([
+          [feature.featureId, assignRoles(tool, "extrude")],
+        ]);
         baseKey = feature.cacheKey;
         protectedKeys.add(feature.cacheKey);
-        pending.push({ key: feature.cacheKey, solid: tool });
+        pending.push({
+          key: feature.cacheKey,
+          solid: tool,
+          roles: baseRoles,
+        });
         statuses.push({
           featureId: feature.featureId,
           status: "ok",
@@ -169,14 +191,33 @@ function buildFeatures(features: KernelFeature[]): {
         continue;
       }
 
+      const toolRoles = new Map([
+        [feature.featureId, assignRoles(tool, "extrude")],
+      ]);
       const result = unwrap(
-        feature.operation === "cut" ? cut(base, tool) : fuse(base, tool),
+        feature.operation === "cut"
+          ? cutWithEvolution(base, tool)
+          : fuseWithEvolution(base, tool),
       );
+      // Advance every origin's role table through the boolean. This is what
+      // keeps a face's role stable when an upstream join/cut re-hashes it.
+      let roles: RoleTable = new Map([...baseRoles, ...toolRoles]);
+      for (const origin of [...roles.keys()]) {
+        roles = updateRoles(roles, origin, result.evolution);
+      }
       tool.delete();
-      base = result;
+      // A boolean of two solids is a solid; brepjs's widest overload returns
+      // Shape3D, so narrow it here before caching.
+      const resultSolid = result.shape as Solid;
+      base = resultSolid;
+      baseRoles = roles;
       baseKey = feature.cacheKey;
       protectedKeys.add(feature.cacheKey);
-      pending.push({ key: feature.cacheKey, solid: result });
+      pending.push({
+        key: feature.cacheKey,
+        solid: resultSolid,
+        roles,
+      });
       statuses.push({
         featureId: feature.featureId,
         status: "ok",
@@ -196,7 +237,7 @@ function buildFeatures(features: KernelFeature[]): {
   }
 
   if (baseKey) protectedKeys.add(baseKey);
-  const mesh = base ? meshSolid(base) : null;
+  const mesh = base ? meshSolid(base, baseRoles) : null;
 
   if (cacheInvalid) {
     // A transient boolean failure must not leave downstream prefix solids that
@@ -205,7 +246,13 @@ function buildFeatures(features: KernelFeature[]): {
     for (const entry of pending) entry.solid.delete();
     solidCache.clear();
   } else {
-    for (const entry of pending) solidCache.set(entry.key, entry.solid, protectedKeys);
+    for (const entry of pending) {
+      solidCache.set(
+        entry.key,
+        { solid: entry.solid, roles: entry.roles },
+        protectedKeys,
+      );
+    }
     solidCache.trim(protectedKeys);
   }
 
@@ -213,14 +260,31 @@ function buildFeatures(features: KernelFeature[]): {
 }
 
 /** Build one tool solid and return an independently owned clone. */
-function buildSolid(params: ExtrudeParams): Solid {
-  if (!Number.isFinite(params.height) || params.height <= 0) {
+function buildSolid(params: ExtrudeParams, base: Solid | null): Solid {
+  if (
+    params.end !== "throughAll" &&
+    (!Number.isFinite(params.height) || params.height <= 0)
+  ) {
     throw new Error("Extrude height must be greater than zero.");
   }
   if (params.regions.length === 0) {
     throw new Error("Select at least one profile region.");
   }
   for (const region of params.regions) validateRegion(region);
+
+  let startZ = 0;
+  let totalHeight = params.height;
+  if (params.end === "throughAll") {
+    if (!base) throw new Error("Through-all needs an existing body to cut.");
+    const bounds = getBounds(base);
+    const span = Math.max(bounds.zMax - bounds.zMin, 1);
+    const margin = Math.max(5, span * 0.1);
+    startZ = bounds.zMin - margin;
+    totalHeight = span + margin * 2;
+  } else if (params.symmetric) {
+    startZ = -params.height / 2;
+    totalHeight = params.height;
+  }
 
   return withScope((scope) => {
     const solids = params.regions.map((region) => {
@@ -229,7 +293,11 @@ function buildSolid(params: ExtrudeParams): Solid {
       const profile = scope.track(unwrap(face(outerWire)));
       const withHoles =
         holeWires.length > 0 ? scope.track(addHoles(profile, holeWires)) : profile;
-      return scope.track(unwrap(extrude(withHoles, [0, 0, params.height])));
+      const placed =
+        startZ === 0
+          ? withHoles
+          : scope.track(translate(withHoles, [0, 0, startZ]));
+      return scope.track(unwrap(extrude(placed, [0, 0, totalHeight])));
     });
     const solid =
       solids.length === 1
@@ -241,7 +309,7 @@ function buildSolid(params: ExtrudeParams): Solid {
   });
 }
 
-function meshSolid(solid: Solid): BodyMesh {
+function meshSolid(solid: Solid, roles: RoleTable): BodyMesh {
   // A cached solid may still own mesh arrays whose buffers were transferred to
   // the main thread on a previous request. Force a fresh tessellation.
   clearMeshCache();
@@ -267,16 +335,21 @@ function meshSolid(solid: Solid): BodyMesh {
     if (z > maxZ) maxZ = z;
   }
 
+  const refs = topoRefs(solid, roles);
   return {
     positions: data.position,
     normals: data.normal,
     indices: data.index,
-    faceGroups: mesh.faceGroups.map((group) => ({
-      start: group.start,
-      count: group.count,
-      faceId: group.faceId,
-      origin: group.origin,
-    })),
+    faceGroups: mesh.faceGroups.map((group) => {
+      const ref = refs.get(group.faceId);
+      return {
+        start: group.start,
+        count: group.count,
+        faceId: group.faceId,
+        origin: group.origin,
+        ...(ref ? { ref } : {}),
+      };
+    }),
     edgePositions: edgeMesh.lines,
     edgeGroups: edgeMesh.edgeGroups.map((group) => ({
       start: group.start,
@@ -294,32 +367,91 @@ function meshSolid(solid: Solid): BodyMesh {
   };
 }
 
+/** Turn the propagated role table into JSON-safe refs for the final body. */
+function topoRefs(solid: Solid, roles: RoleTable): Map<number, TopoRef> {
+  const refs = new Map<number, TopoRef>();
+  try {
+    type Face3D = Parameters<typeof captureHint>[0];
+    const faceByHash = new Map<number, Face3D>();
+    for (const face of getFaces(solid)) {
+      faceByHash.set(getHashCode(face), face as Face3D);
+    }
+    for (const [source, originRoles] of roles) {
+      for (const [role, hashes] of originRoles) {
+        for (const hash of hashes) {
+          const face = faceByHash.get(hash);
+          if (!face) continue;
+          const hint = captureHint(face);
+          const ref = createRef(source, role, face);
+          refs.set(hash, {
+            source: ref.origin,
+            kind: "face",
+            role: ref.role,
+            hint: {
+              entityType: "face",
+              ...(hint.surfaceType
+                ? { surfaceType: String(hint.surfaceType) }
+                : {}),
+              ...(hint.normal
+                ? { normal: [hint.normal[0], hint.normal[1], hint.normal[2]] }
+                : {}),
+              ...(hint.centroid
+                ? {
+                    centroid: [
+                      hint.centroid[0],
+                      hint.centroid[1],
+                      hint.centroid[2],
+                    ],
+                  }
+                : {}),
+              ...(hint.area !== undefined ? { area: hint.area } : {}),
+            },
+          });
+        }
+      }
+    }
+  } catch {
+    // Refs are additive metadata; a role failure must never break the mesh.
+  }
+  return refs;
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+interface PrefixEntry {
+  solid: Solid;
+  /** Stable face roles, propagated through each boolean with `updateRoles`. */
+  roles: RoleTable;
+}
+
 class SolidCache {
-  private readonly entries = new Map<string, Solid>();
+  private readonly entries = new Map<string, PrefixEntry>();
   private readonly limit: number;
 
   constructor(limit: number) {
     this.limit = limit;
   }
 
-  get(key: string): Solid | undefined {
+  get(key: string): PrefixEntry | undefined {
     return this.entries.get(key);
   }
 
-  set(key: string, solid: Solid, protectedKeys: ReadonlySet<string>): void {
+  set(
+    key: string,
+    entry: PrefixEntry,
+    protectedKeys: ReadonlySet<string>,
+  ): void {
     const existing = this.entries.get(key);
-    if (existing === solid) return;
-    if (existing && !protectedKeys.has(key)) existing.delete();
-    this.entries.set(key, solid);
+    if (existing?.solid === entry.solid) return;
+    if (existing && !protectedKeys.has(key)) existing.solid.delete();
+    this.entries.set(key, entry);
     this.trim(protectedKeys);
   }
 
   clear(): void {
-    for (const solid of this.entries.values()) solid.delete();
+    for (const entry of this.entries.values()) entry.solid.delete();
     this.entries.clear();
   }
 
@@ -333,9 +465,9 @@ class SolidCache {
         }
       }
       if (victim === null) return;
-      const solid = this.entries.get(victim);
+      const entry = this.entries.get(victim);
       this.entries.delete(victim);
-      solid?.delete();
+      entry?.solid.delete();
     }
   }
 }

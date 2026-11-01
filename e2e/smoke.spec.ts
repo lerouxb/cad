@@ -14,8 +14,28 @@ async function setSlider(locator: Locator, value: number): Promise<void> {
   }, value);
 }
 
+/** Screen point for a sketch-space coordinate (after the view settles). */
+async function sketchPoint(
+  page: Page,
+  x: number,
+  y: number,
+): Promise<{ x: number; y: number }> {
+  await settleSketch(page);
+  return page.evaluate(
+    ([sx, sy]) => {
+      const svg = document.querySelector<SVGSVGElement>("svg.sketch-canvas");
+      const matrix = svg?.getScreenCTM();
+      if (!matrix) throw new Error("Sketch canvas is not visible");
+      const point = new DOMPoint(sx, sy).matrixTransform(matrix);
+      return { x: point.x, y: point.y };
+    },
+    [x, y],
+  );
+}
+
 /** Click a point given in sketch millimetres, independent of pan/zoom. */
 async function clickSketch(page: Page, x: number, y: number): Promise<void> {
+  await settleSketch(page);
   const screen = await page.evaluate(
     ([sx, sy]) => {
       const svg = document.querySelector<SVGSVGElement>("svg.sketch-canvas");
@@ -34,7 +54,15 @@ async function enterSketch(page: Page): Promise<void> {
   await expect(page.getByTestId("tool-select")).toBeVisible();
 }
 
+/** Create a sketch through the explicit support popover. */
+async function createSketch(page: Page): Promise<void> {
+  await page.getByTestId("add-sketch").click();
+  await expect(page.getByTestId("support-popover")).toBeVisible();
+  await page.getByTestId("new-sketch").click();
+}
+
 async function dblclickSketch(page: Page, x: number, y: number): Promise<void> {
+  await settleSketch(page);
   const screen = await page.evaluate(
     ([sx, sy]) => {
       const svg = document.querySelector<SVGSVGElement>("svg.sketch-canvas");
@@ -48,11 +76,49 @@ async function dblclickSketch(page: Page, x: number, y: number): Promise<void> {
   await page.mouse.dblclick(screen.x, screen.y);
 }
 
+async function settleSketch(page: Page): Promise<void> {
+  // Drawing auto-fits the view. Wait for the fit's effect/paint to land and the
+  // viewBox to stop changing before reading the CTM, otherwise the next gesture
+  // is mapped against the old view. The minimum-frame window also gives React
+  // time to flush the effects under parallel-worker load.
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) => {
+        let last = "";
+        let stable = 0;
+        let frames = 0;
+        const tick = () => {
+          const current =
+            document
+              .querySelector<SVGSVGElement>("svg.sketch-canvas")
+              ?.getAttribute("viewBox") ?? "";
+          frames += 1;
+          if (frames >= 6) {
+            if (current === last) stable += 1;
+            else stable = 0;
+            last = current;
+            if (stable >= 3) {
+              resolve();
+              return;
+            }
+          }
+          if (frames >= 30) {
+            resolve();
+            return;
+          }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }),
+  );
+}
+
 async function dragSketch(
   page: Page,
   from: [number, number],
   to: [number, number],
 ): Promise<void> {
+  await settleSketch(page);
   // Map both ends with the same CTM: an auto-fit between two lookups would
   // skew the drag.
   const points = await page.evaluate(
@@ -67,6 +133,30 @@ async function dragSketch(
     [from[0], from[1], to[0], to[1]],
   );
   await dragScreen(page, points.a.x, points.a.y, points.b.x, points.b.y);
+}
+
+async function lassoSketch(
+  page: Page,
+  points: [number, number][],
+): Promise<void> {
+  await settleSketch(page);
+  const screen = await page.evaluate((world) => {
+    const svg = document.querySelector<SVGSVGElement>("svg.sketch-canvas");
+    const matrix = svg?.getScreenCTM();
+    if (!matrix) throw new Error("Sketch canvas is not visible");
+    return world.map(([x, y]) => {
+      const point = new DOMPoint(x, y).matrixTransform(matrix);
+      return { x: point.x, y: point.y };
+    });
+  }, points);
+  const first = screen[0]!;
+  await page.mouse.move(first.x, first.y);
+  await page.mouse.down();
+  for (const point of screen.slice(1)) {
+    await page.mouse.move(point.x, point.y, { steps: 5 });
+  }
+  await page.mouse.move(first.x, first.y, { steps: 5 });
+  await page.mouse.up();
 }
 
 async function dragScreen(
@@ -218,18 +308,22 @@ test.beforeEach(async ({ app: page }) => {
   await page.getByTestId("theme-day").click();
   await page.getByTestId("highlight-yellow").click();
   await page.getByTestId("timeline-sketch").click();
-  await page.getByTestId("tool-dimension").click();
-  await page.getByTestId("dimension-distance").click();
-  const radius = page.getByTestId("dimension-radius");
-  if (((await radius.getAttribute("class")) ?? "").includes("is-active")) {
-    await radius.click();
-  }
-  const reference = page.getByTestId("reference-toggle");
-  if (await reference.isChecked()) await reference.uncheck();
   await page.getByTestId("tool-select").click();
+  const snap = page.getByTestId("snap-toggle");
+  if (((await snap.textContent()) ?? "").includes("off")) await snap.click();
+  await page.getByTestId("grid-auto").click();
+  await page.getByTestId("zoom-select").selectOption("fit");
+  if (await page.getByTestId("file-menu-popover").count()) {
+    await page.getByTestId("file-menu").click();
+  }
+  const rollForward = page.getByTestId("roll-forward");
+  if (await rollForward.count()) await rollForward.click();
+  await page.evaluate(() => localStorage.removeItem("cad.files"));
   await page.getByTestId("load-example").click();
-  await setSlider(page.getByTestId("height-slider"), 12);
   await page.getByTestId("timeline-extrude").click();
+  await page.getByTestId("edit-feature").click();
+  await setSlider(page.getByTestId("height-slider"), 12);
+  await page.getByTestId("feature-popover-apply").click();
   const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
   await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
 });
@@ -261,13 +355,17 @@ test("the dimensioned example drives an exact solid", async ({ app: page }) => {
   );
   await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
 
-  // Extrude height is a feature parameter.
+  // Extrude height is an extrude-feature parameter, edited in the feature popover.
+  await page.getByTestId("timeline-extrude").click();
+  await page.getByTestId("edit-feature").click();
   await setSlider(page.getByTestId("height-slider"), 30);
+  await page.getByTestId("feature-popover-apply").click();
   const taller = 60 * 40 * 30 - Math.PI * 8 * 8 * 30;
   await expect.poll(() => volume(page)).toBeCloseTo(taller, -1);
 
   // Drawing appends to the sketch instead of replacing it. A circle inside the
   // plate becomes another hole.
+  await page.getByTestId("timeline-sketch").click();
   await page.getByTestId("tool-circle").click();
   await clickSketch(page, 10, 20);
   await clickSketch(page, 15, 20);
@@ -281,8 +379,30 @@ test("the dimensioned example drives an exact solid", async ({ app: page }) => {
   expect(errors).toEqual([]);
 });
 
+test("shows only the selected extrude's profiles on the model overlay", async ({
+  app: page,
+}) => {
+  const canvas = page.locator("canvas.viewport-canvas");
+  await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
+  // Extrude 1 uses the plate plus its central hole; construction and unused
+  // curves are hidden until profile selection. The selected profile is shaded,
+  // with the hole left open.
+  await expect(canvas).toHaveAttribute("data-sketch-curves", "2");
+  await expect(canvas).toHaveAttribute("data-sketch-fills", "1");
+
+  await page.getByTestId("timeline-sketch").click();
+  await expect(canvas).toHaveAttribute("data-sketch-overlay", "off");
+  await expect(page.locator("[data-region-id]")).toHaveCount(2);
+
+  await page.getByTestId("timeline-extrude").click();
+  await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
+  await expect(canvas).toHaveAttribute("data-sketch-curves", "2");
+  await expect(canvas).toHaveAttribute("data-sketch-fills", "1");
+});
+
 test("picks faces and edges in the model view", async ({ app: page }) => {
   const canvas = page.locator("canvas.viewport-canvas");
+  await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
   await page.getByRole("button", { name: "Fit view" }).click();
   await page.waitForTimeout(200);
 
@@ -298,11 +418,31 @@ test("picks faces and edges in the model view", async ({ app: page }) => {
     "data-id",
     /^face-/,
   );
+  await expect(page.getByTestId("body-pick")).toHaveAttribute(
+    "data-ref-role",
+    /^extrude:/,
+  );
+  const ref = JSON.parse(
+    (await page.getByTestId("body-pick").getAttribute("data-ref")) ?? "{}",
+  );
+  expect(ref).toMatchObject({
+    kind: "face",
+    hint: { entityType: "face" },
+  });
+  expect(typeof ref.source).toBe("string");
+
+  // Face support is M4; + sketch acknowledges the picked face but still asks
+  // for a world plane instead of silently ignoring it.
+  await page.getByTestId("add-sketch").click();
+  await expect(page.getByTestId("support-popover")).toContainText(
+    "selected face",
+  );
+  await page.getByTestId("support-cancel").click();
 
   // A visible top edge wins over the face underneath it.
-  await page.mouse.move(500, 330);
+  await page.mouse.move(600, 356);
   await expect(canvas).toHaveAttribute("data-hover-kind", "edge");
-  await page.mouse.click(500, 330);
+  await page.mouse.click(600, 356);
   await expect(page.getByTestId("body-pick")).toHaveAttribute(
     "data-kind",
     "edge",
@@ -316,6 +456,63 @@ test("picks faces and edges in the model view", async ({ app: page }) => {
   await expect(page.getByTestId("body-pick")).toHaveCount(0);
 });
 
+test("the example reuses one sketch for independent extruded regions", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+
+  // The example ships a suppressed "Center pin": a second extrude from Sketch 1
+  // that uses the central hole's void region instead of the plate's material.
+  const pin = page
+    .locator('[data-feature-type="extrude"]')
+    .filter({ hasText: "Center pin" });
+  await expect(pin).toHaveCount(1);
+  await expect(pin).toHaveAttribute("data-status", "skipped");
+
+  await pin.click();
+  await page.getByTestId("feature-suppress").click();
+
+  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const pinVolume = Math.PI * 8 * 8 * 20;
+  await expect.poll(() => volume(page)).toBeCloseTo(plate + pinVolume, -1);
+  await expect.poll(() => meshBounds(page)).toBe("0,0,0,60,40,20");
+
+  const readExtrudes = () =>
+    page.evaluate(() => {
+      const doc = JSON.parse(localStorage.getItem("cad.doc") ?? "{}");
+      return doc.features
+        .filter((feature: { type: string }) => feature.type === "extrude")
+        .map((feature: { name: string; regions: string[] }) => ({
+          name: feature.name,
+          regions: feature.regions,
+        }));
+    });
+  const before: { name: string; regions: string[] }[] = await readExtrudes();
+  expect(before.find((feature) => feature.name === "Extrude 1")?.regions).toEqual(
+    [],
+  );
+  expect(before.find((feature) => feature.name === "Center pin")?.regions).toHaveLength(
+    1,
+  );
+
+  // With two active extrudes consuming Sketch 1, region editing from the sketch
+  // is ambiguous. It must not silently edit the first extrude.
+  await page.getByTestId("timeline-sketch").click();
+  await expect(page.getByTestId("timeline")).toHaveAttribute(
+    "data-active-extrude",
+    "",
+  );
+  await expect(page.getByTestId("region-panel")).toHaveCount(0);
+
+  await page.getByTestId("tool-select").click();
+  await clickSketch(page, 10, 10);
+  await clickSketch(page, 30, 20);
+  await expect(await readExtrudes()).toEqual(before);
+  await expect.poll(() => volume(page)).toBeCloseTo(plate + pinVolume, -1);
+
+  expect(errors).toEqual([]);
+});
+
 test("selects a hole as its own extrusion profile", async ({ app: page }) => {
   const errors = collectErrors(page);
   await enterSketch(page);
@@ -325,24 +522,127 @@ test("selects a hole as its own extrusion profile", async ({ app: page }) => {
   await expect(page.locator('[data-region-kind="void"]')).toHaveCount(1);
 
   await page.getByTestId("tool-select").click();
+
+  // A new extrude starts empty: the profile must be chosen explicitly.
+  await page.getByTestId("new-extrude").click();
+  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
+  await expect(page.getByTestId("extrude-apply")).toBeDisabled();
+
   // Inside the hole but clear of its rim and the construction diagonal.
   await clickSketch(page, 30, 25);
   await expect(page.getByTestId("region-panel")).toContainText(
     "1 of 2 regions · void",
   );
+  await expect(page.getByTestId("extrude-apply")).toBeEnabled();
 
-  await page.getByTestId("timeline-extrude").click();
-  await expect.poll(() => volume(page)).toBeCloseTo(Math.PI * 8 * 8 * 12, -1);
+  await page.getByTestId("extrude-apply").click();
+  // Join fills the existing Ø16 hole, so the plate becomes solid.
+  await expect.poll(() => volume(page)).toBeCloseTo(60 * 40 * 12, -1);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(6);
+  await expect(
+    page.locator('[data-feature-type="extrude"]').last(),
+  ).toContainText("Extrude 4");
 
-  // Auto returns to the largest material face, i.e. the plate with its hole.
-  await page.getByTestId("timeline-sketch").click();
-  await page.getByTestId("auto-region").click();
-  await page.getByTestId("timeline-extrude").click();
-  await expect.poll(() => volume(page)).toBeCloseTo(
-    60 * 40 * 12 - Math.PI * 8 * 8 * 12,
-    -1,
+  expect(errors).toEqual([]);
+});
+
+test("a polygon crossing the example keeps every profile selectable", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+
+  // A four-sided polygon crossing both the plate boundary and the central hole.
+  await page.getByTestId("tool-line").click();
+  for (const [x, y] of [
+    [-10, 20],
+    [32, 47],
+    [69, 27.5],
+    [46, -7],
+    [-10, 20],
+  ] as const) {
+    await clickSketch(page, x, y);
+  }
+  await page.keyboard.press("Escape");
+
+  await expect(page.locator("[data-region-id]")).toHaveCount(10);
+  await expect(page.locator('[data-region-kind="void"]')).toHaveCount(1);
+  // Wait for the debounced rebuild of the polygon-split base before measuring.
+  await expect.poll(() => volume(page)).toBeLessThan(24000);
+  const before = await volume(page);
+
+  // Starting the extrude can be as direct as clicking a profile in the sketch.
+  await expect(page.getByTestId("extrude-apply")).toHaveCount(0);
+  await clickSketch(page, -5, 20);
+  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
+  await expect(page.getByTestId("extrude-apply")).toBeEnabled();
+  await expect(page.getByTestId("region-panel")).toContainText("1 of 10 regions");
+
+  // The central hole is still a selectable void profile through the arrangement.
+  await clickSketch(page, 30, 20);
+  await expect(page.getByTestId("region-panel")).toContainText(
+    "1 of 10 regions · void",
   );
+  await expect(page.getByTestId("extrude-apply")).toBeEnabled();
+  await page.getByTestId("extrude-apply").click();
 
+  // Join fills the Ø16 hole with the new cylinder; the base region itself
+  // changes because the polygon splits it, so compare against the pre-extrude
+  // volume rather than the original plate.
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(before + Math.PI * 8 * 8 * 12, -1);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(6);
+  await expect(
+    page.locator('[data-feature-type="extrude"]').last(),
+  ).toContainText("Extrude 4");
+  await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
+    "data-status",
+    "ok",
+  );
+  expect(errors).toEqual([]);
+});
+
+test("selects narrow profile slivers when a diamond crosses the example", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+
+  // The diamond from the reported sketch: narrow slivers where a sketch-mode
+  // click would otherwise hit a line's 12 px hit target first.
+  await page.getByTestId("tool-line").click();
+  for (const [x, y] of [
+    [-10, 12.5],
+    [24, 48],
+    [72, 12.5],
+    [22, -12],
+    [-10, 12.5],
+  ] as const) {
+    await clickSketch(page, x, y);
+  }
+  await page.keyboard.press("Escape");
+
+  await expect(page.locator("[data-region-id]")).toHaveCount(10);
+  await expect(page.locator('[data-region-kind="void"]')).toHaveCount(1);
+  await expect.poll(() => volume(page)).toBeLessThan(24000);
+  const before = await volume(page);
+
+  // Profile mode raises the region hit layer above geometry, so the narrow
+  // left sliver is selectable even though it lies next to a line.
+  await page.getByTestId("new-extrude").click();
+  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
+  await clickSketch(page, -5, 12.5);
+  await expect(page.getByTestId("region-panel")).toContainText("1 of 10 regions");
+
+  await clickSketch(page, 30, 20);
+  await expect(page.getByTestId("region-panel")).toContainText(
+    "1 of 10 regions · void",
+  );
+  await page.getByTestId("extrude-apply").click();
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(before + Math.PI * 8 * 8 * 12, -1);
   expect(errors).toEqual([]);
 });
 
@@ -481,9 +781,11 @@ test("creates, edits and deletes parametric dimensions", async ({ app: page }) =
   expect(volumeBefore).toBeGreaterThan(0);
   await expect(page.getByTestId("dof")).toContainText("4 DOF");
 
-  await page.getByTestId("tool-dimension").click();
+  await page.getByTestId("tool-select").click();
   await clickSketch(page, (before.minX + before.maxX) / 2, before.minY);
-  await clickSketch(page, (before.minX + before.maxX) / 2, before.minY + 14);
+  await page.getByTestId("tool-dimension").click();
+  await expect(page.getByTestId("reference-toggle")).toBeVisible();
+  await clickSketch(page, (before.minX + before.maxX) / 2 + 10, before.minY + 14);
 
   const widthLabel = page
     .locator("[data-dimension-id]")
@@ -498,10 +800,12 @@ test("creates, edits and deletes parametric dimensions", async ({ app: page }) =
   await expect.poll(() => volume(page)).toBeCloseTo(100 * height * 12, -1);
 
   // A reference dimension measures without constraining.
-  await page.getByTestId("reference-toggle").check();
   const resized = await readProfileRect(page);
   await clickSketch(page, resized.maxX, (resized.minY + resized.maxY) / 2);
-  await clickSketch(page, resized.maxX + 14, (resized.minY + resized.maxY) / 2);
+  await page.getByTestId("tool-dimension").click();
+  await expect(page.getByTestId("reference-toggle")).toBeVisible();
+  await page.getByTestId("reference-toggle").check();
+  await clickSketch(page, resized.maxX + 14, (resized.minY + resized.maxY) / 2 + 10);
   await expect(page.getByTestId("dof")).toContainText("3 DOF");
   await expect(page.locator("[data-dimension-id]")).toHaveCount(2);
 
@@ -618,7 +922,7 @@ test("draws a three-point arc and drags it", async ({ app: page }) => {
   await page.getByTestId("clear-sketch").click();
   await page.getByTestId("tool-arc").click();
   await clickSketch(page, 0, 0);
-  await clickSketch(page, 40, 0);
+  await clickSketch(page, 40, 10);
   await clickSketch(page, 20, 20);
   await page.keyboard.press("Escape");
 
@@ -650,6 +954,8 @@ test("rounds a rectangle corner with a parametric fillet", async ({ app: page })
   await page.keyboard.up("Shift");
   await expect(page.getByTestId("selection-panel")).toHaveAttribute("data-count", "2");
 
+  await page.getByTestId("open-fillet").click();
+
   await page.getByTestId("fillet-radius").fill("10");
   await page.getByTestId("constraint-fillet").click();
 
@@ -675,10 +981,13 @@ test("drives an angle dimension and a radius dimension", async ({ app: page }) =
   await dblclickSketch(page, 50, 30);
   await page.keyboard.press("Escape");
 
-  await page.getByTestId("tool-dimension").click();
-  await page.getByTestId("dimension-angle").click();
+  await page.getByTestId("tool-select").click();
   await clickSketch(page, 30, 0);
+  await page.keyboard.down("Shift");
   await clickSketch(page, 25, 15);
+  await page.keyboard.up("Shift");
+  await page.getByTestId("tool-dimension").click();
+  await expect(page.getByTestId("reference-toggle")).toBeVisible();
   await clickSketch(page, 20, 45);
 
   const angleLabel = page.locator("[data-dimension-id]").filter({ hasText: "°" });
@@ -715,10 +1024,11 @@ test("drives an angle dimension and a radius dimension", async ({ app: page }) =
   await clickSketch(page, 20, 0);
   await page.keyboard.press("Escape");
 
-  await page.getByTestId("tool-dimension").click();
-  await page.getByTestId("dimension-radius").click();
+  await page.getByTestId("tool-select").click();
   await clickSketch(page, 20, 0);
-  await clickSketch(page, 40, 0);
+  await page.getByTestId("dimension-radius").click();
+  await expect(page.getByTestId("reference-toggle")).toBeVisible();
+  await clickSketch(page, 40, 10);
   const radiusLabel = page.locator("[data-dimension-id]").filter({ hasText: "R" });
   await expect(radiusLabel).toHaveCount(1);
   await radiusLabel.dblclick();
@@ -757,6 +1067,92 @@ test("drives an angle dimension and a radius dimension", async ({ app: page }) =
   expect(errors).toEqual([]);
 });
 
+test("drags dimension labels along a line and by radial distance", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+
+  // A linear label can move toward either endpoint, not only sideways.
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, 0, 0);
+  await dblclickSketch(page, 60, 0);
+  await page.keyboard.press("Escape");
+
+  await page.getByTestId("tool-select").click();
+  await clickSketch(page, 30, 0);
+  await page.getByTestId("tool-dimension").click();
+  await expect(page.getByTestId("reference-toggle")).toBeVisible();
+  await clickSketch(page, 30, 15);
+
+  const lengthLabel = page
+    .locator("[data-dimension-id]")
+    .filter({ hasText: "60" });
+  await expect(lengthLabel).toHaveCount(1);
+  const before = await lengthLabel.boundingBox();
+  if (!before) throw new Error("Could not locate the length label");
+  await page.mouse.move(
+    before.x + before.width / 2,
+    before.y + before.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    before.x + before.width / 2 + 60,
+    before.y + before.height / 2,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+  const after = await lengthLabel.boundingBox();
+  if (!after) throw new Error("Could not locate the moved length label");
+  expect(after.x).toBeGreaterThan(before.x + 10);
+  await expect(lengthLabel).toHaveCount(1);
+
+  // A radial label can move outward along its leader, not only around the arc.
+  await page.getByTestId("clear-sketch").click();
+  await page.getByTestId("tool-circle").click();
+  await clickSketch(page, 0, 0);
+  await clickSketch(page, 20, 0);
+  await page.keyboard.press("Escape");
+
+  await page.getByTestId("tool-select").click();
+  await clickSketch(page, 20, 0);
+  await page.getByTestId("dimension-radius").click();
+  await expect(page.getByTestId("reference-toggle")).toBeVisible();
+  await clickSketch(page, 40, 10);
+
+  const radiusLabel = page.locator("[data-dimension-id]").filter({ hasText: "R" });
+  await expect(radiusLabel).toHaveCount(1);
+  const center = await sketchPoint(page, 0, 0);
+  const radiusBefore = await radiusLabel.boundingBox();
+  if (!radiusBefore) throw new Error("Could not locate the radius label");
+  const distanceBefore = Math.hypot(
+    radiusBefore.x + radiusBefore.width / 2 - center.x,
+    radiusBefore.y + radiusBefore.height / 2 - center.y,
+  );
+  await page.mouse.move(
+    radiusBefore.x + radiusBefore.width / 2,
+    radiusBefore.y + radiusBefore.height / 2,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    radiusBefore.x + radiusBefore.width / 2 + 80,
+    radiusBefore.y + radiusBefore.height / 2,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+  const radiusAfter = await radiusLabel.boundingBox();
+  if (!radiusAfter) throw new Error("Could not locate the moved radius label");
+  const distanceAfter = Math.hypot(
+    radiusAfter.x + radiusAfter.width / 2 - center.x,
+    radiusAfter.y + radiusAfter.height / 2 - center.y,
+  );
+  expect(distanceAfter).toBeGreaterThan(distanceBefore + 10);
+  await expect(radiusLabel).toHaveCount(1);
+
+  expect(errors).toEqual([]);
+});
+
 test("extrudes a filleted profile with a circular hole", async ({ app: page }) => {
   const errors = collectErrors(page);
   await enterSketch(page);
@@ -770,6 +1166,7 @@ test("extrudes a filleted profile with a circular hole", async ({ app: page }) =
   await page.keyboard.down("Shift");
   await clickSketch(page, 0, -30);
   await page.keyboard.up("Shift");
+  await page.getByTestId("open-fillet").click();
   await page.getByTestId("fillet-radius").fill("10");
   await page.getByTestId("constraint-fillet").click();
 
@@ -798,6 +1195,8 @@ test("filleting the demo's origin corner keeps the diagonal and anchor", async (
   await clickSketch(page, 0, 20);
   await page.keyboard.up("Shift");
   await expect(page.getByTestId("selection-panel")).toHaveAttribute("data-count", "2");
+
+  await page.getByTestId("open-fillet").click();
 
   await page.getByTestId("fillet-radius").fill("5");
   await page.getByTestId("constraint-fillet").click();
@@ -852,6 +1251,77 @@ test("edits a point's x/y to exact values", async ({ app: page }) => {
     ]),
   );
   expect(errors).toEqual([]);
+});
+
+test("places, selects and undoes standalone sketch points", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+
+  await page.getByTestId("tool-point").click();
+  await clickSketch(page, 10, 10);
+  await clickSketch(page, 40, 30);
+  await expect(page.locator('[data-standalone="true"]')).toHaveCount(2);
+
+  await page.getByTestId("tool-select").click();
+  await clickSketch(page, 10, 10);
+  await expect(page.getByTestId("selection-panel")).toContainText("Point");
+  await expect(page.getByTestId("point-position")).toBeVisible();
+
+  await page.getByTestId("undo").click();
+  await expect(page.locator('[data-standalone="true"]')).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
+test("uses an adaptive or free-form sketch grid", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await expect(page.locator("canvas.viewport-canvas")).toHaveAttribute(
+    "data-sketch-overlay",
+    "off",
+  );
+
+  const grid = page.getByTestId("grid-step");
+  const autoStep = Number(await grid.inputValue());
+  expect(autoStep).toBeGreaterThan(0);
+  await expect(page.getByTestId("grid-scale")).toBeVisible();
+
+  await grid.fill("5");
+  await expect(grid).toHaveValue("5");
+  await page.getByTestId("grid-auto").click();
+
+  const snap = page.getByTestId("snap-toggle");
+  await expect(snap).toContainText("snap on");
+  await snap.click();
+  await expect(snap).toContainText("snap off");
+
+  // A large zoom-out resolves a new adaptive step and keeps the input valid.
+  await page.mouse.move(720, 420);
+  await page.mouse.wheel(0, 600);
+  await expect
+    .poll(async () => Number(await grid.inputValue()))
+    .toBeGreaterThan(0);
+
+  const canvas = page.locator("svg.sketch-canvas");
+  const fitted = await canvas.getAttribute("viewBox");
+  await page.getByTestId("zoom-select").selectOption("200");
+  await expect.poll(async () => canvas.getAttribute("viewBox")).not.toBe(fitted);
+  await page.getByTestId("zoom-select").selectOption("fit");
+  expect(errors).toEqual([]);
+});
+
+test("finishes the active sketch with Enter", async ({ app: page }) => {
+  await enterSketch(page);
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("tool-select")).toBeHidden();
+  await expect(page.getByTestId("edit-feature")).toBeVisible();
+  await expect(page.getByTestId("timeline-detail")).toContainText("12 mm");
+  await expect(page.getByTestId("timeline")).toHaveAttribute(
+    "data-active-extrude",
+    /.+/,
+  );
 });
 
 test("uses the fixed origin and X axis as references", async ({ app: page }) => {
@@ -914,26 +1384,92 @@ test("selects and fuses multiple sketch regions", async ({ app: page }) => {
   await dragSketch(page, [10, -20], [40, 20]);
   await page.keyboard.press("Escape");
 
+  await page.getByTestId("timeline-extrude").click();
+  await page.getByTestId("extrude-profiles").click();
   await expect(page.getByTestId("region-panel")).toBeVisible();
   await clickSketch(page, -25, -10);
   await expect(page.getByTestId("region-panel")).toContainText("1 of 2 regions");
-
-  await page.getByTestId("timeline-extrude").click();
   await expect.poll(() => volume(page)).toBeCloseTo(30 * 40 * 12, -1);
 
-  await page.getByTestId("timeline-sketch").click();
   await page.getByTestId("all-regions").click();
   await expect(page.getByTestId("region-panel")).toContainText("2 of 2 regions");
-
-  await page.getByTestId("timeline-extrude").click();
   await expect.poll(() => volume(page)).toBeCloseTo(2 * 30 * 40 * 12, -1);
 
-  await page.getByTestId("timeline-sketch").click();
   await page.getByTestId("auto-region").click();
   await expect(page.getByTestId("region-panel")).toContainText("auto");
+  await expect.poll(() => volume(page)).toBeCloseTo(30 * 40 * 12, -1);
+  await page.getByTestId("finish-sketch").click();
+
+  expect(errors).toEqual([]);
+});
+
+test("box-selects profile regions", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+
+  await page.getByTestId("tool-rect").click();
+  await dragSketch(page, [-40, -20], [-10, 20]);
+  await dragSketch(page, [10, -20], [40, 20]);
+  await page.keyboard.press("Escape");
+
   await page.getByTestId("timeline-extrude").click();
+  await page.getByTestId("extrude-profiles").click();
+  await page.getByTestId("tool-box").click();
+  await dragSketch(page, [-45, -25], [45, 25]);
+  await expect(page.getByTestId("region-panel")).toContainText("2 of 2 regions");
+  await expect.poll(() => volume(page)).toBeCloseTo(2 * 30 * 40 * 12, -1);
+
+  // Replacing the selection with a box around one profile.
+  await page.getByTestId("tool-box").click();
+  await dragSketch(page, [-45, -25], [-9, 25]);
+  await expect(page.getByTestId("region-panel")).toContainText("1 of 2 regions");
+  await expect.poll(() => volume(page)).toBeCloseTo(30 * 40 * 12, -1);
+  expect(errors).toEqual([]);
+});
+
+test("lasso-selects profile regions", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+
+  await page.getByTestId("tool-rect").click();
+  await dragSketch(page, [-40, -20], [-10, 20]);
+  await dragSketch(page, [10, -20], [40, 20]);
+  await page.keyboard.press("Escape");
+
+  await page.getByTestId("timeline-extrude").click();
+  await page.getByTestId("extrude-profiles").click();
+  await page.getByTestId("tool-lasso").click();
+  await lassoSketch(page, [
+    [-50, -30],
+    [50, -30],
+    [50, 30],
+    [-50, 30],
+  ]);
+  await expect(page.getByTestId("region-panel")).toContainText("2 of 2 regions");
+  await expect.poll(() => volume(page)).toBeCloseTo(2 * 30 * 40 * 12, -1);
+
+  // A lasso that only touches the right profile's top-right corner selects it.
+  await page.getByTestId("tool-lasso").click();
+  await lassoSketch(page, [
+    [35, 15],
+    [45, 15],
+    [45, 25],
+    [35, 25],
+  ]);
+  await expect(page.getByTestId("region-panel")).toContainText("1 of 2 regions");
   await expect.poll(() => volume(page)).toBeCloseTo(30 * 40 * 12, -1);
 
+  // An empty lasso is a no-op; it must not fall back to the largest profile.
+  await page.getByTestId("tool-lasso").click();
+  await lassoSketch(page, [
+    [-5, 30],
+    [5, 30],
+    [5, 40],
+    [-5, 40],
+  ]);
+  await expect(page.getByTestId("region-panel")).toContainText("1 of 2 regions");
   expect(errors).toEqual([]);
 });
 
@@ -954,12 +1490,13 @@ test("splits a circle crossed by a line into selectable halves", async ({
   await page.keyboard.press("Escape");
 
   await expect(page.locator("[data-region-id]")).toHaveCount(2);
+  await page.getByTestId("timeline-extrude").click();
+  await page.getByTestId("extrude-profiles").click();
   await page.getByTestId("tool-select").click();
   // Top half, clear of the axes and the chord.
   await clickSketch(page, 10, 10);
   await expect(page.getByTestId("region-panel")).toContainText("1 of 2 regions");
 
-  await page.getByTestId("timeline-extrude").click();
   const halfCylinder = (Math.PI * 20 * 20 * 12) / 2;
   await expect.poll(() => volume(page)).toBeCloseTo(halfCylinder, -1);
 
@@ -977,18 +1514,21 @@ test("splits crossing diagonals into four selectable regions", async ({ app: pag
 
   await page.getByTestId("tool-line").click();
   await clickSketch(page, -40, -20);
-  await dblclickSketch(page, 40, 20);
+  await clickSketch(page, 40, 20);
+  await page.keyboard.press("Enter");
   await clickSketch(page, -40, 20);
-  await dblclickSketch(page, 40, -20);
+  await clickSketch(page, 40, -20);
+  await page.keyboard.press("Enter");
   await page.keyboard.press("Escape");
 
   await expect(page.locator("[data-region-id]")).toHaveCount(4);
 
+  await page.getByTestId("timeline-extrude").click();
+  await page.getByTestId("extrude-profiles").click();
   await page.getByTestId("tool-select").click();
   await clickSketch(page, 20, -15);
   await expect(page.getByTestId("region-panel")).toContainText("1 of 4 regions");
 
-  await page.getByTestId("timeline-extrude").click();
   // Each triangle is half of an 80x40 half-rectangle.
   await expect.poll(() => volume(page)).toBeCloseTo((80 * 40 * 12) / 4, -1);
 
@@ -1011,13 +1551,15 @@ test("trims a split segment and rebuilds the profile", async ({ app: page }) => 
 
   await expect(page.locator("[data-region-id]")).toHaveCount(2);
 
+  await page.getByTestId("timeline-extrude").click();
+  await page.getByTestId("extrude-profiles").click();
   await page.getByTestId("tool-select").click();
   await clickSketch(page, 20, 10);
   await expect(page.getByTestId("region-panel")).toContainText("1 of 2 regions");
-  await page.getByTestId("timeline-extrude").click();
   await expect.poll(() => volume(page)).toBeCloseTo(40 * 40 * 12, -1);
 
   await page.getByTestId("timeline-sketch").click();
+  await clickSketch(page, 0, 10);
   await page.getByTestId("tool-trim").click();
   await clickSketch(page, 0, 10);
   await expect(page.locator("[data-region-id]")).toHaveCount(1);
@@ -1032,7 +1574,10 @@ test("trims a split segment and rebuilds the profile", async ({ app: page }) => 
 });
 
 test("autosaves the document and reopens it", async ({ app: page }) => {
+  await page.getByTestId("timeline-extrude").click();
+  await page.getByTestId("edit-feature").click();
   await setSlider(page.getByTestId("height-slider"), 20);
+  await page.getByTestId("feature-popover-apply").click();
   const plate = 60 * 40 * 20 - Math.PI * 8 * 8 * 20;
   await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
 
@@ -1053,7 +1598,7 @@ test("autosaves the document and reopens it", async ({ app: page }) => {
     const raw = localStorage.getItem("cad.doc");
     return raw ? JSON.parse(raw) : null;
   });
-  expect(stored?.schemaVersion).toBe(1);
+  expect(stored?.schemaVersion).toBe(4);
 
   // A new document in the same context reads the saved part, migrates it, and
   // rebuilds the same solid.
@@ -1065,11 +1610,13 @@ test("autosaves the document and reopens it", async ({ app: page }) => {
   await expect(second.getByTestId("kernel-status")).toContainText("ready", {
     timeout: 60_000,
   });
-  await expect(second.getByTestId("height-slider")).toHaveValue("20");
+  await expect(second.getByTestId("timeline-detail")).toContainText("20 mm");
   await expect.poll(() => volume(second)).toBeCloseTo(plate, -1);
   await second.close();
 
+  await page.getByTestId("edit-feature").click();
   await setSlider(page.getByTestId("height-slider"), 12);
+  await page.getByTestId("feature-popover-apply").click();
 });
 
 test("rebuilds the reported circle-through-hole part without an invalid profile", async ({
@@ -1112,6 +1659,228 @@ test("rebuilds the reported circle-through-hole part without an invalid profile"
   await context.close();
 });
 
+test("creates a new sketch and a joining extrude", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+  await page.getByTestId("tool-rect").click();
+  await dragSketch(page, [0, 0], [40, 20]);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("finish-sketch").click();
+  await expect.poll(() => volume(page)).toBeCloseTo(40 * 20 * 12, -1);
+
+  await createSketch(page);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(6);
+  await expect(
+    page.locator('[data-feature-type="sketch"]').last(),
+  ).toContainText("Sketch 3");
+  await expect(page.getByTestId("tool-select")).toBeVisible();
+
+  await page.getByTestId("tool-rect").click();
+  await dragSketch(page, [40, 0], [80, 20]);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("finish-sketch").click();
+
+  await page.getByTestId("new-extrude").click();
+  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
+  await expect(page.getByTestId("extrude-apply")).toBeDisabled();
+  await clickSketch(page, 60, 10);
+  await expect(page.getByTestId("extrude-apply")).toBeEnabled();
+  await page.getByTestId("extrude-apply").click();
+  await expect(page.locator("[data-feature-id]")).toHaveCount(7);
+  await expect(
+    page.locator('[data-feature-type="extrude"]').last(),
+  ).toContainText("Extrude 4");
+  await expect.poll(() => volume(page)).toBeCloseTo(80 * 20 * 12, -1);
+  await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
+    "data-status",
+    "ok",
+  );
+  expect(errors).toEqual([]);
+});
+
+test("new extrude picks profiles from the selected sketch", async ({ app: page }) => {
+  // Selection is explicit: choose the sketch first, then extrude it.
+  await page
+    .locator('[data-feature-type="sketch"]')
+    .filter({ hasText: "Mounting holes" })
+    .click();
+  await expect(page.getByTestId("tool-select")).toBeVisible();
+  await page.getByTestId("new-extrude").click();
+  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
+  await expect(page.getByTestId("extrude-apply")).toBeDisabled();
+  await expect(page.getByTestId("region-panel")).toContainText("select profiles");
+
+  await clickSketch(page, 12, 20);
+  await expect(page.getByTestId("region-panel")).toContainText("1 of 2 regions");
+  await page.keyboard.down("Shift");
+  await clickSketch(page, 48, 20);
+  await page.keyboard.up("Shift");
+  await expect(page.getByTestId("region-panel")).toContainText("2 of 2 regions");
+  await expect(page.getByTestId("extrude-apply")).toBeEnabled();
+
+  await page.getByTestId("extrude-operation").selectOption("cut");
+  await page.getByTestId("extrude-end").selectOption("throughAll");
+  await page.getByTestId("extrude-apply").click();
+
+  const expected =
+    60 * 40 * 12 - Math.PI * 8 * 8 * 12 - 2 * Math.PI * 3 * 3 * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
+  await expect(
+    page.locator('[data-feature-type="extrude"]').last(),
+  ).toContainText("Extrude 4");
+  await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
+    "data-status",
+    "ok",
+  );
+});
+
+test("edits, suppresses and deletes an extrude", async ({ app: page }) => {
+  const plate12 = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(plate12, -1);
+
+  await page.getByTestId("timeline-extrude").click();
+  await page.getByTestId("edit-feature").click();
+  await page.getByTestId("extrude-height").fill("30");
+  const plate30 = 60 * 40 * 30 - Math.PI * 8 * 8 * 30;
+  await expect.poll(() => volume(page)).toBeCloseTo(plate30, -1);
+
+  await page.getByTestId("extrude-symmetric").click();
+  await expect(page.getByTestId("extrude-symmetric")).toContainText("symmetric");
+  await expect.poll(() => meshBounds(page)).toBe("0,0,-15,60,40,15");
+
+  await page.getByTestId("extrude-operation").selectOption("join");
+  await expect.poll(() => volume(page)).toBeCloseTo(plate30, -1);
+  await page.getByTestId("extrude-operation").selectOption("new");
+
+  await page.getByTestId("feature-popover-apply").click();
+  await page.getByTestId("feature-suppress").click();
+  await expect(page.getByTestId("timeline-extrude")).toHaveAttribute(
+    "data-status",
+    "skipped",
+  );
+  await expect(page.getByTestId("mesh-stats")).toHaveCount(0);
+  await page.getByTestId("feature-suppress").click();
+  await expect.poll(() => volume(page)).toBeCloseTo(plate30, -1);
+
+  await page.getByTestId("feature-delete").click();
+  await expect(page.locator("[data-feature-id]")).toHaveCount(4);
+  await expect(page.getByTestId("timeline-extrude")).toHaveAttribute(
+    "data-status",
+    "skipped",
+  );
+  await page.getByTestId("undo").click();
+  await expect(page.locator("[data-feature-id]")).toHaveCount(5);
+  await expect.poll(() => volume(page)).toBeCloseTo(plate30, -1);
+});
+
+test("cancel restores the previous extrude and discards a draft", async ({
+  app: page,
+}) => {
+  const plate12 = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(plate12, -1);
+
+  await page.getByTestId("timeline-extrude").click();
+  await page.getByTestId("edit-feature").click();
+  await page.getByTestId("extrude-height").fill("30");
+  await page.getByTestId("extrude-symmetric").click();
+  const plate30 = 60 * 40 * 30 - Math.PI * 8 * 8 * 30;
+  await expect.poll(() => volume(page)).toBeCloseTo(plate30, -1);
+  await expect(page.getByTestId("feature-popover")).toContainText(
+    "30 mm · new · symmetric · 1 region",
+  );
+
+  await page.getByTestId("feature-popover-cancel").click();
+  await expect(page.getByTestId("feature-popover")).toHaveCount(0);
+  await expect.poll(() => volume(page)).toBeCloseTo(plate12, -1);
+  await expect(page.getByTestId("timeline-detail")).toContainText("12 mm");
+  await expect(page.getByTestId("timeline-detail")).toContainText("one side");
+
+  // Cancel also leaves profile-selection mode and returns to the model.
+  await page.getByTestId("edit-feature").click();
+  await page.getByTestId("popover-select-profiles").click();
+  await expect(page.getByTestId("tool-select")).toBeVisible();
+  await page.getByTestId("feature-popover-cancel").click();
+  await expect(page.getByTestId("tool-select")).toBeHidden();
+
+  // Cancelling a draft never creates a feature.
+  await page.getByTestId("timeline-sketch").click();
+  await page.getByTestId("new-extrude").click();
+  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
+  await expect(page.locator("[data-feature-id]")).toHaveCount(5);
+  await page.getByTestId("extrude-cancel").click();
+  await expect(page.getByTestId("extrude-draft-popover")).toHaveCount(0);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(5);
+  await expect(page.getByTestId("tool-select")).toBeHidden();
+  await expect.poll(() => volume(page)).toBeCloseTo(plate12, -1);
+});
+
+test("downloads, renames and opens a .cad document", async ({ app: page }) => {
+  await page.getByTestId("file-menu").click();
+  const downloadPromise = page.waitForEvent("download");
+  await page.getByTestId("download-doc").click();
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toBe("Example.cad");
+
+  await page.getByTestId("file-menu").click();
+  await page.getByTestId("rename-doc").click();
+  await page.getByTestId("doc-rename-input").fill("Bracket");
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("file-menu")).toContainText("Bracket.cad");
+
+  await page.getByTestId("file-open-input").setInputFiles({
+    name: "part.cad",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(multiFeatureDoc())),
+  });
+  await expect(page.locator("[data-feature-id]")).toHaveCount(6);
+  const expected = 80 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
+});
+
+test("reloading the example reuses its local file entry", async ({ app: page }) => {
+  // The built-in example has a stable id, so a reload updates its local file
+  // instead of piling up identical Example.cad rows.
+  await page.getByTestId("timeline-sketch").click();
+  await page.getByTestId("load-example").click();
+  await page.waitForTimeout(400);
+  await page.getByTestId("load-example").click();
+  await page.waitForTimeout(400);
+  await page.getByTestId("file-menu").click();
+  const rows = page.getByTestId("local-file-list").locator(".file-entry");
+  await expect(rows).toHaveCount(1);
+  await expect(rows.first()).toContainText("Example.cad");
+});
+
+test("lists, copies and reopens local files", async ({ app: page }) => {
+  await page.getByTestId("file-menu").click();
+  await expect(page.getByTestId("local-file-list")).toContainText("Example.cad");
+  await page.getByTestId("copy-doc").click();
+  await expect(page.getByTestId("file-menu")).toContainText("Example copy.cad");
+
+  await page.getByTestId("file-menu").click();
+  await expect(page.getByTestId("local-file-list")).toContainText(
+    "Example copy.cad",
+  );
+  await expect(page.getByTestId("local-file-list")).toContainText("Example.cad");
+  await page
+    .getByTestId("local-file-list")
+    .getByText("Example.cad", { exact: true })
+    .click();
+  await expect(page.getByTestId("file-menu")).toContainText("Example.cad");
+
+  // A non-current local file can be removed with an explicit confirm.
+  await page.getByTestId("file-menu").click();
+  const copyRow = page
+    .locator(".file-entry")
+    .filter({ hasText: "Example copy.cad" });
+  await copyRow.getByRole("button", { name: "delete" }).click();
+  await copyRow.getByRole("button", { name: "confirm" }).click();
+  await expect(page.getByTestId("local-file-list")).not.toContainText(
+    "Example copy.cad",
+  );
+});
+
 test("builds a cut and join from a saved multi-feature document", async ({
   browser,
 }) => {
@@ -1139,23 +1908,196 @@ test("builds a cut and join from a saved multi-feature document", async ({
     "data-status",
     "ok",
   );
+
+  // The history lists the whole document, not just the first sketch/extrude.
+  const timeline = page.getByTestId("timeline");
+  await expect(page.locator("[data-feature-id]")).toHaveCount(6);
+  const holeSketch = page.locator('[data-feature-id="sketch-2"]');
+  const cut = page.locator('[data-feature-id="extrude-2"]');
+  await expect(holeSketch).toContainText("Hole sketch");
+  await expect(cut).toContainText("Cut 1");
+  await expect(timeline).toHaveAttribute("data-active-feature", "extrude-1");
+
+  // Selecting a later sketch edits that sketch; it does not silently take over
+  // its consuming extrude. Select the extrude step for profile editing.
+  await holeSketch.click();
+  await expect(timeline).toHaveAttribute("data-active-feature", "sketch-2");
+  await expect(timeline).toHaveAttribute("data-active-extrude", "");
+  await expect(page.getByTestId("tool-select")).toBeVisible();
+
+  // Double-click rename is an undoable feature edit, not a document swap.
+  await holeSketch.dblclick();
+  await expect(page.getByTestId("feature-rename")).toBeVisible();
+  await page.getByTestId("feature-rename").fill("Hole profile");
+  await page.keyboard.press("Enter");
+  await expect(holeSketch).toContainText("Hole profile");
+  await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
+
+  // Reorder a downstream sketch before the base includes it; the order is valid.
+  await page
+    .locator('[data-feature-id="sketch-3"]')
+    .dragTo(page.locator('[data-feature-id="sketch-1"]'));
+  await expect(page.locator("[data-feature-id]").first()).toHaveAttribute(
+    "data-feature-id",
+    "sketch-3",
+  );
+  await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
+
+  await page.getByTestId("timeline-extrude").click();
+  await expect(timeline).toHaveAttribute("data-active-feature", "extrude-1");
+  await expect(page.getByTestId("edit-feature")).toBeVisible();
+
+  // Rollback shows the model at the base extrude and pauses downstream steps.
+  await page.getByTestId("roll-back").click();
+  await expect.poll(() => volume(page)).toBeCloseTo(60 * 40 * 12, -1);
+  await expect(page.locator('[data-feature-id="extrude-2"]')).toHaveAttribute(
+    "data-status",
+    "paused",
+  );
+  await page.getByTestId("roll-forward").click();
+  await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
+  await expect(page.locator('[data-feature-id="extrude-2"]')).toHaveAttribute(
+    "data-status",
+    "ok",
+  );
+  await context.close();
+});
+
+function symmetricDoc() {
+  const plate = addPolyline(
+    emptySketch(),
+    [
+      { point: [0, 0] },
+      { point: [40, 0] },
+      { point: [40, 20] },
+      { point: [0, 20] },
+    ],
+    true,
+  );
+  const doc = createDocument(plate, {
+    id: "doc-symmetric",
+    sketchId: "sketch-sym",
+    extrudeId: "extrude-sym",
+    name: "Symmetric",
+    height: 10,
+  });
+  const base = doc.features[1];
+  if (base?.type !== "extrude") throw new Error("Expected the base extrude");
+  return { ...doc, features: [doc.features[0]!, { ...base, symmetric: true }] };
+}
+
+function throughAllDoc() {
+  const doc = multiFeatureDoc();
+  return {
+    ...doc,
+    features: doc.features.map((feature) =>
+      feature.id === "extrude-2" && feature.type === "extrude"
+        ? { ...feature, height: 1, end: "throughAll" as const }
+        : feature,
+    ),
+  };
+}
+
+test("builds a symmetric extrude around the sketch plane", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    baseURL: "http://127.0.0.1:4173",
+    viewport: { width: 1280, height: 720 },
+  });
+  const page = await context.newPage();
+  await page.addInitScript((json) => {
+    localStorage.setItem("cad.doc", json);
+  }, JSON.stringify(symmetricDoc()));
+  await page.goto("/");
+  await expect(page.getByTestId("solver-status")).toContainText("ready", {
+    timeout: 60_000,
+  });
+  await expect(page.getByTestId("kernel-status")).toContainText("ready", {
+    timeout: 60_000,
+  });
+  await expect.poll(() => volume(page)).toBeCloseTo(40 * 20 * 10, -1);
+  await expect.poll(() => meshBounds(page)).toBe("0,0,-5,40,20,5");
+  await context.close();
+});
+
+test("cuts through the whole body from a through-all extrude", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    baseURL: "http://127.0.0.1:4173",
+    viewport: { width: 1280, height: 720 },
+  });
+  const page = await context.newPage();
+  await page.addInitScript((json) => {
+    localStorage.setItem("cad.doc", json);
+  }, JSON.stringify(throughAllDoc()));
+  await page.goto("/");
+  await expect(page.getByTestId("solver-status")).toContainText("ready", {
+    timeout: 60_000,
+  });
+  await expect(page.getByTestId("kernel-status")).toContainText("ready", {
+    timeout: 60_000,
+  });
+  const expected = 80 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
+  await expect.poll(() => meshBounds(page)).toBe("0,0,0,80,40,12");
+  await context.close();
+});
+
+test("rebuilds downstream features after editing the first sketch", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    baseURL: "http://127.0.0.1:4173",
+    viewport: { width: 1280, height: 720 },
+  });
+  const page = await context.newPage();
+  await page.addInitScript((json) => {
+    localStorage.setItem("cad.doc", json);
+  }, JSON.stringify(multiFeatureDoc()));
+  await page.goto("/");
+  await expect(page.getByTestId("solver-status")).toContainText("ready", {
+    timeout: 60_000,
+  });
+  await expect(page.getByTestId("kernel-status")).toContainText("ready", {
+    timeout: 60_000,
+  });
+  const expected = 80 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
+
+  await page.getByTestId("timeline-sketch").click();
+  await page.getByTestId("tool-circle").click();
+  await clickSketch(page, 10, 10);
+  await clickSketch(page, 15, 10);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("finish-sketch").click();
+  await expect.poll(() => volume(page)).not.toBeCloseTo(expected, -1);
+
+  await page.getByTestId("undo").click();
+  await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
   await context.close();
 });
 
 test("switches and persists the appearance theme", async ({ app: page }) => {
   await page.getByTestId("theme-night").click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "night");
-  await expect(page.locator(".toolbar")).toHaveCSS(
+  await expect(page.locator(".doc-head")).toHaveCSS(
     "background-color",
     "rgb(17, 17, 16)",
   );
 
   await page.getByTestId("highlight-pink").click();
   await expect(page.locator("html")).toHaveAttribute("data-highlight", "pink");
-  await expect(page.locator(".chip")).toHaveCSS(
-    "background-color",
-    "rgba(255, 121, 201, 0.3)",
-  );
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        getComputedStyle(document.documentElement)
+          .getPropertyValue("--marker")
+          .trim(),
+      ),
+    )
+    .toBe("#ff79c9");
   expect(
     await page.evaluate(() => ({
       mode: localStorage.getItem("cad.theme"),
@@ -1180,7 +2122,7 @@ test("switches and persists the appearance theme", async ({ app: page }) => {
 
   await page.getByTestId("theme-day").click();
   await page.getByTestId("highlight-yellow").click();
-  await expect(page.locator(".toolbar")).toHaveCSS(
+  await expect(page.locator(".doc-head")).toHaveCSS(
     "background-color",
     "rgb(251, 251, 249)",
   );
