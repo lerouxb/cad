@@ -149,6 +149,18 @@
         ln("o6", [0, 72], [0, 0])
       ],
       defaultSelection: ["o1", "o2", "o3", "o4", "o5", "o6"]
+    },
+    move: {
+      name: "tab profile",
+      geometry: [
+        ln("v1", [0, 0], [44, 0]),
+        ln("v2", [44, 0], [44, 16]),
+        ln("v3", [44, 16], [16, 16]),
+        ln("v4", [16, 16], [16, 44]),
+        ln("v5", [16, 44], [0, 44]),
+        ln("v6", [0, 44], [0, 0])
+      ],
+      defaultSelection: ["v1", "v2", "v3", "v4", "v5", "v6"]
     }
   };
 
@@ -178,7 +190,8 @@
         rotate: true
       },
       mirror: { line: "y", keep: true },
-      offset: { dist: 8, side: 1, corner: "miter" }
+      offset: { dist: 8, side: 1, corner: "miter" },
+      move: { dx: 42, dy: 28, angle: 0, copy: true }
     },
     drag: null,
     justDragged: false,
@@ -225,7 +238,9 @@
       ? "pattern " + n
       : tool === "circular"
         ? "circular " + n
-        : tool;
+        : tool === "move"
+          ? "move " + n
+          : tool;
   }
 
   /* ------------------------------------------------------------------ */
@@ -277,6 +292,16 @@
         { type: "seg", key: "side", label: "side", options: [["1", "outside"], ["-1", "inside"]] },
         { type: "seg", key: "corner", label: "corner", options: [["miter", "miter"], ["round", "round"]] },
         { type: "static", label: "chain", value: "closed loop" }
+      ]
+    },
+    move: {
+      title: "move / copy",
+      rows: [
+        { type: "toggle", key: "copy", label: "create copy" },
+        { type: "input", key: "dx", label: "x offset", unit: "mm" },
+        { type: "input", key: "dy", label: "y offset", unit: "mm" },
+        { type: "input", key: "angle", label: "rotate", unit: "deg" },
+        { type: "static", label: "base", value: "selection centre" }
       ]
     }
   };
@@ -349,6 +374,14 @@
       }
     });
     return n ? mul(acc, 1 / n) : null;
+  }
+
+  // true when applying the operation removes its source geometry
+  // (mirror without "keep original", move without "create copy")
+  function replacesSource(tool, p) {
+    if (tool === "mirror") return !p.keep;
+    if (tool === "move") return !p.copy;
+    return false;
   }
 
   function sceneBounds(scene) {
@@ -581,6 +614,17 @@
       });
     } else if (tool === "offset") {
       return offsetResult(scene, p, selection);
+    } else if (tool === "move") {
+      var mc = centroid(sel);
+      var ma = deg2rad(p.angle || 0);
+      sel.forEach(function (c) {
+        out.push(
+          transformCurve(c, function (q) {
+            var r = mc ? rotAbout(q, mc, ma) : q;
+            return add(r, [p.dx, p.dy]);
+          })
+        );
+      });
     }
     return out;
   }
@@ -744,11 +788,10 @@
   function renderGeometry(scene) {
     var html = "";
     var p = state.params[state.tool];
-    var dimOriginals =
-      state.tool === "mirror" && !p.keep && !state.editingOp;
+    var dimOriginals = replacesSource(state.tool, p) && !state.editingOp;
     var hidden = {};
     activeOps().forEach(function (op) {
-      if (op.tool === "mirror" && !op.params.keep) {
+      if (replacesSource(op.tool, op.params)) {
         op.selection.forEach(function (id) {
           hidden[id] = true;
         });
@@ -807,7 +850,7 @@
           });
       }
     }
-    var dimOriginals = state.tool === "mirror" && !p.keep && !state.editingOp;
+    var dimOriginals = replacesSource(state.tool, p) && !state.editingOp;
     if (!dimOriginals) {
       var sel = selectedCurves(scene);
       sel.forEach(function (c) {
@@ -855,8 +898,8 @@
     if (!selectedCurves(scene).length) return "";
     var list = ghostList(scene);
     var html = "";
-    if (state.tool === "mirror" && !state.params.mirror.keep) {
-      // the mirrored copies become the result; the originals are replaced
+    if (replacesSource(state.tool, state.params[state.tool])) {
+      // the transformed copies become the result; the originals are replaced
       list.forEach(function (c) {
         html += curveEl(c, "sc-wash");
         html += curveEl(c, "sc-curve");
@@ -1094,6 +1137,29 @@
     return html;
   }
 
+  function manipMove(scene) {
+    var p = state.params.move;
+    var sel = selectedCurves(scene);
+    var cen = centroid(sel) || [0, 0];
+    var to = add(cen, [p.dx, p.dy]);
+    var html = crosshairEl(cen);
+    if (Math.abs(p.angle || 0) > 0.1) {
+      var R = Math.max(vlen([p.dx, p.dy]), 24);
+      var samples = 24;
+      var d = "";
+      for (var k = 0; k <= samples; k++) {
+        var a = deg2rad((p.angle * k) / samples);
+        var q = add(cen, mul([Math.cos(a), Math.sin(a)], R));
+        d += (k === 0 ? "M " : " L ") + sp(q);
+      }
+      html += '<path d="' + d + '" class="sc-construct" fill="none"/>';
+    }
+    html += arrowPath(cen, to, "sc-manip");
+    html += handleEl(to, "move");
+    html += labelEl(to, fmt(p.dx) + ", " + fmt(p.dy), 10, -8);
+    return html;
+  }
+
   function renderManip(scene) {
     var html = renderBadges(scene);
     if (state.tool !== "select" && selectedCurves(scene).length) {
@@ -1101,6 +1167,7 @@
       else if (state.tool === "circular") html += manipCircular(scene);
       else if (state.tool === "mirror") html += manipMirror(scene);
       else if (state.tool === "offset") html += manipOffset(scene);
+      else if (state.tool === "move") html += manipMove(scene);
     }
     return html;
   }
@@ -1129,6 +1196,12 @@
       return (
         fmt(p.dist) + " mm \u00b7 " + (p.side === 1 ? "outside" : "inside") +
         " \u00b7 " + p.corner
+      );
+    }
+    if (tool === "move") {
+      return (
+        (p.copy ? "copy" : "move") + " \u00b7 " + fmt(p.dx) + ", " + fmt(p.dy) +
+        " mm" + (p.angle ? " \u00b7 " + fmt(p.angle) + "\u00b0" : "")
       );
     }
     return "";
@@ -1297,7 +1370,12 @@
     }
     if (key === "dist1" || key === "dist2") p[key] = clamp(p[key], 0.5, 500);
     if (key === "dist") p[key] = clamp(p[key], 0.5, 200);
-    if (key === "angle") p[key] = clamp(p[key], 1, 360);
+    if (key === "angle") {
+      p[key] =
+        state.tool === "move"
+          ? clamp(p[key], -360, 360)
+          : clamp(p[key], 1, 360);
+    }
     if (key === "mode" && p.mode === "spacing") {
       // a step of 360 deg would stack every instance on the first
       p.angle = Math.min(
@@ -1457,6 +1535,11 @@
       active: "01",
       steps: [["01", "sketch", "L profile", "XY \u00b7 closed loop"]],
       detail: [["step", "L profile"], ["plane", "XY"]]
+    },
+    move: {
+      active: "01",
+      steps: [["01", "sketch", "tab profile", "XY \u00b7 closed loop"]],
+      detail: [["step", "tab profile"], ["plane", "XY"]]
     }
   };
 
@@ -1688,6 +1771,10 @@
       var signed = dot(sub(mm, m), nrm);
       p.dist = clamp(Math.abs(signed), 0.5, 200);
       p.side = signed * outward > 0 ? 1 : -1;
+    } else if (state.drag === "move") {
+      var cen = centroid(selectedCurves(scene)) || [0, 0];
+      p.dx = clamp(mm[0] - cen[0], -500, 500);
+      p.dy = clamp(mm[1] - cen[1], -500, 500);
     }
   }
 
