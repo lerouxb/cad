@@ -38,6 +38,32 @@ The preview grammar is the point of the study:
   only shows the rows that apply (direction 2 appears when it is switched on),
   and disappears in `select` mode.
 
+## Objects, not one-shot edits
+
+A pattern, mirror or offset is **not** a one-shot transform. `apply` keeps it as
+a persistent **object** in the sketch — a named operation with its own
+parameters, the way a constraint persists. That object is what makes the
+operation re-editable later.
+
+- **A badge marks the object.** A small glyph and name sit on the geometry it
+  governs. Click it (or any of the geometry) to select the whole object; the
+  highlighter washes the source and every piece it generated.
+- **The selection line is the edit handle.** Selecting an object shows its name,
+  parameters and **edit** / **delete** in the same selection line the app already
+  uses for dimensions and constraints.
+- **Edit reopens the tool.** Editing loads the object's own parameters back into
+  the popup, previews the change with the same grammar, and updates the object on
+  apply. Delete removes everything it made.
+- **The timeline is the permanent home.** While the sketch step is active, its
+  detail line lists the sketch's objects by name, so they are discoverable even
+  with nothing selected.
+
+The recommendation this study makes: keep these as **sketch objects** (siblings
+of constraints), not as separate history steps. The sketch step owns them and
+the timeline detail lists them. If M6.0 decides they are history steps instead,
+the same badge + selection-line + edit flow still applies — only the home
+changes.
+
 ## How to use it
 
 - The **tool line** at the top of the sketch switches tools. Each tool brings
@@ -46,8 +72,10 @@ The preview grammar is the point of the study:
   summary update immediately.
 - **Drag the on-canvas handles** (the dot on a direction arrow, the sweep handle,
   the offset arrow) to change spacing, angle or distance.
-- **The popup** holds counts, axes, modes and corner style, plus an apply/cancel
-  pair that mirrors Fusion's OK/Cancel.
+- **The popup** holds counts, axes, modes and corner style. **apply** commits the
+  preview into a persistent object; **cancel** discards it.
+- **Click an object's badge or its geometry** to select it, then use **edit** or
+  **delete** in the selection line.
 - Day/night and the four highlighters work as in the other studies, and persist
   in `localStorage` under the same keys.
 
@@ -66,14 +94,20 @@ The preview grammar is the point of the study:
    a change; a manipulator alone would hide the option. The study uses both.
 5. **No new type or colour.** The popup uses the existing eight roles and the
    existing highlighter. A preview introduces no fifth state colour.
+6. **The object owns the operation, not the copies.** Applying stores the
+   parameters and the source selection; the instances are re-derived from them on
+   every render. Re-editing changes the parameters, not the geometry, so the
+   operation stays the single source of truth.
+7. **Two homes, one fact each.** The badge is the canvas handle, the selection
+   line is the edit handle, and the timeline detail is the permanent list. Each
+   fact (name, parameters, actions) has exactly one home.
 
 ## Open questions
 
-- Should a pattern preview be **parametric** (rebuilt from the selection on every
-  edit, as shown) or **materialised** into real geometry when applied? The
-  document model decides this.
-- Does a pattern produce one history step with N instances, or N steps? The
-  timeline mockup assumes one step per tool invocation.
+- Are these **sketch objects** (shown here) or **history steps**? This study
+  recommends sketch objects owned by the sketch step; M6.0 should decide.
+- Should editing the source geometry re-run the object automatically, and how is
+  a stale or lost reference surfaced?
 - Circular pattern axis: is it always a sketch point (axis normal to the plane),
   or can it be a projected edge / axis? The study only offers a point today.
 - Offset corner style (miter/round) and "flip side" are shown; a full offset also

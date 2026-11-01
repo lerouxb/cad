@@ -62,6 +62,8 @@
             </div>
           </div>
 
+          <div class="selection-line is-top" id="selection-line" hidden></div>
+
           <div class="sketch-viewport" id="viewport">
             <svg
               class="stage-svg sketch-svg"
@@ -127,17 +129,25 @@
         <li><b>Parameters live on the geometry.</b> Direction arrows, instance ticks, a sweep arc, a mirror line and an offset arrow are drawn on the canvas and are draggable.</li>
         <li><b>The popup is context-sensitive.</b> It exists only while a tool is active, shows only the rows that apply, and disappears in select mode.</li>
       </ul>
+      <h3>Objects, not one-shot edits</h3>
+      <ul>
+        <li><b>Apply keeps an object.</b> The preview becomes real geometry and a persistent <b>object</b> — a pattern, mirror or offset with its parameters — the way a constraint persists.</li>
+        <li><b>The object has a badge.</b> A small glyph and name sit on the geometry it governs. Click it (or the geometry) to select the whole object; the highlighter washes every piece it made.</li>
+        <li><b>The selection line is the edit handle.</b> Selecting an object shows its name, parameters and <b>edit</b> / <b>delete</b> — the same line the app already uses for dimensions and constraints.</li>
+        <li><b>Edit reopens the tool.</b> Editing loads the object's own parameters back into the popup, previews the change, and updates the object on apply. Delete removes everything it made.</li>
+        <li><b>The timeline is the permanent home.</b> While the sketch step is active, its detail line lists the sketch's objects by name, so they are discoverable even with nothing selected.</li>
+      </ul>
       <h3>What this study tests</h3>
       <ul>
         <li>Does a single preview grammar cover pattern, mirror and offset?</li>
         <li>Is a dashed, faint copy distinct enough from the original selection in both themes and all four highlighter colours?</li>
+        <li>Is a persistent object obvious enough to re-find later — badge, selection line, and timeline list together?</li>
         <li>Is the popup next to the geometry better than a docked inspector?</li>
-        <li>Do the on-canvas handles remove the need to open the popup for the common edit?</li>
       </ul>
       <h3>Open questions</h3>
       <ul>
-        <li>Should the preview be parametric and rebuilt on every edit, or materialised when applied?</li>
-        <li>One history step per tool invocation, or one per instance?</li>
+        <li>Are these <b>sketch objects</b> (shown here) or <b>history steps</b>? The timeline currently lists them inside the sketch step rather than as steps of their own.</li>
+        <li>Should editing the source geometry re-run the object, and how is a stale reference surfaced?</li>
         <li>Is a circular pattern always about a sketch point, or also a projected edge or axis?</li>
         <li>How should an offset handle open chains and self-intersections?</li>
       </ul>

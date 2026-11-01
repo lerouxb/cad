@@ -35,6 +35,14 @@
   cursor: pointer;
 }
 
+/* circles are hit through their interior, like a region fill */
+.sc-hit-fill {
+  fill: transparent;
+  stroke: transparent;
+  stroke-width: 2;
+  cursor: pointer;
+}
+
 /* the original selection: ink on a highlighter wash */
 .sc-wash {
   fill: none;
@@ -462,4 +470,105 @@
     opacity: 0;
     transform: translateY(3px);
   }
+}
+
+/* --------------------------------------------------------------------------
+   persistent operation objects
+   -------------------------------------------------------------------------- */
+
+/* a selected object washes all the geometry it generated */
+.sc-badge {
+  cursor: pointer;
+}
+
+.sc-badge-box {
+  fill: var(--bg);
+  stroke: var(--rule-strong);
+  stroke-width: 1;
+}
+
+.sc-badge:hover .sc-badge-box {
+  stroke: var(--ink);
+}
+
+.sc-badge.is-selected .sc-badge-box {
+  fill: var(--marker);
+  stroke: var(--marker);
+}
+
+.sc-badge-text {
+  fill: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+}
+
+.sc-badge.is-selected .sc-badge-text {
+  fill: var(--marker-ink);
+}
+
+.sc-badge-glyph .dot {
+  fill: var(--ink-3);
+}
+
+.sc-badge-glyph .stroke {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1;
+}
+
+.sc-badge.is-selected .sc-badge-glyph .dot {
+  fill: var(--marker-ink);
+}
+
+.sc-badge.is-selected .sc-badge-glyph .stroke {
+  stroke: var(--marker-ink);
+}
+
+/* the selection line is the object's edit handle; pointer-through except
+   for its actions, like the sketch selection line in the app */
+.selection-line[hidden] {
+  display: none;
+}
+
+.selection-line {
+  pointer-events: none;
+}
+
+.selection-line .selection-actions button {
+  pointer-events: auto;
+}
+
+/* the sketch's objects, listed in the timeline detail */
+.detail-op {
+  margin: 0 -3px;
+  padding: 1px 3px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+  cursor: pointer;
+}
+
+.detail-op:hover {
+  background: var(--marker-soft);
+  color: var(--ink);
+}
+
+.detail-op.is-selected {
+  background: var(--marker);
+  color: var(--marker-ink);
+}
+
+/* a quiet hint in the popup footer */
+.tool-hint {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  line-height: var(--leading-micro);
 }

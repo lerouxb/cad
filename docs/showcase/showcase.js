@@ -182,8 +182,51 @@
     },
     drag: null,
     justDragged: false,
-    message: ""
+    message: "",
+    // applied operations, per scene: { id, tool, name, params, selection }
+    ops: {},
+    selectedOp: null,
+    editingOp: null,
+    opSeq: 0
   };
+
+  function cloneParams(p) {
+    return JSON.parse(JSON.stringify(p));
+  }
+
+  function sceneOps(scene) {
+    return state.ops[state.scene] || [];
+  }
+
+  function findOp(id) {
+    var ops = sceneOps();
+    for (var i = 0; i < ops.length; i++) {
+      if (ops[i].id === id) return ops[i];
+    }
+    return null;
+  }
+
+  function activeOps() {
+    return sceneOps().filter(function (o) {
+      return o.id !== state.editingOp;
+    });
+  }
+
+  function opCurves(scene, op) {
+    return generateCurves(op.tool, scene, op.params, op.selection);
+  }
+
+  function opName(tool, ops) {
+    var n = 1;
+    ops.forEach(function (o) {
+      if (o.tool === tool) n++;
+    });
+    return tool === "rect"
+      ? "pattern " + n
+      : tool === "circular"
+        ? "circular " + n
+        : tool;
+  }
 
   /* ------------------------------------------------------------------ */
   /* panel specs                                                         */
@@ -242,7 +285,7 @@
   /* DOM                                                                 */
   /* ------------------------------------------------------------------ */
 
-  var svg, viewport, stage, panel, prompt, statusLine, legendEl, stepsEl, detailEl;
+  var svg, viewport, stage, panel, prompt, statusLine, legendEl, stepsEl, detailEl, selectionLine;
   var layers = {};
 
   function $(id) {
@@ -259,6 +302,7 @@
     legendEl = $("legend");
     stepsEl = $("steps");
     detailEl = $("timeline-detail");
+    selectionLine = $("selection-line");
     layers.ref = $("ref-layer");
     layers.ghost = $("ghost-layer");
     layers.selection = $("selection-layer");
@@ -278,13 +322,17 @@
     return map;
   }
 
-  function selectedCurves(scene) {
+  function curvesFor(scene, selection) {
     var map = sceneById(scene);
-    return state.selection
+    return selection
       .map(function (id) {
         return map[id];
       })
       .filter(Boolean);
+  }
+
+  function selectedCurves(scene) {
+    return curvesFor(scene, state.selection);
   }
 
   function centroid(curves) {
@@ -454,8 +502,8 @@
     return out;
   }
 
-  function offsetResult(scene, p) {
-    var sel = selectedCurves(scene);
+  function offsetResult(scene, p, selection) {
+    var sel = curvesFor(scene, selection);
     var out = [];
     var lines = sel.filter(function (c) {
       return c.type === "line";
@@ -484,11 +532,11 @@
     return out;
   }
 
-  function ghostCurves(scene) {
-    var sel = selectedCurves(scene);
+  function generateCurves(tool, scene, p, selection) {
+    var sel = curvesFor(scene, selection);
     var out = [];
-    if (state.tool === "rect") {
-      var offs = rectOffsets(state.params.rect);
+    if (tool === "rect") {
+      var offs = rectOffsets(p);
       sel.forEach(function (c) {
         offs.forEach(function (o) {
           out.push(
@@ -498,10 +546,9 @@
           );
         });
       });
-    } else if (state.tool === "circular") {
+    } else if (tool === "circular") {
       var center = scene.axis || [0, 0];
       var cen = centroid(sel) || center;
-      var p = state.params.circular;
       circAngles(p)
         .slice(1)
         .forEach(function (deg) {
@@ -523,8 +570,8 @@
             }
           });
         });
-    } else if (state.tool === "mirror") {
-      var ml = mirrorLine(scene, state.params.mirror);
+    } else if (tool === "mirror") {
+      var ml = mirrorLine(scene, p);
       sel.forEach(function (c) {
         out.push(
           transformCurve(c, function (q) {
@@ -532,8 +579,19 @@
           })
         );
       });
+    } else if (tool === "offset") {
+      return offsetResult(scene, p, selection);
     }
     return out;
+  }
+
+  function ghostCurves(scene) {
+    return generateCurves(
+      state.tool,
+      scene,
+      state.params[state.tool],
+      state.selection
+    );
   }
 
   /* ------------------------------------------------------------------ */
@@ -672,11 +730,32 @@
     return html;
   }
 
+  function hitEl(c, attr) {
+    if (c.type === "circle") {
+      var p = px(c.c);
+      return (
+        '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) +
+        '" r="' + (c.r * VB.s).toFixed(1) + '" class="sc-hit-fill"' + attr + "/>"
+      );
+    }
+    return curveEl(c, "sc-hit", attr);
+  }
+
   function renderGeometry(scene) {
     var html = "";
     var p = state.params[state.tool];
-    var dimOriginals = state.tool === "mirror" && !p.keep;
+    var dimOriginals =
+      state.tool === "mirror" && !p.keep && !state.editingOp;
+    var hidden = {};
+    activeOps().forEach(function (op) {
+      if (op.tool === "mirror" && !op.params.keep) {
+        op.selection.forEach(function (id) {
+          hidden[id] = true;
+        });
+      }
+    });
     scene.geometry.forEach(function (c) {
+      if (hidden[c.id]) return;
       var cls;
       if (dimOriginals && state.selection.indexOf(c.id) !== -1) {
         cls = "sc-ghost";
@@ -685,8 +764,15 @@
       }
       html += curveEl(c, cls);
     });
+    // applied operations are real sketch geometry now, tagged with their object
+    activeOps().forEach(function (op) {
+      opCurves(scene, op).forEach(function (c) {
+        html += curveEl(c, "sc-curve", ' data-op="' + op.id + '"');
+      });
+    });
     // points on top
     scene.geometry.forEach(function (c) {
+      if (hidden[c.id]) return;
       if (c.type === "circle") {
         html += circleScreenEl(c.c, 3.2, "sc-point");
         return;
@@ -696,30 +782,48 @@
     });
     // wide transparent hit targets
     scene.geometry.forEach(function (c) {
-      html += curveEl(c, "sc-hit", ' data-curve="' + c.id + '"');
+      if (hidden[c.id]) return;
+      html += hitEl(c, ' data-curve="' + c.id + '"');
+    });
+    activeOps().forEach(function (op) {
+      opCurves(scene, op).forEach(function (c) {
+        html += hitEl(c, ' data-op="' + op.id + '"');
+      });
     });
     return html;
   }
 
   function renderSelection(scene) {
     var p = state.params[state.tool];
-    if (state.tool === "mirror" && !p.keep) return "";
-    var sel = selectedCurves(scene);
     var html = "";
-    sel.forEach(function (c) {
-      html += curveEl(c, "sc-wash");
-    });
-    // re-draw the selected ink so it stays the most prominent element
-    sel.forEach(function (c) {
-      html += curveEl(c, "sc-curve");
-    });
+    // a selected object: wash the source and every piece it generated
+    if (state.selectedOp) {
+      var op = findOp(state.selectedOp);
+      if (op) {
+        curvesFor(scene, op.selection)
+          .concat(opCurves(scene, op))
+          .forEach(function (c) {
+            html += curveEl(c, "sc-wash");
+          });
+      }
+    }
+    var dimOriginals = state.tool === "mirror" && !p.keep && !state.editingOp;
+    if (!dimOriginals) {
+      var sel = selectedCurves(scene);
+      sel.forEach(function (c) {
+        html += curveEl(c, "sc-wash");
+      });
+      // re-draw the selected ink so it stays the most prominent element
+      sel.forEach(function (c) {
+        html += curveEl(c, "sc-curve");
+      });
+    }
     return html;
   }
 
   function ghostList(scene) {
     if (state.tool === "select") return [];
     if (!selectedCurves(scene).length) return [];
-    if (state.tool === "offset") return offsetResult(scene, state.params.offset);
     return ghostCurves(scene);
   }
 
@@ -925,38 +1029,103 @@
     return html;
   }
 
+  function badgeGlyph(tool, x, y) {
+    var s = "";
+    if (tool === "rect") {
+      [
+        [0, 0],
+        [5, 0],
+        [10, 0],
+        [0, 5],
+        [5, 5],
+        [10, 5],
+        [0, 10],
+        [5, 10],
+        [10, 10]
+      ].forEach(function (d) {
+        s +=
+          '<circle class="dot" cx="' + (x + d[0]) + '" cy="' + (y + d[1]) +
+          '" r="0.95"/>';
+      });
+    } else if (tool === "circular") {
+      s =
+        '<circle class="stroke" cx="' + (x + 5) + '" cy="' + (y + 5) +
+        '" r="4.2"/><circle class="dot" cx="' + (x + 5) + '" cy="' + (y + 5) +
+        '" r="1.1"/>';
+    } else if (tool === "mirror") {
+      s =
+        '<path class="stroke" d="M ' + (x + 4) + " " + (y + 1) + " L " +
+        (x + 4) + " " + (y + 9) + " L " + (x + 1) + " " + (y + 5) + " Z" +
+        " M " + (x + 6) + " " + (y + 1) + " L " + (x + 6) + " " + (y + 9) +
+        " L " + (x + 9) + " " + (y + 5) + ' Z"/>';
+    } else if (tool === "offset") {
+      s =
+        '<path class="stroke" d="M ' + (x + 1) + " " + (y + 3) + " H " +
+        (x + 9) + " M " + (x + 1) + " " + (y + 7) + " H " + (x + 9) + '"/>';
+    }
+    return '<g class="sc-badge-glyph">' + s + "</g>";
+  }
+
+  function badgeEl(scene, op) {
+    var b = boundsOf(curvesFor(scene, op.selection).concat(opCurves(scene, op)));
+    if (!b) return "";
+    var P = px([b.x1, b.y2]);
+    var x = clamp(P[0] - 16, 4, VB.w - 4);
+    var y = clamp(P[1] - 16, 16, VB.h - 4);
+    var w = 13 + op.name.length * 5.4 + 10;
+    var selected = op.id === state.selectedOp;
+    return (
+      '<g class="sc-badge' + (selected ? " is-selected" : "") +
+      '" data-op="' + op.id + '" transform="translate(' + x.toFixed(1) + " " +
+      y.toFixed(1) + ')">' +
+      '<rect class="sc-badge-box" x="0" y="-11" width="' + w.toFixed(1) +
+      '" height="15"/>' +
+      badgeGlyph(op.tool, 3, -9) +
+      '<text class="sc-badge-text" x="16" y="0">' + op.name + "</text>" +
+      "</g>"
+    );
+  }
+
+  function renderBadges(scene) {
+    var html = "";
+    activeOps().forEach(function (op) {
+      html += badgeEl(scene, op);
+    });
+    return html;
+  }
+
   function renderManip(scene) {
-    if (state.tool === "select") return "";
-    if (!selectedCurves(scene).length) return "";
-    if (state.tool === "rect") return manipRect(scene);
-    if (state.tool === "circular") return manipCircular(scene);
-    if (state.tool === "mirror") return manipMirror(scene);
-    if (state.tool === "offset") return manipOffset(scene);
-    return "";
+    var html = renderBadges(scene);
+    if (state.tool !== "select" && selectedCurves(scene).length) {
+      if (state.tool === "rect") html += manipRect(scene);
+      else if (state.tool === "circular") html += manipCircular(scene);
+      else if (state.tool === "mirror") html += manipMirror(scene);
+      else if (state.tool === "offset") html += manipOffset(scene);
+    }
+    return html;
   }
 
   /* ------------------------------------------------------------------ */
   /* status + summary                                                    */
   /* ------------------------------------------------------------------ */
 
-  function summary() {
-    var p = state.params[state.tool];
-    if (state.tool === "rect") {
+  function summaryFor(tool, p) {
+    if (tool === "rect") {
       var n1 = Math.max(1, Math.round(p.count1));
       var n2 = p.dir2 ? Math.max(1, Math.round(p.count2)) : 1;
       return n1 + " \u00d7 " + n2 + " copies \u00b7 " + fmt(p.dist1) + " mm";
     }
-    if (state.tool === "circular") {
+    if (tool === "circular") {
       var n = Math.max(1, Math.round(p.count));
       return n + " copies \u00b7 " + fmt(circStep(p)) + "\u00b0 apart";
     }
-    if (state.tool === "mirror") {
+    if (tool === "mirror") {
       return (
         (p.line === "y" ? "Y axis" : "X axis") +
         " \u00b7 " + (p.keep ? "keep original" : "replace original")
       );
     }
-    if (state.tool === "offset") {
+    if (tool === "offset") {
       return (
         fmt(p.dist) + " mm \u00b7 " + (p.side === 1 ? "outside" : "inside") +
         " \u00b7 " + p.corner
@@ -965,18 +1134,48 @@
     return "";
   }
 
+  function summary() {
+    return summaryFor(state.tool, state.params[state.tool]);
+  }
+
+  function opSummary(op) {
+    return summaryFor(op.tool, op.params);
+  }
+
   function renderStatus() {
     var scene = SCENES[state.scene];
     var sel = selectedCurves(scene);
     var parts = [];
     if (state.tool === "select") {
-      parts.push("<b>select</b>");
-      parts.push("click geometry to build a selection");
+      if (state.selectedOp) {
+        var op = findOp(state.selectedOp);
+        if (op) {
+          parts.push("<b>" + op.name + "</b>");
+          parts.push(opSummary(op));
+          parts.push("edit or delete in the selection line");
+        }
+      } else {
+        parts.push("<b>select</b>");
+        parts.push(
+          sceneOps().length
+            ? "click a pattern, mirror or offset object to edit it"
+            : "click geometry to build a selection"
+        );
+      }
+    } else if (state.editingOp) {
+      var editing = findOp(state.editingOp);
+      parts.push("<b>" + (editing ? editing.name : "object") + "</b>");
+      parts.push("editing \u00b7 " + summary());
     } else {
       parts.push("<b>" + SPECS[state.tool].title + "</b>");
       parts.push(summary());
+      parts.push("preview \u00b7 not yet an object");
     }
-    parts.push(sel.length + (sel.length === 1 ? " curve selected" : " curves selected"));
+    if (state.tool !== "select") {
+      parts.push(
+        sel.length + (sel.length === 1 ? " curve selected" : " curves selected")
+      );
+    }
     if (state.message) parts.push(state.message);
     statusLine.innerHTML = parts.join(" \u00b7 ");
   }
@@ -1044,10 +1243,15 @@
     }
     var spec = SPECS[state.tool];
     var p = state.params[state.tool];
+    var editing = state.editingOp ? findOp(state.editingOp) : null;
     var html =
       '<div class="tool-panel-head"><div>' +
-      '<div class="tool-panel-kicker">sketch tool</div>' +
-      '<h2 class="tool-panel-title">' + spec.title + "</h2></div>" +
+      '<div class="tool-panel-kicker">' +
+      (editing ? "editing object" : "sketch tool") +
+      "</div>" +
+      '<h2 class="tool-panel-title">' +
+      (editing ? editing.name : spec.title) +
+      "</h2></div>" +
       '<button type="button" class="text-action is-quiet" data-cancel>cancel</button></div>';
     html += '<div class="tool-panel-body">';
     spec.rows.forEach(function (row) {
@@ -1055,6 +1259,12 @@
       html += rowHtml(row, p);
     });
     html += "</div>";
+    html +=
+      '<div class="tool-hint">' +
+      (editing
+        ? "changing these updates the object"
+        : "apply keeps an editable object") +
+      "</div>";
     html +=
       '<div class="tool-panel-foot"><span class="tool-summary">' + summary() +
       '</span><span class="tool-panel-actions">' +
@@ -1129,12 +1339,11 @@
         return;
       }
       if (t.closest("[data-cancel]")) {
-        setTool("select");
+        cancelTool();
         return;
       }
       if (t.closest("[data-apply]")) {
-        state.message = "applied";
-        renderStatus();
+        applyTool();
         return;
       }
     });
@@ -1208,6 +1417,7 @@
     layers.manip.innerHTML = renderManip(scene);
     renderStatus();
     renderLegend();
+    renderSelectionLine();
     var hasSel = selectedCurves(scene).length > 0;
     prompt.hidden = !(state.tool !== "select" && !hasSel);
     if (state.tool !== "select" && !hasSel) {
@@ -1229,36 +1439,24 @@
 
   var TIMELINES = {
     rect: {
-      active: "02",
-      steps: [
-        ["01", "sketch", "bolt plate", "XY · plate + hole"],
-        ["02", "pattern", "hole grid", "rect · 4 × 2"]
-      ],
-      detail: [["step", "hole grid"], ["source", "sketch 01"], ["copies", "8"]]
+      active: "01",
+      steps: [["01", "sketch", "bolt plate", "XY \u00b7 plate + hole"]],
+      detail: [["step", "bolt plate"], ["plane", "XY"]]
     },
     circular: {
-      active: "02",
-      steps: [
-        ["01", "sketch", "flange", "XY · centre + bolt"],
-        ["02", "pattern", "bolt circle", "circular · 6"]
-      ],
-      detail: [["step", "bolt circle"], ["axis", "sketch origin"], ["sweep", "360°"]]
+      active: "01",
+      steps: [["01", "sketch", "flange", "XY \u00b7 centre + bolt"]],
+      detail: [["step", "flange"], ["plane", "XY"]]
     },
     mirror: {
-      active: "02",
-      steps: [
-        ["01", "sketch", "half profile", "XY · 5 curves"],
-        ["02", "mirror", "symmetric body", "Y axis"]
-      ],
-      detail: [["step", "symmetric body"], ["line", "Y axis"], ["keep", "original"]]
+      active: "01",
+      steps: [["01", "sketch", "half profile", "XY \u00b7 5 curves"]],
+      detail: [["step", "half profile"], ["plane", "XY"]]
     },
     offset: {
-      active: "02",
-      steps: [
-        ["01", "sketch", "L profile", "XY · closed loop"],
-        ["02", "offset", "outer wall", "8.0 mm · miter"]
-      ],
-      detail: [["step", "outer wall"], ["distance", "8.0 mm"], ["side", "outside"]]
+      active: "01",
+      steps: [["01", "sketch", "L profile", "XY \u00b7 closed loop"]],
+      detail: [["step", "L profile"], ["plane", "XY"]]
     }
   };
 
@@ -1285,6 +1483,22 @@
         );
       })
       .join("");
+    var ops = sceneOps();
+    if (ops.length) {
+      detailEl.innerHTML +=
+        '<span class="detail-key">objects</span>' +
+        ops
+          .map(function (op) {
+            return (
+              '<button class="detail-op' +
+              (op.id === (state.selectedOp || state.editingOp)
+                ? " is-selected"
+                : "") +
+              '" type="button" data-op="' + op.id + '">' + op.name + "</button>"
+            );
+          })
+          .join("");
+    }
   }
 
   /* ------------------------------------------------------------------ */
@@ -1306,10 +1520,98 @@
     if (tool !== "select") {
       state.scene = tool;
       state.selection = SCENES[tool].defaultSelection.slice();
+      state.selectedOp = null;
+      state.editingOp = null;
     }
     updateToolLine();
     renderTimeline();
     render();
+  }
+
+  function applyTool() {
+    if (state.tool === "select") return;
+    if (!state.selection.length) return;
+    var tool = state.tool;
+    var p = state.params[tool];
+    if (state.editingOp) {
+      var existing = findOp(state.editingOp);
+      if (existing) {
+        existing.params = cloneParams(p);
+        existing.selection = state.selection.slice();
+        state.selectedOp = existing.id;
+      }
+      state.editingOp = null;
+    } else {
+      var ops = state.ops[state.scene] || (state.ops[state.scene] = []);
+      var op = {
+        id: "op" + ++state.opSeq,
+        tool: tool,
+        name: opName(tool, ops),
+        params: cloneParams(p),
+        selection: state.selection.slice()
+      };
+      ops.push(op);
+      state.selectedOp = op.id;
+    }
+    state.selection = [];
+    state.message = "applied";
+    state.tool = "select";
+    updateToolLine();
+    renderTimeline();
+    render();
+  }
+
+  function cancelTool() {
+    state.editingOp = null;
+    state.message = "";
+    state.tool = "select";
+    updateToolLine();
+    renderTimeline();
+    render();
+  }
+
+  function editOp(id) {
+    var op = findOp(id);
+    if (!op) return;
+    state.editingOp = id;
+    state.selectedOp = null;
+    state.tool = op.tool;
+    state.scene = op.tool;
+    state.params[op.tool] = cloneParams(op.params);
+    state.selection = op.selection.slice();
+    state.message = "";
+    updateToolLine();
+    renderTimeline();
+    render();
+  }
+
+  function deleteOp(id) {
+    var ops = state.ops[state.scene] || [];
+    state.ops[state.scene] = ops.filter(function (o) {
+      return o.id !== id;
+    });
+    if (state.selectedOp === id) state.selectedOp = null;
+    if (state.editingOp === id) state.editingOp = null;
+    renderTimeline();
+    render();
+  }
+
+  function renderSelectionLine() {
+    var op = state.selectedOp ? findOp(state.selectedOp) : null;
+    if (!op || state.tool !== "select") {
+      selectionLine.hidden = true;
+      return;
+    }
+    selectionLine.hidden = false;
+    selectionLine.innerHTML =
+      '<span class="selection-title">' + op.name + "</span>" +
+      '<span>' + opSummary(op) + "</span>" +
+      '<span class="selection-actions">' +
+      '<button class="text-action" type="button" data-op-edit="' + op.id +
+      '">edit</button>' +
+      '<button class="text-action is-quiet" type="button" data-op-delete="' +
+      op.id + '">delete</button>' +
+      "</span>";
   }
 
   function toggleSelection(id) {
@@ -1421,16 +1723,50 @@
     svg.addEventListener("pointercancel", onPointerUp);
     svg.addEventListener("click", function (e) {
       if (state.justDragged) return;
-      var el = e.target.closest ? e.target.closest("[data-curve]") : null;
-      if (!el) return;
-      toggleSelection(el.getAttribute("data-curve"));
-      render();
+      if (!e.target.closest) return;
+      var opEl = e.target.closest("[data-op]");
+      if (opEl) {
+        state.selectedOp = opEl.getAttribute("data-op");
+        state.message = "";
+        render();
+        return;
+      }
+      var curveEl = e.target.closest("[data-curve]");
+      if (curveEl) {
+        state.selectedOp = null;
+        toggleSelection(curveEl.getAttribute("data-curve"));
+        render();
+        return;
+      }
+      if (state.selectedOp) {
+        state.selectedOp = null;
+        render();
+      }
     });
     Array.prototype.forEach.call(document.querySelectorAll("[data-tool]"), function (btn) {
       btn.addEventListener("click", function () {
         setTool(btn.getAttribute("data-tool"));
       });
     });
+    if (selectionLine) {
+      selectionLine.addEventListener("click", function (e) {
+        var edit = e.target.closest("[data-op-edit]");
+        if (edit) {
+          editOp(edit.getAttribute("data-op-edit"));
+          return;
+        }
+        var del = e.target.closest("[data-op-delete]");
+        if (del) deleteOp(del.getAttribute("data-op-delete"));
+      });
+    }
+    if (detailEl) {
+      detailEl.addEventListener("click", function (e) {
+        var opEl = e.target.closest("[data-op]");
+        if (!opEl) return;
+        state.selectedOp = opEl.getAttribute("data-op");
+        render();
+      });
+    }
   }
 
   /* ------------------------------------------------------------------ */
