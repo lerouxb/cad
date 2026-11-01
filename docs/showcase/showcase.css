@@ -673,6 +673,28 @@
   stroke: none;
 }
 
+/* the result body of a transform (moved, copied or aligned) */
+.bo-result-top {
+  fill: var(--marker-fill);
+  stroke: var(--model-edge);
+  stroke-width: 1.1;
+  stroke-linejoin: round;
+}
+
+.bo-result-x {
+  fill: var(--marker-soft);
+  stroke: var(--model-edge);
+  stroke-width: 1.1;
+  stroke-linejoin: round;
+}
+
+.bo-result-y {
+  fill: var(--marker-wash);
+  stroke: var(--model-edge);
+  stroke-width: 1.1;
+  stroke-linejoin: round;
+}
+
 .bo-plane {
   fill: var(--marker-fill);
   stroke: var(--marker);

@@ -8,6 +8,13 @@ Source: a feature-by-feature pass over the Solid tab and the sketch editor, plus
 Fusion-vs-FreeCAD-vs-SolveSpace comparison. Only features **we** are missing are listed;
 features already done or already scheduled are not repeated.
 
+Several Keep items now have interactive design targets in this folder:
+**combine + split body** ([`body-ops.html`](body-ops.html)), **move/copy + align**
+([`transform.html`](transform.html)), **section analysis**
+([`inspect.html`](inspect.html)), **sketch pattern/mirror/offset/move**
+([`index.html`](index.html)), and the **create variants**
+([`sketch-create.html`](sketch-create.html)).
+
 Status vocabulary: **Keep** (wanted, with a proposed home) · **Low** (nice, not soon) ·
 **Defer** (wanted, but needs its own design pass) · **Drop** (decided no) ·
 **Covered** (reachable with existing tools, no new work).

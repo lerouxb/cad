@@ -7,6 +7,7 @@ Interactive design targets for tools that do not exist yet, split into four stud
 | **Sketch layout** | [`index.html`](index.html) | rectangular / circular pattern, mirror, offset, **move/copy** | **M6.0** (ADR-0004) |
 | **Sketch create** | [`sketch-create.html`](sketch-create.html) | rectangle / circle / arc variants, polygon | M6.0-era sketch polish |
 | **Body ops** | [`body-ops.html`](body-ops.html) | **combine** (join/cut/intersect, keep tools), **split body** | M6 |
+| **Body transforms** | [`transform.html`](transform.html) | **move / copy**, **align** | M6 |
 | **Inspect** | [`inspect.html`](inspect.html) | **section analysis** | M5 |
 
 The decisions behind these (what to keep, drop, defer) are in
@@ -128,11 +129,12 @@ changes.
 index.html           sketch layout: pattern / mirror / offset / move-copy
 sketch-create.html   sketch create variants: rectangle / circle / arc / polygon
 body-ops.html        combine + split body
+transform.html       move / copy + align
 inspect.html         section analysis
 showcase.css         popup, preview, manipulator and 3D styles (mockup tokens)
 showcase.js          sketch model, preview geometry and interaction
 showcase-create.js   the create-tool atlas
-showcase-3d.js       isometric helpers + body ops + section analysis
+showcase-3d.js       isometric helpers + body ops + transforms + section
 BACKLOG.md           the gap decisions (keep / drop / defer) and their homes
 README.md            this file
 ```

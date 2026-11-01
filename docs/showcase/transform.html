@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — body transforms</title>
+    <link rel="stylesheet" href="../mockups/mockup.css" />
+    <link rel="stylesheet" href="showcase.css" />
+    <script src="../mockups/theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="../mockups/index.html">
+        cad <span class="tag">tool showcase</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Showcase">
+        <a href="index.html">sketch layout</a>
+        <a href="sketch-create.html">sketch create</a>
+        <a href="body-ops.html">body ops</a>
+        <a class="is-active" href="transform.html">transform</a>
+        <a href="inspect.html">inspect</a>
+        <a href="BACKLOG.md">backlog</a>
+      </nav>
+      <div class="mockbar-right">
+        <a class="mockbar-btn" href="../mockups/index.html">studies</a>
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" title="File menu">
+            <span class="doc-name">transforms</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-center">
+          <span>model</span>
+          <span class="mode">preview</span>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage" id="stage">
+          <div class="stage-head">
+            <div class="tool-line" role="toolbar" aria-label="Body transforms">
+              <button class="tool" type="button" data-tool="move">move / copy</button>
+              <button class="tool" type="button" data-tool="align">align</button>
+            </div>
+          </div>
+
+          <div class="sketch-viewport" id="viewport">
+            <svg
+              class="stage-svg"
+              viewBox="0 0 1200 700"
+              preserveAspectRatio="xMidYMid meet"
+              role="img"
+              aria-label="A block being moved, copied or aligned relative to a base plate."
+            >
+              <g id="tr-layer"></g>
+            </svg>
+            <div class="tool-panel" id="tool-panel" role="dialog" aria-label="Transform settings"></div>
+          </div>
+
+          <div class="stage-foot">
+            <div class="stage-foot-left">
+              <span id="tr-foot"></span>
+            </div>
+            <div class="stage-foot-right">
+              <span class="sc-legend">
+                <span class="key"><span class="swatch is-selected"></span>result</span>
+                <span class="key"><span class="swatch is-ghost"></span>original</span>
+              </span>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · transform</div>
+          <h2>Move, copy and align</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        Two ways to put a body where you want it: transform it directly
+        (<b>move / copy</b>), or relate it to another body (<b>align</b>). Both
+        keep the same preview grammar — the result is highlighter-tinted, the
+        original is a faint ghost until you commit.
+      </p>
+      <h3>What each does</h3>
+      <ul>
+        <li><b>Move / copy</b> translates and rotates the block, with a <b>create copy</b> toggle: on, the original stays and a tinted copy appears; off, the original becomes a ghost and the result takes its place.</li>
+        <li><b>Align</b> snaps the block to the reference plate per axis — none / left / centre / right, and for Z below / centre / on top. A guide line shows where the block travels.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Does a body <b>move</b> persist as a feature (so it can be re-edited), or is it a one-shot transform like the sketch move/copy? This study leans toward a persistent operation, matching M6.0.</li>
+        <li>Should move/copy be draggable in the viewport (Fusion's free move), or is the exact numeric box enough for v1?</li>
+        <li>Align needs a reference: a body, a face, or a datum plane? This study only uses a body's bounds.</li>
+        <li>How does align pick the moving body when several are selected?</li>
+      </ul>
+      <div class="mini-note">
+        Stylised geometry for a design decision, not a real B-rep. The point is
+        the interaction: a target, a transform, and a live preview.
+      </div>
+    </aside>
+
+    <script src="../mockups/mockups.js"></script>
+    <script src="showcase-3d.js"></script>
+  </body>
+</html>

@@ -27,6 +27,18 @@
     });
   }
 
+  function cross(a, b) {
+    return [
+      a[1] * b[2] - a[2] * b[1],
+      a[2] * b[0] - a[0] * b[2],
+      a[0] * b[1] - a[1] * b[0]
+    ];
+  }
+
+  function subv(a, b) {
+    return [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  }
+
   function poly(pts, cls) {
     return (
       '<polygon points="' +
@@ -110,6 +122,51 @@
     if (hole) d += " " + ellipsePath(iso, hole.x, hole.y, b.z1, hole.r);
     html +=
       '<path d="' + d + '" fill-rule="evenodd" class="bo-face-top"/>';
+    return html;
+  }
+
+  function boxCorners(b) {
+    return [
+      [b.x0, b.y0, b.z0],
+      [b.x1, b.y0, b.z0],
+      [b.x1, b.y1, b.z0],
+      [b.x0, b.y1, b.z0],
+      [b.x0, b.y0, b.z1],
+      [b.x1, b.y0, b.z1],
+      [b.x1, b.y1, b.z1],
+      [b.x0, b.y1, b.z1]
+    ];
+  }
+
+  // a box from its 8 corners (bottom 0-3, top 4-7), so it can be rotated.
+  // only front-facing faces are drawn, shaded by their dominant axis.
+  function drawBoxCorners(iso, c, prefix, ghost) {
+    var quads = [
+      [0, 3, 2, 1],
+      [4, 5, 6, 7],
+      [0, 1, 5, 4],
+      [1, 2, 6, 5],
+      [2, 3, 7, 6],
+      [3, 0, 4, 7]
+    ];
+    var html = "";
+    quads.forEach(function (q) {
+      var p0 = c[q[0]],
+        p1 = c[q[1]],
+        p2 = c[q[2]];
+      var n = cross(subv(p1, p0), subv(p2, p1));
+      if (n[0] + n[1] + n[2] <= 0) return;
+      var ax = Math.abs(n[0]),
+        ay = Math.abs(n[1]),
+        az = Math.abs(n[2]);
+      var name = az >= ax && az >= ay ? "top" : ax >= ay ? "x" : "y";
+      var cls = ghost
+        ? "bo-ghost"
+        : prefix
+          ? prefix + "-" + name
+          : "bo-face-" + name;
+      html += poly(pts3(iso, q.map(function (i) { return c[i]; })), cls);
+    });
     return html;
   }
 
@@ -559,6 +616,191 @@
     setTool("combine");
   }
 
+  /* ------------------------------------------------------------------ */
+  /* body transforms: move / copy + align                                */
+  /* ------------------------------------------------------------------ */
+
+  var TR_PLATE = { x0: 0, y0: 0, z0: 0, x1: 110, y1: 74, z1: 18 };
+  var TR_BLOCK = { x0: 18, y0: 22, z0: 34, x1: 50, y1: 54, z1: 66 };
+
+  var tr = {
+    tool: "move",
+    params: {
+      move: { dx: 34, dy: 22, dz: 0, rot: 0, copy: true },
+      align: { ax: "centre", ay: "centre", az: "ontop" }
+    }
+  };
+
+  function alignAxis(bmin, bmax, rmin, rmax, mode) {
+    if (mode === "min") return rmin;
+    if (mode === "max") return rmax;
+    if (mode === "centre") return (rmin + rmax) / 2 - (bmax - bmin) / 2;
+    if (mode === "ontop") return rmax;
+    if (mode === "below") return rmin - (bmax - bmin);
+    return bmin;
+  }
+
+  function alignedBox(b, ref, p) {
+    var w = b.x1 - b.x0,
+      d = b.y1 - b.y0,
+      h = b.z1 - b.z0;
+    var x0 = alignAxis(b.x0, b.x1, ref.x0, ref.x1, p.ax);
+    var y0 = alignAxis(b.y0, b.y1, ref.y0, ref.y1, p.ay);
+    var z0 = alignAxis(b.z0, b.z1, ref.z0, ref.z1, p.az);
+    return { x0: x0, y0: y0, z0: z0, x1: x0 + w, y1: y0 + d, z1: z0 + h };
+  }
+
+  function movedCorners(b, p) {
+    var cx = (b.x0 + b.x1) / 2,
+      cy = (b.y0 + b.y1) / 2;
+    var a = ((p.rot || 0) * Math.PI) / 180;
+    var ca = Math.cos(a),
+      sa = Math.sin(a);
+    return boxCorners(b).map(function (q) {
+      var dx = q[0] - cx,
+        dy = q[1] - cy;
+      return [
+        cx + dx * ca - dy * sa + p.dx,
+        cy + dx * sa + dy * ca + p.dy,
+        q[2] + p.dz
+      ];
+    });
+  }
+
+  function trSpec(tool) {
+    if (tool === "move") {
+      return {
+        kicker: "body transform",
+        title: "move / copy",
+        rows: [
+          { type: "input", key: "dx", label: "x", unit: "mm" },
+          { type: "input", key: "dy", label: "y", unit: "mm" },
+          { type: "input", key: "dz", label: "z", unit: "mm" },
+          { type: "input", key: "rot", label: "rotate Z", unit: "deg" },
+          { type: "toggle", key: "copy", label: "create copy" },
+          { type: "static", label: "body", value: "block" }
+        ],
+        hint: "move or duplicate a body without redrawing it",
+        summary: function (p) {
+          return (
+            (p.copy ? "copy" : "move") + " \u00b7 " +
+            fmt1(p.dx) + ", " + fmt1(p.dy) + ", " + fmt1(p.dz) + " mm" +
+            (p.rot ? " \u00b7 " + fmt1(p.rot) + "\u00b0" : "")
+          );
+        }
+      };
+    }
+    return {
+      kicker: "body transform",
+      title: "align",
+      rows: [
+        { type: "seg", key: "ax", label: "X", options: [["none", "none"], ["min", "left"], ["centre", "centre"], ["max", "right"]] },
+        { type: "seg", key: "ay", label: "Y", options: [["none", "none"], ["min", "front"], ["centre", "centre"], ["max", "back"]] },
+        { type: "seg", key: "az", label: "Z", options: [["none", "none"], ["below", "below"], ["centre", "centre"], ["ontop", "on top"]] },
+        { type: "static", label: "reference", value: "plate" }
+      ],
+      hint: "snap the block to the plate on each axis",
+      summary: function (p) {
+        return "X " + p.ax + " \u00b7 Y " + p.ay + " \u00b7 Z " + p.az;
+      }
+    };
+  }
+
+  function trRender(iso, layer, footEl) {
+    var tool = tr.tool;
+    var p = tr.params[tool];
+    var html = "";
+    if (tool === "move") {
+      var moved = movedCorners(TR_BLOCK, p);
+      html += drawBox(iso, TR_PLATE, null, false);
+      if (p.copy) {
+        html += drawBoxCorners(iso, boxCorners(TR_BLOCK), null, false);
+        html += drawBoxCorners(iso, moved, "bo-result", false);
+      } else {
+        html += drawBoxCorners(iso, boxCorners(TR_BLOCK), null, true);
+        html += drawBoxCorners(iso, moved, "bo-result", false);
+      }
+    } else {
+      var aligned = alignedBox(TR_BLOCK, TR_PLATE, p);
+      html += drawBox(iso, TR_PLATE, null, false);
+      html += drawBoxCorners(iso, boxCorners(TR_BLOCK), null, true);
+      html += drawBoxCorners(iso, boxCorners(aligned), "bo-result", false);
+      // a guide from the block's centre to where it lands
+      var from = [
+        (TR_BLOCK.x0 + TR_BLOCK.x1) / 2,
+        (TR_BLOCK.y0 + TR_BLOCK.y1) / 2,
+        TR_BLOCK.z0
+      ];
+      var to = [
+        (aligned.x0 + aligned.x1) / 2,
+        (aligned.y0 + aligned.y1) / 2,
+        aligned.z0
+      ];
+      var f = iso.p(from[0], from[1], from[2]);
+      var t = iso.p(to[0], to[1], to[2]);
+      html +=
+        '<line x1="' + f[0].toFixed(1) + '" y1="' + f[1].toFixed(1) +
+        '" x2="' + t[0].toFixed(1) + '" y2="' + t[1].toFixed(1) +
+        '" class="bo-ghost"/>';
+    }
+    layer.innerHTML = html;
+    footEl.innerHTML =
+      "<b>" + (tool === "move" ? "move / copy" : "align") + "</b> \u00b7 " +
+      trSpec(tool).summary(p);
+  }
+
+  function bootTransform() {
+    var layer = document.getElementById("tr-layer");
+    var panel = document.getElementById("tool-panel");
+    var foot = document.getElementById("tr-foot");
+    var iso = makeIso(540, 400, 2.6);
+
+    function render() {
+      trRender(iso, layer, foot);
+      panel.innerHTML = panelHtml(trSpec(tr.tool), tr.params[tr.tool]);
+      layoutPanel(panel);
+    }
+
+    function setTool(tool) {
+      tr.tool = tool;
+      Array.prototype.forEach.call(document.querySelectorAll("[data-tool]"), function (b) {
+        var on = b.getAttribute("data-tool") === tool;
+        b.classList.toggle("is-active", on);
+      });
+      render();
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll("[data-tool]"), function (b) {
+      b.addEventListener("click", function () {
+        setTool(b.getAttribute("data-tool"));
+      });
+    });
+
+    panel.addEventListener("click", function (e) {
+      var seg = e.target.closest(".seg button");
+      if (seg) {
+        tr.params[tr.tool][seg.closest(".seg").getAttribute("data-key")] = seg.getAttribute("data-value");
+        render();
+        return;
+      }
+      var tog = e.target.closest(".toggle");
+      if (tog) {
+        var k = tog.getAttribute("data-key");
+        tr.params[tr.tool][k] = !tr.params[tr.tool][k];
+        render();
+      }
+    });
+    panel.addEventListener("input", function (e) {
+      var inp = e.target.closest("[data-input]");
+      if (inp) {
+        tr.params[tr.tool][inp.getAttribute("data-input")] = Number(inp.value) || 0;
+        trRender(iso, layer, foot);
+      }
+    });
+
+    setTool("move");
+  }
+
   function bootSection() {
     var layer = document.getElementById("sec-layer");
     var panel = document.getElementById("tool-panel");
@@ -603,6 +845,7 @@
 
   function boot() {
     if (document.getElementById("bo-layer")) bootBodyOps();
+    if (document.getElementById("tr-layer")) bootTransform();
     if (document.getElementById("sec-layer")) bootSection();
     if (window.M && window.M.hydrateIcons) window.M.hydrateIcons(document);
   }
