@@ -117,9 +117,38 @@ The rule of thumb:
 - One value, and it lives on an annotation → **inline editor**.
 - Actions that apply immediately to the selection → **selection popover**.
 
-The dimension editor is the clearest case for the inline shape: study 02 already
-puts it *at* the dimension, with `apply` / `cancel`. That is correct, and it stays
-there. The constraint editing is the case for the selection popover.
+The dimension editor is the clearest case for the inline shape: it sits *at* the
+dimension, replaces the label, and has no buttons. Constraint editing is the case
+for the selection popover. An applied sketch operation is a third case: selecting
+it opens a small selection popover with its kind, a summary and `edit` / `delete`,
+and `edit` reopens the tool popover with the same values.
+
+### Inline editor — exact spec
+
+This is the shape the other surfaces should copy. A dimension's value is the
+reference implementation (`docs/mockups/02-sketch.html`, and the shared builder
+`ShowcaseUI.inlineEditor` in `docs/showcase/showcase-ui.js`):
+
+```html
+<div class="dim-editor is-selected">
+  <input type="text" value="55.0" aria-label="Dimension value">
+  <span class="dim-unit">mm</span>
+  <button class="dim-kind is-active" type="button">driving</button>
+</div>
+```
+
+- **Placement:** it replaces the annotation's label, at the same spot. The value
+  must never be rendered twice. (In the static mockup the same markup sits in a
+  `foreignObject` with the extra class `is-inline`.)
+- **Contents:** the value, its unit, and the value's own option — for a dimension,
+  `driving` / `reference`, toggled in place. No second surface for the option.
+- **Commit:** `Enter`. **Cancel:** `Escape`, or a tap/click outside. There are
+  **no `apply` / `cancel` buttons** — the value is already the thing you are
+  looking at, and on touch the keyboard's return is the commit.
+- **Selected state:** the editor is opaque (it hides the annotation line behind
+  it) with a marker underline; the value field carries the highlighter tint.
+- **The same applies to a point's X/Y**: two fields, one control, at the point —
+  not a card, not a panel.
 
 ## Popover anatomy
 
@@ -146,7 +175,7 @@ The kicker says what *kind* of thing this is (`sketch tool`, `body op`,
 
 | Surface | Input | Actions | Target |
 | --- | --- | --- | --- |
-| Sketch layout (`index.html`) | popover ✓ | popover footer | keep (its selection line should become a selection popover) |
+| Sketch layout (`index.html`) | popover ✓ | popover footer + selection popover ✓ | keep |
 | Sketch constraints (app) | **selection card + constraint bar ✗** | immediate chips | **one selection popover** |
 | Dimension edit (app, study 02) | inline editor ✓ | Enter / Escape, no buttons | keep |
 | Point X/Y (app) | **selection card ✗** | — | **inline editor, or rows in the selection popover** |
@@ -167,17 +196,32 @@ a status bar with a viewport behind it.
 
 - If a new control changes the document, it goes in a popover.
 - If it changes the view, it may go in the foot.
-- If it acts on the selection, it goes in the selection line.
+- If it acts on the selection, it goes in the selection popover.
 - If it does not fit any of those, that is a signal to add a rule here, not to
   add a row to the bottom bar.
+
+## Implementing this in the app
+
+Point the app session at this list:
+
+1. **Feature forms** → the draggable `FeaturePopover` (already started): kicker,
+   title, rows, hint, footer `summary + quiet cancel + primary apply`. Editing
+   reopens the same popover; `cancel` restores the state from when it opened.
+2. **Sketch constraints** → replace the `selection-card` + `constraint-bar` with
+   one **selection popover**: kicker `selection`, the selected item(s), a wrapped
+   row of `.sc-chip` constraints (immediate, no commit pair), footer
+   `summary + quiet delete`.
+3. **Dimension value** → the **inline editor** spec above; drop the apply/cancel
+   buttons and the duplicate label.
+4. **Point X/Y** → the same inline editor, at the point.
+5. **The stage foot** keeps only state and view controls. No form input moves
+   down there.
 
 ## Open questions
 
 - Should the popover remember its position per tool, or is one shared position
   enough?
 - Should the popover collapse to just its header when dragged out of the way?
-- Study 02's selection line is now superseded by the selection popover; the
-  mockup should be revisited (it currently shows the bottom strip).
-- Does selecting a **dimension** open a selection popover (with `make reference` /
-  `delete`) *and* the inline editor, or only the inline editor?
+- On touch, is "tap outside cancels" for the inline editor discoverable enough,
+  or does it need a visible done affordance?
 - Do `cancel` and `Esc` do the same thing everywhere?

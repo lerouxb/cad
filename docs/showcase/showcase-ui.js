@@ -68,5 +68,31 @@
     );
   }
 
-  window.ShowcaseUI = { makeDraggable: makeDraggable, footer: footer };
+  // The single-value inline editor. It replaces the annotation's label, carries
+  // the value's own option (a dimension's driving/reference), and has NO buttons:
+  // Enter commits, Escape (or a tap outside) cancels. See INTERACTION.md.
+  // The mockups carry the same markup, with `is-inline` added for the
+  // foreignObject positioning.
+  function inlineEditor(opts) {
+    opts = opts || {};
+    var kind = opts.kind === "reference" ? "reference" : "driving";
+    return (
+      '<div class="dim-editor is-selected">' +
+      '<input type="text" value="' +
+      (opts.value == null ? "" : opts.value) +
+      '" aria-label="Dimension value">' +
+      (opts.unit ? '<span class="dim-unit">' + opts.unit + "</span>" : "") +
+      '<button class="dim-kind' +
+      (kind === "driving" ? " is-active" : "") +
+      '" type="button">' +
+      kind +
+      "</button></div>"
+    );
+  }
+
+  window.ShowcaseUI = {
+    makeDraggable: makeDraggable,
+    footer: footer,
+    inlineEditor: inlineEditor
+  };
 })();

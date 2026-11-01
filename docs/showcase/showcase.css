@@ -537,20 +537,6 @@
   stroke: var(--marker-ink);
 }
 
-/* the selection line is the object's edit handle; pointer-through except
-   for its actions, like the sketch selection line in the app */
-.selection-line[hidden] {
-  display: none;
-}
-
-.selection-line {
-  pointer-events: none;
-}
-
-.selection-line .selection-actions button {
-  pointer-events: auto;
-}
-
 /* the sketch's objects, listed in the timeline detail */
 .detail-op {
   margin: 0 -3px;

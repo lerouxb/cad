@@ -44,7 +44,8 @@
   var state = {
     sel: "lines",
     chips: {},
-    point: { x: 16, y: 52 }
+    point: { x: 16, y: 52 },
+    dimKind: "driving"
   };
 
   var layerGeom, layerDim, layerWash, panel, inline, viewport;
@@ -183,10 +184,11 @@
     inline.style.width = "148px";
     inline.style.left = q[0] - 74 + "px";
     inline.style.top = q[1] - 34 + "px";
-    inline.innerHTML =
-      '<input type="text" value="' + DIM.text + '" aria-label="Dimension value">' +
-      '<span class="dim-unit">mm</span>' +
-      '<button class="dim-kind is-active" type="button">driving</button>';
+    inline.innerHTML = ShowcaseUI.inlineEditor({
+      value: DIM.text,
+      unit: "mm",
+      kind: state.dimKind
+    });
   }
 
   function render() {
@@ -239,6 +241,12 @@
         P1[1] = state.point.y;
         renderGeom();
         renderWash();
+      }
+    });
+    inline.addEventListener("click", function (e) {
+      if (e.target.closest(".dim-kind")) {
+        state.dimKind = state.dimKind === "driving" ? "reference" : "driving";
+        renderInline();
       }
     });
 

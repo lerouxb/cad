@@ -310,7 +310,7 @@
   /* DOM                                                                 */
   /* ------------------------------------------------------------------ */
 
-  var svg, viewport, stage, panel, prompt, statusLine, legendEl, stepsEl, detailEl, selectionLine;
+  var svg, viewport, stage, panel, prompt, statusLine, legendEl, stepsEl, detailEl;
   var layers = {};
 
   function $(id) {
@@ -327,7 +327,6 @@
     legendEl = $("legend");
     stepsEl = $("steps");
     detailEl = $("timeline-detail");
-    selectionLine = $("selection-line");
     layers.ref = $("ref-layer");
     layers.ghost = $("ghost-layer");
     layers.selection = $("selection-layer");
@@ -1230,7 +1229,7 @@
         if (op) {
           parts.push("<b>" + op.name + "</b>");
           parts.push(opSummary(op));
-          parts.push("edit or delete in the selection line");
+          parts.push("edit or delete in the selection popover");
         }
       } else {
         parts.push("<b>select</b>");
@@ -1316,6 +1315,11 @@
 
   function renderPanel() {
     if (state.tool === "select") {
+      var op = state.selectedOp ? findOp(state.selectedOp) : null;
+      if (op) {
+        renderSelectionPanel(op);
+        return;
+      }
       panel.hidden = true;
       return;
     }
@@ -1403,6 +1407,13 @@
   function wirePanel() {
     panel.addEventListener("click", function (e) {
       var t = e.target;
+      var action = t.closest("[data-action]");
+      if (action) {
+        var id = action.getAttribute("data-action");
+        if (id === "edit" && state.selectedOp) editOp(state.selectedOp);
+        else if (id === "delete" && state.selectedOp) deleteOp(state.selectedOp);
+        return;
+      }
       var seg = t.closest(".seg button");
       if (seg) {
         setParam(seg.closest(".seg").getAttribute("data-key"), seg.getAttribute("data-value"));
@@ -1454,6 +1465,14 @@
   }
 
   function selectionScreenBounds(scene) {
+    if (state.tool === "select" && state.selectedOp) {
+      var op = findOp(state.selectedOp);
+      if (op) {
+        return boundsOf(
+          curvesFor(scene, op.selection).concat(opCurves(scene, op))
+        );
+      }
+    }
     var sel = selectedCurves(scene);
     if (!sel.length) return null;
     return boundsOf(sel.concat(ghostList(scene)));
@@ -1501,7 +1520,6 @@
     layers.manip.innerHTML = renderManip(scene);
     renderStatus();
     renderLegend();
-    renderSelectionLine();
     var hasSel = selectedCurves(scene).length > 0;
     prompt.hidden = !(state.tool !== "select" && !hasSel);
     if (state.tool !== "select" && !hasSel) {
@@ -1685,6 +1703,24 @@
     render();
   }
 
+  function renderSelectionPanel(op) {
+    var spec = SPECS[op.tool];
+    panel.innerHTML =
+      '<div class="tool-panel-head"><div>' +
+      '<div class="tool-panel-kicker">selection</div>' +
+      '<h2 class="tool-panel-title">' + op.name + "</h2></div></div>" +
+      '<div class="tool-panel-body">' +
+      '<div class="tool-row"><span class="tool-label">kind</span>' +
+      '<span class="tool-note">' + spec.title + "</span></div>" +
+      "</div>" +
+      '<div class="tool-hint">edit reopens the tool with these values</div>' +
+      ShowcaseUI.footer(opSummary(op), [
+        { id: "edit", label: "edit" },
+        { id: "delete", label: "delete", quiet: true }
+      ]);
+    panel.hidden = false;
+  }
+
   function renderSelectionLine() {
     var op = state.selectedOp ? findOp(state.selectedOp) : null;
     if (!op || state.tool !== "select") {
@@ -1841,17 +1877,6 @@
         setTool(btn.getAttribute("data-tool"));
       });
     });
-    if (selectionLine) {
-      selectionLine.addEventListener("click", function (e) {
-        var edit = e.target.closest("[data-op-edit]");
-        if (edit) {
-          editOp(edit.getAttribute("data-op-edit"));
-          return;
-        }
-        var del = e.target.closest("[data-op-delete]");
-        if (del) deleteOp(del.getAttribute("data-op-delete"));
-      });
-    }
     if (detailEl) {
       detailEl.addEventListener("click", function (e) {
         var opEl = e.target.closest("[data-op]");
