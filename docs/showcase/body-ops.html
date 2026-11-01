@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — body operations</title>
+    <link rel="stylesheet" href="../mockups/mockup.css" />
+    <link rel="stylesheet" href="showcase.css" />
+    <script src="../mockups/theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="../mockups/index.html">
+        cad <span class="tag">tool showcase</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Showcase">
+        <a href="index.html">sketch layout</a>
+        <a href="sketch-create.html">sketch create</a>
+        <a class="is-active" href="body-ops.html">body ops</a>
+        <a href="inspect.html">inspect</a>
+        <a href="BACKLOG.md">backlog</a>
+      </nav>
+      <div class="mockbar-right">
+        <a class="mockbar-btn" href="../mockups/index.html">studies</a>
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" title="File menu">
+            <span class="doc-name">body-ops</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-center">
+          <span>model</span>
+          <span class="mode">preview</span>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage" id="stage">
+          <div class="stage-head">
+            <div class="tool-line" role="toolbar" aria-label="Body operations">
+              <button class="tool" type="button" data-tool="combine">combine</button>
+              <button class="tool" type="button" data-tool="split">split body</button>
+            </div>
+          </div>
+
+          <div class="sketch-viewport" id="viewport">
+            <svg
+              class="stage-svg"
+              viewBox="0 0 1200 700"
+              preserveAspectRatio="xMidYMid meet"
+              role="img"
+              aria-label="Two bodies with a body operation: a target plate and a cylindrical tool body."
+            >
+              <g id="bo-layer"></g>
+            </svg>
+            <div class="tool-panel" id="tool-panel" role="dialog" aria-label="Operation settings"></div>
+          </div>
+
+          <div class="stage-foot">
+            <div class="stage-foot-left">
+              <span id="bo-foot"></span>
+            </div>
+            <div class="stage-foot-right">
+              <span class="sc-legend">
+                <span class="key"><span class="swatch is-selected"></span>target</span>
+                <span class="key"><span class="swatch is-ghost"></span>tool body</span>
+              </span>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · body ops</div>
+          <h2>Combine and split</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        The Solid tab's body operations all share one shape: pick a target, pick a
+        tool, choose what to do, and see the result before committing. This study
+        reuses the sketch preview grammar for solids.
+      </p>
+      <h3>What each op does</h3>
+      <ul>
+        <li><b>Combine · join</b> unions the tool into the target (here a boss on the plate).</li>
+        <li><b>Combine · cut</b> removes the tool from the target (here a through hole).</li>
+        <li><b>Combine · intersect</b> keeps only the overlap.</li>
+        <li><b>Keep tool bodies</b> leaves the tool as a separate body; otherwise it is consumed. The kept tool is tinted, the consumed one is dashed.</li>
+        <li><b>Split body</b> cuts one body into two independent bodies with a plane; <b>keep both</b> controls whether the far half survives.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Are target/tool a selection in the dialog, or a bodies list on the document? How do the result bodies keep stable identity across a split?</li>
+        <li>Does intersect need a distinct icon/colour so it is not mistaken for cut?</li>
+        <li>Should the tool body stay ghosted after apply when it is consumed?</li>
+      </ul>
+      <div class="mini-note">
+        This is stylised geometry for a design decision, not a real B-rep. The
+        point is the interaction: target, tool, operation, and a live preview.
+      </div>
+    </aside>
+
+    <script src="../mockups/mockups.js"></script>
+    <script src="showcase-3d.js"></script>
+  </body>
+</html>

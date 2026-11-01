@@ -1,26 +1,28 @@
-# Sketch tool showcase
+# Tool showcase
 
-Interactive design targets for four sketch-editor tools that do not exist yet:
+Interactive design targets for tools that do not exist yet, split into four studies:
 
-| Tool | Study | Milestone |
-| --- | --- | --- |
-| Rectangular pattern | [`index.html?tool=rect`](index.html?tool=rect) | M6 (feature patterns) / sketch-level here |
-| Circular pattern | [`index.html?tool=circular`](index.html?tool=circular) | M6 |
-| Mirror | [`index.html?tool=mirror`](index.html?tool=mirror) | M6 — **high priority** |
-| Offset | [`index.html?tool=offset`](index.html?tool=offset) | M9 today; promote with an ADR |
+| Study | Page | What it covers | Milestone |
+| --- | --- | --- | --- |
+| **Sketch layout** | [`index.html`](index.html) | rectangular / circular pattern, mirror, offset, **move/copy** | **M6.0** (ADR-0004) |
+| **Sketch create** | [`sketch-create.html`](sketch-create.html) | rectangle / circle / arc variants, polygon | M6.0-era sketch polish |
+| **Body ops** | [`body-ops.html`](body-ops.html) | **combine** (join/cut/intersect, keep tools), **split body** | M6 |
+| **Inspect** | [`inspect.html`](inspect.html) | **section analysis** | M5 |
 
-Open [`index.html`](index.html) directly in a browser. No build step, no server, no
-dependencies. It reuses the shared paper/ink system from
-[`../mockups/`](../mockups/) (`mockup.css`, `mockups.js`, `theme-init.js`) but does
-not modify it, and it is never imported by `src/`.
+The decisions behind these (what to keep, drop, defer) are in
+[`BACKLOG.md`](BACKLOG.md).
 
-## What this explores
+Open the pages directly in a browser. No build step, no server, no dependencies.
+They reuse the shared paper/ink system from [`../mockups/`](../mockups/)
+(`mockup.css`, `mockups.js`, `theme-init.js`) but do not modify it, and are never
+imported by `src/`.
 
-The four tools share one interaction problem: **the tool needs a configuration
-before it can create anything, and the sketch is the only place that
-configuration can be judged.** So each tool opens a small popup that lives next
-to the geometry it will change, and every control edits a live preview on the
-canvas.
+## What the sketch-layout study explores
+
+The tools share one interaction problem: **the tool needs a configuration before
+it can create anything, and the sketch is the only place that configuration can
+be judged.** So each tool opens a small popup that lives next to the geometry it
+will change, and every control edits a live preview on the canvas.
 
 The preview grammar is the point of the study:
 
@@ -31,12 +33,14 @@ The preview grammar is the point of the study:
   change. It is never highlighter-coloured: the highlighter means "current or
   selected", and a preview is neither yet.
 - **The parameters live on the geometry.** Direction arrows, instance ticks, a
-  sweep arc, a mirror line and an offset arrow are drawn on the canvas and are
-  draggable, so the common edit (spacing, distance, angle) does not need the
-  popup at all.
+  sweep arc, a mirror line, a move arrow and an offset arrow are drawn on the
+  canvas and are draggable, so the common edit does not need the popup at all.
 - **The popup is context-sensitive.** It only exists while a tool is active,
   only shows the rows that apply (direction 2 appears when it is switched on),
   and disappears in `select` mode.
+
+The same grammar carries into the body operations: a target body, a tool body,
+an operation, and a live result — solids instead of curves.
 
 ## Objects, not one-shot edits
 
@@ -121,10 +125,16 @@ changes.
 ## Files
 
 ```
-index.html      the interactive showcase (all four tools)
-showcase.css    the popup, preview and manipulator styles (tokens from mockups)
-showcase.js     the sketch model, preview geometry and interaction
-README.md       this file
+index.html           sketch layout: pattern / mirror / offset / move-copy
+sketch-create.html   sketch create variants: rectangle / circle / arc / polygon
+body-ops.html        combine + split body
+inspect.html         section analysis
+showcase.css         popup, preview, manipulator and 3D styles (mockup tokens)
+showcase.js          sketch model, preview geometry and interaction
+showcase-create.js   the create-tool atlas
+showcase-3d.js       isometric helpers + body ops + section analysis
+BACKLOG.md           the gap decisions (keep / drop / defer) and their homes
+README.md            this file
 ```
 
 The typography contract in [`../mockups/TYPOGRAPHY.md`](../mockups/TYPOGRAPHY.md)

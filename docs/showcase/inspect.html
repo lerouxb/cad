@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — section analysis</title>
+    <link rel="stylesheet" href="../mockups/mockup.css" />
+    <link rel="stylesheet" href="showcase.css" />
+    <script src="../mockups/theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="../mockups/index.html">
+        cad <span class="tag">tool showcase</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Showcase">
+        <a href="index.html">sketch layout</a>
+        <a href="sketch-create.html">sketch create</a>
+        <a href="body-ops.html">body ops</a>
+        <a class="is-active" href="inspect.html">inspect</a>
+        <a href="BACKLOG.md">backlog</a>
+      </nav>
+      <div class="mockbar-right">
+        <a class="mockbar-btn" href="../mockups/index.html">studies</a>
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" title="File menu">
+            <span class="doc-name">section-analysis</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-center">
+          <span>inspect</span>
+          <span class="mode">view only</span>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage" id="stage">
+          <div class="stage-head">
+            <div class="stage-kicker">inspect</div>
+            <h2 class="stage-title">Section analysis</h2>
+            <div class="stage-meta">
+              <span id="sec-meta"></span>
+              <span class="sep">·</span>
+              <span>a view, never a history step</span>
+            </div>
+          </div>
+
+          <div class="sketch-viewport" id="viewport">
+            <svg
+              class="stage-svg"
+              viewBox="0 0 1200 700"
+              preserveAspectRatio="xMidYMid meet"
+              role="img"
+              aria-label="A stepped body cut by a plane, with the cut cross-section hatched."
+            >
+              <defs>
+                <pattern
+                  id="hatch"
+                  width="7"
+                  height="7"
+                  patternUnits="userSpaceOnUse"
+                  patternTransform="rotate(45)"
+                >
+                  <line x1="0" y1="0" x2="0" y2="7" stroke="var(--ink-3)" stroke-width="1" />
+                </pattern>
+              </defs>
+              <g id="sec-layer"></g>
+            </svg>
+            <div class="tool-panel" id="tool-panel" role="dialog" aria-label="Section settings"></div>
+          </div>
+
+          <div class="stage-foot">
+            <div class="stage-foot-left">
+              <span><b>section</b> · view only</span>
+            </div>
+            <div class="stage-foot-right">
+              <span class="sc-legend">
+                <span class="key"><span class="swatch is-selected"></span>cut material</span>
+                <span class="key"><span class="swatch is-ghost"></span>cutting plane</span>
+              </span>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · inspect</div>
+          <h2>Section analysis</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        Section analysis is the one inspect tool that is used constantly: slide a
+        plane through the body and look at the cut, to check wall thickness and
+        internals. It is a view, not a modelling operation, so it must never
+        enter history or the document.
+      </p>
+      <h3>What this study tests</h3>
+      <ul>
+        <li><b>The cut is hatched.</b> The classic drafting convention: solid material reads as a hatched cross-section, so the wall is unambiguous.</li>
+        <li><b>The plane is a handle, not a dialog.</b> Drag it (or use the range) to move the cut; flip keeps the other half.</li>
+        <li><b>It is view-only.</b> The header says so, and nothing here touches the timeline.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Is the plane a world plane, a selected face, or a free plane? This study uses a world X plane for clarity.</li>
+        <li>Does it belong with the visibility toggles (isolate, opacity) in one inspect surface? Likely yes.</li>
+        <li>Should the hatched section be exportable, or is it purely on-screen?</li>
+      </ul>
+      <div class="mini-note">
+        This is stylised geometry for a design decision. The interaction is the
+        point: a plane, a position, a flip, and a hatched cut.
+      </div>
+    </aside>
+
+    <script src="../mockups/mockups.js"></script>
+    <script src="showcase-3d.js"></script>
+  </body>
+</html>
