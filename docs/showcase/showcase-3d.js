@@ -92,6 +92,42 @@
     return html;
   }
 
+  // a box whose top face has a real circular hole (even-odd fill)
+  function drawBoxHole(iso, b, hole) {
+    var f = boxFaces(b);
+    var html =
+      poly(pts3(iso, f.ymax), "bo-face-y") +
+      poly(pts3(iso, f.xmax), "bo-face-x");
+    var top = pts3(iso, f.top);
+    var d =
+      "M " +
+      top
+        .map(function (q) {
+          return q[0].toFixed(1) + " " + q[1].toFixed(1);
+        })
+        .join(" L ") +
+      " Z";
+    if (hole) d += " " + ellipsePath(iso, hole.x, hole.y, b.z1, hole.r);
+    html +=
+      '<path d="' + d + '" fill-rule="evenodd" class="bo-face-top"/>';
+    return html;
+  }
+
+  // the visible far wall of a bore, between the top and bottom openings
+  function boreWall(iso, x, y, r, zTop, zBot) {
+    var pts = [];
+    var n = 24;
+    for (var k = 0; k <= n; k++) {
+      var th = Math.PI - (Math.PI * k) / n;
+      pts.push(iso.p(x + r * Math.cos(th), y + r * Math.sin(th), zTop));
+    }
+    for (var k2 = 0; k2 <= n; k2++) {
+      var th2 = (Math.PI * k2) / n;
+      pts.push(iso.p(x + r * Math.cos(th2), y + r * Math.sin(th2), zBot));
+    }
+    return poly(pts, "bo-bore");
+  }
+
   function ellipsePath(iso, x, y, z, r) {
     var pts = [];
     var n = 48;
@@ -158,6 +194,17 @@
     return poly(pts3(iso, q), "bo-plane");
   }
 
+  function planeLabel(iso, b, axis, pos, text) {
+    var a;
+    if (axis === "x") a = iso.p(pos, b.y1, b.z1);
+    else if (axis === "y") a = iso.p(b.x1, pos, b.z1);
+    else a = iso.p(b.x1, b.y1, pos);
+    return (
+      '<text class="bo-plane-label" x="' + (a[0] + 8).toFixed(1) + '" y="' +
+      (a[1] - 6).toFixed(1) + '">' + text + "</text>"
+    );
+  }
+
   /* ------------------------------------------------------------------ */
   /* shared panel                                                        */
   /* ------------------------------------------------------------------ */
@@ -168,7 +215,19 @@
       '<div class="tool-panel-kicker">' + spec.kicker + "</div>" +
       '<h2 class="tool-panel-title">' + spec.title + "</h2></div></div>" +
       '<div class="tool-panel-body">';
+    if (spec.list) {
+      html += '<div class="picker-section">' + spec.list.label + "</div>";
+      spec.list.rows.forEach(function (r) {
+        html +=
+          '<button class="picker-row' +
+          (p[spec.list.key] === r.value ? " is-selected" : "") +
+          '" type="button" data-list="' + r.value + '">' +
+          '<span class="row-name">' + r.name + "</span>" +
+          '<span class="row-meta">' + r.meta + "</span></button>";
+      });
+    }
     spec.rows.forEach(function (row) {
+      if (row.when && !row.when(p)) return;
       var v = p[row.key];
       var ctrl = "";
       if (row.type === "seg") {
@@ -194,6 +253,11 @@
           '<input class="tool-range" type="range" data-input="' + row.key +
           '" min="' + row.min + '" max="' + row.max + '" step="1" value="' +
           v + '">';
+      } else if (row.type === "input") {
+        ctrl =
+          '<label class="tool-input"><input type="text" inputmode="decimal" data-input="' +
+          row.key + '" value="' + fmt1(v) + '">' +
+          '<span class="unit">' + (row.unit || "") + "</span></label>";
       } else if (row.type === "static") {
         ctrl = '<span class="tool-note">' + row.value + "</span>";
       }
@@ -236,20 +300,23 @@
   /* ------------------------------------------------------------------ */
 
   var PLATE = { x0: 0, y0: 0, z0: 0, x1: 110, y1: 74, z1: 18 };
-  var CYL = { x: 80, y: 37, r: 15, z0: -10, z1: 54 };
-  var ENV = { x0: 0, y0: 0, z0: -10, x1: 110, y1: 74, z1: 54 };
+  var CYL = { x: 55, y: 37, r: 16, z0: -10, z1: 52 };
+  var ENV = { x0: 0, y0: 0, z0: -10, x1: 110, y1: 74, z1: 52 };
+
+  // splitting tools: existing datum planes or a tool body (not a free slider)
+  var SPLIT_TOOLS = {
+    plane1: { name: "Plane 1", meta: "offset", axis: "x", at: 40, plane: true },
+    plane2: { name: "Plane 2", meta: "midplane", axis: "y", at: 37, plane: true },
+    body2: { name: "Body 2", meta: "tool body", axis: "z", at: 9, plane: false }
+  };
 
   var bo = {
     tool: "combine",
     params: {
       combine: { op: "cut", keepTools: false },
-      split: { axis: "x", pos: 55, keepBoth: true }
+      split: { tool: "plane1", offset: 40, keepBoth: true }
     }
   };
-
-  function axisMax(axis) {
-    return axis === "x" ? 110 : axis === "y" ? 74 : 18;
-  }
 
   function boSpec(tool) {
     if (tool === "combine") {
@@ -271,20 +338,35 @@
     return {
       kicker: "body op",
       title: "split body",
+      list: {
+        label: "splitting tool",
+        key: "tool",
+        rows: [
+          { value: "plane1", name: "Plane 1", meta: "offset 40.0 mm" },
+          { value: "plane2", name: "Plane 2", meta: "midplane" },
+          { value: "body2", name: "Body 2", meta: "tool body" }
+        ]
+      },
       rows: [
-        { type: "seg", key: "axis", label: "splitting tool", options: [["x", "X"], ["y", "Y"], ["z", "Z"]] },
-        { type: "range", key: "pos", label: "position", min: 0, max: axisMax(bo.params.split.axis) },
+        { type: "input", key: "offset", label: "plane offset", unit: "mm", when: function (p) { return SPLIT_TOOLS[p.tool].plane; } },
         { type: "toggle", key: "keepBoth", label: "keep both" },
         { type: "static", label: "target", value: "plate" }
       ],
-      hint: "a split keeps two independent bodies",
+      hint: "the position lives on the plane; edit the plane, not the split",
       summary: function (p) {
+        var t = SPLIT_TOOLS[p.tool];
+        var pos = t.plane ? p.offset : t.at;
         return (
-          p.axis.toUpperCase() + " plane \u00b7 " + Math.round(p.pos) + " mm \u00b7 " +
-          (p.keepBoth ? "keep both" : "keep one")
+          t.name + " \u00b7 " + t.meta +
+          (t.plane ? " " + fmt1(pos) + " mm" : "") +
+          " \u00b7 " + (p.keepBoth ? "keep both" : "keep one")
         );
       }
     };
+  }
+
+  function fmt1(n) {
+    return (Math.round(n * 10) / 10).toFixed(1);
   }
 
   function splitBox(axis, pos, first) {
@@ -302,6 +384,11 @@
     return c;
   }
 
+  function splitAt(p) {
+    var t = SPLIT_TOOLS[p.tool];
+    return { axis: t.axis, pos: t.plane ? p.offset : t.at };
+  }
+
   function boRender(iso, layer, footEl) {
     var tool = bo.tool;
     var p = bo.params[tool];
@@ -312,15 +399,14 @@
         html += drawBox(iso, PLATE, null, false);
         html += cylinderSolid(iso, CYL.x, CYL.y, CYL.r, PLATE.z1, CYL.z1, "bo-face-x", "bo-face-top");
       } else if (op === "cut") {
-        html += drawBox(iso, PLATE, null, false);
-        html +=
-          '<path d="' + ellipsePath(iso, CYL.x, CYL.y, PLATE.z1, CYL.r) +
-          '" class="bo-hole"/>';
+        // draw the tool first, then the plate, so the plate occludes the bore
         html += cylinderSolid(
           iso, CYL.x, CYL.y, CYL.r, CYL.z0, CYL.z1,
           p.keepTools ? "bo-tool-kept" : "bo-ghost",
           p.keepTools ? "bo-tool-kept" : "bo-ghost"
         );
+        html += boreWall(iso, CYL.x, CYL.y, CYL.r, PLATE.z1, PLATE.z0);
+        html += drawBoxHole(iso, PLATE, { x: CYL.x, y: CYL.y, r: CYL.r });
       } else {
         html += drawBox(iso, PLATE, null, true);
         html += cylinderSolid(iso, CYL.x, CYL.y, CYL.r, PLATE.z0, PLATE.z1, "bo-face-x", "bo-face-top");
@@ -329,11 +415,15 @@
         }
       }
     } else {
-      var a = splitBox(p.axis, p.pos, true);
-      var b = splitBox(p.axis, p.pos, false);
+      var at = splitAt(p);
+      var a = splitBox(at.axis, at.pos, true);
+      var b = splitBox(at.axis, at.pos, false);
       html += drawBox(iso, a, null, false);
       html += p.keepBoth ? drawBox(iso, b, null, false) : drawBox(iso, b, null, true);
-      html += planeQuad(iso, ENV, p.axis, p.pos);
+      html += planeQuad(iso, ENV, at.axis, at.pos);
+      if (SPLIT_TOOLS[p.tool].plane) {
+        html += planeLabel(iso, ENV, at.axis, at.pos, SPLIT_TOOLS[p.tool].name);
+      }
     }
     layer.innerHTML = html;
     footEl.innerHTML =
@@ -415,14 +505,20 @@
     });
 
     panel.addEventListener("click", function (e) {
+      var listRow = e.target.closest("[data-list]");
+      if (listRow) {
+        var t = listRow.getAttribute("data-list");
+        bo.params.split.tool = t;
+        var def = SPLIT_TOOLS[t];
+        if (def.plane) bo.params.split.offset = def.at;
+        render();
+        return;
+      }
       var seg = e.target.closest(".seg button");
       if (seg) {
         var key = seg.closest(".seg").getAttribute("data-key");
         var val = seg.getAttribute("data-value");
         bo.params[bo.tool][key] = val;
-        if (bo.tool === "split" && key === "axis") {
-          bo.params.split.pos = Math.round(axisMax(val) / 2);
-        }
         render();
         return;
       }
@@ -436,7 +532,10 @@
     panel.addEventListener("input", function (e) {
       var inp = e.target.closest("[data-input]");
       if (inp) {
-        bo.params[bo.tool][inp.getAttribute("data-input")] = Number(inp.value);
+        var key = inp.getAttribute("data-input");
+        var v = Number(inp.value);
+        if (key === "offset") v = Math.max(0, Math.min(110, v));
+        bo.params[bo.tool][key] = v;
         boRender(iso, layer, foot);
       }
     });

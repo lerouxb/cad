@@ -558,7 +558,8 @@
         var signed = outward * p.dist * p.side;
         out.push({
           type: "poly",
-          pts: offsetPolyline(pts, signed, p.corner === "round", closed)
+          pts: offsetPolyline(pts, signed, p.corner === "round", closed),
+          closed: closed
         });
       }
     }
@@ -657,7 +658,11 @@
           return sp(q);
         })
         .join(" ");
-      return '<polyline points="' + pts + '" class="' + cls + '"' + (extra || "") + "/>";
+      var tag = c.closed ? "polygon" : "polyline";
+      return (
+        "<" + tag + ' points="' + pts + '" class="' + cls + '"' +
+        (extra || "") + "/>"
+      );
     }
     return (
       '<line x1="' + px(c.a)[0].toFixed(1) + '" y1="' + px(c.a)[1].toFixed(1) +

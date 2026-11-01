@@ -53,17 +53,14 @@
   }
 
   function polyline(pts, closed) {
-    return (
-      '<polyline points="' +
-      pts
-        .map(function (q) {
-          return sp(q);
-        })
-        .join(" ") +
-      '" class="c-result"' +
-      (closed ? ' data-closed="1"' : "") +
-      "/>"
-    );
+    var p = pts
+      .map(function (q) {
+        return sp(q);
+      })
+      .join(" ");
+    return closed
+      ? '<polygon points="' + p + '" class="c-result"/>'
+      : '<polyline points="' + p + '" class="c-result"/>';
   }
 
   function curveEl(c, cls) {
