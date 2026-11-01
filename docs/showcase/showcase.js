@@ -1088,6 +1088,13 @@
     if (key === "dist1" || key === "dist2") p[key] = clamp(p[key], 0.5, 500);
     if (key === "dist") p[key] = clamp(p[key], 0.5, 200);
     if (key === "angle") p[key] = clamp(p[key], 1, 360);
+    if (key === "mode" && p.mode === "spacing") {
+      // a step of 360 deg would stack every instance on the first
+      p.angle = Math.min(
+        p.angle,
+        Math.max(1, Math.round(360 / Math.max(1, p.count)))
+      );
+    }
   }
 
   function bump(key, delta) {
