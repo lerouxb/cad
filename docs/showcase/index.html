@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — sketch tool showcase</title>
+    <link rel="stylesheet" href="../mockups/mockup.css" />
+    <link rel="stylesheet" href="showcase.css" />
+    <script src="../mockups/theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="../mockups/index.html">
+        cad <span class="tag">tool showcase</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Showcase">
+        <a class="is-active" href="index.html">sketch tools</a>
+        <a href="README.md">readme</a>
+      </nav>
+      <div class="mockbar-right">
+        <a class="mockbar-btn" href="../mockups/index.html">studies</a>
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" title="File menu">
+            <span class="doc-name">tool-showcase</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-center">
+          <span>sketch</span>
+          <span class="mode">preview</span>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage has-grid" id="stage">
+          <div class="stage-head">
+            <div class="tool-line" role="toolbar" aria-label="Sketch tools">
+              <button class="tool" type="button" data-tool="select">select <kbd>v</kbd></button>
+              <button class="tool" type="button" data-tool="rect">pattern <kbd>r</kbd></button>
+              <button class="tool" type="button" data-tool="circular">circular <kbd>p</kbd></button>
+              <button class="tool" type="button" data-tool="mirror">mirror <kbd>m</kbd></button>
+              <button class="tool" type="button" data-tool="offset">offset <kbd>o</kbd></button>
+            </div>
+          </div>
+
+          <div class="sketch-viewport" id="viewport">
+            <svg
+              class="stage-svg sketch-svg"
+              id="svg"
+              viewBox="0 0 1200 700"
+              preserveAspectRatio="xMidYMid meet"
+              role="img"
+              aria-label="A sketch with a tool preview. The original selection is in ink on a highlighter wash; the geometry the tool would add is dashed and faint."
+            >
+              <g id="ref-layer"></g>
+              <g id="ghost-layer"></g>
+              <g id="selection-layer"></g>
+              <g id="geometry-layer"></g>
+              <g id="manip-layer"></g>
+            </svg>
+
+            <div
+              class="tool-panel"
+              id="tool-panel"
+              role="dialog"
+              aria-label="Tool settings"
+              hidden
+            ></div>
+            <div class="tool-prompt" id="tool-prompt" hidden></div>
+          </div>
+
+          <div class="stage-foot">
+            <div class="stage-foot-left">
+              <span id="status-line"></span>
+            </div>
+            <div class="stage-foot-right">
+              <span class="sc-legend" id="legend"></span>
+              <span>front ortho</span>
+            </div>
+          </div>
+        </section>
+
+        <footer class="timeline">
+          <div class="steps" id="steps"></div>
+          <div class="timeline-detail" id="timeline-detail"></div>
+        </footer>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · sketch tools</div>
+          <h2>Preview before commit</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        Pattern, mirror and offset all need a configuration before they can
+        create anything, and the sketch is the only place that configuration can
+        be judged. So each tool opens a popup next to the geometry it will
+        change, and every control edits a live preview on the canvas.
+      </p>
+      <h3>The preview grammar</h3>
+      <ul>
+        <li><b>The selection stays the original.</b> It is ink with the highlighter wash behind it — the most prominent thing on the page.</li>
+        <li><b>What the tool adds is a preview.</b> New geometry is dashed and faint, so it reads as a proposal you can still change. It is never highlighter-coloured: the highlighter means current or selected, and a preview is neither.</li>
+        <li><b>Parameters live on the geometry.</b> Direction arrows, instance ticks, a sweep arc, a mirror line and an offset arrow are drawn on the canvas and are draggable.</li>
+        <li><b>The popup is context-sensitive.</b> It exists only while a tool is active, shows only the rows that apply, and disappears in select mode.</li>
+      </ul>
+      <h3>What this study tests</h3>
+      <ul>
+        <li>Does a single preview grammar cover pattern, mirror and offset?</li>
+        <li>Is a dashed, faint copy distinct enough from the original selection in both themes and all four highlighter colours?</li>
+        <li>Is the popup next to the geometry better than a docked inspector?</li>
+        <li>Do the on-canvas handles remove the need to open the popup for the common edit?</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Should the preview be parametric and rebuilt on every edit, or materialised when applied?</li>
+        <li>One history step per tool invocation, or one per instance?</li>
+        <li>Is a circular pattern always about a sketch point, or also a projected edge or axis?</li>
+        <li>How should an offset handle open chains and self-intersections?</li>
+      </ul>
+      <div class="mini-note">
+        The highlighter is never decoration: it means current, selected, or
+        changed. A preview is a proposal, so it stays ink — dashed, faint, and
+        easy to tell apart from the thing you already chose.
+      </div>
+    </aside>
+
+    <script src="../mockups/mockups.js"></script>
+    <script src="showcase.js"></script>
+  </body>
+</html>
