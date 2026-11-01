@@ -595,8 +595,62 @@
     return next;
   }
 
+  function wireDraggable() {
+    Array.prototype.forEach.call(
+      document.querySelectorAll("[data-drag]"),
+      function (el) {
+        var handle =
+          el.querySelector("[data-drag-handle]") ||
+          el.querySelector(".picker-title") ||
+          el.querySelector(".picker-kicker");
+        if (!handle) return;
+        var drag = null;
+        handle.addEventListener("pointerdown", function (e) {
+          if (e.target.closest("button")) return;
+          var parent = el.offsetParent || document.body;
+          var pr = el.getBoundingClientRect();
+          var par = parent.getBoundingClientRect();
+          el.style.left = pr.left - par.left + "px";
+          el.style.top = pr.top - par.top + "px";
+          el.style.right = "auto";
+          el.style.bottom = "auto";
+          drag = { x: e.clientX - pr.left, y: e.clientY - pr.top };
+          try {
+            handle.setPointerCapture(e.pointerId);
+          } catch (err) {
+            /* ignore */
+          }
+          e.preventDefault();
+        });
+        handle.addEventListener("pointermove", function (e) {
+          if (!drag) return;
+          var parent = el.offsetParent || document.body;
+          var par = parent.getBoundingClientRect();
+          var l = e.clientX - drag.x - par.left;
+          var t = e.clientY - drag.y - par.top;
+          l = Math.max(0, Math.min(par.width - el.offsetWidth, l));
+          t = Math.max(0, Math.min(par.height - el.offsetHeight, t));
+          el.style.left = l + "px";
+          el.style.top = t + "px";
+        });
+        function up(e) {
+          if (!drag) return;
+          drag = null;
+          try {
+            handle.releasePointerCapture(e.pointerId);
+          } catch (err) {
+            /* ignore */
+          }
+        }
+        handle.addEventListener("pointerup", up);
+        handle.addEventListener("pointercancel", up);
+      },
+    );
+  }
+
   function wire() {
     hydrateIcons(document);
+    wireDraggable();
 
     var theme = applyTheme(readTheme(), false);
     Array.prototype.forEach.call(

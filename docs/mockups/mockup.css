@@ -1645,6 +1645,31 @@ body.is-embed .app {
   line-height: var(--leading-display);
 }
 
+.picker-kicker {
+  margin-bottom: 4px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.floating-note .picker-title,
+.floating-note [data-drag-handle] {
+  cursor: grab;
+}
+
+.floating-note .picker-title:active,
+.floating-note [data-drag-handle]:active {
+  cursor: grabbing;
+}
+
+.picker-actions {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 14px;
+}
+
 .picker-copy {
   margin: 0 0 14px;
   color: var(--ink-3);

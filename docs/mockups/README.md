@@ -38,20 +38,27 @@ dependencies. The shared files are plain HTML/CSS/JS and are **not imported by
 5. **Controls appear where the decision is.** Tools only in sketch mode, a
    dimension editor at the dimension, support choices only when starting a
    sketch. Export is a page because it is the end of the job.
-6. **The background is a tool.** The sketch grid is the snap grid. Its spacing
+6. **Input is a draggable popover; the stage foot is a readout.** A form lives in
+   a popover anchored to the thing it changes: a title, its parameters, and a
+   footer holding a summary and the actions. Every popover is draggable, and
+   editing reuses the same popover that created the thing. Selecting anything
+   opens a popover. The stage foot carries state and view controls only, never a
+   form. The shared rules are in
+   [`../showcase/INTERACTION.md`](../showcase/INTERACTION.md).
+7. **The background is a tool.** The sketch grid is the snap grid. Its spacing
    is set from the footer control, and the scale bar shows one cell at the
    current zoom. Snap can be switched off while the grid stays as a reference.
    No wallpaper texture.
-7. **One home for every fact.** Document identity lives in the header. History,
+8. **One home for every fact.** Document identity lives in the header. History,
    names, and feature parameters live in the timeline. Solver or body health
    lives in one stage status line. Tools, selection, and view live in the stage
    corners. Nothing repeats.
-8. **Separate the study from the app.** The thin top bar is mockup navigation
+9. **Separate the study from the app.** The thin top bar is mockup navigation
    and design notes. Appearance is a quick-access app setting in the app header;
    a future full settings surface can hold the rest.
-9. **Typography is a contract.** Three families, eight app roles, one separate
-   editorial layer for this index. No raw type values outside the token block;
-   run the audit before calling a change done.
+10. **Typography is a contract.** Three families, eight app roles, one separate
+    editorial layer for this index. No raw type values outside the token block;
+    run the audit before calling a change done.
 
 ## Using the studies
 

@@ -35,9 +35,6 @@
             <span class="doc-name">angle-bracket</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
           </button>
         </div>
-        <div class="doc-actions">
-          <button class="text-action" type="button">cancel</button>
-        </div>
         <div class="doc-right">
           <div class="appearance" role="group" aria-label="Appearance">
             <div class="theme-switch" role="group" aria-label="Theme">
@@ -71,7 +68,8 @@
             <b>front face</b> · 8,412 mm²
           </div>
 
-          <div class="floating-note picker" data-select-group>
+          <div class="floating-note picker" data-select-group data-drag>
+            <div class="picker-kicker">sketch support</div>
             <h1 class="picker-title">New sketch</h1>
             <p class="picker-copy">
               Choose a support. The sketch stays attached to it when the model
@@ -120,9 +118,10 @@
               <span class="hint">
                 curved faces are not valid supports in v1
               </span>
-              <button class="text-action" type="button">
-                start sketch →
-              </button>
+              <span class="picker-actions">
+                <button class="text-action is-quiet" type="button">cancel</button>
+                <button class="text-action" type="button">start sketch →</button>
+              </span>
             </div>
           </div>
 

@@ -165,13 +165,24 @@
             </svg>
           </div>
 
-          <div class="selection-line is-top">
-            <span class="selection-title">dimension</span>
-            <span>driving</span>
-            <span class="selection-actions">
-              <button class="text-action" type="button">make reference</button>
-              <button class="text-action is-quiet" type="button">delete</button>
-            </span>
+          <div class="floating-note selection-popover" data-drag style="right: 26px; top: 96px">
+            <div class="picker-kicker">selection</div>
+            <h2 class="picker-title">dimension</h2>
+            <div class="picker-section">type</div>
+            <button class="picker-row is-selected" type="button" data-select-option>
+              <span class="row-name">driving</span>
+              <span class="row-meta">sets 55.0 mm</span>
+            </button>
+            <button class="picker-row" type="button" data-select-option>
+              <span class="row-name">reference</span>
+              <span class="row-meta">measures only</span>
+            </button>
+            <div class="picker-foot">
+              <span class="hint">the value is edited at the dimension</span>
+              <span class="picker-actions">
+                <button class="text-action is-quiet" type="button">delete</button>
+              </span>
+            </div>
           </div>
 
           <div class="stage-foot">
@@ -301,13 +312,13 @@
         <li><b>Projected reference geometry is visibly different.</b> Dashed, labelled, fixed, and never selectable as user geometry.</li>
         <li><b>The background is the snap grid.</b> Change the spacing from the footer; the scale bar shows one cell at the current zoom (100%). Snap can be switched off without hiding the grid.</li>
         <li><b>The view footer is real.</b> 100% opens 50 / 100 / 200 / fit. The grid and scale bar follow the zoom. Every control is focusable; coarse pointers get larger targets.</li>
-        <li><b>The selection line replaces a floating inspector.</b> Only the selected dimension and the actions that apply to it appear.</li>
+        <li><b>Selection opens a popover.</b> The selected dimension gets a draggable popover with its type and actions; the value itself is still edited at the dimension, because it belongs to the annotation.</li>
         <li><b>The timeline is still here.</b> Sketching is a step in history, not a separate application. The step name is the identifier; “rename” lives in the timeline detail.</li>
       </ul>
       <h3>Open questions</h3>
       <ul>
         <li>Should the tool line stay visible for the whole sketch, or fade once a tool is chosen?</li>
-        <li>Is the inline editor enough for driving vs. reference dimensions, or does that need a modifier?</li>
+        <li>Does driving vs. reference live in the selection popover (as here) or as a modifier on the inline editor?</li>
         <li>Do projected edges need a global show/hide control, or is the dashed style enough?</li>
         <li>Should the grid hide automatically when zooming out makes the cells too dense?</li>
       </ul>
