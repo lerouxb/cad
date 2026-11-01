@@ -86,7 +86,7 @@ import {
   sketchPalette,
   type ThemeSettings,
 } from "./theme";
-import { Viewport } from "../viewer/Viewport";
+import { Viewport, type BodyPick } from "../viewer/Viewport";
 
 type LoadState = "loading" | "ready" | "error";
 
@@ -134,6 +134,7 @@ export function App() {
   const [kernelState, setKernelState] = useState<LoadState>("loading");
   const [kernelError, setKernelError] = useState<string | null>(null);
   const [workerStatuses, setWorkerStatuses] = useState<FeatureBuildStatus[]>([]);
+  const [bodyPick, setBodyPick] = useState<BodyPick | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const clientRef = useRef<KernelClient | null>(null);
@@ -400,7 +401,15 @@ export function App() {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const viewport = new Viewport(canvas, loadTheme().mode);
+    const initialTheme = loadTheme();
+    const viewport = new Viewport(canvas, {
+      theme: initialTheme.mode,
+      highlightColor: highlighterColor(
+        initialTheme.highlight,
+        initialTheme.mode,
+      ).color,
+      onPick: setBodyPick,
+    });
     viewportRef.current = viewport;
 
     const client = new KernelClient({
@@ -451,7 +460,10 @@ export function App() {
 
   useEffect(() => {
     viewportRef.current?.setTheme(themeSettings.mode);
-  }, [themeSettings.mode]);
+    viewportRef.current?.setHighlightColor(
+      highlighterColor(themeSettings.highlight, themeSettings.mode).color,
+    );
+  }, [themeSettings]);
 
   useEffect(() => {
     if (!trimNotice) return;
@@ -496,6 +508,8 @@ export function App() {
         setTool("select");
         setSelection([]);
         setCancelToken((token) => token + 1);
+        setBodyPick(null);
+        viewportRef.current?.clearPick();
         return;
       }
       if (event.key === "Delete" || event.key === "Backspace") {
@@ -922,6 +936,31 @@ export function App() {
               </button>
             </div>
 
+            {bodyPick ? (
+              <div
+                className="body-pick"
+                data-testid="body-pick"
+                data-kind={bodyPick.kind}
+                data-id={bodyPick.id}
+                role="status"
+              >
+                <span className="body-pick-dot" />
+                <span>
+                  {bodyPick.kind === "face" ? "Face selected" : "Edge selected"}
+                </span>
+                <button
+                  className="body-pick-clear"
+                  type="button"
+                  onClick={() => {
+                    setBodyPick(null);
+                    viewportRef.current?.clearPick();
+                  }}
+                >
+                  Clear
+                </button>
+              </div>
+            ) : null}
+
             {kernelState === "loading" ? (
               <div className="viewport-message">
                 <span className="spinner" />
@@ -952,6 +991,12 @@ export function App() {
                   className="mono"
                   data-testid="mesh-stats"
                   data-volume={shownMesh.stats.volume.toFixed(2)}
+                  data-faces={shownMesh.stats.faces}
+                  data-edges={shownMesh.stats.edges}
+                  data-triangles={shownMesh.stats.triangles}
+                  data-bbox={shownMesh.stats.bounds
+                    .map((value) => Number(value.toFixed(3)))
+                    .join(",")}
                 >
                   {formatInt(shownMesh.stats.triangles)} tris
                   <span className="overlay-sep">·</span>

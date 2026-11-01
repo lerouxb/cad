@@ -49,7 +49,7 @@ then sketches on faces, then more features.
   solids by feature cache key, applies new/join/cut booleans, and returns per-feature
   build statuses.
 - The example sketch can be loaded, cleared, edited, or replaced by drawing.
-- `npm run verify` (127 unit tests) and `npm run e2e` (21 tests) are green. The e2e asserts
+- `npm run verify` (132 unit tests) and `npm run e2e` (22 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -59,12 +59,12 @@ Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
 95 017.7 mm³ and rebuilds in ~35 ms after warm-up.
 
 **Still temporary** (all scheduled below): auto mode defaults to the largest material
-region until you click one; trim handles lines/arcs but not circles; face/edge picking is
-pending;
-**datum planes and sketch-on-face are M4**; the feature tree is still the fixed two-step
-timeline (rename/reorder/suppress are the next M3 slices); the rebuild engine still runs
-one sketch + one extrude, without prefix caching or per-feature diagnostics. Free 3D
-sketches, splines/text/images and drawing exports remain out of scope.
+region until you click one; trim handles lines/arcs but not circles; **datum planes and
+sketch-on-face are M4**; the feature tree is still the fixed two-step timeline
+(rename/reorder/suppress and creating a second feature are the next M3 slices). Join/cut
+and the worker prefix cache work for saved multi-feature documents, but the UI cannot
+create one yet. Free 3D sketches, splines/text/images and drawing exports remain out of
+scope.
 
 ---
 
@@ -238,24 +238,29 @@ rebuild exist; they are tracked at the top of M3.
 - [x] `core/sketch/loops.ts`: graph → simple cycles → face filtering (a cycle containing
       a smaller cycle that shares an edge is a subdivision, not a face) → containment tree
       (even depth material, odd depth holes) → selectable regions, with tests
-- [x] Region picking in the sketch UI: translucent fills with holes, click/Shift-click,
-      and an **All / Auto** panel. The active regions are highlighted and previewed in 3D
+- [x] Region picking in the sketch UI: translucent fills with holes and void profiles,
+      click/Shift-click, and an **All / Voids / Auto** panel. The active regions are
+      highlighted and previewed in 3D
 - [x] `regionId = hash(sorted outer + direct-hole curve ids)`; stable across dimension
       edits and invalidated when a boundary changes
 - [x] Multiple regions per extrude. The worker extrudes each region and fuses the solids
       (`fuseAll`), so disjoint regions become one body
 - [x] Deeper nesting: a hole can contain an island, which is a separate depth-2 region
 - [x] Split curves at intersections / trim while sketching — implemented in M2.6
-- [ ] Full planar face traversal: intersecting segments without a shared endpoint are not
-      yet split, so crossing diagonals are still ambiguous
-- [ ] Rebuild goldens: several profiles → bbox/face-count assertions (volume is covered by
-      the multi-region e2e)
-- [ ] Face/edge picking + hover/selection highlight (`faceGroups`/`edgeGroups` are already
-      in the mesh payload but unused)
+- [x] Full planar face traversal: M2.6's arrangement splits crossings and T-junctions;
+      crossing diagonals produce real faces. Circles are still whole loops for face
+      traversal (trimming a circle into an arc is M9)
+- [x] Rebuild goldens: representative profiles assert bbox and face count, not just volume;
+      `BodyStats.bounds` comes from the tessellated mesh, so curved goldens round
+- [x] Face/edge picking + hover/selection highlight: raycast `faceGroups`/`edgeGroups`,
+      edge-priority picking, highlighter overlays, and an ephemeral `BodyPick` readout
 
 **Done when:** you can draw an arbitrary multi-region sketch, click one or more regions
 (including holes and islands), and extrude/fuse them with exact volume. Auto mode still
 defaults to the largest material region until you click; M2.6 adds split/trim.
+
+**M2 is complete.** The 3D view picks faces and edges with hover/selection highlights;
+the profile path handles crossings, T-junctions, holes, void profiles, and trim.
 
 ## M2.5 — UI foundations: paper/ink visual system (2–3 days)
 

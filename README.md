@@ -53,7 +53,9 @@ selection/dimension inspector; there is no permanent sidebar.
   own. Arc edges stay exact through the kernel. OCCT runs in a Web Worker; three.js renders the solid with its B-rep edges
   (Z-up, mm).
 - **Select and delete**: click a curve or point, Shift-click to multi-select, Delete to
-  remove. Deletion cascades through dependent curves/constraints; undo restores it.
+  remove. Deletion cascades through dependent curves/constraints; undo restores it. In
+  the 3D view, hover and click faces or edges for a highlighter selection readout; the
+  selection is ephemeral UI state, cleared by Escape or a new mesh.
 - **Undo/redo** with gesture grouping (`Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`), `Esc` to cancel a
   draft and clear the selection, `V/L/R/C/A/D` for tools.
 - **Split profiles and trim**: region extraction runs on a planar arrangement of the
@@ -75,9 +77,9 @@ selection/dimension inspector; there is no permanent sidebar.
 
 It is intentionally narrow: auto mode defaults to the largest region until you click one,
 split/trim works on lines and arcs (trimming a circle into an arc is still unsupported),
-face/edge picking is pending, datum planes and sketches on faces are M4. Join/cut and
-multi-feature rebuilds work for saved documents, but the timeline is still the fixed
-two-step list and cannot create or edit a second feature yet. Ellipses/conics/B-splines, free 3D sketches, 3D fillets, lofts/sweeps,
+and datum planes and sketches on faces are M4. Join/cut and multi-feature rebuilds work
+for saved documents, but the timeline is still the fixed two-step list and cannot create
+or edit a second feature yet. Ellipses/conics/B-splines, free 3D sketches, 3D fillets, lofts/sweeps,
 patterns/mirror, drafts, shelling/offsets, expressions and threads are tracked in the
 **M9 TODO/limitations backlog** in `docs/PLAN.md`, with workarounds and the upstream
 SolveSpace/OCCT work each would need.

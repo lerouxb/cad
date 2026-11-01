@@ -1188,6 +1188,52 @@ body {
   pointer-events: auto;
 }
 
+.body-pick {
+  position: absolute;
+  top: 54px;
+  left: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 28px;
+  padding: 0 6px 0 10px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--overlay);
+  color: var(--ink-2);
+  font-size: 11.5px;
+  pointer-events: none;
+}
+
+.body-pick-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--marker);
+}
+
+.body-pick .mono {
+  font-size: 10.5px;
+}
+
+.body-pick-clear {
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--rule);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.body-pick-clear:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+
 .overlay-chip,
 .viewport-stats {
   display: inline-flex;

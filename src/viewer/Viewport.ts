@@ -1,6 +1,16 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import type { BodyMesh } from "../core/kernel/protocol";
+import {
+  edgeGroupForVertex,
+  edgePick,
+  edgePositionsForGroup,
+  edgeUnitForMesh,
+  faceGroupForTriangle,
+  facePick,
+  type BodyPick,
+  type EdgeUnit,
+} from "./picking";
 
 /**
  * Imperative three.js scene. Deliberately not react-three-fiber: picking and
@@ -10,6 +20,16 @@ import type { BodyMesh } from "../core/kernel/protocol";
  */
 type ViewportTheme = "day" | "night";
 
+export interface ViewportOptions {
+  theme?: ViewportTheme;
+  /** Highlighter colour for hover/selection overlays. */
+  highlightColor?: string;
+  /** Ephemeral body selection callback; null means cleared. */
+  onPick?: (pick: BodyPick | null) => void;
+}
+
+export type { BodyPick };
+
 export class Viewport {
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
@@ -17,7 +37,11 @@ export class Viewport {
   private controls: OrbitControls;
   private body = new THREE.Group();
   private environment = new THREE.Group();
+  private hoverGroup = new THREE.Group();
+  private selectionGroup = new THREE.Group();
   private theme: ViewportTheme;
+  private highlightColor: string;
+  private readonly onPick?: (pick: BodyPick | null) => void;
   private resizeObserver: ResizeObserver;
   private disposed = false;
   private framed = false;
@@ -25,9 +49,20 @@ export class Viewport {
   private dirty = true;
   private readonly canvas: HTMLCanvasElement;
 
-  constructor(canvas: HTMLCanvasElement, theme: ViewportTheme = "night") {
+  private mesh: BodyMesh | null = null;
+  private solid: THREE.Mesh | null = null;
+  private edges: THREE.LineSegments | null = null;
+  private edgeUnit: EdgeUnit = "segment";
+  private readonly raycaster = new THREE.Raycaster();
+  private pointerStart: { x: number; y: number; pointerId: number } | null = null;
+  private hoverPick: BodyPick | null = null;
+  private selectedPick: BodyPick | null = null;
+
+  constructor(canvas: HTMLCanvasElement, options: ViewportOptions = {}) {
     this.canvas = canvas;
-    this.theme = theme;
+    this.theme = options.theme ?? "night";
+    this.highlightColor = options.highlightColor ?? "#ddff00";
+    this.onPick = options.onPick;
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
@@ -56,11 +91,19 @@ export class Viewport {
 
     this.scene.add(this.body);
     this.scene.add(this.environment);
+    this.scene.add(this.hoverGroup);
+    this.scene.add(this.selectionGroup);
     this.addEnvironment();
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
     this.resize();
+
+    canvas.addEventListener("pointerdown", this.onPointerDown);
+    canvas.addEventListener("pointermove", this.onPointerMove);
+    canvas.addEventListener("pointerup", this.onPointerUp);
+    canvas.addEventListener("pointercancel", this.onPointerCancel);
+    canvas.addEventListener("pointerleave", this.onPointerLeave);
 
     this.startLoop();
   }
@@ -74,6 +117,12 @@ export class Viewport {
     this.dirty = true;
   }
 
+  setHighlightColor(color: string): void {
+    if (this.highlightColor === color || this.disposed) return;
+    this.highlightColor = color;
+    this.rebuildSelectionOverlays();
+  }
+
   /** Pause rendering while the 3D view is hidden (sketch mode). */
   setActive(active: boolean): void {
     if (this.active === active || this.disposed) return;
@@ -82,12 +131,15 @@ export class Viewport {
       this.dirty = true;
       this.startLoop();
     } else {
+      this.setHover(null);
       this.renderer.setAnimationLoop(null);
     }
   }
 
   setMesh(mesh: BodyMesh): void {
     this.clearBody();
+    this.mesh = mesh;
+    this.edgeUnit = edgeUnitForMesh(mesh);
 
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(mesh.positions, 3));
@@ -107,6 +159,7 @@ export class Viewport {
     const solid = new THREE.Mesh(geometry, material);
     solid.name = "body";
     this.body.add(solid);
+    this.solid = solid;
 
     const edgeGeometry = new THREE.BufferGeometry();
     edgeGeometry.setAttribute(
@@ -121,17 +174,26 @@ export class Viewport {
     const edges = new THREE.LineSegments(edgeGeometry, edgeMaterial);
     edges.name = "edges";
     this.body.add(edges);
+    this.edges = edges;
 
     if (!this.framed && geometry.boundingSphere) {
       this.frameAll();
       this.framed = true;
     }
+    this.onPick?.(null);
     this.dirty = true;
   }
 
   clearMesh(): void {
     this.clearBody();
     this.framed = false;
+    this.onPick?.(null);
+    this.dirty = true;
+  }
+
+  clearPick(): void {
+    this.selectedPick = null;
+    this.clearGroup(this.selectionGroup);
     this.dirty = true;
   }
 
@@ -156,9 +218,207 @@ export class Viewport {
     this.renderer.setAnimationLoop(null);
     this.resizeObserver.disconnect();
     this.controls.dispose();
+    this.canvas.removeEventListener("pointerdown", this.onPointerDown);
+    this.canvas.removeEventListener("pointermove", this.onPointerMove);
+    this.canvas.removeEventListener("pointerup", this.onPointerUp);
+    this.canvas.removeEventListener("pointercancel", this.onPointerCancel);
+    this.canvas.removeEventListener("pointerleave", this.onPointerLeave);
     this.clearBody();
     this.clearEnvironment();
     this.renderer.dispose();
+  }
+
+  private onPointerDown = (event: PointerEvent): void => {
+    if (!this.active || event.button !== 0) return;
+    this.pointerStart = {
+      x: event.clientX,
+      y: event.clientY,
+      pointerId: event.pointerId,
+    };
+  };
+
+  private onPointerMove = (event: PointerEvent): void => {
+    if (!this.active || this.disposed) return;
+    if (event.buttons !== 0) {
+      this.setHover(null);
+      return;
+    }
+    this.setHover(this.pickAt(event));
+  };
+
+  private onPointerUp = (event: PointerEvent): void => {
+    if (!this.active || this.disposed) return;
+    const start = this.pointerStart;
+    this.pointerStart = null;
+    if (!start || start.pointerId !== event.pointerId || event.button !== 0) {
+      return;
+    }
+    if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) {
+      return;
+    }
+    this.selectPick(this.pickAt(event));
+  };
+
+  private onPointerCancel = (): void => {
+    this.pointerStart = null;
+    this.setHover(null);
+  };
+
+  private onPointerLeave = (): void => {
+    this.pointerStart = null;
+    this.setHover(null);
+  };
+
+  private pickAt(event: PointerEvent): BodyPick | null {
+    if (!this.mesh || !this.solid || !this.edges) return null;
+    const rect = this.canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+
+    const ndc = new THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    this.raycaster.setFromCamera(ndc, this.camera);
+
+    const distance = this.camera.position.distanceTo(this.controls.target);
+    const pixelSize =
+      (2 *
+        Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) *
+        distance) /
+      Math.max(1, rect.height);
+    const threshold = Math.max(0.35, pixelSize * 8);
+    this.raycaster.params.Line.threshold = threshold;
+
+    const faceHit = this.raycaster.intersectObject(this.solid, false)[0] ?? null;
+    const edgeHit = this.raycaster.intersectObject(this.edges, false)[0] ?? null;
+
+    // An edge on the surface is at roughly the same depth as the face. A hidden
+    // back edge is farther away, so it must not win over the front face.
+    if (edgeHit && (!faceHit || edgeHit.distance <= faceHit.distance + threshold)) {
+      const group = edgeGroupForVertex(
+        this.mesh,
+        edgeHit.index ?? 0,
+        this.edgeUnit,
+      );
+      if (group) return edgePick(group);
+    }
+
+    if (faceHit && typeof faceHit.faceIndex === "number") {
+      const group = faceGroupForTriangle(this.mesh, faceHit.faceIndex);
+      if (group) return facePick(group);
+    }
+    return null;
+  }
+
+  private setHover(pick: BodyPick | null): void {
+    if ((this.hoverPick?.id ?? null) === (pick?.id ?? null)) return;
+    this.hoverPick = pick;
+    this.clearGroup(this.hoverGroup);
+    if (pick) this.addOverlay(this.hoverGroup, pick, false);
+    this.canvas.dataset.hoverKind = pick?.kind ?? "";
+    this.canvas.dataset.hoverId = pick?.id ?? "";
+    this.dirty = true;
+  }
+
+  private selectPick(pick: BodyPick | null): void {
+    this.selectedPick = pick;
+    this.clearGroup(this.selectionGroup);
+    if (pick) this.addOverlay(this.selectionGroup, pick, true);
+    this.dirty = true;
+    this.onPick?.(pick);
+  }
+
+  private rebuildSelectionOverlays(): void {
+    const hover = this.hoverPick;
+    const selected = this.selectedPick;
+    this.clearGroup(this.hoverGroup);
+    this.clearGroup(this.selectionGroup);
+    if (hover) this.addOverlay(this.hoverGroup, hover, false);
+    if (selected) this.addOverlay(this.selectionGroup, selected, true);
+    this.dirty = true;
+  }
+
+  private addOverlay(
+    group: THREE.Group,
+    pick: BodyPick,
+    selected: boolean,
+  ): void {
+    if (!this.mesh) return;
+
+    if (pick.kind === "face") {
+      const face = this.mesh.faceGroups.find(
+        (candidate) =>
+          candidate.faceId === pick.faceId &&
+          (pick.origin === undefined || candidate.origin === pick.origin),
+      );
+      if (!face || face.count <= 0) return;
+
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(this.mesh.positions, 3),
+      );
+      geometry.setAttribute(
+        "normal",
+        new THREE.BufferAttribute(this.mesh.normals, 3),
+      );
+      geometry.setIndex(
+        new THREE.BufferAttribute(
+          this.mesh.indices.slice(face.start, face.start + face.count),
+          1,
+        ),
+      );
+      const material = new THREE.MeshBasicMaterial({
+        color: this.highlightColor,
+        transparent: true,
+        opacity: selected ? 0.38 : 0.2,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+        side: THREE.DoubleSide,
+      });
+      const overlay = new THREE.Mesh(geometry, material);
+      overlay.renderOrder = selected ? 4 : 3;
+      overlay.raycast = () => {};
+      group.add(overlay);
+      return;
+    }
+
+    const edge = this.mesh.edgeGroups.find(
+      (candidate) => candidate.edgeId === pick.edgeId,
+    );
+    if (!edge) return;
+    const positions = edgePositionsForGroup(this.mesh, edge, this.edgeUnit);
+    if (positions.length < 6) return;
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+    const material = new THREE.LineBasicMaterial({
+      color: this.highlightColor,
+      transparent: true,
+      opacity: selected ? 1 : 0.6,
+      depthTest: false,
+      depthWrite: false,
+    });
+    const overlay = new THREE.LineSegments(geometry, material);
+    overlay.renderOrder = selected ? 6 : 5;
+    overlay.raycast = () => {};
+    group.add(overlay);
+  }
+
+  private clearGroup(group: THREE.Group): void {
+    for (const child of [...group.children]) {
+      group.remove(child);
+      if (child instanceof THREE.Mesh || child instanceof THREE.LineSegments) {
+        child.geometry.dispose();
+        if (Array.isArray(child.material)) {
+          child.material.forEach((material) => material.dispose());
+        } else {
+          child.material.dispose();
+        }
+      }
+    }
   }
 
   private addEnvironment(): void {
@@ -262,6 +522,15 @@ export class Viewport {
         }
       }
     }
+    this.mesh = null;
+    this.solid = null;
+    this.edges = null;
+    this.hoverPick = null;
+    this.selectedPick = null;
+    this.canvas.dataset.hoverKind = "";
+    this.canvas.dataset.hoverId = "";
+    this.clearGroup(this.hoverGroup);
+    this.clearGroup(this.selectionGroup);
   }
 
   /**

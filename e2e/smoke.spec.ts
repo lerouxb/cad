@@ -155,6 +155,16 @@ function multiFeatureDoc() {
 }
 
 /** Bounds of the extruded outer loop, in sketch millimetres. */
+/** Rounded mesh bounds as a compact string, tolerating tessellation error. */
+async function meshBounds(page: Page): Promise<string> {
+  const raw = await page.getByTestId("mesh-stats").getAttribute("data-bbox");
+  if (!raw) throw new Error("No mesh bounds");
+  return raw
+    .split(",")
+    .map((value) => Number(Number(value).toFixed(1)))
+    .join(",");
+}
+
 async function readProfileRect(page: Page) {
   return page.evaluate(() => {
     const element = document.querySelector("[data-region-bounds]");
@@ -228,6 +238,8 @@ test("the dimensioned example drives an exact solid", async ({ app: page }) => {
 
   const stats = page.getByTestId("mesh-stats");
   await expect(stats).toBeVisible();
+  await expect.poll(() => meshBounds(page)).toBe("0,0,0,60,40,12");
+  await expect(stats).toHaveAttribute("data-faces", "7");
 
   const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
   await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
@@ -266,6 +278,41 @@ test("the dimensioned example drives an exact solid", async ({ app: page }) => {
   await expect.poll(() => volume(page)).toBeCloseTo(taller, -1);
 
   expect(errors).toEqual([]);
+});
+
+test("picks faces and edges in the model view", async ({ app: page }) => {
+  const canvas = page.locator("canvas.viewport-canvas");
+  await page.getByRole("button", { name: "Fit view" }).click();
+  await page.waitForTimeout(200);
+
+  // Hover and click a top face.
+  await page.mouse.move(700, 330);
+  await expect(canvas).toHaveAttribute("data-hover-kind", "face");
+  await page.mouse.click(700, 330);
+  await expect(page.getByTestId("body-pick")).toHaveAttribute(
+    "data-kind",
+    "face",
+  );
+  await expect(page.getByTestId("body-pick")).toHaveAttribute(
+    "data-id",
+    /^face-/,
+  );
+
+  // A visible top edge wins over the face underneath it.
+  await page.mouse.move(500, 330);
+  await expect(canvas).toHaveAttribute("data-hover-kind", "edge");
+  await page.mouse.click(500, 330);
+  await expect(page.getByTestId("body-pick")).toHaveAttribute(
+    "data-kind",
+    "edge",
+  );
+  await expect(page.getByTestId("body-pick")).toHaveAttribute(
+    "data-id",
+    /^edge-/,
+  );
+
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("body-pick")).toHaveCount(0);
 });
 
 test("selects a hole as its own extrusion profile", async ({ app: page }) => {
@@ -362,6 +409,8 @@ test("extrudes a lone circle as a cylinder", async ({ app: page }) => {
 
   const expected = Math.PI * (diameter / 2) ** 2 * 12;
   await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
+  await expect.poll(() => meshBounds(page)).toBe("-20,-20,0,20,20,12");
+  await expect(page.getByTestId("mesh-stats")).toHaveAttribute("data-faces", "3");
 
   expect(errors).toEqual([]);
 });
@@ -405,6 +454,11 @@ test("uses a drawn inner rectangle as a hole", async ({ app: page }) => {
 
   const expected = outerVolume - innerArea * 12;
   await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
+  await expect.poll(() => meshBounds(page)).toBe("-40,-30,0,40,30,12");
+  await expect(page.getByTestId("mesh-stats")).toHaveAttribute(
+    "data-faces",
+    "10",
+  );
 
   expect(errors).toEqual([]);
 });
@@ -955,6 +1009,7 @@ test("builds a cut and join from a saved multi-feature document", async ({
   // Union of the 0..60 plate and 40..80 extension, minus the Ø16 hole.
   const expected = 80 * 40 * 12 - Math.PI * 8 * 8 * 12;
   await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
+  await expect.poll(() => meshBounds(page)).toBe("0,0,0,80,40,12");
   await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
     "data-status",
     "ok",

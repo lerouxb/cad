@@ -18,9 +18,9 @@ engine matters more than feature count.
 
 ## Status
 
-**M1 is done, M2 region selection is in, M2.5 paper/ink UI is in, M2.6 split/trim is in,
-and M3's document store is in progress.** The app is an editable sketcher driving an exact
-extrude:
+**M2 is complete, including region/void selection, paper/ink UI, split/trim, and 3D
+face/edge picking. M3's document store and ordered rebuild are in progress.** The app is
+an editable sketcher driving an exact extrude:
 
 - Real: `slvs` adapter, tangent-space constrained dragging of points, whole lines, circles
   and arcs, line/rectangle/circle/three-point-arc tools and a parametric corner fillet,
@@ -30,7 +30,8 @@ extrude:
   cascading delete, a non-destructive planar arrangement for profile faces (crossings and
   T-junctions split into real regions), trim by clicking a line/arc segment with undo,
   explicit region selection (click a filled region or a hole, Shift adds, All/Voids/Auto;
-  multiple selected regions are extruded and fused), dimensions (point-point, point-line,
+  multiple selected regions are extruded and fused), 3D face/edge picking with hover and
+  selection highlights, dimensions (point-point, point-line,
   angle, diameter, radius, driving or reference, inline edit/delete and draggable labels),
   a floating constraint bar
   (horizontal/vertical, parallel, perpendicular, equal, point-on-line, point-on-circle,
@@ -49,13 +50,12 @@ extrude:
   one highlighter colour (yellow/pink/blue/green), persisted in `localStorage`; the
   static studies in `docs/mockups/` are the design target and are never imported.
 - Temporary: auto mode still defaults to the largest material region until a region is
-  clicked;
-  trim supports lines and arcs but not turning a circle into an arc; face/edge picking is
-  not implemented; the example sketch is hand-authored (`core/sketch/demo.ts`);
-  **datum planes and sketch-on-face are not implemented (M4)**; the timeline is still the
-  fixed two-step list (rename/reorder/suppress, feature dialogs and creating a second
-  feature are next). Join/cut works for saved multi-feature documents, but the UI cannot
-  add one yet. Free 3D sketches, splines/text/images and drawing exports are out of scope.
+  clicked; trim supports lines and arcs but not turning a circle into an arc; body
+  selection is ephemeral and cannot start a sketch yet; the example sketch is
+  hand-authored (`core/sketch/demo.ts`); **datum planes and sketch-on-face are not
+  implemented (M4)**; the timeline is still the fixed two-step list
+  (rename/reorder/suppress, feature dialogs and creating a second feature are next).
+  Join/cut works for saved multi-feature documents, but the UI cannot add one yet. Free 3D sketches, splines/text/images and drawing exports are out of scope.
 
 Next: **finish M3** (feature tree editing and feature creation), then **M4** (datum
 planes + face supports). Read `docs/PLAN.md`; it is the source of truth
@@ -250,6 +250,16 @@ docs/
   solid. A previous request transferred the mesh's ArrayBuffers, which detaches them;
   re-meshing the same cached solid without clearing the mesh cache throws "detached
   ArrayBuffer" on postMessage. This showed up as a volume that did not update after undo.
+- **Body picking is group-based and ephemeral.** `faceGroups` carry index ranges plus
+  `faceId`/`origin`; `edgeGroups` carry `edgeId` ranges. `src/viewer/picking.ts` maps a
+  triangle index to a face group and a LineSegments vertex index to an edge group.
+  `edgeGroups` may be segment- or vertex-indexed depending on the kernel build; call
+  `edgeUnitForMesh`. Edges win only when their ray hit is not behind the face, so hidden
+  back edges cannot steal a face click. Hover and selected overlays are separate groups;
+  `BodyPick` is UI state, never `Doc`, and is cleared on mesh rebuild and Escape. e2e
+  picking coordinates rely on Fit view; call it before hovering.
+- **`BodyStats.bounds` is tessellation bounds.** It is exact for axis-aligned planar
+  profiles but curved meshes sample inside the true circle; round golden comparisons.
 - **Regions are faces, not every cycle.** `planarArrangement` splits line/arc segments at
   crossings, T-junctions and circle crossings without touching the document. `findLoops`
   enumerates cycles on that split graph, `regionsFromSketch` drops a cycle when a smaller

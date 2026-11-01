@@ -249,6 +249,23 @@ function meshSolid(solid: Solid): BodyMesh {
   const data = toBufferGeometryData(mesh);
   const edgeMesh = shape(solid).meshEdges({ tolerance: 0.05 });
   const volume = unwrap(measureVolume(solid));
+  let minX = Infinity;
+  let minY = Infinity;
+  let minZ = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+  let maxZ = -Infinity;
+  for (let i = 0; i < data.position.length; i += 3) {
+    const x = data.position[i]!;
+    const y = data.position[i + 1]!;
+    const z = data.position[i + 2]!;
+    if (x < minX) minX = x;
+    if (y < minY) minY = y;
+    if (z < minZ) minZ = z;
+    if (x > maxX) maxX = x;
+    if (y > maxY) maxY = y;
+    if (z > maxZ) maxZ = z;
+  }
 
   return {
     positions: data.position,
@@ -272,6 +289,7 @@ function meshSolid(solid: Solid): BodyMesh {
       triangles: data.index.length / 3,
       volume,
       buildMs: 0,
+      bounds: [minX, minY, minZ, maxX, maxY, maxZ],
     },
   };
 }

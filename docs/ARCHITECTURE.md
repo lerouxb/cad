@@ -569,18 +569,21 @@ solver has no 3D sketch representation.
 
 - **Model space is Z-up.** `camera.up.set(0, 0, 1)`. OrbitControls handles an arbitrary
   up vector.
-- Kernel output per body: triangle positions + normals, a per-vertex `faceId` attribute,
-  and edge polylines with an `edgeId` per segment. All transferred as typed arrays.
-  `brepjs` already provides `toBufferGeometryData`, `toLineGeometryData` and
-  `toGroupedBufferGeometryData`; use them and add the face/edge ids alongside.
-- **Face picking:** raycast the mesh, take `intersection.faceIndex` (triangle index),
-  look up `triangleToFace[]`. No per-face meshes, no GPU id buffer needed yet.
-- **Edge picking:** screen-space distance from the cursor to projected edge segments,
-  threshold ~6 px. Edges win over faces when within threshold (CAD convention).
-- **Highlight:** build a second geometry containing only the selected faces' triangles
-  (copy those vertex ranges) and draw it with an emissive overlay material. Simple and
-  fast for interactive selection counts; a `faceId`-keyed shader is the optimisation if
-  it ever shows up in profiles.
+- Kernel output per body: triangle positions + normals, `faceGroups` (index range +
+  `faceId`/`origin`) and `edgeGroups` (range + `edgeId`). All transferred as typed arrays.
+- **Face picking:** raycast the mesh, take `intersection.faceIndex` (triangle index), and
+  look it up in `faceGroups` via `src/viewer/picking.ts`. No per-face meshes or GPU id
+  buffer needed.
+- **Edge picking:** raycast the `LineSegments` and map the hit's vertex index to an
+  `edgeGroup`. Kernel edge groups may be segment- or vertex-indexed; `edgeUnitForMesh`
+  detects the convention from the data. Edges win over the face only when their hit is
+  not behind the face, so hidden back edges do not steal a click.
+- **Highlight:** overlay geometries contain only the selected face's triangle indices or
+  the selected edge's line positions. They use the highlighter colour and are disposed
+  when the pick changes. Hover and selection are separate overlay groups.
+- **Body selection is ephemeral.** `BodyPick` lives in App UI state, uses `faceId`/`origin`
+  or `edgeId` rather than array indices, and never enters the document or undo history.
+  It is cleared when a new mesh arrives and by Escape.
 - **Sketch mode:** a full-stage 2D surface rather than a sidebar. The timeline switches
   between this and the 3D model; the 3D renderer is paused while the sketch is active.
   `slvs` stays on the main thread, and a **separate SVG surface** carries sketch curves,
@@ -685,20 +688,19 @@ the honest map, so nobody assumes a layer exists because it is described above.
 
 | Layer | Status |
 | --- | --- |
-| `core/doc` | Not started. The sketch + solve summary live in `useHistory`; no schema, feature list or persistence yet. |
+| `core/doc` | Real: `Doc` schema with sketch/extrude features, selectors, migrations and `localStorage` autosave. |
 | `core/sketch` | Real: types, `slvs` adapter, tangent-space `solveDrag`, pure drawing edits, loop extraction, geometry helpers, tests. `demo.ts` is the loadable example. |
-| `core/features` | Real but narrow: one extrude. No datum planes, cuts, fillets or history replay. |
-| `core/rebuild` | Not started. One sketch and one feature, rebuilt by a debounce. |
-| `core/kernel` | Real: typed protocol, worker client, OCCT worker, hole validation, exact stats. |
-| `viewer` | Real: Z-up scene, framing, meshing, edges. Picking and highlight are not implemented. |
+| `core/features` | Real: region selection + extrude params. The worker supports ordered new/join/cut; no datum planes or fillets yet. |
+| `core/rebuild` | Real: ordered sketch/extrude evaluation, prefix cache, per-feature diagnostics. Worker solid cache + new/join/cut are in; feature-tree creation UI is M3. |
+| `core/kernel` | Real: typed protocol, worker client, OCCT worker, feature cache, hole validation, exact stats + bounds. |
+| `viewer` | Real: Z-up scene, framing, meshing, edges, face/edge raycast picking, hover/selection highlights. |
 | `sketch` UI | Real: full-stage sketch editor toggled from the timeline, with a floating tool strip, DOF pill, and selection/dimension/constraint inspector. Select/drag, line/rectangle/circle/arc, fillet, explicit region fills (material and void, with All/Voids/Auto), dimension tool with inline editing, constraint bar, construction toggle, snapping, auto H/V, undo/redo. |
-| Feature tree | Static markup that communicates the intended product. |
-| Persistence | None yet. |
+| Feature tree | Static two-step markup; creating/editing/reordering features is the next M3 slice. |
+| Persistence | Autosave to `localStorage` with migration-on-load. No explicit `.cad` export/import UI yet. |
 
-Known shortcuts, all scheduled: auto region selection defaults to the largest material region
-until a fill is clicked; intersecting segments are not split, so crossing diagonals are
-ambiguous; face/edge picking is not implemented; datum planes and sketch-on-face are not
-implemented yet (M4); history, persistence and the feature tree are M3. Unsupported
-geometry and kernel features are collected in PLAN M9 with current workarounds and the
-upstream SolveSpace/OCCT work each would need.
+Known shortcuts, all scheduled: auto region selection defaults to the largest material
+region until a fill is clicked; datum planes and sketch-on-face are not implemented yet
+(M4); the timeline is still a fixed two-step list and cannot create/edit a second feature
+(M3). Unsupported geometry and kernel features are collected in PLAN M9 with current
+workarounds and the upstream SolveSpace/OCCT work each would need.
 

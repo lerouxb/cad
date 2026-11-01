@@ -37,6 +37,8 @@ export interface BodyStats {
   triangles: number;
   volume: number;
   buildMs: number;
+  /** [minX, minY, minZ, maxX, maxY, maxZ] in model millimetres. */
+  bounds: [number, number, number, number, number, number];
 }
 
 /** Renderable output of one rebuild. Typed arrays are transferred, not copied. */
