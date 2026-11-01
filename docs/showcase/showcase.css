@@ -572,3 +572,60 @@
   font-size: var(--type-micro);
   line-height: var(--leading-micro);
 }
+
+/* --------------------------------------------------------------------------
+   sketch create-tool atlas
+   -------------------------------------------------------------------------- */
+
+.c-result {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.8;
+  stroke-linejoin: round;
+}
+
+.c-context {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+}
+
+.c-construct {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+}
+
+.c-step {
+  fill: var(--marker);
+  stroke: var(--ink);
+  stroke-width: 1.1;
+}
+
+.c-step-n {
+  fill: var(--marker-ink);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  font-weight: var(--weight-medium);
+  text-anchor: middle;
+}
+
+.create-options {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+.create-options[hidden] {
+  display: none;
+}
+
+.c-opt-label {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}

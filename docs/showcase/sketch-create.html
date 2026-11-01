@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — sketch create tools</title>
+    <link rel="stylesheet" href="../mockups/mockup.css" />
+    <link rel="stylesheet" href="showcase.css" />
+    <script src="../mockups/theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="../mockups/index.html">
+        cad <span class="tag">tool showcase</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Showcase">
+        <a href="index.html">sketch layout</a>
+        <a class="is-active" href="sketch-create.html">sketch create</a>
+        <a href="body-ops.html">body ops</a>
+        <a href="inspect.html">inspect</a>
+        <a href="BACKLOG.md">backlog</a>
+      </nav>
+      <div class="mockbar-right">
+        <a class="mockbar-btn" href="../mockups/index.html">studies</a>
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" title="File menu">
+            <span class="doc-name">create-tools</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-center">
+          <span>sketch</span>
+          <span class="mode">reference</span>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage has-grid" id="stage">
+          <div class="stage-head">
+            <div class="tool-line" role="toolbar" aria-label="Sketch create tools">
+              <button class="tool" type="button" data-create="rect2">rect 2-pt</button>
+              <button class="tool" type="button" data-create="rectC">rect centre</button>
+              <button class="tool" type="button" data-create="rect3">rect 3-pt</button>
+              <button class="tool" type="button" data-create="circleC">circle centre</button>
+              <button class="tool" type="button" data-create="circle2">circle 2-pt</button>
+              <button class="tool" type="button" data-create="circle3">circle 3-pt</button>
+              <button class="tool" type="button" data-create="arc3">arc 3-pt</button>
+              <button class="tool" type="button" data-create="arcC">arc centre</button>
+              <button class="tool" type="button" data-create="arcT">arc tangent</button>
+              <button class="tool" type="button" data-create="polygon">polygon</button>
+            </div>
+          </div>
+
+          <div class="sketch-viewport" id="viewport">
+            <svg
+              class="stage-svg sketch-svg"
+              id="svg"
+              viewBox="0 0 1200 700"
+              preserveAspectRatio="xMidYMid meet"
+              role="img"
+              aria-label="An annotated diagram of a sketch create tool: numbered click points, implied construction, and the resulting geometry."
+            >
+              <g id="layer-context"></g>
+              <g id="layer-construction"></g>
+              <g id="layer-result"></g>
+              <g id="layer-markers"></g>
+            </svg>
+          </div>
+
+          <div class="stage-foot">
+            <div class="stage-foot-left">
+              <span id="create-caption"></span>
+              <span class="create-options" id="create-options" hidden></span>
+            </div>
+            <div class="stage-foot-right">
+              <span class="sc-legend">
+                <span class="key"><span class="swatch is-selected"></span>click order</span>
+                <span class="key"><span class="swatch is-ghost"></span>construction</span>
+              </span>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · create tools</div>
+          <h2>One tool, several variants</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        Fusion hides the drawing variants behind press-and-hold flyouts on a single
+        tool button. This study lays them out so the click sequence and the implied
+        construction are visible side by side.
+      </p>
+      <h3>What each variant adds</h3>
+      <ul>
+        <li><b>Rectangle:</b> 2-point (two opposite corners), centre (stays centred on the first click), 3-point (a rotated rectangle from an edge and a width).</li>
+        <li><b>Circle:</b> centre + radius, 2-point diameter, and 3-point (through three points).</li>
+        <li><b>Arc:</b> 3-point through a mid point, centre + start + end, and tangent (starts tangent to the curve you click).</li>
+        <li><b>Polygon:</b> inscribed or circumscribed, N sides, centre + vertex (or edge midpoint). This one is live.</li>
+      </ul>
+      <h3>Design questions</h3>
+      <ul>
+        <li>Flyout on press-and-hold, a small variant switcher in the tool line, or one entry per variant? The line is already long.</li>
+        <li>Do the variants need distinct shortcuts, or does the last-used variant stick to the tool key?</li>
+        <li>Should the click sequence be shown in-app (as here) the first time, or is it learnable from the cursor?</li>
+      </ul>
+      <div class="mini-note">
+        The numbered markers are a teaching device, not app chrome: in the app the
+        cursor and a rubber-band preview carry the same information.
+      </div>
+    </aside>
+
+    <script src="../mockups/mockups.js"></script>
+    <script src="showcase-create.js"></script>
+  </body>
+</html>
