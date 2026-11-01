@@ -113,19 +113,37 @@
     return html;
   }
 
-  // the visible far wall of a bore, between the top and bottom openings
+  // the visible far wall of a bore, between the top and bottom openings.
+  // In this isometric the far side of a circle is theta in [135deg, 315deg].
   function boreWall(iso, x, y, r, zTop, zBot) {
     var pts = [];
     var n = 24;
     for (var k = 0; k <= n; k++) {
-      var th = Math.PI - (Math.PI * k) / n;
+      var th = Math.PI * 0.75 + (Math.PI * k) / n;
       pts.push(iso.p(x + r * Math.cos(th), y + r * Math.sin(th), zTop));
     }
     for (var k2 = 0; k2 <= n; k2++) {
-      var th2 = (Math.PI * k2) / n;
+      var th2 = Math.PI * 1.75 - (Math.PI * k2) / n;
       pts.push(iso.p(x + r * Math.cos(th2), y + r * Math.sin(th2), zBot));
     }
     return poly(pts, "bo-bore");
+  }
+
+  // a transparent cylinder outline, for a ghost tool body
+  function cylinderGhost(iso, x, y, r, z0, z1, cls) {
+    var top = iso.p(x, y, z1),
+      bot = iso.p(x, y, z0);
+    var rx = 1.2247 * r * iso.s;
+    return (
+      '<path d="' + ellipsePath(iso, x, y, z1, r) + '" class="' + cls + '" fill="none"/>' +
+      '<path d="' + ellipsePath(iso, x, y, z0, r) + '" class="' + cls + '" fill="none"/>' +
+      '<line x1="' + (top[0] - rx).toFixed(1) + '" y1="' + top[1].toFixed(1) +
+      '" x2="' + (bot[0] - rx).toFixed(1) + '" y2="' + bot[1].toFixed(1) +
+      '" class="' + cls + '"/>' +
+      '<line x1="' + (top[0] + rx).toFixed(1) + '" y1="' + top[1].toFixed(1) +
+      '" x2="' + (bot[0] + rx).toFixed(1) + '" y2="' + bot[1].toFixed(1) +
+      '" class="' + cls + '"/>'
+    );
   }
 
   function ellipsePath(iso, x, y, z, r) {
@@ -399,14 +417,12 @@
         html += drawBox(iso, PLATE, null, false);
         html += cylinderSolid(iso, CYL.x, CYL.y, CYL.r, PLATE.z1, CYL.z1, "bo-face-x", "bo-face-top");
       } else if (op === "cut") {
-        // draw the tool first, then the plate, so the plate occludes the bore
-        html += cylinderSolid(
-          iso, CYL.x, CYL.y, CYL.r, CYL.z0, CYL.z1,
-          p.keepTools ? "bo-tool-kept" : "bo-ghost",
-          p.keepTools ? "bo-tool-kept" : "bo-ghost"
-        );
+        // a real bore through the top face, and the tool ghosted above the plate
         html += boreWall(iso, CYL.x, CYL.y, CYL.r, PLATE.z1, PLATE.z0);
         html += drawBoxHole(iso, PLATE, { x: CYL.x, y: CYL.y, r: CYL.r });
+        html += p.keepTools
+          ? cylinderSolid(iso, CYL.x, CYL.y, CYL.r, PLATE.z1, CYL.z1, "bo-tool-kept", "bo-tool-kept")
+          : cylinderGhost(iso, CYL.x, CYL.y, CYL.r, PLATE.z1, CYL.z1, "bo-ghost");
       } else {
         html += drawBox(iso, PLATE, null, true);
         html += cylinderSolid(iso, CYL.x, CYL.y, CYL.r, PLATE.z0, PLATE.z1, "bo-face-x", "bo-face-top");
