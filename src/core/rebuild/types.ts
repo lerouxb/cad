@@ -1,4 +1,4 @@
-import type { Doc, Feature } from "../doc/types";
+import type { Doc, ExtrudeOperation, Feature } from "../doc/types";
 import type { ExtrudeParams } from "../kernel/protocol";
 import type { SketchRegion } from "../sketch/loops";
 import type { SolveOutcome, SolveStatus } from "../sketch/solver";
@@ -33,6 +33,7 @@ export interface ExtrudeRebuildOutput {
   regionIds: string[];
   /** True when the largest material face was used instead of stored ids. */
   auto: boolean;
+  operation: ExtrudeOperation;
 }
 
 export type FeatureOutput = SketchRebuildOutput | ExtrudeRebuildOutput;

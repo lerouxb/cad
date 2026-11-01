@@ -6,6 +6,7 @@ import {
   type Feature,
   type SketchFeature,
 } from "../doc/types";
+import type { KernelFeature } from "../kernel/protocol";
 import { extrudeParams, selectExtrudeRegions } from "../features/extrude";
 import { applySolution } from "../sketch/geometry";
 import { regionsFromSketch } from "../sketch/loops";
@@ -241,20 +242,6 @@ function evaluateExtrude(
       ],
     };
   }
-  if (feature.operation !== "new") {
-    return {
-      ...base,
-      status: "error",
-      output: null,
-      diagnostics: [
-        {
-          severity: "error",
-          code: "operation-not-implemented",
-          message: `Extrude operation "${feature.operation}" is not implemented yet.`,
-        },
-      ],
-    };
-  }
   if (feature.symmetric) {
     return {
       ...base,
@@ -317,6 +304,26 @@ function evaluateExtrude(
     sketchId: feature.sketchId,
     regionIds: selection.ids,
     auto: selection.auto,
+    operation: feature.operation,
   };
   return { ...base, status: "ok", output, diagnostics };
+}
+
+/**
+ * The successful extrude features, in history order, in the shape the kernel
+ * worker consumes. Main-thread failures are kept out of this list; their
+ * statuses/diagnostics stay in the RebuildResult for the history UI.
+ */
+export function extractKernelFeatures(result: RebuildResult): KernelFeature[] {
+  return result.features.flatMap((feature) => {
+    if (feature.status !== "ok" || feature.output?.kind !== "extrude") return [];
+    return [
+      {
+        featureId: feature.featureId,
+        cacheKey: feature.cacheKey,
+        params: feature.output.params,
+        operation: feature.output.operation,
+      },
+    ];
+  });
 }

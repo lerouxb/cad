@@ -50,11 +50,40 @@ export interface BodyMesh {
   stats: BodyStats;
 }
 
+export type KernelOperation = "new" | "join" | "cut";
+
+/** One resolved extrude in history order, with the main-thread cache key. */
+export interface KernelFeature {
+  featureId: string;
+  /** hash(canonical(feature) + upstreamKey); also the worker cache key. */
+  cacheKey: string;
+  params: ExtrudeParams;
+  operation: KernelOperation;
+}
+
+export interface FeatureBuildStatus {
+  featureId: string;
+  status: "ok" | "error" | "skipped";
+  /** True when the worker reused a previously built prefix solid. */
+  cached: boolean;
+  message?: string;
+}
+
 export type KernelRequest =
   | { type: "init" }
-  | { type: "rebuild"; gen: number; params: ExtrudeParams };
+  | { type: "rebuild"; gen: number; features: KernelFeature[] };
 
 export type KernelResponse =
   | { type: "ready"; kernel: string }
-  | { type: "result"; gen: number; mesh: BodyMesh }
-  | { type: "error"; gen: number; message: string };
+  | {
+      type: "result";
+      gen: number;
+      mesh: BodyMesh;
+      features: FeatureBuildStatus[];
+    }
+  | {
+      type: "error";
+      gen: number;
+      message: string;
+      features?: FeatureBuildStatus[];
+    };

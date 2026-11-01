@@ -1,14 +1,19 @@
 import type {
   BodyMesh,
-  ExtrudeParams,
+  FeatureBuildStatus,
+  KernelFeature,
   KernelRequest,
   KernelResponse,
 } from "./protocol";
 
 export interface KernelClientHandlers {
   onReady?: () => void;
-  onMesh?: (mesh: BodyMesh, roundTripMs: number) => void;
-  onError?: (message: string) => void;
+  onMesh?: (
+    mesh: BodyMesh,
+    roundTripMs: number,
+    features: FeatureBuildStatus[],
+  ) => void;
+  onError?: (message: string, features?: FeatureBuildStatus[]) => void;
 }
 
 /**
@@ -23,7 +28,7 @@ export class KernelClient {
   private handlers: KernelClientHandlers;
   private ready = false;
   private inFlight = false;
-  private pending: ExtrudeParams | null = null;
+  private pending: KernelFeature[] | null = null;
   private latestGen = 0;
   private sentAt = 0;
 
@@ -41,8 +46,9 @@ export class KernelClient {
     this.post({ type: "init" });
   }
 
-  rebuild(params: ExtrudeParams): void {
-    this.pending = params;
+  /** Rebuild the ordered solid feature list. Latest request wins. */
+  rebuild(features: readonly KernelFeature[]): void {
+    this.pending = [...features];
     this.latestGen += 1;
     this.pump();
   }
@@ -53,11 +59,11 @@ export class KernelClient {
 
   private pump(): void {
     if (!this.ready || this.inFlight || !this.pending) return;
-    const params = this.pending;
+    const features = this.pending;
     this.pending = null;
     this.inFlight = true;
     this.sentAt = performance.now();
-    this.post({ type: "rebuild", gen: this.latestGen, params });
+    this.post({ type: "rebuild", gen: this.latestGen, features });
   }
 
   private receive(message: KernelResponse): void {
@@ -70,14 +76,18 @@ export class KernelClient {
       case "result": {
         this.inFlight = false;
         if (message.gen === this.latestGen) {
-          this.handlers.onMesh?.(message.mesh, performance.now() - this.sentAt);
+          this.handlers.onMesh?.(
+            message.mesh,
+            performance.now() - this.sentAt,
+            message.features,
+          );
         }
         this.pump();
         break;
       }
       case "error":
         this.inFlight = false;
-        this.handlers.onError?.(message.message);
+        this.handlers.onError?.(message.message, message.features);
         this.pump();
         break;
     }

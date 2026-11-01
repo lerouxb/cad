@@ -6,9 +6,10 @@ import { addCircle, emptySketch } from "../sketch/create";
 import { createDemoModel } from "../sketch/demo";
 import { sketchGeometry } from "../sketch/geometry";
 import { regionsFromSketch } from "../sketch/loops";
+import type { ExtrudeFeature, SketchFeature } from "../doc/types";
 import type { SolveOutcome } from "../sketch/solver";
 import type { Sketch } from "../sketch/types";
-import { rebuildDocument } from "./engine";
+import { extractKernelFeatures, rebuildDocument } from "./engine";
 import { canonicalJson, stableHash } from "./hash";
 import { RebuildCache, type RebuildDeps } from "./types";
 
@@ -181,7 +182,7 @@ describe("ordered rebuild", () => {
     expect(extrude.diagnostics[0]?.code).toBe("stale-regions");
   });
 
-  it("errors on an invalid height and unsupported operations", () => {
+  it("errors on an invalid height", () => {
     const zero = rebuildDocument(
       updateExtrudeHeight(exampleDoc(), 0),
       {},
@@ -189,20 +190,48 @@ describe("ordered rebuild", () => {
     );
     expect(zero.status).toBe("error");
     expect(zero.features[1]?.diagnostics[0]?.code).toBe("invalid-height");
+  });
 
+  it("evaluates a second sketch and a cut extrude in order", () => {
     const doc = exampleDoc();
-    const cut = {
-      ...doc,
-      features: doc.features.map((feature) =>
-        feature.type === "extrude"
-          ? { ...feature, operation: "cut" as const }
-          : feature,
-      ),
+    const sketch1 = doc.features[0]!;
+    const extrude1 = doc.features[1]!;
+    if (sketch1.type !== "sketch" || extrude1.type !== "extrude") {
+      throw new Error("Expected the example sketch/extrude");
+    }
+    const sketch2: SketchFeature = {
+      id: "sketch-2",
+      type: "sketch",
+      name: "Sketch 2",
+      support: { kind: "world", plane: "XY" },
+      sketch: addCircle(emptySketch(), { point: [30, 20] }, 8),
     };
-    const result = rebuildDocument(cut, {}, countingDeps().deps);
-    expect(result.features[1]?.diagnostics[0]?.code).toBe(
-      "operation-not-implemented",
-    );
+    const extrude2: ExtrudeFeature = {
+      ...extrude1,
+      id: "extrude-2",
+      name: "Cut 1",
+      sketchId: "sketch-2",
+      operation: "cut",
+      regions: [],
+    };
+    const twoFeatureDoc = {
+      ...doc,
+      features: [sketch1, extrude1, sketch2, extrude2],
+    };
+
+    const { calls, deps } = countingDeps();
+    const result = rebuildDocument(twoFeatureDoc, {}, deps);
+
+    expect(result.status).toBe("ok");
+    expect(result.features).toHaveLength(4);
+    expect(result.features.every((feature) => feature.status === "ok")).toBe(true);
+    const kernelFeatures = extractKernelFeatures(result);
+    expect(kernelFeatures.map((feature) => feature.operation)).toEqual([
+      "new",
+      "cut",
+    ]);
+    expect(kernelFeatures[1]?.params.regions[0]?.outer.kind).toBe("circle");
+    expect(calls).toEqual({ solve: 2, regions: 2, extrude: 2 });
   });
 
   it("reports an extrude whose source sketch is missing", () => {

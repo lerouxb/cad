@@ -1,4 +1,7 @@
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
+import { createDocument } from "../src/core/doc/create";
+import type { ExtrudeFeature, SketchFeature } from "../src/core/doc/types";
+import { addCircle, addPolyline, emptySketch } from "../src/core/sketch/create";
 
 /** Set a range input the way a user would, through React's onChange. */
 async function setSlider(locator: Locator, value: number): Promise<void> {
@@ -80,6 +83,75 @@ async function dragScreen(
 
 async function volume(page: Page): Promise<number> {
   return Number(await page.getByTestId("mesh-stats").getAttribute("data-volume"));
+}
+
+/** A saved three-feature part: new plate, cut hole, join extension. */
+function multiFeatureDoc() {
+  const plate = addPolyline(
+    emptySketch(),
+    [
+      { point: [0, 0] },
+      { point: [60, 0] },
+      { point: [60, 40] },
+      { point: [0, 40] },
+    ],
+    true,
+  );
+  const hole = addCircle(emptySketch(), { point: [30, 20] }, 8);
+  const extension = addPolyline(
+    emptySketch(),
+    [
+      { point: [40, 0] },
+      { point: [80, 0] },
+      { point: [80, 40] },
+      { point: [40, 40] },
+    ],
+    true,
+  );
+  const doc = createDocument(plate, {
+    id: "doc-multi",
+    sketchId: "sketch-1",
+    extrudeId: "extrude-1",
+    name: "Multi-feature",
+    height: 12,
+  });
+  const base = doc.features[1];
+  if (base?.type !== "extrude") throw new Error("Expected the base extrude");
+
+  const sketch2: SketchFeature = {
+    id: "sketch-2",
+    type: "sketch",
+    name: "Hole sketch",
+    support: { kind: "world", plane: "XY" },
+    sketch: hole,
+  };
+  const sketch3: SketchFeature = {
+    id: "sketch-3",
+    type: "sketch",
+    name: "Extension sketch",
+    support: { kind: "world", plane: "XY" },
+    sketch: extension,
+  };
+  const cut: ExtrudeFeature = {
+    ...base,
+    id: "extrude-2",
+    name: "Cut 1",
+    sketchId: "sketch-2",
+    operation: "cut",
+    regions: [],
+  };
+  const join: ExtrudeFeature = {
+    ...base,
+    id: "extrude-3",
+    name: "Join 1",
+    sketchId: "sketch-3",
+    operation: "join",
+    regions: [],
+  };
+  return {
+    ...doc,
+    features: [doc.features[0]!, base, sketch2, cut, sketch3, join],
+  };
 }
 
 /** Bounds of the extruded outer loop, in sketch millimetres. */
@@ -859,6 +931,35 @@ test("autosaves the document and reopens it", async ({ app: page }) => {
   await second.close();
 
   await setSlider(page.getByTestId("height-slider"), 12);
+});
+
+test("builds a cut and join from a saved multi-feature document", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    baseURL: "http://127.0.0.1:4173",
+    viewport: { width: 1280, height: 720 },
+  });
+  const page = await context.newPage();
+  await page.addInitScript((json) => {
+    localStorage.setItem("cad.doc", json);
+  }, JSON.stringify(multiFeatureDoc()));
+  await page.goto("/");
+  await expect(page.getByTestId("solver-status")).toContainText("ready", {
+    timeout: 60_000,
+  });
+  await expect(page.getByTestId("kernel-status")).toContainText("ready", {
+    timeout: 60_000,
+  });
+
+  // Union of the 0..60 plate and 40..80 extension, minus the Ø16 hole.
+  const expected = 80 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
+  await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
+    "data-status",
+    "ok",
+  );
+  await context.close();
 });
 
 test("switches and persists the appearance theme", async ({ app: page }) => {

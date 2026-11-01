@@ -40,8 +40,9 @@ extrude:
   unit + e2e tests. The part is a plain-JSON `Doc` with sketch/extrude features,
   schemaVersion + migrations, autosave to `localStorage`, and undoable feature parameters
   (extrude height and selected regions). The main-thread rebuild walks the feature list
-  in order with a prefix cache and per-feature diagnostics; the worker still builds one
-  extrude.
+  in order with a prefix cache and per-feature diagnostics. The worker receives the
+  successful extrudes, caches prefix solids by cache key, and applies new/join/cut
+  booleans with per-feature build statuses.
 - UI: one main stage. The bottom timeline switches between the full-stage sketch editor
   and the 3D model; the sketch has floating tools, a DOF pill, and a floating selection /
   dimension inspector. No permanent sidebar. The paper/ink theme has day/night modes and
@@ -52,12 +53,12 @@ extrude:
   trim supports lines and arcs but not turning a circle into an arc; face/edge picking is
   not implemented; the example sketch is hand-authored (`core/sketch/demo.ts`);
   **datum planes and sketch-on-face are not implemented (M4)**; the timeline is still the
-  fixed two-step list (rename/reorder/suppress and feature dialogs are next); the worker
-  still evaluates one extrude, without worker-side feature caching or join/cut booleans.
-  Free 3D sketches, splines/text/images and drawing exports are out of scope.
+  fixed two-step list (rename/reorder/suppress, feature dialogs and creating a second
+  feature are next). Join/cut works for saved multi-feature documents, but the UI cannot
+  add one yet. Free 3D sketches, splines/text/images and drawing exports are out of scope.
 
-Next: **finish M3** (worker-side feature cache, feature tree editing, multi-feature
-booleans), then **M4** (datum planes + face supports). Read `docs/PLAN.md`; it is the source of truth
+Next: **finish M3** (feature tree editing and feature creation), then **M4** (datum
+planes + face supports). Read `docs/PLAN.md`; it is the source of truth
 for done. Unsupported geometry/features (ellipses, conics, B-splines, free
 3D sketches, 3D fillets, lofts/sweeps, patterns/mirror, drafts, shelling/offsets,
 expressions, threads) and the upstream SolveSpace/OCCT work are documented in **PLAN M9**.
@@ -232,11 +233,23 @@ docs/
 - **Rebuild is ordered, cached and explicit.** `core/rebuild` walks `doc.features` in
   order. `cacheKey = hash(canonical(feature), upstreamKey)`, so a height/region edit reuses
   the solved sketch and a sketch edit invalidates the extrude. Every feature returns
-  `status` + diagnostics; App uses `rebuild.params` when the solver is ready and keeps
-  the local region/param path only as the pre-solver fallback. The cache is bounded and
-  in-memory. `selectExtrudeRegions` is shared by App and the engine so the auto/largest
-  material fallback cannot drift. Do not claim worker-side feature caching or multi-body
-  booleans yet; the worker still builds the last extrude only.
+  `status` + diagnostics; App extracts the successful extrudes and sends them to the
+  worker. The cache is bounded and in-memory. `selectExtrudeRegions` is shared by App and
+  the engine so the auto/largest material fallback cannot drift.
+- **The worker builds an ordered single body.** `KernelFeature[]` carries each extrude's
+  cacheKey, params and operation. The worker caches the prefix solid per cacheKey, applies
+  new/join/cut, and returns `FeatureBuildStatus[]`. A failed feature is skipped and later
+  features use the last good base; a failed first feature returns an error with statuses.
+  The first feature may be new or join; cut needs a base; new after a base is an error.
+  Any worker feature error clears the prefix cache after the last-good mesh is produced,
+  so a later successful retry cannot reuse downstream solids built past a skipped feature.
+- **Worker solids are cloned out of their disposal scope.** `buildSolid` uses
+  `withScope` for wires/faces/originals and returns `clone(solid)`; the cache owns those
+  clones and disposes them on eviction. Do not return a scoped handle.
+- **Cached solids and mesh buffers:** call `clearMeshCache()` before meshing a cached
+  solid. A previous request transferred the mesh's ArrayBuffers, which detaches them;
+  re-meshing the same cached solid without clearing the mesh cache throws "detached
+  ArrayBuffer" on postMessage. This showed up as a volume that did not update after undo.
 - **Regions are faces, not every cycle.** `planarArrangement` splits line/arc segments at
   crossings, T-junctions and circle crossings without touching the document. `findLoops`
   enumerates cycles on that split graph, `regionsFromSketch` drops a cycle when a smaller

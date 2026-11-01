@@ -412,17 +412,19 @@ symmetric). The sketch is no longer React component state.
   hash(canonical(feature) + upstreamKey)` gives prefix reuse: height/region edits keep the
   sketch result; sketch edits invalidate the extrude. The cache is bounded and in-memory.
   `selectExtrudeRegions` is the single source of the auto/largest-material fallback.
-- **Still one kernel extrude.** The worker call remains sketch -> selected regions -> one
-  extrude, with latest-wins generation dropping stale results. Worker-side feature
-  caching, multiple bodies, join/cut booleans and feature-tree editing are the next M3
-  slices.
+- **Worker multi-feature rebuild is in.** The kernel request carries the ordered successful
+  extrudes as `KernelFeature[]` (cacheKey, params, operation). The worker caches the
+  prefix solid per cacheKey, applies new/join/cut, and returns per-feature build
+  statuses. It is still a single body: `new` after a base is an error, and multiple bodies
+  are later. The timeline cannot create/edit a second feature yet; that is the next M3
+  slice.
 
 ## 6. Rebuild engine
 
 Input: `Doc`. Output: the final solid, its tessellation, and per-feature status.
 
-Current split: the main thread evaluates sketches and produces `ExtrudeParams` in
-`core/rebuild`; the worker still turns the last params into one solid.
+Current split: the main thread evaluates sketches and produces ordered `KernelFeature`s;
+the worker builds a single body with a prefix-solid cache and booleans.
 
 ```
 main thread: features in order
@@ -430,9 +432,19 @@ main thread: features in order
   ├─ evaluate extrude: source sketch -> selected regions -> ExtrudeParams
   ├─ cache output keyed by hash(feature, upstream key)
   └─ record { featureId, status, output, diagnostics }
-
-worker: ExtrudeParams -> one solid -> mesh
+       ↓ successful extrudes only, in history order
+worker: KernelFeature[]
+  ├─ prefix cache: cacheKey -> Solid (new/join/cut already applied through this feature)
+  ├─ cache hit: reuse the solid and its face origins
+  ├─ cache miss: build tool -> fuse/cut -> cache the result
+  └─ mesh the last good base -> BodyMesh + per-feature statuses
 ```
+
+The worker cache owns cloned solids. Cached solids cannot be meshed twice with the same
+mesh cache: the first request transfers the mesh ArrayBuffers, detaching them, so call
+`clearMeshCache()` before tessellating a cached prefix. A worker feature error clears the
+whole solid cache after the last-good mesh is computed: downstream prefixes that skipped
+the failed feature must not be reused if a retry succeeds.
 
 - **Prefix caching.** `cacheKey = hash(canonical(feature), upstreamCacheKey)`. Editing
   the last feature reuses everything before it. The cache lives in the worker and is

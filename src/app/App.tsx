@@ -19,8 +19,13 @@ import {
 import type { Doc } from "../core/doc/types";
 import { extrudeParams, selectExtrudeRegions } from "../core/features/extrude";
 import { KernelClient } from "../core/kernel/client";
-import type { BodyMesh } from "../core/kernel/protocol";
-import { rebuildDocument } from "../core/rebuild/engine";
+import type {
+  BodyMesh,
+  FeatureBuildStatus,
+  KernelFeature,
+} from "../core/kernel/protocol";
+import { extractKernelFeatures, rebuildDocument } from "../core/rebuild/engine";
+import { canonicalJson, stableHash } from "../core/rebuild/hash";
 import { RebuildCache } from "../core/rebuild/types";
 import {
   addArc,
@@ -128,6 +133,7 @@ export function App() {
   const [roundTripMs, setRoundTripMs] = useState<number | null>(null);
   const [kernelState, setKernelState] = useState<LoadState>("loading");
   const [kernelError, setKernelError] = useState<string | null>(null);
+  const [workerStatuses, setWorkerStatuses] = useState<FeatureBuildStatus[]>([]);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const clientRef = useRef<KernelClient | null>(null);
@@ -169,15 +175,28 @@ export function App() {
     () => regions.some((region) => region.kind === "void"),
     [regions],
   );
-  const params = useMemo(() => {
-    // Before the solver is ready, keep the existing local path so the first
-    // mesh can appear. Once the rebuild runs, its params are authoritative and
-    // a feature error must not silently fall back to a different body.
-    if (rebuild) return rebuild.params;
-    return activeRegions.length > 0
-      ? extrudeParams(activeRegions, extrudeHeight)
-      : null;
-  }, [rebuild, activeRegions, extrudeHeight]);
+  const fallbackParams = useMemo(
+    () =>
+      activeRegions.length > 0
+        ? extrudeParams(activeRegions, extrudeHeight)
+        : null,
+    [activeRegions, extrudeHeight],
+  );
+  const solidFeatures = useMemo<KernelFeature[]>(() => {
+    if (rebuild) return extractKernelFeatures(rebuild);
+    if (!fallbackParams) return [];
+    const operation = extrudeFeature?.operation ?? "new";
+    return [
+      {
+        featureId: extrudeFeature?.id ?? "extrude",
+        cacheKey: `fallback-${stableHash(
+          canonicalJson({ params: fallbackParams, operation }),
+        )}`,
+        params: fallbackParams,
+        operation,
+      },
+    ];
+  }, [rebuild, fallbackParams, extrudeFeature]);
   const rebuildDiagnostics = useMemo(
     () =>
       rebuild?.features
@@ -189,9 +208,57 @@ export function App() {
         ) ?? [],
     [rebuild],
   );
-  const firstRebuildError = rebuildDiagnostics.find(
+  const activeWorkerStatuses = useMemo(
+    () =>
+      workerStatuses.filter((status) =>
+        solidFeatures.some((feature) => feature.featureId === status.featureId),
+      ),
+    [workerStatuses, solidFeatures],
+  );
+  const workerDiagnostics = useMemo(
+    () =>
+      activeWorkerStatuses
+        .filter((status) => status.status !== "ok")
+        .map((status) => ({
+          feature: doc.features.find((feature) => feature.id === status.featureId)
+            ?.name ?? status.featureId,
+          diagnostic: {
+            severity: "error" as const,
+            code: `worker-${status.status}`,
+            message: status.message ?? "Solid build failed.",
+          },
+        })),
+    [activeWorkerStatuses, doc.features],
+  );
+  const allDiagnostics = useMemo(
+    () => [
+      ...rebuildDiagnostics,
+      ...workerDiagnostics,
+      ...(kernelError
+        ? [
+            {
+              feature: "Kernel",
+              diagnostic: {
+                severity: "error" as const,
+                code: "kernel-error",
+                message: kernelError,
+              },
+            },
+          ]
+        : []),
+    ],
+    [rebuildDiagnostics, workerDiagnostics, kernelError],
+  );
+  const firstRebuildError = allDiagnostics.find(
     ({ diagnostic }) => diagnostic.severity === "error",
   );
+  const rebuildStatus =
+    rebuild?.status === "error" ||
+    activeWorkerStatuses.some((s) => s.status !== "ok")
+      ? "error"
+      : rebuild
+        ? "ok"
+        : "pending";
 
   const selectedInfo = useMemo(
     () => describeSelection(sketch, geometry, selection),
@@ -338,16 +405,18 @@ export function App() {
 
     const client = new KernelClient({
       onReady: () => setKernelState("ready"),
-      onMesh: (nextMesh, elapsed) => {
+      onMesh: (nextMesh, elapsed, features) => {
         setMesh(nextMesh);
         setRoundTripMs(elapsed);
         setKernelState("ready");
         setKernelError(null);
+        setWorkerStatuses(features);
         viewport.setMesh(nextMesh);
       },
-      onError: (message) => {
+      onError: (message, features) => {
         setKernelError(message);
         setKernelState("error");
+        setWorkerStatuses(features ?? []);
       },
     });
     clientRef.current = client;
@@ -361,13 +430,16 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!params) {
+    if (solidFeatures.length === 0) {
       viewportRef.current?.clearMesh();
       return;
     }
-    const timer = window.setTimeout(() => clientRef.current?.rebuild(params), 60);
+    const timer = window.setTimeout(
+      () => clientRef.current?.rebuild(solidFeatures),
+      60,
+    );
     return () => window.clearTimeout(timer);
-  }, [params]);
+  }, [solidFeatures]);
 
   useEffect(() => {
     viewportRef.current?.setActive(mode === "model");
@@ -705,8 +777,8 @@ export function App() {
     setFitToken((token) => token + 1);
   };
 
-  const shownMesh = params ? mesh : null;
-  const shownRoundTrip = params ? roundTripMs : null;
+  const shownMesh = solidFeatures.length > 0 ? mesh : null;
+  const shownRoundTrip = solidFeatures.length > 0 ? roundTripMs : null;
   const shown = solveError ?? editor.solved;
   const tone: SketchTone =
     shown?.status === "inconsistent"
@@ -857,10 +929,13 @@ export function App() {
               </div>
             ) : null}
 
-            {!params && kernelState !== "loading" ? (
+            {solidFeatures.length === 0 && kernelState !== "loading" ? (
               <div className="viewport-message subtle">
-                <strong>No closed region</strong>
-                <span>Draw a closed loop, or select a region in the sketch, to extrude it.</span>
+                <strong>No solid</strong>
+                <span>
+                  Draw a closed loop, select a region, or fix the feature errors
+                  in the history.
+                </span>
               </div>
             ) : null}
 
@@ -1169,10 +1244,10 @@ export function App() {
             <span
               className={`timeline-note${firstRebuildError ? " is-error" : ""}`}
               data-testid="rebuild-status"
-              data-status={rebuild?.status ?? "pending"}
+              data-status={rebuildStatus}
               title={
-                rebuildDiagnostics.length > 0
-                  ? rebuildDiagnostics
+                allDiagnostics.length > 0
+                  ? allDiagnostics
                       .map(
                         ({ feature, diagnostic }) =>
                           `${feature}: ${diagnostic.message}`,

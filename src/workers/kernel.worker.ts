@@ -2,8 +2,12 @@ import {
   OcctWasmAdapter,
   addHoles,
   circle,
+  clearMeshCache,
+  clone,
+  cut,
   extrude,
   face,
+  fuse,
   fuseAll,
   line,
   measureVolume,
@@ -16,11 +20,14 @@ import {
   withScope,
   type ClosedWire,
   type PlanarWire,
+  type Solid,
 } from "brepjs";
 import { OcctKernel } from "occt-wasm";
 import type {
   BodyMesh,
   ExtrudeParams,
+  FeatureBuildStatus,
+  KernelFeature,
   KernelRequest,
   ProfileRegion,
   KernelResponse,
@@ -54,10 +61,20 @@ async function handle(request: KernelRequest): Promise<void> {
     }
 
     const started = performance.now();
-    const mesh = buildBody(request.params);
+    const built = buildFeatures(request.features);
+    if (!built.mesh) {
+      reply({
+        type: "error",
+        gen: request.gen,
+        message: "No solid feature could be built.",
+        features: built.features,
+      });
+      return;
+    }
+    const mesh = built.mesh;
     mesh.stats.buildMs = performance.now() - started;
     reply(
-      { type: "result", gen: request.gen, mesh },
+      { type: "result", gen: request.gen, mesh, features: built.features },
       [
         mesh.positions.buffer as ArrayBuffer,
         mesh.normals.buffer as ArrayBuffer,
@@ -76,8 +93,130 @@ function reply(message: KernelResponse, transfer?: Transferable[]): void {
   self.postMessage(message, { transfer: transfer ?? [] });
 }
 
-function buildBody(params: ExtrudeParams): BodyMesh {
-  if (params.height <= 0) throw new Error("Extrude height must be greater than zero.");
+function buildFeatures(features: KernelFeature[]): {
+  mesh: BodyMesh | null;
+  features: FeatureBuildStatus[];
+} {
+  const statuses: FeatureBuildStatus[] = [];
+  const protectedKeys = new Set<string>();
+  const pending: { key: string; solid: Solid }[] = [];
+  let base: Solid | null = null;
+  let baseKey: string | null = null;
+  let cacheInvalid = false;
+
+  for (const feature of features) {
+    const cached = solidCache.get(feature.cacheKey);
+    if (cached) {
+      base = cached;
+      baseKey = feature.cacheKey;
+      protectedKeys.add(feature.cacheKey);
+      statuses.push({
+        featureId: feature.featureId,
+        status: "ok",
+        cached: true,
+      });
+      continue;
+    }
+
+    let tool: Solid;
+    try {
+      tool = buildSolid(feature.params);
+    } catch (error) {
+      cacheInvalid = true;
+      statuses.push({
+        featureId: feature.featureId,
+        status: "error",
+        cached: false,
+        message: errorMessage(error),
+      });
+      continue;
+    }
+
+    try {
+      if (!base) {
+        if (feature.operation === "cut") {
+          tool.delete();
+          cacheInvalid = true;
+          statuses.push({
+            featureId: feature.featureId,
+            status: "error",
+            cached: false,
+            message: "Nothing exists to cut.",
+          });
+          continue;
+        }
+        base = tool;
+        baseKey = feature.cacheKey;
+        protectedKeys.add(feature.cacheKey);
+        pending.push({ key: feature.cacheKey, solid: tool });
+        statuses.push({
+          featureId: feature.featureId,
+          status: "ok",
+          cached: false,
+        });
+        continue;
+      }
+
+      if (feature.operation === "new") {
+        tool.delete();
+        cacheInvalid = true;
+        statuses.push({
+          featureId: feature.featureId,
+          status: "error",
+          cached: false,
+          message: "Only the first solid feature can create a new body.",
+        });
+        continue;
+      }
+
+      const result = unwrap(
+        feature.operation === "cut" ? cut(base, tool) : fuse(base, tool),
+      );
+      tool.delete();
+      base = result;
+      baseKey = feature.cacheKey;
+      protectedKeys.add(feature.cacheKey);
+      pending.push({ key: feature.cacheKey, solid: result });
+      statuses.push({
+        featureId: feature.featureId,
+        status: "ok",
+        cached: false,
+      });
+    } catch (error) {
+      tool.delete();
+      cacheInvalid = true;
+      statuses.push({
+        featureId: feature.featureId,
+        status: "error",
+        cached: false,
+        message: errorMessage(error),
+      });
+      // A failed feature is skipped; later features use the last good base.
+    }
+  }
+
+  if (baseKey) protectedKeys.add(baseKey);
+  const mesh = base ? meshSolid(base) : null;
+
+  if (cacheInvalid) {
+    // A transient boolean failure must not leave downstream prefix solids that
+    // were built as if the failed feature had been skipped. Dispose everything
+    // and force a clean retry next time.
+    for (const entry of pending) entry.solid.delete();
+    solidCache.clear();
+  } else {
+    for (const entry of pending) solidCache.set(entry.key, entry.solid, protectedKeys);
+    solidCache.trim(protectedKeys);
+  }
+
+  return { mesh, features: statuses };
+}
+
+/** Build one tool solid and return an independently owned clone. */
+function buildSolid(params: ExtrudeParams): Solid {
+  if (!Number.isFinite(params.height) || params.height <= 0) {
+    throw new Error("Extrude height must be greater than zero.");
+  }
   if (params.regions.length === 0) {
     throw new Error("Select at least one profile region.");
   }
@@ -96,39 +235,94 @@ function buildBody(params: ExtrudeParams): BodyMesh {
       solids.length === 1
         ? solids[0]!
         : scope.track(unwrap(fuseAll(solids)));
-
-    // Meshing returns plain typed arrays; everything kernel-side stays in scope.
-    const mesh = shape(solid).mesh({ tolerance: 0.05 });
-    const data = toBufferGeometryData(mesh);
-    const edgeMesh = shape(solid).meshEdges({ tolerance: 0.05 });
-    const volume = unwrap(measureVolume(solid));
-
-    return {
-      positions: data.position,
-      normals: data.normal,
-      indices: data.index,
-      faceGroups: mesh.faceGroups.map((group) => ({
-        start: group.start,
-        count: group.count,
-        faceId: group.faceId,
-        origin: group.origin,
-      })),
-      edgePositions: edgeMesh.lines,
-      edgeGroups: edgeMesh.edgeGroups.map((group) => ({
-        start: group.start,
-        count: group.count,
-        edgeId: group.edgeId,
-      })),
-      stats: {
-        faces: mesh.faceGroups.length,
-        edges: edgeMesh.edgeGroups.length,
-        triangles: data.index.length / 3,
-        volume,
-        buildMs: 0,
-      },
-    };
+    // The scope disposes the inputs and the original solid; the caller owns the
+    // clone independently, which is what the prefix cache retains.
+    return unwrap(clone(solid));
   });
 }
+
+function meshSolid(solid: Solid): BodyMesh {
+  // A cached solid may still own mesh arrays whose buffers were transferred to
+  // the main thread on a previous request. Force a fresh tessellation.
+  clearMeshCache();
+  const mesh = shape(solid).mesh({ tolerance: 0.05 });
+  const data = toBufferGeometryData(mesh);
+  const edgeMesh = shape(solid).meshEdges({ tolerance: 0.05 });
+  const volume = unwrap(measureVolume(solid));
+
+  return {
+    positions: data.position,
+    normals: data.normal,
+    indices: data.index,
+    faceGroups: mesh.faceGroups.map((group) => ({
+      start: group.start,
+      count: group.count,
+      faceId: group.faceId,
+      origin: group.origin,
+    })),
+    edgePositions: edgeMesh.lines,
+    edgeGroups: edgeMesh.edgeGroups.map((group) => ({
+      start: group.start,
+      count: group.count,
+      edgeId: group.edgeId,
+    })),
+    stats: {
+      faces: mesh.faceGroups.length,
+      edges: edgeMesh.edgeGroups.length,
+      triangles: data.index.length / 3,
+      volume,
+      buildMs: 0,
+    },
+  };
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+class SolidCache {
+  private readonly entries = new Map<string, Solid>();
+  private readonly limit: number;
+
+  constructor(limit: number) {
+    this.limit = limit;
+  }
+
+  get(key: string): Solid | undefined {
+    return this.entries.get(key);
+  }
+
+  set(key: string, solid: Solid, protectedKeys: ReadonlySet<string>): void {
+    const existing = this.entries.get(key);
+    if (existing === solid) return;
+    if (existing && !protectedKeys.has(key)) existing.delete();
+    this.entries.set(key, solid);
+    this.trim(protectedKeys);
+  }
+
+  clear(): void {
+    for (const solid of this.entries.values()) solid.delete();
+    this.entries.clear();
+  }
+
+  trim(protectedKeys: ReadonlySet<string>): void {
+    while (this.entries.size > this.limit) {
+      let victim: string | null = null;
+      for (const key of this.entries.keys()) {
+        if (!protectedKeys.has(key)) {
+          victim = key;
+          break;
+        }
+      }
+      if (victim === null) return;
+      const solid = this.entries.get(victim);
+      this.entries.delete(victim);
+      solid?.delete();
+    }
+  }
+}
+
+const solidCache = new SolidCache(24);
 
 function toWire(loop: ProfileLoop): ClosedWire & PlanarWire {
   if (loop.kind === "circle") {
