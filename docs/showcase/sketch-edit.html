@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — sketch selection</title>
+    <link rel="stylesheet" href="../mockups/mockup.css" />
+    <link rel="stylesheet" href="showcase.css" />
+    <script src="../mockups/theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="../mockups/index.html">
+        cad <span class="tag">tool showcase</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Showcase">
+        <a href="index.html">sketch layout</a>
+        <a class="is-active" href="sketch-edit.html">sketch edit</a>
+        <a href="sketch-create.html">sketch create</a>
+        <a href="body-ops.html">body ops</a>
+        <a href="transform.html">transform</a>
+        <a href="extrude.html">extrude</a>
+        <a href="inspect.html">inspect</a>
+        <a href="BACKLOG.md">backlog</a>
+      </nav>
+      <div class="mockbar-right">
+        <a class="mockbar-btn" href="../mockups/index.html">studies</a>
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" title="File menu">
+            <span class="doc-name">sketch-selection</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-center">
+          <span>sketch</span>
+          <span class="mode">select</span>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage has-grid" id="stage">
+          <div class="stage-head">
+            <div class="tool-line" role="toolbar" aria-label="Selection">
+              <span class="stage-kicker">select</span>
+              <button class="tool" type="button" data-sel="lines">2 lines</button>
+              <button class="tool" type="button" data-sel="circle">circle</button>
+              <button class="tool" type="button" data-sel="point">point</button>
+              <button class="tool" type="button" data-sel="dimension">dimension</button>
+            </div>
+          </div>
+
+          <div class="sketch-viewport" id="viewport">
+            <svg
+              class="stage-svg sketch-svg"
+              id="svg"
+              viewBox="0 0 1200 700"
+              preserveAspectRatio="xMidYMid meet"
+              role="img"
+              aria-label="A sketch with the selection popover open: selected geometry is in ink on a highlighter wash, and the constraints it can take are listed."
+            >
+              <g id="edit-geom"></g>
+              <g id="edit-dim"></g>
+              <g id="edit-wash"></g>
+            </svg>
+            <div class="tool-panel" id="edit-panel" role="dialog" aria-label="Selection"></div>
+            <div class="dim-editor" id="edit-inline" hidden></div>
+          </div>
+
+          <div class="stage-foot">
+            <div class="stage-foot-left">
+              <span id="edit-foot"></span>
+            </div>
+            <div class="stage-foot-right">
+              <span class="sc-legend">
+                <span class="key"><span class="swatch is-selected"></span>selected</span>
+                <span class="key"><span class="swatch is-ghost"></span>constraint</span>
+              </span>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · sketch selection</div>
+          <h2>Selecting opens a popover</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        Sketch inputs used to look nothing like the feature popovers: a floating
+        "selection card" with a horizontal constraint bar. This study folds them
+        into the same family. Selecting geometry opens a <b>selection popover</b>
+        with the same anatomy as every other popover — it is simply a palette of
+        immediate actions rather than a form with a commit pair.
+      </p>
+      <h3>The three shapes</h3>
+      <ul>
+        <li><b>Selection popover</b> — the actions for what is selected: constraints, construction, fix, delete. Chips act immediately, so there is no apply/cancel. Draggable, like every popover.</li>
+        <li><b>Inline editor</b> — a single value at the thing it belongs to. Select the dimension and the editor sits at the dimension, not in a panel.</li>
+        <li><b>Operation popover</b> — the multi-parameter forms (extrude, pattern, combine), with a commit pair.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Selecting a dimension: does it open the selection popover (for <b>make reference</b> / delete) <em>and</em> the inline editor, or only the inline editor?</li>
+        <li>Do the constraint chips need grouping (position / size / pattern), or is one wrapped row enough?</li>
+        <li>Should the popover show the full selection list, or just the count and the geometry?</li>
+      </ul>
+      <div class="mini-note">
+        The old study-02 "selection line" is superseded: a bottom strip is still a
+        bottom bar, and it drifts. The popover is one shape to learn.
+      </div>
+    </aside>
+
+    <script src="../mockups/mockups.js"></script>
+    <script src="showcase-ui.js"></script>
+    <script src="showcase-edit.js"></script>
+  </body>
+</html>

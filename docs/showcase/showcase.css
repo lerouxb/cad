@@ -629,7 +629,6 @@
   align-items: baseline;
   gap: 10px;
 }
-
 .create-options[hidden] {
   display: none;
 }
@@ -747,4 +746,45 @@
 .tool-range {
   width: 116px;
   accent-color: var(--marker);
+}
+
+/* --------------------------------------------------------------------------
+   sketch selection inputs (see INTERACTION.md)
+   -------------------------------------------------------------------------- */
+
+.sc-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 9px;
+}
+
+.sc-chip {
+  margin: 0;
+  padding: 2px 7px;
+  border: 1px solid var(--rule-strong);
+  background: none;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-control);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.sc-chip:hover {
+  background: var(--marker-soft);
+  color: var(--ink);
+}
+
+.sc-chip.is-on {
+  border-color: var(--marker);
+  background: var(--marker);
+  color: var(--marker-ink);
+}
+
+.sc-point-wash {
+  fill: var(--marker);
+  stroke: var(--ink);
+  stroke-width: 1.4;
 }

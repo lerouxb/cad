@@ -5,6 +5,7 @@ Interactive design targets for tools that do not exist yet, split into four stud
 | Study | Page | What it covers | Milestone |
 | --- | --- | --- | --- |
 | **Sketch layout** | [`index.html`](index.html) | rectangular / circular pattern, mirror, offset, **move/copy** | **M6.0** (ADR-0004) |
+| **Sketch selection** | [`sketch-edit.html`](sketch-edit.html) | selection popover (constraints), inline dimension editor | app consistency (see INTERACTION.md) |
 | **Sketch create** | [`sketch-create.html`](sketch-create.html) | rectangle / circle / arc variants, polygon | M6.0-era sketch polish |
 | **Body ops** | [`body-ops.html`](body-ops.html) | **combine** (join/cut/intersect, keep tools), **split body** | M6 |
 | **Body transforms** | [`transform.html`](transform.html) | **move / copy**, **align** | M6 |
@@ -130,6 +131,7 @@ changes.
 
 ```
 index.html           sketch layout: pattern / mirror / offset / move-copy
+sketch-edit.html     sketch selection: constraint popover + inline dimension editor
 sketch-create.html   sketch create variants: rectangle / circle / arc / polygon
 body-ops.html        combine + split body
 transform.html       move / copy + align
@@ -139,6 +141,7 @@ showcase.css         popup, preview, manipulator and 3D styles (mockup tokens)
 showcase-ui.js       shared draggable popovers + the footer action grammar
 showcase.js          sketch model, preview geometry and interaction
 showcase-create.js   the create-tool atlas
+showcase-edit.js     the selection popover + inline editor
 showcase-3d.js       isometric helpers + body ops + transforms + extrude + section
 INTERACTION.md       the interaction contract (popover, actions, foot)
 BACKLOG.md           the gap decisions (keep / drop / defer) and their homes

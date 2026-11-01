@@ -52,11 +52,21 @@ step, snap on/off, zoom, the scale bar. It is where you *read*, not where you
 - A control that changes only the view (zoom, grid visibility, snap) may live in
   the foot, because the decision *is* the view.
 
-### 5. Selection actions live in the selection line
+### 5. Selection opens a popover
 
-The selection line (study 02) is the one exception: it reports the selected thing
-and offers the two or three actions that apply to it (edit, delete, make
-reference). It is a readout plus actions, not a form. Do not move input into it.
+Selecting anything — geometry, a dimension, a feature, a body — opens a popover
+anchored to it: what is selected, the actions or parameters that apply, and a
+footer. This **supersedes the "selection line" from study 02**: a bottom strip is
+still a bottom bar, and it drifts. The popover is the same shape as the operation
+popovers, so there is one thing to learn.
+
+The selection popover is a **palette** when the actions are immediate (constraints,
+`construction`, `fix`) — no commit pair, each chip acts at once — and a small
+**form** when there is a value (a point's X/Y). It is draggable like the rest.
+
+The one thing that stays anchored to its annotation rather than becoming a popover
+box is the **inline editor**: a single dimension value, edited where the dimension
+is. Everything else that a selection can do lives in the popover.
 
 ## Action vocabulary
 
@@ -67,11 +77,42 @@ Keep the set small. Every action is one of these:
 | Primary | `.text-action` | `apply`, `finish sketch`, `export` |
 | Secondary | `.text-action.is-quiet` | `cancel`, `delete`, `make reference` |
 | Inline in a row | `.seg button` | `X` / `Y`, `join` / `cut` / `intersect` |
+| Immediate action | `.sc-chip` | a constraint, `construction`, `fix` |
 | Stepper | `.stepper button` | `−` / `+` on a count |
 | Value | `.tool-input` | a number in `mm` or `deg` |
 
 There is no "OK vs Apply vs Done" ambiguity: the primary is always the verb of
 the operation, and `cancel` is always the same word.
+
+## Sketch inputs are the same family, not the same shape
+
+The sketch has inputs that are not "configure a feature", so they should not all
+become popovers. There are three shapes, and they share the type roles, the
+action vocabulary and the placement rule (**controls appear where the decision
+is**) — but not the same box:
+
+1. **Operation popover** — a multi-parameter form for an operation or feature
+   (extrude, pattern, combine). Full anatomy: kicker, title, rows, hint, footer.
+   Has a commit pair.
+2. **Inline editor** — a *single value* edited at the thing it belongs to: a
+   dimension's value, a point's X/Y. Compact, anchored, with the same `apply` /
+   `cancel` pair. It must not be lifted into a popover: the value belongs to the
+   annotation, and moving it away is worse.
+3. **Selection popover** — the actions for the *current selection*: the
+   constraints that apply, `construction`, `fix`, `delete`. It is a palette of
+   immediate actions, not a form, so it has **no commit pair** — each chip acts
+   at once. It replaces the old floating "selection card" + "constraint bar",
+   and it is draggable like every other popover.
+
+The rule of thumb:
+
+- Several parameters and a commit → **operation popover**.
+- One value, and it lives on an annotation → **inline editor**.
+- Actions that apply immediately to the selection → **selection popover**.
+
+The dimension editor is the clearest case for the inline shape: study 02 already
+puts it *at* the dimension, with `apply` / `cancel`. That is correct, and it stays
+there. The constraint editing is the case for the selection popover.
 
 ## Popover anatomy
 
@@ -98,12 +139,15 @@ The kicker says what *kind* of thing this is (`sketch tool`, `body op`,
 
 | Surface | Input | Actions | Target |
 | --- | --- | --- | --- |
-| Sketch layout (`index.html`) | popover ✓ | popover footer + selection line ✓ | keep |
-| Sketch create (`sketch-create.html`) | **stage foot ✗** | — | **move polygon rows into a popover** |
-| Body ops (`body-ops.html`) | popover ✓ | **no footer ✗** | **add apply / cancel** |
-| Transforms (`transform.html`) | popover ✓ | **no footer ✗** | **add apply / cancel** |
-| Extrude (`extrude.html`) | popover ✓ | **no footer ✗** | **add apply / cancel** |
-| Section (`inspect.html`) | popover ✓ | **no footer ✗** | view-only; `done` instead of `apply` |
+| Sketch layout (`index.html`) | popover ✓ | popover footer | keep (its selection line should become a selection popover) |
+| Sketch constraints (app) | **selection card + constraint bar ✗** | immediate chips | **one selection popover** |
+| Dimension edit (app, study 02) | inline editor ✓ | `apply` / `cancel` ✓ | keep |
+| Point X/Y (app) | **selection card ✗** | — | **inline editor, or rows in the selection popover** |
+| Sketch create (`sketch-create.html`) | popover ✓ | popover footer ✓ | keep |
+| Body ops (`body-ops.html`) | popover ✓ | popover footer ✓ | keep |
+| Transforms (`transform.html`) | popover ✓ | popover footer ✓ | keep |
+| Extrude (`extrude.html`) | popover ✓ | popover footer ✓ | keep |
+| Section (`inspect.html`) | popover ✓ | footer `done` | keep |
 | Grid / zoom (mockup 02) | foot menus | — | keep: the decision *is* the view |
 
 Every popover in this folder is draggable by its header.
@@ -125,6 +169,8 @@ a status bar with a viewport behind it.
 - Should the popover remember its position per tool, or is one shared position
   enough?
 - Should the popover collapse to just its header when dragged out of the way?
-- Is the selection line still the right home for selection actions now that
-  popovers exist, or should a selected object open a popover instead?
+- Study 02's selection line is now superseded by the selection popover; the
+  mockup should be revisited (it currently shows the bottom strip).
+- Does selecting a **dimension** open a selection popover (with `make reference` /
+  `delete`) *and* the inline editor, or only the inline editor?
 - Do `cancel` and `Esc` do the same thing everywhere?
