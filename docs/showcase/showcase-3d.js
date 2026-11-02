@@ -727,7 +727,7 @@
         meta: "join \u00b7 lid into body",
         out: [
           { op: "\u2192", kind: "body", id: "body", label: "body" },
-          { op: "\u2715", kind: "body", id: "lid", label: "lid", consumed: true, lost: merged }
+          { op: "\u2212", kind: "body", id: "lid", label: "lid", consumed: true, lost: merged }
         ]
       }
     ];
@@ -837,13 +837,15 @@
     if (o.consumed) {
       return (
         '<span class="' + cls + '" title="consumed by this step">' +
-        '<span class="body-op">' + o.op + "</span>" + dot + name + "</span>"
+        '<span class="body-op">' + o.op + "</span>" + dot +
+        '<span class="body-name">' + name + "</span></span>"
       );
     }
     return (
       '<button class="' + cls + '" type="button" data-out="' + o.id +
       '" data-kind="' + o.kind + '">' +
-      '<span class="body-op">' + o.op + "</span>" + dot + name + "</button>"
+      '<span class="body-op">' + o.op + "</span>" + dot +
+      '<span class="body-name">' + name + "</span></button>"
     );
   }
 

@@ -942,7 +942,7 @@
 
 .body-dot {
   position: relative;
-  top: 0.5px;
+  top: -0.5ex;
   width: 7px;
   height: 7px;
   border: 1px solid var(--ink);
@@ -966,8 +966,13 @@
 
 .body-chip.is-consumed {
   color: var(--ink-3);
-  text-decoration: line-through;
   cursor: default;
+}
+
+/* only the body's name is struck out — the minus op and the type dot stay
+   legible, so the chip still reads as “this body is gone” */
+.body-chip.is-consumed .body-name {
+  text-decoration: line-through;
 }
 
 .body-chip.is-consumed .body-op {
