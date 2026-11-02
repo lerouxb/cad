@@ -1033,11 +1033,14 @@ export function App() {
     [featureStates],
   );
 
-  const datumPlaneFrames = useMemo(
+  const datumPlaneOverlays = useMemo(
     () =>
       datumPlaneFeatures(doc)
         .filter((feature) => feature.suppressed !== true)
-        .map((feature) => resolvedDatumFrame(feature)),
+        .map((feature) => ({
+          featureId: feature.id,
+          frame: resolvedDatumFrame(feature),
+        })),
     [doc, resolvedDatumFrame],
   );
 
@@ -1392,7 +1395,10 @@ export function App() {
         initialTheme.highlight,
         initialTheme.mode,
       ).color,
-      onPick: setBodyPick,
+      onPick: (pick) => {
+        setBodyPick(pick);
+        setSupportDatumId(pick?.kind === "datum" ? pick.datumId ?? null : null);
+      },
     });
     viewportRef.current = viewport;
 
@@ -1580,8 +1586,8 @@ export function App() {
   }, [modelSketchOverlay]);
 
   useEffect(() => {
-    viewportRef.current?.setDatumPlanes(datumPlaneFrames);
-  }, [datumPlaneFrames]);
+    viewportRef.current?.setDatumPlanes(datumPlaneOverlays);
+  }, [datumPlaneOverlays]);
 
   useEffect(() => {
     applyTheme(themeSettings);
@@ -2637,12 +2643,20 @@ export function App() {
                 data-ref={
                   bodyPick.ref ? JSON.stringify(bodyPick.ref) : undefined
                 }
+                data-datum-id={bodyPick.datumId}
                 role="status"
               >
                 <span className="body-pick-dot" />
                 <span>
-                  {bodyPick.kind === "face" ? "Face selected" : "Edge selected"}
+                  {bodyPick.kind === "face"
+                    ? "Face selected"
+                    : bodyPick.kind === "datum"
+                      ? "Datum plane selected"
+                      : "Edge selected"}
                   {bodyPick.ref ? ` · ${bodyPick.ref.role}` : ""}
+                  {bodyPick.kind === "datum" && bodyPick.datumId
+                    ? ` · ${findFeature(doc, bodyPick.datumId)?.name ?? "plane"}`
+                    : ""}
                 </span>
               </div>
             ) : null}
@@ -3349,7 +3363,9 @@ export function App() {
               type="button"
               onClick={() => {
                 setSupportPlane("XY");
-                setSupportDatumId(null);
+                setSupportDatumId(
+                  bodyPick?.kind === "datum" ? bodyPick.datumId ?? null : null,
+                );
                 setSupportOpen(true);
                 setFileMenuOpen(false);
               }}

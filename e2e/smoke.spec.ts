@@ -96,6 +96,20 @@ async function pickRightFace(page: Page): Promise<void> {
   );
 }
 
+/** Find a screen point over a rendered datum plane after Fit view. */
+async function findDatumHover(page: Page): Promise<{ x: number; y: number }> {
+  const canvas = page.locator("canvas.viewport-canvas");
+  for (let y = 120; y <= 600; y += 30) {
+    for (let x = 120; x <= 900; x += 30) {
+      await page.mouse.move(x, y);
+      if ((await canvas.getAttribute("data-hover-kind")) === "datum") {
+        return { x, y };
+      }
+    }
+  }
+  throw new Error("No datum plane hover target found");
+}
+
 async function sketchOnPickedFace(page: Page): Promise<void> {
   await page.getByTestId("add-sketch").click();
   await expect(page.getByTestId("support-popover")).toContainText(
@@ -609,6 +623,37 @@ test("creates an offset datum plane and sketches on it", async ({
   await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
     "data-status",
     "ok",
+  );
+  expect(errors).toEqual([]);
+});
+
+test("picks a datum plane and starts a sketch on it", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await page.getByTestId("add-plane").click();
+  await page.getByTestId("datum-distance").fill("10");
+  await page.getByTestId("datum-apply").click();
+  const canvas = page.locator("canvas.viewport-canvas");
+  await expect(canvas).toHaveAttribute("data-datum-planes", "1");
+  await page.getByRole("button", { name: "Fit view" }).click();
+  await page.waitForTimeout(200);
+
+  const hover = await findDatumHover(page);
+  await expect(canvas).toHaveAttribute("data-hover-kind", "datum");
+  await page.mouse.click(hover.x, hover.y);
+  await expect(page.getByTestId("body-pick")).toHaveAttribute(
+    "data-kind",
+    "datum",
+  );
+  const datumId = await page.getByTestId("body-pick").getAttribute("data-datum-id");
+  expect(datumId).toBeTruthy();
+
+  await page.getByTestId("add-sketch").click();
+  await expect(page.getByTestId("support-popover")).toContainText(
+    "datum plane · Plane 1",
+  );
+  await page.getByTestId("new-sketch").click();
+  await expect(page.getByTestId("timeline-detail")).toContainText(
+    "Datum · Plane 1",
   );
   expect(errors).toEqual([]);
 });

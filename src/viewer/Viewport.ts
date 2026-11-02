@@ -9,6 +9,7 @@ import {
   edgeGroupForVertex,
   edgePick,
   edgePositionsForGroup,
+  datumPick,
   edgeUnitForMesh,
   faceGroupForTriangle,
   facePick,
@@ -53,6 +54,11 @@ export interface SketchOverlayData {
 
 export type { BodyPick };
 
+export interface DatumPlaneOverlay {
+  featureId: string;
+  frame: PlaneFrame;
+}
+
 export class Viewport {
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
@@ -61,7 +67,8 @@ export class Viewport {
   private body = new THREE.Group();
   private sketch = new THREE.Group();
   private datums = new THREE.Group();
-  private datumPlanes: ReadonlyArray<PlaneFrame> = [];
+  private datumPlanes: ReadonlyArray<DatumPlaneOverlay> = [];
+  private readonly datumByFeature = new Map<string, DatumPlaneOverlay>();
   private sketchOverlay: SketchOverlayData | null = null;
   private readonly sketchLineMaterials = new Set<LineMaterial>();
   private environment = new THREE.Group();
@@ -172,9 +179,10 @@ export class Viewport {
   }
 
   /** Show datum planes as faint translucent quads with their local axes. */
-  setDatumPlanes(planes: ReadonlyArray<PlaneFrame>): void {
+  setDatumPlanes(planes: ReadonlyArray<DatumPlaneOverlay>): void {
     if (this.disposed) return;
     this.datumPlanes = planes;
+    this.datumByFeature.clear();
     this.canvas.dataset.datumPlanes = String(planes.length);
     this.clearGroup(this.datums);
     const day = this.theme === "day";
@@ -192,7 +200,8 @@ export class Viewport {
       depthWrite: false,
     });
     const size = 80;
-    for (const frame of planes) {
+    for (const { featureId, frame } of planes) {
+      this.datumByFeature.set(featureId, { featureId, frame });
       const matrix = new THREE.Matrix4()
         .makeBasis(
           new THREE.Vector3(...frame.xAxis),
@@ -203,8 +212,8 @@ export class Viewport {
       const plane = new THREE.PlaneGeometry(size, size);
       plane.applyMatrix4(matrix);
       const mesh = new THREE.Mesh(plane, fill.clone());
+      mesh.userData.datumId = featureId;
       mesh.renderOrder = 1;
-      mesh.raycast = () => {};
       const border = new THREE.EdgesGeometry(plane);
       border.applyMatrix4(matrix);
       const outline = new THREE.LineSegments(border, line.clone());
@@ -226,6 +235,7 @@ export class Viewport {
     }
     fill.dispose();
     line.dispose();
+    this.rebuildSelectionOverlays();
     this.dirty = true;
   }
 
@@ -399,6 +409,8 @@ export class Viewport {
 
     const faceHit = this.raycaster.intersectObject(this.solid, false)[0] ?? null;
     const edgeHit = this.raycaster.intersectObject(this.edges, false)[0] ?? null;
+    const datumHit =
+      this.raycaster.intersectObjects(this.datums.children, false)[0] ?? null;
 
     // An edge on the surface is at roughly the same depth as the face. A hidden
     // back edge is farther away, so it must not win over the front face.
@@ -409,6 +421,14 @@ export class Viewport {
         this.edgeUnit,
       );
       if (group) return edgePick(group);
+    }
+
+    if (
+      datumHit &&
+      (!faceHit || datumHit.distance <= faceHit.distance + threshold)
+    ) {
+      const featureId = datumHit.object.userData.datumId;
+      if (typeof featureId === "string") return datumPick(featureId);
     }
 
     if (faceHit && typeof faceHit.faceIndex === "number") {
@@ -451,6 +471,34 @@ export class Viewport {
     pick: BodyPick,
     selected: boolean,
   ): void {
+    if (pick.kind === "datum") {
+      const datum = pick.datumId ? this.datumByFeature.get(pick.datumId) : null;
+      if (!datum) return;
+      const size = 84;
+      const matrix = new THREE.Matrix4()
+        .makeBasis(
+          new THREE.Vector3(...datum.frame.xAxis),
+          new THREE.Vector3(...datum.frame.yAxis),
+          new THREE.Vector3(...datum.frame.normal),
+        )
+        .setPosition(new THREE.Vector3(...datum.frame.origin));
+      const geometry = new THREE.PlaneGeometry(size, size);
+      geometry.applyMatrix4(matrix);
+      const material = new THREE.MeshBasicMaterial({
+        color: this.highlightColor,
+        transparent: true,
+        opacity: selected ? 0.3 : 0.14,
+        depthTest: false,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const overlay = new THREE.Mesh(geometry, material);
+      overlay.renderOrder = selected ? 5 : 4;
+      overlay.raycast = () => {};
+      group.add(overlay);
+      return;
+    }
+
     if (!this.mesh) return;
 
     if (pick.kind === "face") {

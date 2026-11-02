@@ -113,7 +113,7 @@ feature work then lands inside that system.
   started from the selected sketch step and begins with **no profile selected**; the
   draft only becomes a history feature after at least one profile and the parameters are
   applied. Existing extrudes are edited by selecting their step.
-- `npm run verify` (179 unit tests) and `npm run e2e` (56 tests) are green. The e2e asserts
+- `npm run verify` (179 unit tests) and `npm run e2e` (57 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -599,8 +599,9 @@ with face sketches.
       (the cached face frame is stable but does not track a changed source face yet).
 - [x] Timeline rows for planes; edit type/bases/distance; suppress/delete cascades through
       dependent sketches, extrudes and datum chains.
-- [ ] Render planes in 3D (translucent quad + axes), pick them to start a sketch, and hide
-      inactive ones while sketching. Quads + axes are rendered; picking is next.
+- [x] Render planes in 3D (translucent quad + axes), pick them to start a sketch, and hide
+      inactive ones while sketching. The model view is hidden in the sketch stage, so
+      inactive planes are not shown while sketching.
 - [ ] Sketch-support picker: one typographic list for world planes / planar faces / datum
       planes. World/face/datum choices are in; hover preview and lost-reference errors are
       still pending.
@@ -641,8 +642,9 @@ with face sketches.
       regression coverage.
 - [x] **Datum slice landed:** offset/midplane features with chained bases, timeline
       edit/suppress/delete cascade, datum supports in the sketch picker, dependent
-      sketches/extrudes following offset edits, and 3D plane quads. Datum picking,
-      exact `resolveRef` and lost-support recovery remain.
+      sketches/extrudes following offset edits, 3D plane quads, and ray-picking a datum
+      to start a sketch. Exact `resolveRef`, live face-base resolution and lost-support
+      recovery remain.
 
 **Done when:** sketch on an offset plane in empty space; sketch on a midplane between two
 faces; change the offset or the base plate height and every dependent sketch/feature

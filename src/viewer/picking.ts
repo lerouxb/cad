@@ -7,12 +7,14 @@ import type {
 
 /** Ephemeral body selection. Never persisted in the document. */
 export interface BodyPick {
-  kind: "face" | "edge";
+  kind: "face" | "edge" | "datum";
   /** Stable id derived from the brepjs origin/hash, not an array index. */
   id: string;
   faceId?: number;
   origin?: number;
   edgeId?: number;
+  /** Datum-plane feature id for a datum pick. */
+  datumId?: string;
   /** Stable role+hint reference created by the worker for a face. */
   ref?: TopoRef;
 }
@@ -100,5 +102,13 @@ export function edgePick(group: EdgeGroup): BodyPick {
     kind: "edge",
     id: `edge-${group.edgeId}`,
     edgeId: group.edgeId,
+  };
+}
+
+export function datumPick(featureId: string): BodyPick {
+  return {
+    kind: "datum",
+    id: `datum-${featureId}`,
+    datumId: featureId,
   };
 }

@@ -59,8 +59,9 @@ an editable sketcher driving an exact extrude:
   Trim supports lines and arcs but not turning a circle into an arc; body
   selection starts a sketch on a planar face when `+ sketch` is used, and the
   supporting boundary is projected live as fixed dashed references. Offset and
-  midplane datum features are in, with a support picker and 3D preview; datum
-  picking/full lost-support recovery are still M4. The example part is
+  midplane datum features are in, with a support picker, 3D preview and ray-picking;
+  full lost-support recovery and live face-base resolution are still M4. The example
+  part is
   hand-authored (`core/sketch/demo.ts` + `core/doc/example.ts`, including a suppressed
   center-pin extrude from the same sketch and a suppressed mounting-holes cut); the
   timeline now lists the real feature history with select,
@@ -71,9 +72,9 @@ an editable sketcher driving an exact extrude:
   `updateRoles`. Free 3D sketches, splines/text/images and drawing exports are out of
   scope.
 
-Next: **M4** — datum-plane picking/hover preview, flipped normals, and lost-support
-recovery (planar faces, cached frames, projections, offset/midplane datum features are
-in), then **M6.0** (re-editable sketch
+Next: **M4** — live face-base resolution, flipped normals, and lost-support recovery
+(planar faces, cached frames, projections, offset/midplane datum features and datum
+picking are in), then **M6.0** (re-editable sketch
 pattern/mirror/offset, ADR-0004). Read `docs/PLAN.md`; it is the source of truth
 for done. Unsupported geometry/features (ellipses, conics, B-splines, free
 3D sketches, 3D fillets, lofts/sweeps, patterns/mirror, drafts, shelling/offsets,
@@ -413,8 +414,9 @@ docs/
   and moves along its normal; midplane requires parallel normals and uses the first's
   axes. `updateSketchFeature`/extrude consumers use the resolved output frame, not the
   cached support frame. Deleting a datum cascades dependent sketches, extrudes and datum
-  chains. Renaming one relabels cached supports. Kernel picking and hover preview of
-  datums are still M4.
+  chains. Renaming one relabels cached supports. Datum quads are ray-picked as
+  `BodyPick.kind = "datum"` (with the feature id) and selected from the same support
+  popover; live face-base resolution and lost-support recovery remain.
 - **Projected face boundaries are live fixed references.** Schema v6 adds
   `SketchFeature.projections` (the cached projected loops) and materializes them in
   `Sketch.references` as fixed points/lines with `projectionId`/`referenceLabel`, so

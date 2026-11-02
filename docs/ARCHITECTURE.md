@@ -593,7 +593,8 @@ and datum planes.
   several sketches. They do not produce a body; a rebuild records their frame and errors.
 - Render them as translucent quads with axes, pickable in 3D. While sketching, show only
   the active support (and the model, dimmed) to keep the sketch readable. Quads + axes are
-  rendered today; 3D picking/hover preview is still pending.
+  rendered and ray-picked as an ephemeral datum pick today; support-list hover preview
+  and lost-ref recovery are still pending.
 - A lost base face/plane errors the plane feature; every dependent sketch/feature shows
   "support lost" and uses its cached frame until reselected. Datum bases already resolve
   through earlier rebuild results; exact face-ref fallback and reselect UI are pending.
@@ -793,9 +794,9 @@ the honest map, so nobody assumes a layer exists because it is described above.
 
 Known shortcuts, all scheduled: existing extrude features with an empty region list still
 resolve to the largest material region for legacy documents, while new extrude drafts
-require an explicit profile; datum-plane 3D picking and lost-support recovery are not
-implemented yet (M4). Sketches on planar faces, live projected boundaries and
-offset/midplane datum features are in. Unsupported geometry and kernel features are
+require an explicit profile; live face-base resolution and full lost-support recovery
+are not implemented yet (M4). Sketches on planar faces, live projected boundaries,
+offset/midplane datum features and datum picking are in. Unsupported geometry and kernel features are
 collected in PLAN M9 with current
 workarounds and the upstream SolveSpace/OCCT work each would need.
 
