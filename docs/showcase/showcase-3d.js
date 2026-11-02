@@ -921,11 +921,10 @@
   // keeps it usable on touch. Clicking it selects the step before it.
   function bdGapButton(after) {
     var near = after === bd.active;
-    var label = "Insert a step after step " + bdPos(after);
     return (
       '<button class="insert-gap' + (near ? " is-near" : "") +
       '" type="button" data-gap="' + after +
-      '" title="' + label + '" aria-label="' + label + '"></button>'
+      '" title="Insert a step here" aria-label="Insert a step here"></button>'
     );
   }
 
