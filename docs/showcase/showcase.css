@@ -940,12 +940,12 @@
   opacity: 0.7;
 }
 
-/* centre the dot on the text's x-height (half the x-height up from the
-   baseline), then a hair lower — a round shape reads a touch high at the
-   geometric centre, so this is the optical one */
+/* align the dot to the text's x-height. Flex centring puts it on the line-box
+   centre; the x-height centre is a hair lower, so nudge it down by that much
+   (measured: 0.34px at the chip's 8.5px font) */
 .body-dot {
   position: relative;
-  top: -0.4ex;
+  top: 0.04em;
   width: 7px;
   height: 7px;
   border: 1px solid var(--ink);
