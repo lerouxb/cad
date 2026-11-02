@@ -98,7 +98,7 @@ export interface SketchCanvasProps {
   onCreateRectangle: (a: Vec2, b: Vec2) => void;
   onCreateCircle: (center: DraftVertex, radius: number) => void;
   onCreateArc: (start: DraftVertex, end: DraftVertex, through: Vec2) => void;
-  onCreatePoint: (point: Vec2) => void;
+  onCreatePoint: (vertex: DraftVertex) => void;
   onTrimCurve: (curveId: string, point: Vec2) => void;
   onCreateDimension: (target: DimensionTarget, placement: DimensionPlacement) => void;
   /** A contextual dimension target chosen from the selection popover. */
@@ -120,7 +120,9 @@ interface ViewBox {
 interface Snap {
   point: Vec2;
   existingPointId?: string;
-  kind: "point" | "axis" | "grid" | "free";
+  /** Projected reference line the point snapped onto. */
+  referenceLineId?: string;
+  kind: "point" | "line" | "axis" | "grid" | "free";
 }
 
 /** Selection is deliberately not the tone colour: it must read as "picked". */
@@ -391,10 +393,18 @@ export function SketchCanvas({
     let best: { snap: Snap; distance: number } | null = null;
     if (snapEnabled) {
       const snapCandidates = sketch.references
-        ? [...sketch.points, sketch.references.origin]
+        ? [
+            ...sketch.points,
+            ...sketch.references.points.filter(
+              (point) =>
+                point.id === sketch.references!.origin.id ||
+                point.projectionId !== undefined,
+            ),
+          ]
         : sketch.points;
       for (const point of snapCandidates) {
-        if (point.construction) continue;
+        // Construction centres are not snap targets; projected points are.
+        if (point.construction && !point.projectionId) continue;
         const position = points[point.id];
         if (!position) continue;
         const distance = Math.hypot(position[0] - raw[0], position[1] - raw[1]);
@@ -406,6 +416,33 @@ export function SketchCanvas({
         }
       }
       if (best) return best.snap;
+
+      // Projected face edges are real snap targets. Snapping a new vertex to
+      // one also adds a point-on-line constraint (see addPolyline), so the
+      // drawn geometry stays attached when the source body changes.
+      let bestLine: { snap: Snap; distance: number } | null = null;
+      for (const line of sketch.references?.lines ?? []) {
+        if (!line.projectionId) continue;
+        const a = points[line.a];
+        const b = points[line.b];
+        if (!a || !b) continue;
+        const projected = projectPointOnSegment(a, b, raw);
+        const distance = Math.hypot(projected[0] - raw[0], projected[1] - raw[1]);
+        if (
+          distance <= snapTolerance &&
+          (!bestLine || distance < bestLine.distance)
+        ) {
+          bestLine = {
+            snap: {
+              point: projected,
+              referenceLineId: line.id,
+              kind: "line",
+            },
+            distance,
+          };
+        }
+      }
+      if (bestLine) return bestLine.snap;
     }
 
     let x = snapEnabled
@@ -812,7 +849,11 @@ export function SketchCanvas({
 
     if (current.length === 0) {
       updateDraft([
-        { point: snap.point, existingPointId: snap.existingPointId },
+        {
+          point: snap.point,
+          existingPointId: snap.existingPointId,
+          referenceLineId: snap.referenceLineId,
+        },
       ]);
       return;
     }
@@ -836,7 +877,11 @@ export function SketchCanvas({
     }
     updateDraft([
       ...current,
-      { point: snap.point, existingPointId: snap.existingPointId },
+      {
+        point: snap.point,
+        existingPointId: snap.existingPointId,
+        referenceLineId: snap.referenceLineId,
+      },
     ]);
   };
 
@@ -892,7 +937,11 @@ export function SketchCanvas({
       const snap = snapPoint(raw);
       // Clicking an existing point selects it instead of stacking a duplicate.
       if (snap.existingPointId) onSelect(snap.existingPointId, false);
-      else onCreatePoint(snap.point);
+      else
+        onCreatePoint({
+          point: snap.point,
+          referenceLineId: snap.referenceLineId,
+        });
       return;
     }
     if (tool === "rect") {
@@ -905,7 +954,11 @@ export function SketchCanvas({
     if (tool === "circle") {
       if (!circleCenter) {
         const snap = snapPoint(raw);
-        setCircleCenter({ point: snap.point, existingPointId: snap.existingPointId });
+        setCircleCenter({
+          point: snap.point,
+          existingPointId: snap.existingPointId,
+          referenceLineId: snap.referenceLineId,
+        });
       } else {
         const snap = snapPoint(raw);
         const radius = Math.hypot(
@@ -920,7 +973,11 @@ export function SketchCanvas({
     if (tool === "arc") {
       const snap = snapPoint(raw);
       if (!arcStart) {
-        setArcStart({ point: snap.point, existingPointId: snap.existingPointId });
+        setArcStart({
+          point: snap.point,
+          existingPointId: snap.existingPointId,
+          referenceLineId: snap.referenceLineId,
+        });
         return;
       }
       if (!arcEnd) {
@@ -930,7 +987,11 @@ export function SketchCanvas({
             snap.point[1] - arcStart.point[1],
           ) >= 1
         ) {
-          setArcEnd({ point: snap.point, existingPointId: snap.existingPointId });
+          setArcEnd({
+            point: snap.point,
+            existingPointId: snap.existingPointId,
+            referenceLineId: snap.referenceLineId,
+          });
         }
         return;
       }
@@ -2801,6 +2862,22 @@ function projectPointOnLine(a: Vec2, b: Vec2, point: Vec2): Vec2 {
   const lengthSquared = dx * dx + dy * dy;
   if (lengthSquared < 1e-12) return a;
   const t = ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / lengthSquared;
+  return [a[0] + dx * t, a[1] + dy * t];
+}
+
+/** Closest point on the segment itself, not its infinite extension. */
+function projectPointOnSegment(a: Vec2, b: Vec2, point: Vec2): Vec2 {
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared < 1e-12) return a;
+  const t = Math.max(
+    0,
+    Math.min(
+      1,
+      ((point[0] - a[0]) * dx + (point[1] - a[1]) * dy) / lengthSquared,
+    ),
+  );
   return [a[0] + dx * t, a[1] + dy * t];
 }
 

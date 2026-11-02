@@ -371,7 +371,10 @@ docs/
   `StagePopover` chrome: kicker/title, selected rows, a `.sc-chip` palette for immediate
   constraints/construction/dimension/trim/fillet, and a footer summary + quiet delete.
   Applied constraints are included as active chips with their constraint id; clicking one
-  removes it (this is how H/V, parallel, equal, etc. are released). Its body is
+  removes it (this is how H/V, parallel, equal, etc. are released). A constraint that
+  would make the sketch inconsistent is shown as a checked **preview** chip but is not
+  written to the document; clicking it releases the conflict, and changing selection or
+  tool discards it. Its body is
   click-through except for the header and controls, so floating over the sketch does not
   steal point/axis picks. There is no selection card or constraint bar.
 - **Dimension and trim are contextual.** The top tool line only holds selection and
@@ -402,7 +405,10 @@ docs/
   geometry and marks the projection `stale` instead of silently rewiring constraints.
   The live effect requests the face from the worker's cached prefix solid by `cacheKey`,
   `source` and `role`, so downstream booleans cannot move or split the reference
-  outline. Exact `resolveRef` and lost-support recovery are still pending M4 work.
+  outline. Projected points and edges are snap targets; snapping a new vertex to a
+  projected edge adds an ordinary `pointOnLine` constraint, so the drawn geometry stays
+  attached when the body changes. Exact `resolveRef` and lost-support recovery are still
+  pending M4 work.
 - **Box/lasso selection is a sketch tool, not a pan gesture.** `tool === "box"` uses
   `regionsFullyInside` (fully enclosed); `tool === "lasso"` uses
   `regionsIntersectingPolygon` (touched/crossing, including a freehand loop inside a

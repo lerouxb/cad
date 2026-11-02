@@ -19,6 +19,18 @@ export interface DraftVertex {
   point: Vec2;
   /** Reuse this document point (snapped to existing geometry). */
   existingPointId?: string;
+  /** Projected reference line this new point was snapped to. */
+  referenceLineId?: string;
+}
+
+/** True when the id names a projected (not axis) reference line. */
+function isProjectedReferenceLine(sketch: Sketch, id: string | undefined): id is string {
+  if (!id) return false;
+  return Boolean(
+    sketch.references?.lines.some(
+      (line) => line.id === id && line.projectionId !== undefined,
+    ),
+  );
 }
 
 /** Add a polyline, optionally closing it back to the first vertex. */
@@ -53,6 +65,17 @@ export function addPolyline(
     const id = newId("p");
     ids.push(id);
     points.push({ id, x: vertex.point[0], y: vertex.point[1] });
+    if (
+      !vertex.existingPointId &&
+      isProjectedReferenceLine(sketch, vertex.referenceLineId)
+    ) {
+      constraints.push({
+        id: newId("c"),
+        type: "pointOnLine",
+        point: id,
+        line: vertex.referenceLineId,
+      });
+    }
   }
 
   const segments: [string, string][] = [];
@@ -86,13 +109,28 @@ export function addPolyline(
  * construction) so it can be dragged, constrained and dimensioned; `standalone`
  * keeps it through pruning because no curve refers to it.
  */
-export function addPoint(sketch: Sketch, point: Vec2): Sketch {
+export function addPoint(
+  sketch: Sketch,
+  point: Vec2,
+  referenceLineId?: string,
+): Sketch {
+  const id = newId("p");
+  const constraints = [...sketch.constraints];
+  if (isProjectedReferenceLine(sketch, referenceLineId)) {
+    constraints.push({
+      id: newId("c"),
+      type: "pointOnLine",
+      point: id,
+      line: referenceLineId,
+    });
+  }
   return {
     ...sketch,
     points: [
       ...sketch.points,
-      { id: newId("p"), x: point[0], y: point[1], standalone: true },
+      { id, x: point[0], y: point[1], standalone: true },
     ],
+    constraints,
   };
 }
 
@@ -144,8 +182,9 @@ export function addArc(
   through: Vec2,
 ): Sketch {
   const points = [...sketch.points];
-  const startId = resolveDraftPoint(sketch, points, startVertex);
-  const endId = resolveDraftPoint(sketch, points, endVertex);
+  const constraints = [...sketch.constraints];
+  const startId = resolveDraftPoint(sketch, points, constraints, startVertex);
+  const endId = resolveDraftPoint(sketch, points, constraints, endVertex);
   if (startId === endId) return sketch;
 
   const byId = new Map(
@@ -185,6 +224,7 @@ export function addArc(
       ...sketch.curves,
       { id: newId("a"), type: "arc", center: centerId, start: from, end: to },
     ],
+    constraints,
   };
 }
 
@@ -399,6 +439,26 @@ export function addCircle(
     : [...sketch.points, { id: centerId, x: center.point[0], y: center.point[1] }];
 
   const curveId = newId("l");
+  const constraints: SketchConstraint[] = [
+    ...sketch.constraints,
+    {
+      id: newId("c"),
+      type: "diameter",
+      circle: curveId,
+      value: radius * 2,
+    },
+  ];
+  if (
+    !center.existingPointId &&
+    isProjectedReferenceLine(sketch, center.referenceLineId)
+  ) {
+    constraints.push({
+      id: newId("c"),
+      type: "pointOnLine",
+      point: centerId,
+      line: center.referenceLineId,
+    });
+  }
   return {
     ...sketch,
     points,
@@ -406,15 +466,7 @@ export function addCircle(
       ...sketch.curves,
       { id: curveId, type: "circle", center: centerId, radius },
     ],
-    constraints: [
-      ...sketch.constraints,
-      {
-        id: newId("c"),
-        type: "diameter",
-        circle: curveId,
-        value: radius * 2,
-      },
-    ],
+    constraints,
   };
 }
 
@@ -513,6 +565,7 @@ export function setCircleDiameter(
 function resolveDraftPoint(
   sketch: Sketch,
   points: SketchPoint[],
+  constraints: SketchConstraint[],
   vertex: DraftVertex,
 ): string {
   if (
@@ -528,6 +581,14 @@ function resolveDraftPoint(
   if (existing) return existing.id;
   const id = newId("p");
   points.push({ id, x: vertex.point[0], y: vertex.point[1] });
+  if (isProjectedReferenceLine(sketch, vertex.referenceLineId)) {
+    constraints.push({
+      id: newId("c"),
+      type: "pointOnLine",
+      point: id,
+      line: vertex.referenceLineId,
+    });
+  }
   return id;
 }
 

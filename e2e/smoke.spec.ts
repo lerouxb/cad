@@ -68,11 +68,15 @@ async function pickTopFace(page: Page): Promise<void> {
   );
 }
 
-/** Create the demo face sketch and its 5 mm boss on the picked top face. */
-async function sketchBossOnPickedFace(page: Page): Promise<void> {
+/** Create the demo face sketch on the picked top face and wait for its
+ * projected boundary to arrive from the worker. */
+async function sketchOnPickedFace(page: Page): Promise<void> {
   await page.getByTestId("add-sketch").click();
   await expect(page.getByTestId("support-popover")).toContainText(
     "selected face",
+  );
+  await expect(page.getByTestId("support-popover")).toContainText(
+    "planar face",
   );
   await expect(page.getByTestId("new-sketch")).toBeEnabled();
   await page.getByTestId("new-sketch").click();
@@ -87,6 +91,11 @@ async function sketchBossOnPickedFace(page: Page): Promise<void> {
     "4 3",
   );
   await expect(page.locator("[data-projection-point-id]").first()).toBeAttached();
+}
+
+/** Create the demo face sketch and its 5 mm boss on the picked top face. */
+async function sketchBossOnPickedFace(page: Page): Promise<void> {
+  await sketchOnPickedFace(page);
 
   // The sketch is plane-local at the face centroid; the projected outline is
   // fixed reference geometry. Draw a 5 mm circle inside the central hole.
@@ -454,14 +463,7 @@ test("creates a sketch on a planar face and extrudes from it", async ({
 }) => {
   const errors = collectErrors(page);
   await pickTopFace(page);
-
-  await page.getByTestId("add-sketch").click();
-  await expect(page.getByTestId("support-popover")).toContainText(
-    "planar face",
-  );
-  await page.getByTestId("new-sketch").click();
-  await expect(page.getByTestId("timeline-detail")).toContainText("Face ·");
-  await expect(page.locator("[data-projection-id]").first()).toBeAttached();
+  await sketchOnPickedFace(page);
 
   await page.getByTestId("tool-circle").click();
   await clickSketch(page, 0, 0);
@@ -483,6 +485,59 @@ test("creates a sketch on a planar face and extrudes from it", async ({
     "data-status",
     "ok",
   );
+  expect(errors).toEqual([]);
+});
+
+test("snaps a drawn line to a projected face boundary", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await pickTopFace(page);
+  await sketchOnPickedFace(page);
+
+  // The projected plate outline is a 60×40 rectangle centred on the face. Start
+  // the line 0.5 mm inside the right edge; it must snap onto x = 30 and gain a
+  // point-on-line constraint instead of rounding to the 5 mm grid.
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, 29.5, 13.3);
+  await clickSketch(page, 20, 13.3);
+  await page.keyboard.press("Enter");
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const raw = localStorage.getItem("cad.doc");
+        if (!raw) return null;
+        const doc = JSON.parse(raw);
+        const sketch = [...doc.features]
+          .reverse()
+          .find((feature: { type: string }) => feature.type === "sketch");
+        const point = sketch?.sketch.points.find(
+          (candidate: { x: number }) => candidate.x > 29.9,
+        );
+        const linked = sketch?.sketch.constraints.some(
+          (constraint: { type: string; line?: string }) =>
+            constraint.type === "pointOnLine" &&
+            constraint.line?.startsWith("proj-"),
+        );
+        return point && linked ? [point.x, point.y] : null;
+      }),
+    )
+    .not.toBeNull();
+
+  const snapped = await page.evaluate(() => {
+    const doc = JSON.parse(localStorage.getItem("cad.doc")!);
+    const sketch = [...doc.features]
+      .reverse()
+      .find((feature: { type: string }) => feature.type === "sketch");
+    return sketch.sketch.points.find(
+      (candidate: { x: number }) => candidate.x > 29.9,
+    ) as { x: number; y: number };
+  });
+  expect(snapped.x).toBeCloseTo(30, 3);
+  // The auto horizontal constraint lets the solver settle a few hundredths of
+  // a millimetre; the point is still off the 5 mm grid, proving edge snapping.
+  expect(snapped.y).toBeCloseTo(13.3, 1);
   expect(errors).toEqual([]);
 });
 
@@ -1291,6 +1346,27 @@ test("removes an applied constraint from the line selection", async ({
 
   await page.getByTestId("undo").click();
   await expect(horizontal).toHaveCount(2);
+  expect(errors).toEqual([]);
+});
+
+test("clears a conflict when a conflicting constraint is released", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("tool-select").click();
+  await clickSketch(page, 60, 20);
+
+  const horizontal = page.getByTestId("constraint-horizontal");
+  const vertical = page.getByTestId("constraint-vertical");
+  await expect(vertical).toHaveClass(/is-on/);
+  await horizontal.click();
+  await expect(page.getByTestId("dof")).toContainText("Conflicting constraints");
+  await expect(horizontal).toHaveClass(/is-on/);
+  await horizontal.click();
+  await expect(page.getByTestId("dof")).not.toContainText("Conflicting constraints");
+  await expect(page.locator('[data-constraint-type="horizontal"]')).toHaveCount(2);
+  await expect(vertical).toHaveClass(/is-on/);
   expect(errors).toEqual([]);
 });
 

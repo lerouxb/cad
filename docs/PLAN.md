@@ -112,7 +112,7 @@ feature work then lands inside that system.
   started from the selected sketch step and begins with **no profile selected**; the
   draft only becomes a history feature after at least one profile and the parameters are
   applied. Existing extrudes are edited by selecting their step.
-- `npm run verify` (174 unit tests) and `npm run e2e` (49 tests) are green. The e2e asserts
+- `npm run verify` (175 unit tests) and `npm run e2e` (51 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -620,7 +620,9 @@ with face sketches.
       every rebuild, and are kept as cached geometry (marked stale) if their topology
       changes. Downstream booleans cannot move or split them.
 - [x] Projected references participate in the solver as fixed (group-0-like) entities, so
-      point-on-line / point-on-point / coincident constraints work against them
+      point-on-line / point-on-point / coincident constraints work against them. Points
+      and edges are snap targets; snapping a vertex to a projected edge adds a
+      point-on-line constraint so the drawn geometry stays attached.
 - [ ] `resolveRef` on rebuild: exact → fallback → lost-ref error with "reselect"
 - [ ] Lost-support recovery surface: name the step and lost face in plain language,
       keep the last-good body, show “cached frame” in the step detail, and offer

@@ -1,9 +1,10 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { addCircle, emptySketch, isSketchEmpty } from "./create";
+import { addCircle, addPolyline, emptySketch, isSketchEmpty } from "./create";
 import { applicableConstraints, applyConstraint } from "./constraints";
 import { addDimension, setDimensionValue } from "./dimensions";
 import { distance, sketchGeometry } from "./geometry";
 import { profileFromSketch } from "./loops";
+import { applyProjectionGeometry } from "./projection";
 import { initSolver, solveSketch } from "./solver";
 import type { Sketch } from "./types";
 
@@ -103,5 +104,42 @@ describe("sketch reference frame", () => {
       center: [0, 0],
       radius: 10,
     });
+  });
+
+  it("keeps a polyline vertex snapped to a projected reference line", () => {
+    const projected = applyProjectionGeometry(
+      emptySketch(),
+      "proj-1",
+      "Projected face",
+      [
+        [
+          [0, 0],
+          [60, 0],
+          [60, 40],
+          [0, 40],
+        ],
+      ],
+    );
+    if (!projected) throw new Error("Expected the projection to apply");
+    const lineId = "proj-1-l0-0";
+    const sketch = addPolyline(
+      projected,
+      [
+        { point: [10, 1], referenceLineId: lineId },
+        { point: [10, 20] },
+      ],
+      false,
+    );
+    const pointId = sketch.points[0]!.id;
+    expect(sketch.constraints).toContainEqual(
+      expect.objectContaining({
+        type: "pointOnLine",
+        point: pointId,
+        line: lineId,
+      }),
+    );
+    const solved = solveSketch(sketch);
+    expect(solved.ok).toBe(true);
+    expect(solved.points[pointId]![1]).toBeCloseTo(0, 6);
   });
 });

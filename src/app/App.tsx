@@ -223,6 +223,8 @@ interface ExtrudeDraft {
   end: ExtrudeFeature["end"];
 }
 
+const PENDING_CONFLICT_ID = "pending-conflict";
+
 export function App() {
   const [initialEditor] = useState<EditorState>(() => {
     const saved = loadDoc();
@@ -289,6 +291,11 @@ export function App() {
     value: "fit" | number;
   } | null>(null);
   const [solveError, setSolveError] = useState<SolveOutcome | null>(null);
+  /** A constraint that would be valid on its own but made the sketch
+   * inconsistent. It is shown as an active chip so the same click releases it;
+   * it is not written to the document. */
+  const [pendingConstraint, setPendingConstraint] =
+    useState<ConstraintAction | null>(null);
   const [trimNotice, setTrimNotice] = useState<string | null>(null);
   const [solverState, setSolverState] = useState<LoadState>("loading");
   const [solverError, setSolverError] = useState<string | null>(null);
@@ -653,10 +660,21 @@ export function App() {
   );
 
   const selectedSet = useMemo(() => new Set(selectedInfo.map((info) => info.id)), [selectedInfo]);
-  const constraintActions = useMemo(
-    () => applicableConstraints(sketch, selection),
-    [sketch, selection],
-  );
+  const constraintActions = useMemo(() => {
+    const actions = applicableConstraints(sketch, selection);
+    const pending = pendingConstraint;
+    if (!pending) return actions;
+    return actions.map((action) =>
+      action.type === pending.type && !action.applied
+        ? { ...action, applied: true, id: PENDING_CONFLICT_ID }
+        : action,
+    );
+  }, [sketch, selection, pendingConstraint]);
+
+  const clearTransientSolve = (): void => {
+    setPendingConstraint(null);
+    setSolveError(null);
+  };
   const construction = useMemo(
     () => constructionState(sketch, selection),
     [sketch, selection],
@@ -718,6 +736,7 @@ export function App() {
       mergeKey,
     );
     setSolveError(null);
+    setPendingConstraint(null);
   };
 
   /** Solve, then commit both the geometry and its diagnostics. */
@@ -733,6 +752,7 @@ export function App() {
   };
 
   const changeTool = (next: SketchTool): void => {
+    clearTransientSolve();
     setTool(next);
     setDimensionRequest(null);
     setSelection([]);
@@ -902,6 +922,7 @@ export function App() {
   const rollForward = (): void => setRollbackIndex(null);
 
   const activateFeature = (feature: Feature): void => {
+    clearTransientSolve();
     dismissEditor();
     setSupportOpen(false);
     setActiveFeatureId(feature.id);
@@ -1097,6 +1118,7 @@ export function App() {
   };
 
   const handleSelect = (entityId: string | null, additive: boolean): void => {
+    clearTransientSolve();
     if (filletOpen) {
       setFilletOpen(false);
       setFilletRadiusBefore(null);
@@ -1443,6 +1465,8 @@ export function App() {
       const meta = event.metaKey || event.ctrlKey;
       if (meta && event.key.toLowerCase() === "z") {
         event.preventDefault();
+        setPendingConstraint(null);
+        setSolveError(null);
         if (event.shiftKey) redo();
         else undo();
         setFitToken((token) => token + 1);
@@ -1450,11 +1474,15 @@ export function App() {
       }
       if (meta && event.key.toLowerCase() === "y") {
         event.preventDefault();
+        setPendingConstraint(null);
+        setSolveError(null);
         redo();
         setFitToken((token) => token + 1);
         return;
       }
       if (event.key === "Escape") {
+        setPendingConstraint(null);
+        setSolveError(null);
         setTool("select");
         setDimensionRequest(null);
         setFilletOpen(false);
@@ -1568,16 +1596,25 @@ export function App() {
 
   const handlePolyline = (vertices: DraftVertex[], closed: boolean): void => {
     const base = currentSketch();
-    const valid = vertices.map((vertex) =>
-      vertex.existingPointId && findSketchPoint(base, vertex.existingPointId)
-        ? vertex
-        : { point: vertex.point },
-    );
+    const valid = vertices.map((vertex) => {
+      const existing = vertex.existingPointId
+        ? findSketchPoint(base, vertex.existingPointId)
+        : undefined;
+      return {
+        point: vertex.point,
+        ...(existing ? { existingPointId: existing.id } : {}),
+        ...(vertex.referenceLineId
+          ? { referenceLineId: vertex.referenceLineId }
+          : {}),
+      };
+    });
     drawAndCommit(base, addPolyline(base, valid, closed));
   };
 
-  const handlePoint = (point: Vec2): void => {
-    solveAndCommit(addPoint(currentSketch(), point));
+  const handlePoint = (vertex: DraftVertex): void => {
+    solveAndCommit(
+      addPoint(currentSketch(), vertex.point, vertex.referenceLineId),
+    );
     setSelection([]);
   };
 
@@ -1802,16 +1839,41 @@ export function App() {
   };
 
   const handleConstraintAction = (action: ConstraintAction): void => {
-    const base = currentSketch();
-    if (action.applied && action.id) {
-      const next = removeConstraint(base, action.id);
-      if (next === base) return;
-      solveAndCommit(next);
-      return;
+    if (action.applied) {
+      // The conflict preview is UI-only: release it without touching the doc.
+      if (action.id === PENDING_CONFLICT_ID) {
+        setPendingConstraint(null);
+        setSolveError(null);
+        return;
+      }
+      if (action.id) {
+        setPendingConstraint(null);
+        const base = currentSketch();
+        const next = removeConstraint(base, action.id);
+        if (next === base) return;
+        solveAndCommit(next);
+        return;
+      }
     }
+    const base = currentSketch();
     const next = applyConstraint(base, action.type, selection);
     if (next === base) return;
-    solveAndCommit(next);
+    if (!isSolverReady()) return;
+    const outcome = solveSketch(next);
+    if (!outcome.ok) {
+      // Keep the would-be constraint visible as an active chip so the user can
+      // uncheck it. Rejected constraints are not written to the document.
+      setPendingConstraint({
+        type: action.type,
+        label: action.label,
+        applied: true,
+        id: PENDING_CONFLICT_ID,
+      });
+      setSolveError(outcome);
+      return;
+    }
+    setPendingConstraint(null);
+    commitDoc(applySolution(next, outcome), outcome);
   };
 
   const handleConstruction = (): void => {
@@ -1985,11 +2047,13 @@ export function App() {
   };
 
   const goBack = (): void => {
+    clearTransientSolve();
     undo();
     setFitToken((token) => token + 1);
   };
 
   const goForward = (): void => {
+    clearTransientSolve();
     redo();
     setFitToken((token) => token + 1);
   };
