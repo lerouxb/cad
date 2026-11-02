@@ -886,8 +886,9 @@
       return (
         '<div class="step-group is-collapsed" data-group="' + g.id +
         '" role="button" tabindex="0" title="Expand group">' +
-        '<span class="group-mark"></span>' + name +
-        '<span class="group-meta">' + members.length + " steps</span>" +
+        '<span class="group-mark"></span>' +
+        '<span class="collapsed-body">' + name +
+        '<span class="group-meta">' + members.length + " steps</span></span>" +
         "</div>"
       );
     }

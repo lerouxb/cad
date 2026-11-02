@@ -1100,7 +1100,7 @@
 }
 
 .step-group.is-collapsed {
-  margin-top: 32px;
+  margin-top: 38px;
 }
 
 .step-group {
@@ -1119,6 +1119,13 @@
   border: 1px solid var(--rule-strong);
   background: var(--bg);
   cursor: pointer;
+}
+
+/* the collapsed chip stacks the name over the count, so it stays narrow */
+.step-group.is-collapsed .collapsed-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
 }
 
 .step-group.is-collapsed:hover {
