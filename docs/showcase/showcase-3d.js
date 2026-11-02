@@ -522,11 +522,43 @@
     active: 8,
     connected: false,
     selected: null,
-    grouped: false,
-    groupName: "case details",
+    sel: [8],
+    groups: [{ id: "g1", name: "case details", from: 4, to: 7, collapsed: false }],
+    nextGid: 1,
     names: {},
     editing: null
   };
+
+  function bdGroup(id) {
+    for (var i = 0; i < bd.groups.length; i++) {
+      if (bd.groups[i].id === id) return bd.groups[i];
+    }
+    return null;
+  }
+
+  function bdGroupAt(n) {
+    for (var i = 0; i < bd.groups.length; i++) {
+      if (bd.groups[i].from === n) return bd.groups[i];
+    }
+    return null;
+  }
+
+  function bdGroupCovering(from, to) {
+    for (var i = 0; i < bd.groups.length; i++) {
+      var g = bd.groups[i];
+      if (g.from === from && g.to === to) return g;
+    }
+    return null;
+  }
+
+  function bdExtendRange(sel, n) {
+    if (!sel.length) return [n];
+    var lo = Math.min.apply(null, sel.concat([n]));
+    var hi = Math.max.apply(null, sel.concat([n]));
+    var out = [];
+    for (var i = lo; i <= hi; i++) out.push(i);
+    return out;
+  }
 
   function bdSteps() {
     var merged = bd.connected;
@@ -684,7 +716,7 @@
   function bdChip(o) {
     var name = bdName(o);
     var dot = '<span class="body-dot is-' + o.kind + '"></span>';
-    if (bd.editing && bd.editing.id === o.id) {
+    if (bd.editing && bd.editing.kind === "output" && bd.editing.id === o.id) {
       return (
         '<span class="body-chip is-editing">' + dot +
         '<input class="chip-input" data-rename="' + o.id + '" value="' + name +
@@ -709,50 +741,108 @@
     );
   }
 
+  function bdStepHtml(s, n) {
+    var lost = s.out.some(function (o) {
+      return o.lost;
+    });
+    var cls = "step";
+    if (bd.sel.indexOf(n) !== -1) cls += " is-selected";
+    if (n === bd.active) cls += " is-active";
+    if (n > bd.active) cls += " is-paused";
+    if (lost) cls += " is-error";
+    var chips = s.out.map(bdChip).join("");
+    return (
+      '<div class="' + cls + '" data-step="' + n + '" role="button" tabindex="0">' +
+      '<span class="step-index">' + bdPad(n) + "</span>" +
+      '<span class="step-kind">' + s.kind + "</span>" +
+      '<span class="step-name">' + s.name + "</span>" +
+      '<span class="step-meta">' + s.meta + "</span>" +
+      (chips ? '<span class="step-bodies">' + chips + "</span>" : "") +
+      "</div>"
+    );
+  }
+
+  function bdGroupHtml(g, steps) {
+    var activeIn = bd.active >= g.from && bd.active <= g.to;
+    var editing = bd.editing && bd.editing.kind === "group" && bd.editing.id === g.id;
+    var name = editing
+      ? '<input class="chip-input" data-rename="__group:' + g.id + '" value="' +
+        g.name + '" aria-label="Group name">'
+      : '<span class="group-name">' + g.name + "</span>";
+    if (g.collapsed) {
+      return (
+        '<div class="step-group is-collapsed' + (activeIn ? " is-active" : "") +
+        '" data-group="' + g.id + '" role="button" tabindex="0" title="Expand group">' +
+        '<span class="group-mark"></span>' + name +
+        '<span class="group-meta">' + (g.to - g.from + 1) + " steps</span>" +
+        "</div>"
+      );
+    }
+    var inner = "";
+    for (var n = g.from; n <= g.to; n++) inner += bdStepHtml(steps[n - 1], n);
+    return (
+      '<div class="step-group' + (activeIn ? " is-active" : "") +
+      '" data-group="' + g.id + '">' +
+      '<div class="group-head">' +
+      '<button class="group-btn" type="button" data-collapse="' + g.id +
+      '" aria-label="Collapse group">\u2212</button>' +
+      name +
+      '<span class="group-meta">' + (g.to - g.from + 1) + " steps</span>" +
+      '<button class="group-btn" type="button" data-ungroup="' + g.id +
+      '">ungroup</button>' +
+      "</div>" +
+      '<div class="group-steps">' + inner + "</div>" +
+      "</div>"
+    );
+  }
+
+  function bdGroupActions() {
+    var sel = bd.sel.slice().sort(function (a, b) {
+      return a - b;
+    });
+    if (sel.length < 2) return "";
+    var lo = sel[0];
+    var hi = sel[sel.length - 1];
+    if (hi - lo !== sel.length - 1) return "";
+    var exact = bdGroupCovering(lo, hi);
+    var grow = null;
+    bd.groups.forEach(function (g) {
+      if (g.from >= lo && g.to <= hi && (g.from > lo || g.to < hi)) grow = g;
+    });
+    if (grow) {
+      return (
+        '<span class="detail-actions"><button class="text-action" type="button" data-action="grow" data-gid="' +
+        grow.id + '">add to \u201c' + grow.name + "\u201d</button></span>"
+      );
+    }
+    if (exact) {
+      return (
+        '<span class="detail-actions">' +
+        '<button class="text-action" type="button" data-action="rename" data-gid="' +
+        exact.id + '">rename</button>' +
+        '<button class="text-action is-quiet" type="button" data-action="ungroup" data-gid="' +
+        exact.id + '">ungroup</button></span>'
+      );
+    }
+    return (
+      '<span class="detail-actions"><button class="text-action" type="button" data-action="group">group ' +
+      sel.length + " steps</button></span>"
+    );
+  }
+
   function bdRenderTimeline(stepsEl, detailEl) {
     var steps = bdSteps();
     var html = "";
     var i = 0;
     while (i < steps.length) {
-      var s = steps[i];
       var n = i + 1;
-      if (bd.grouped && s.group) {
-        var end = i;
-        while (end < steps.length && steps[end].group) end++;
-        var inGroup = bd.active > i && bd.active <= end;
-        var groupName =
-          bd.editing && bd.editing.id === "__group"
-            ? '<input class="chip-input" data-rename="__group" value="' +
-              bd.groupName + '" aria-label="Group name">'
-            : bd.groupName;
-        html +=
-          '<div class="step is-group' + (inGroup ? " is-active" : "") +
-          '" data-group="1" role="button" tabindex="0">' +
-          '<span class="group-mark"></span>' +
-          '<span class="step-index">' + bdPad(n) + "\u2013" + bdPad(end) + "</span>" +
-          '<span class="step-kind">group</span>' +
-          '<span class="step-name">' + groupName + "</span>" +
-          '<span class="step-meta">' + (end - i) + " steps</span>" +
-          "</div>";
-        i = end;
+      var g = bdGroupAt(n);
+      if (g) {
+        html += bdGroupHtml(g, steps);
+        i = g.to;
         continue;
       }
-      var lost = s.out.some(function (o) {
-        return o.lost;
-      });
-      var cls = "step";
-      if (n === bd.active) cls += " is-active";
-      if (n > bd.active) cls += " is-paused";
-      if (lost) cls += " is-error";
-      var chips = s.out.map(bdChip).join("");
-      html +=
-        '<div class="' + cls + '" data-step="' + n + '" role="button" tabindex="0">' +
-        '<span class="step-index">' + bdPad(n) + "</span>" +
-        '<span class="step-kind">' + s.kind + "</span>" +
-        '<span class="step-name">' + s.name + "</span>" +
-        '<span class="step-meta">' + s.meta + "</span>" +
-        (chips ? '<span class="step-bodies">' + chips + "</span>" : "") +
-        "</div>";
+      html += bdStepHtml(steps[i], n);
       i++;
     }
     stepsEl.innerHTML = html;
@@ -781,6 +871,7 @@
           );
         })
         .join("") +
+      bdGroupActions() +
       (curLost
         ? '<span class="detail-item"><span class="detail-key">lost</span>' +
           '<span class="detail-value">body \u201clid\u201d no longer exists</span></span>' +
@@ -852,7 +943,6 @@
     var foot = document.getElementById("bd-foot");
     var panel = document.getElementById("tool-panel");
     var whatif = document.getElementById("bd-whatif");
-    var groupBtn = document.getElementById("bd-group");
     var iso = makeIso(560, 380, 2.6);
     ShowcaseUI.makeDraggable(panel, document.getElementById("viewport"));
 
@@ -864,14 +954,12 @@
       foot.innerHTML =
         "<b>" + count + (count === 1 ? " body" : " bodies") + "</b> \u00b7 step " +
         bd.active + " of " + bdSteps().length +
+        (bd.sel.length > 1 ? " \u00b7 " + bd.sel.length + " steps selected" : "") +
         (bd.connected ? " \u00b7 what-if: profiles connected" : "");
       if (whatif) {
         whatif.textContent = bd.connected
           ? "separate the profiles"
           : "connect the profiles";
-      }
-      if (groupBtn) {
-        groupBtn.textContent = bd.grouped ? "expand the group" : "collapse the details";
       }
     }
 
@@ -879,15 +967,56 @@
       var id = inp.getAttribute("data-rename");
       var v = inp.value.trim();
       if (v) {
-        if (id === "__group") bd.groupName = v;
-        else bd.names[id] = v;
+        if (id.indexOf("__group:") === 0) {
+          var g = bdGroup(id.slice(8));
+          if (g) g.name = v;
+        } else {
+          bd.names[id] = v;
+        }
       }
       bd.editing = null;
       render();
     }
 
+    function startRename(kind, id) {
+      bd.editing = { kind: kind, id: id };
+      render();
+      var inp = stepsEl.querySelector("[data-rename]");
+      if (inp) {
+        inp.focus();
+        inp.select();
+      }
+    }
+
     stepsEl.addEventListener("click", function (e) {
       if (e.target.closest("[data-rename]")) return;
+      var collapse = e.target.closest("[data-collapse]");
+      if (collapse) {
+        var gc = bdGroup(collapse.getAttribute("data-collapse"));
+        if (gc) gc.collapsed = true;
+        render();
+        return;
+      }
+      var ungroup = e.target.closest("[data-ungroup]");
+      if (ungroup) {
+        bd.groups = bd.groups.filter(function (x) {
+          return x.id !== ungroup.getAttribute("data-ungroup");
+        });
+        render();
+        return;
+      }
+      var grp = e.target.closest("[data-group]");
+      if (grp) {
+        var g = bdGroup(grp.getAttribute("data-group"));
+        if (g && g.collapsed) {
+          g.collapsed = false;
+          bd.sel = [];
+          for (var k = g.from; k <= g.to; k++) bd.sel.push(k);
+          bd.active = g.to;
+          render();
+        }
+        return;
+      }
       var chip = e.target.closest("[data-out]");
       if (chip) {
         var id = chip.getAttribute("data-out");
@@ -904,31 +1033,58 @@
         render();
         return;
       }
-      if (e.target.closest("[data-group]")) {
-        bd.grouped = false;
-        render();
-        return;
-      }
       var step = e.target.closest("[data-step]");
       if (step) {
-        bd.active = Number(step.getAttribute("data-step"));
+        var n = Number(step.getAttribute("data-step"));
+        bd.sel = e.shiftKey ? bdExtendRange(bd.sel, n) : [n];
+        bd.active = n;
         bd.selected = null;
         render();
       }
     });
 
+    detailEl.addEventListener("click", function (e) {
+      var act = e.target.closest("[data-action]");
+      if (!act) return;
+      var kind = act.getAttribute("data-action");
+      var sel = bd.sel.slice().sort(function (a, b) {
+        return a - b;
+      });
+      if (kind === "group") {
+        bd.nextGid = (bd.nextGid || 1) + 1;
+        bd.groups.push({
+          id: "g" + bd.nextGid,
+          name: "group " + bd.nextGid,
+          from: sel[0],
+          to: sel[sel.length - 1],
+          collapsed: false
+        });
+        render();
+      } else if (kind === "ungroup") {
+        bd.groups = bd.groups.filter(function (x) {
+          return x.id !== act.getAttribute("data-gid");
+        });
+        render();
+      } else if (kind === "grow") {
+        var g = bdGroup(act.getAttribute("data-gid"));
+        if (g) {
+          g.from = Math.min(g.from, sel[0]);
+          g.to = Math.max(g.to, sel[sel.length - 1]);
+        }
+        render();
+      } else if (kind === "rename") {
+        startRename("group", act.getAttribute("data-gid"));
+      }
+    });
+
     stepsEl.addEventListener("dblclick", function (e) {
       var chip = e.target.closest("[data-out]");
-      var grp = e.target.closest("[data-group]");
-      if (chip) bd.editing = { id: chip.getAttribute("data-out") };
-      else if (grp) bd.editing = { id: "__group" };
-      else return;
-      render();
-      var inp = stepsEl.querySelector("[data-rename]");
-      if (inp) {
-        inp.focus();
-        inp.select();
+      if (chip) {
+        startRename("output", chip.getAttribute("data-out"));
+        return;
       }
+      var grp = e.target.closest("[data-group]");
+      if (grp) startRename("group", grp.getAttribute("data-group"));
     });
 
     stepsEl.addEventListener("keydown", function (e) {
@@ -952,12 +1108,6 @@
       whatif.addEventListener("click", function () {
         bd.connected = !bd.connected;
         bd.selected = null;
-        render();
-      });
-    }
-    if (groupBtn) {
-      groupBtn.addEventListener("click", function () {
-        bd.grouped = !bd.grouped;
         render();
       });
     }
