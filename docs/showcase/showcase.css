@@ -854,33 +854,60 @@
   text-underline-offset: 2px;
 }
 
-/* one insert affordance, placed after the selected step */
-.insert-marker {
+/* one insert affordance per gap: a full-height, narrow column, invisible until
+   hovered so the steps never shift. The one after the active step stays
+   visible, which keeps the affordance usable on touch. Clicking one selects
+   the step before it and opens the insert menu. */
+.bd-timeline .insert-gap {
   flex: none;
-  align-self: flex-start;
+  align-self: stretch;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 26px;
+  margin: 0;
+  padding: 38px 0 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+/* inside a group the row starts lower than an ungrouped step's content */
+.bd-timeline .group-steps .insert-gap {
+  padding-top: 7px;
+}
+
+.bd-timeline .insert-gap::before {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 22px;
   height: 22px;
-  margin: 38px 12px 0;
-  padding: 0;
   border: 1px solid var(--rule-strong);
   background: var(--bg);
   color: var(--ink-3);
   font-family: var(--font-mono);
   font-size: var(--type-value);
   line-height: 1;
-  cursor: pointer;
+  content: "+";
+  opacity: 0;
 }
 
-.insert-marker:hover {
+.bd-timeline .insert-gap.is-near::before,
+.bd-timeline .insert-gap:hover::before {
+  opacity: 1;
+}
+
+.bd-timeline .insert-gap:hover::before {
   border-color: var(--marker);
   background: var(--marker);
   color: var(--marker-ink);
 }
 
-/* inside a group the marker sits in the group's step row, which starts lower
-   than an ungrouped step's content, so it needs a smaller top offset */
-.group-steps .insert-marker {
-  margin-top: 7px;
+/* the gaps supply the spacing now, so the steps sit flush against them */
+.bd-timeline .step,
+.bd-timeline .step-group {
+  margin-right: 0;
 }
 
 .insert-menu {

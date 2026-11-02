@@ -892,9 +892,9 @@
       );
     }
     var inner = "";
-    members.forEach(function (n) {
+    members.forEach(function (n, idx) {
       inner += bdStepHtml(bdStep(n), n);
-      if (n === bd.active) inner += bdInsertMarker();
+      if (idx < members.length - 1) inner += bdGapButton(n);
     });
     var collapseBtn = activeIn
       ? '<button class="group-btn" type="button" disabled ' +
@@ -915,10 +915,15 @@
     );
   }
 
-  function bdInsertMarker() {
+  // a narrow, full-height column between two steps. Invisible until hovered so
+  // the steps never move; the one after the active step is always shown, which
+  // keeps it usable on touch. Clicking it selects the step before it.
+  function bdGapButton(after) {
+    var near = after === bd.active;
     return (
-      '<button class="insert-marker" type="button" data-insert="1" ' +
-      'aria-label="Insert a step here">+</button>'
+      '<button class="insert-gap' + (near ? " is-near" : "") +
+      '" type="button" data-gap="' + after +
+      '" aria-label="Insert a step after step ' + bdPos(after) + '"></button>'
     );
   }
 
@@ -929,13 +934,15 @@
       var n = bd.order[i];
       var g = bdGroupOf(n);
       if (g) {
+        var members = bdMembersInOrder(g);
         html += bdGroupHtml(g);
+        html += bdGapButton(members[members.length - 1]);
         i += g.ids.length;
         continue;
       }
       html += bdStepHtml(bdStep(n), n);
+      html += bdGapButton(n);
       i++;
-      if (n === bd.active) html += bdInsertMarker();
     }
     stepsEl.innerHTML = html;
 
@@ -967,11 +974,12 @@
           '</span><span class="grid-option-note">' + t.note + "</span></button>"
         );
       }).join("");
-    var marker = stepsEl.querySelector(".insert-marker");
-    if (marker) {
-      var mr = marker.getBoundingClientRect();
+    var gap = stepsEl.querySelector('[data-gap="' + bd.active + '"]');
+    if (gap) {
+      var gr = gap.getBoundingClientRect();
       var tr = timelineEl.getBoundingClientRect();
-      menuEl.style.left = Math.max(0, mr.left - tr.left) + "px";
+      var left = Math.max(0, gr.left + gr.width / 2 - 88);
+      menuEl.style.left = Math.min(left, Math.max(0, tr.width - 184)) + "px";
     }
   }
 
@@ -1163,9 +1171,12 @@
     stepsEl.addEventListener("click", function (e) {
       if (e.target.closest("[data-rename]")) return;
       if (bd.dragMoved) return;
-      var ins = e.target.closest("[data-insert]");
-      if (ins) {
-        bd.insertMenu = !bd.insertMenu;
+      var gap = e.target.closest("[data-gap]");
+      if (gap) {
+        // select the step before the button, then open the insert menu
+        bd.active = Number(gap.getAttribute("data-gap"));
+        bd.selected = null;
+        bd.insertMenu = true;
         render();
         return;
       }
@@ -1263,7 +1274,7 @@
     }
     document.addEventListener("click", function (e) {
       if (!bd.insertMenu) return;
-      if (e.target.closest("#bd-insert-menu") || e.target.closest("[data-insert]")) return;
+      if (e.target.closest("#bd-insert-menu") || e.target.closest("[data-gap]")) return;
       bd.insertMenu = false;
       render();
     });
