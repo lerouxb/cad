@@ -901,7 +901,7 @@
       ? '<button class="group-btn" type="button" disabled ' +
         'title="the active step is inside this group \u2014 roll back first">\u2212</button>'
       : '<button class="group-btn" type="button" data-collapse="' + g.id +
-        '" aria-label="Collapse group">\u2212</button>';
+        '" title="Collapse group" aria-label="Collapse group">\u2212</button>';
     return (
       '<div class="step-group" data-group="' + g.id + '">' +
       '<div class="group-head">' +
@@ -921,10 +921,11 @@
   // keeps it usable on touch. Clicking it selects the step before it.
   function bdGapButton(after) {
     var near = after === bd.active;
+    var label = "Insert a step after step " + bdPos(after);
     return (
       '<button class="insert-gap' + (near ? " is-near" : "") +
       '" type="button" data-gap="' + after +
-      '" aria-label="Insert a step after step ' + bdPos(after) + '"></button>'
+      '" title="' + label + '" aria-label="' + label + '"></button>'
     );
   }
 
