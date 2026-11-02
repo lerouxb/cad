@@ -234,6 +234,21 @@ export function addExtrudeFeature(
 }
 
 /** Suppress or unsuppress a feature; downstream dependants will skip visibly. */
+export function setDatumPlaneHidden(
+  doc: Doc,
+  featureId: string,
+  hidden: boolean,
+): Doc {
+  return updateFeature(doc, featureId, (feature) => {
+    if (!isDatumPlaneFeature(feature)) return feature;
+    const current = feature.hidden === true;
+    if (current === hidden) return feature;
+    return hidden
+      ? { ...feature, hidden: true }
+      : { ...feature, hidden: undefined };
+  });
+}
+
 export function setFeatureSuppressed(
   doc: Doc,
   featureId: string,

@@ -414,7 +414,9 @@ docs/
 - **Datum planes are history features, not sketch properties.** Schema v7 adds
   `DatumPlaneFeature` (`type: "datum"`) with an `offset` or `midplane` definition and a
   cached `PlaneFrame`; `PlaneRef.kind = "datum"` points at the feature id and caches the
-  label/frame for display. The rebuild resolves bases through earlier feature results in
+  label/frame for display. Schema v8 adds `hidden`: a presentation-only flag that skips
+  rendering/picking but never suppresses the feature or invalidates the geometry cache.
+  The rebuild resolves bases through earlier feature results in
   history order, so dependent sketches/extrudes follow edits. Offset keeps the base axes
   and moves along its normal; midplane requires parallel normals and uses the first's
   axes. `updateSketchFeature`/extrude consumers use the resolved output frame, not the

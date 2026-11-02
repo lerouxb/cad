@@ -113,7 +113,7 @@ feature work then lands inside that system.
   started from the selected sketch step and begins with **no profile selected**; the
   draft only becomes a history feature after at least one profile and the parameters are
   applied. Existing extrudes are edited by selecting their step.
-- `npm run verify` (186 unit tests) and `npm run e2e` (61 tests) are green. The e2e asserts
+- `npm run verify` (187 unit tests) and `npm run e2e` (62 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -643,6 +643,10 @@ with face sketches.
 - [x] Render planes in 3D (translucent quad + axes), pick them to start a sketch, and hide
       inactive ones while sketching. The model view is hidden in the sketch stage, so
       inactive planes are not shown while sketching.
+- [x] Per-datum **visibility** (`hidden`, schema v8) separate from suppression: hidden
+      planes stop rendering and picking but still rebuild and remain valid sketch
+      supports. The timeline shows `hidden` and offers hide/show. Broader visibility
+      toggles (bodies/sketches/constraints) remain the M8 design pass.
 - [x] Sketch-support picker: one typographic list for world planes / planar faces / datum
       planes. World/face/datum choices are in, selecting one previews its plane on a dimmed
       body, and lost references are visible with recovery. Per-row hover flash can still be

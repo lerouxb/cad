@@ -34,14 +34,16 @@ export function migrateDoc(raw: unknown): Doc | null {
   // v3 → v4 adds optional dimension label placement (`along`/`distance`);
   // v4 → v5 adds face sketch supports (TopoRef + cached frame);
   // v5 → v6 adds cached face-boundary projections on sketch features;
-  // v6 → v7 adds datum-plane features and datum sketch supports.
+  // v6 → v7 adds datum-plane features and datum sketch supports;
+  // v7 → v8 adds the datum-plane `hidden` presentation flag.
   if (
     version === 1 ||
     version === 2 ||
     version === 3 ||
     version === 4 ||
     version === 5 ||
-    version === 6
+    version === 6 ||
+    version === 7
   ) {
     return validateDoc(raw);
   }
@@ -191,6 +193,7 @@ function validateFeature(raw: unknown): Feature | null {
       name,
       definition,
       frame,
+      ...(raw.hidden === true ? { hidden: true } : {}),
       ...(raw.suppressed === true ? { suppressed: true } : {}),
     };
   }

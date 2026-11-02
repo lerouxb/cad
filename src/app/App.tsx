@@ -56,6 +56,7 @@ import {
   primarySketchFeature,
   renameDocument,
   renameFeature,
+  setDatumPlaneHidden,
   setFeatureSuppressed,
   sketchFeatureById,
   updateDatumPlaneFeature,
@@ -922,6 +923,22 @@ export function App() {
     updateActiveExtrude((feature) => ({ ...feature, end }));
   };
 
+  const handleToggleDatumVisibility = (feature: Feature): void => {
+    if (!isDatumPlaneFeature(feature)) return;
+    const current = getState();
+    const next = setDatumPlaneHidden(
+      current.doc,
+      feature.id,
+      feature.hidden !== true,
+    );
+    if (next === current.doc) return;
+    commit({ doc: next, solved: current.solved, solvedFor: current.solvedFor });
+    if (bodyPick?.kind === "datum" && bodyPick.datumId === feature.id) {
+      setBodyPick(null);
+      viewportRef.current?.clearPick();
+    }
+  };
+
   const handleToggleSuppress = (feature: Feature): void => {
     const current = getState();
     const next = setFeatureSuppressed(
@@ -1059,7 +1076,7 @@ export function App() {
   const datumPlaneOverlays = useMemo(
     () =>
       datumPlaneFeatures(doc)
-        .filter((feature) => feature.suppressed !== true)
+        .filter((feature) => feature.suppressed !== true && feature.hidden !== true)
         .map((feature) => ({
           featureId: feature.id,
           frame: resolvedDatumFrame(feature),
@@ -3426,7 +3443,9 @@ export function App() {
                       ? " · skipped"
                       : feature.suppressed
                         ? " · suppressed"
-                        : "";
+                        : isDatumPlaneFeature(feature) && feature.hidden
+                          ? " · hidden"
+                          : "";
               const statusClass =
                 status === "paused"
                   ? " is-paused"
@@ -3744,6 +3763,17 @@ export function App() {
                       data-testid="roll-back"
                     >
                       roll back to here
+                    </button>
+                  ) : null}
+                  {isDatumPlaneFeature(activeFeature) ? (
+                    <button
+                      className="text-action"
+                      type="button"
+                      onClick={() => handleToggleDatumVisibility(activeFeature)}
+                      aria-pressed={activeFeature.hidden === true}
+                      data-testid="toggle-datum-visibility"
+                    >
+                      {activeFeature.hidden ? "show" : "hide"}
                     </button>
                   ) : null}
                   <button

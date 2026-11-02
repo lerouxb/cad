@@ -552,10 +552,11 @@ assigns roles to each tool with `assignRoles(tool, "extrude")`, uses
 `updateRoles` before caching the prefix. `captureHint`/`createRef` then produce JSON-safe
 `TopoRef`s for the final body's faces; `FaceGroup.ref` and `BodyPick.ref` carry them to
 the main thread. Schema v5 stores a face `TopoRef` plus its cached `PlaneFrame` on
-`SketchFeature.support`; schema v6 adds cached face-boundary projections and schema v7
-adds datum-plane features/supports. The worker maps the local extrude solid through that
-frame, and resolves a projected boundary from the cached prefix solid that owns the face
-(never from a downstream boolean). The worker resolves stored `TopoRef`s with
+`SketchFeature.support`; schema v6 adds cached face-boundary projections, schema v7 adds
+datum-plane features/supports, and schema v8 adds datum-plane visibility (`hidden`). The
+worker maps the local extrude solid through that frame, and resolves a projected boundary
+from the cached prefix solid that owns the face (never from a downstream boolean). The
+worker resolves stored `TopoRef`s with
 `resolveRef`: exact role hashes first, then a geometric hint fallback, then a visible
 lost-support error.
 
@@ -785,7 +786,7 @@ the honest map, so nobody assumes a layer exists because it is described above.
 
 | Layer | Status |
 | --- | --- |
-| `core/doc` | Real: `Doc` schema with sketch/extrude/datum features, selectors, migrations, schema v7 face/datum sketch supports (`TopoRef`/feature id + cached `PlaneFrame`), face-boundary projections, and `localStorage` autosave. |
+| `core/doc` | Real: `Doc` schema with sketch/extrude/datum features, selectors, migrations, schema v8 face/datum sketch supports (`TopoRef`/feature id + cached `PlaneFrame`), datum visibility, face-boundary projections, and `localStorage` autosave. |
 | `core/sketch` | Real: types, `slvs` adapter, tangent-space `solveDrag`, pure drawing edits, loop extraction, geometry helpers, tests. `demo.ts` is the loadable example. |
 | `core/features` | Real: region selection + extrude params, including face/datum-plane frames mapped in the worker. The worker supports ordered new/join/cut; projected face-boundary references live in the sketch-support path. No feature fillets yet. |
 | `core/rebuild` | Real: ordered sketch/datum/extrude evaluation, prefix cache, per-feature diagnostics. Worker solid cache + new/join/cut are in. |

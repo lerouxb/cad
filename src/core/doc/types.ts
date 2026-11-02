@@ -3,7 +3,7 @@ import type { PlaneFrame, Vec2 } from "../types";
 import type { TopoRef } from "../kernel/protocol";
 
 /** The document schema version. Bump this on every shape change. */
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 8;
 
 export type WorldPlane = "XY" | "XZ" | "YZ";
 
@@ -36,6 +36,8 @@ export interface DatumPlaneFeature {
   definition: DatumPlaneDefinition;
   /** Last-known resolved frame, used for display/recovery before rebuild. */
   frame: PlaneFrame;
+  /** Hidden in the model view only; still rebuilds and supports sketches. */
+  hidden?: boolean;
   suppressed?: boolean;
 }
 

@@ -884,6 +884,33 @@ test("resolves a stale face role by geometric fallback", async ({ browser }) => 
   await context.close();
 });
 
+test("hides a datum plane without suppressing it", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await page.getByTestId("add-plane").click();
+  await page.getByTestId("datum-distance").fill("10");
+  await page.getByTestId("datum-apply").click();
+  const canvas = page.locator("canvas.viewport-canvas");
+  await expect(canvas).toHaveAttribute("data-datum-planes", "1");
+
+  const datum = page.locator('[data-feature-type="datum"]');
+  await datum.click();
+  await page.getByTestId("toggle-datum-visibility").click();
+  await expect(canvas).toHaveAttribute("data-datum-planes", "0");
+  await expect(datum).toContainText("hidden");
+  await expect(datum).toHaveAttribute("data-status", "ok");
+
+  // It is still a usable support while hidden.
+  await page.getByTestId("add-sketch").click();
+  await expect(page.getByTestId("support-datum")).toContainText("Plane 1");
+  await page.getByTestId("support-cancel").click();
+
+  await datum.click();
+  await page.getByTestId("toggle-datum-visibility").click();
+  await expect(canvas).toHaveAttribute("data-datum-planes", "1");
+  await expect(datum).not.toContainText("hidden");
+  expect(errors).toEqual([]);
+});
+
 test("snaps a drawn line to a projected face boundary", async ({
   app: page,
 }) => {
@@ -2319,7 +2346,7 @@ test("autosaves the document and reopens it", async ({ app: page }) => {
     const raw = localStorage.getItem("cad.doc");
     return raw ? JSON.parse(raw) : null;
   });
-  expect(stored?.schemaVersion).toBe(7);
+  expect(stored?.schemaVersion).toBe(8);
 
   // A new document in the same context reads the saved part, migrates it, and
   // rebuilds the same solid.

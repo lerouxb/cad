@@ -3,6 +3,7 @@ import { createDocument } from "../doc/create";
 import {
   addDatumPlaneFeature,
   addSketchFeature,
+  setDatumPlaneHidden,
   updateDatumPlaneFeature,
   updateExtrudeFeature,
   updateExtrudeHeight,
@@ -199,6 +200,31 @@ describe("ordered rebuild", () => {
 
     const recovered = rebuildDocument(withSketch.doc, { cache }, deps);
     expect(recovered.features.at(-1)?.status).toBe("ok");
+  });
+
+  it("keeps the datum cache when only visibility changes", () => {
+    const { deps } = countingDeps();
+    const doc = exampleDoc();
+    const reference = { kind: "world" as const, plane: "XY" as const };
+    const definition = {
+      kind: "offset" as const,
+      base: reference,
+      distance: 10,
+    };
+    const added = addDatumPlaneFeature(
+      doc,
+      definition,
+      datumDefinitionFrame(definition)!,
+      { id: "plane-1", name: "Plane 1" },
+    );
+    const cache = new RebuildCache();
+    rebuildDocument(added.doc, { cache }, deps);
+    const hidden = setDatumPlaneHidden(added.doc, "plane-1", true);
+    const result = rebuildDocument(hidden, { cache }, deps);
+    const datum = result.features.find(
+      (feature) => feature.featureId === "plane-1",
+    );
+    expect(datum?.cached).toBe(true);
   });
 
   it("rejects a midplane between non-parallel supports", () => {

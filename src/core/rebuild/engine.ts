@@ -67,7 +67,7 @@ export function rebuildDocument(
   let sketch: SketchRebuildOutput | null = null;
 
   for (const feature of doc.features) {
-    const contentKey = stableHash(canonicalJson(feature));
+    const contentKey = stableHash(canonicalJson(cacheContent(feature)));
     const cacheKey = stableHash(`${contentKey}|${upstreamKey}`);
     const cached = cache.get(cacheKey);
 
@@ -132,6 +132,13 @@ export function rebuildDocument(
 interface Keys {
   cacheKey: string;
   upstreamKey: string;
+}
+
+/** Presentation-only fields must not invalidate the geometry cache. */
+function cacheContent(feature: Feature): unknown {
+  if (!isDatumPlaneFeature(feature) || feature.hidden !== true) return feature;
+  const { hidden: _hidden, ...rest } = feature;
+  return rest;
 }
 
 function evaluateFeature(
