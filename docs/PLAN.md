@@ -108,11 +108,11 @@ feature work then lands inside that system.
   suppressed through-all cut. The two suppressed features keep the familiar plate and
   picking goldens while exercising same-sketch region ownership, a second sketch,
   suppression, edits and the 3D sketch overlay. A new sketch is added from the timeline's
-  `+ sketch` support popover (XY explicit; XZ/YZ and datum planes are M4). A new extrude is
+  `+ sketch` support popover (world XY/XZ/YZ explicit; datum planes are M4). A new extrude is
   started from the selected sketch step and begins with **no profile selected**; the
   draft only becomes a history feature after at least one profile and the parameters are
   applied. Existing extrudes are edited by selecting their step.
-- `npm run verify` (175 unit tests) and `npm run e2e` (51 tests) are green. The e2e asserts
+- `npm run verify` (175 unit tests) and `npm run e2e` (54 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -141,7 +141,7 @@ milestone. The mockups themselves stay static and are never imported by `src/`.
 | 01 history | **M3**: feature tree/active step (done), rename (done), status (done), rollback/scrub with paused downstream steps + roll forward, selected-step summary line, delete step. |
 | 02 sketch | **M1/M2** (done): geometry, dimensions, inline editing, constraints, reference dimensions. **M2.7** (done): point tool. **M2.8**: adaptive/free-form grid step, snap on/off independent of grid, scale bar, 50/100/200/fit zoom menu, contextual selection line, type-token audit. **M2.9**: rectangular/lasso profile selection. **M4**: dashed fixed projected references + project tool. |
 | 03 model | **M3**: selected-feature summary line (distance/direction/operation/profile), a draggable parameter popover, and edit/suppress/delete. **M5**: selecting a feature highlights the geometry it created; body health line (1 body · 1 shell · faces · watertight); overall dimensions drawn on the model. |
-| 04 support | **M3**: `+ sketch` opens an explicit support popover (XY today). **M4**: one support list for world planes / planar faces / datum planes, hover/select preview on the dimmed body, curved faces explained, cached frame, reselect recovery. |
+| 04 support | **M3**: `+ sketch` opens an explicit support popover. **M4**: world planes / planar faces (done), datum planes, hover/select preview on the dimmed body, curved faces explained, cached frame, reselect recovery. |
 | 05 export | **M5**: export is a page over the visible model, generated from the current rebuild; body/watertight/shell/open-edge/normal checks, units/scale/triangles/file size, build-volume fit, one export action; STL + STEP. |
 | 06 errors | **M3**: failed step stays visible, last-good body stays on stage, diagnostics name the step and lost reference, recovery actions (reselect / open sketch / revert). **M4**: TopoRef loss + cached frame. Error style is ink + dotted rule + “!”, not red. |
 | 07 files | **M3 persistence**: filename as the file menu, download/open `.cad`, make a copy, rename, local file index with step/body counts and modified time, new file, offline-only. |
@@ -162,10 +162,10 @@ offset remains M9.
 
 Checked against SolveSpace's actual menu/group inventory **and** the 3:13 homepage demo
 video (frames extracted at 2 s intervals). The headline gap was **sketch supports**: a
-sketch is currently always on XY. Datum planes now move into M4 and become a history
-feature, not a sketch property. The demo also makes one more gap explicit: sketch points
-must be constrainable to **existing solid faces and edges**, which is how the gusset is
-anchored between the inner walls.
+sketch used to be always on XY. World XZ/YZ and planar faces are in; datum planes move
+into M4 and become a history feature, not a sketch property. The demo also makes one
+more gap explicit: sketch points must be constrainable to **existing solid faces and
+edges**, which is how the gusset is anchored between the inner walls.
 
 | SolveSpace feature | Our status |
 | --- | --- |

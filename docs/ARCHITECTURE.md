@@ -450,7 +450,8 @@ symmetric). The sketch is no longer React component state.
   profiles. Double-click renames through `renameFeature` as one undo
   entry. Each row shows its rebuild/worker status, diagnostic tooltip and paused/
   suppressed state. `+ sketch` at the end of the timeline opens `SupportPopover` and
-  creates a sketch on the explicit support (XY today; XZ/YZ and faces are M4). `extrude`
+  creates a sketch on the explicit support (world XY/XZ/YZ or a planar face; datum
+  planes are next). `extrude`
   on a selected sketch starts a UI-only `extrudeDraft` with no profile selected; it
   becomes a history feature only when at least one profile and the parameters are
   applied. The first extrude is `new`, later ones default to `join`. A draggable popover

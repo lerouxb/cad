@@ -323,38 +323,95 @@ function faceBoundary(
     if (!hint.normal || !hint.centroid) return null;
     const loops: [number, number, number][][] = [];
     for (const wire of [outerWire(face), ...innerWires(face)]) {
-      const loop: [number, number, number][] = [];
-      const addPoint = (point: [number, number, number]): void => {
-        const previous = loop[loop.length - 1];
-        if (
-          previous &&
-          Math.hypot(
-            point[0] - previous[0],
-            point[1] - previous[1],
-            point[2] - previous[2],
-          ) < 1e-7
-        ) {
-          return;
-        }
-        loop.push(point);
-      };
-      for (const edge of getEdges(wire)) {
-        // Straight edges only need their start: sampling them would turn a
+      const segments = getEdges(wire).map((edge): [number, number, number][] => {
+        // Straight edges only need their endpoints: sampling them would turn a
         // rectangle into hundreds of collinear reference points. Curves keep a
         // deterministic sample so dashes/constraints follow the arc.
         if (getCurveType(edge) === "LINE") {
-          const point = curvePointAt(edge, 0);
-          addPoint([point[0], point[1], point[2]]);
-          continue;
+          const start = curvePointAt(edge, 0);
+          const end = curvePointAt(edge, 1);
+          return [
+            [start[0], start[1], start[2]],
+            [end[0], end[1], end[2]],
+          ];
         }
         const length = curveLength(edge);
         const steps = Math.max(2, Math.min(64, Math.ceil(length / 1.5)));
-        for (let index = 0; index < steps; index++) {
+        const points: [number, number, number][] = [];
+        for (let index = 0; index <= steps; index++) {
           const point = curvePointAt(edge, index / steps);
-          addPoint([point[0], point[1], point[2]]);
+          points.push([point[0], point[1], point[2]]);
+        }
+        return points;
+      });
+      if (segments.length === 0) continue;
+
+      // Edge order and orientation are not guaranteed by the kernel. Chain the
+      // segments by matching endpoints so a side face is a real rectangle, not
+      // four points in arbitrary order.
+      const close = (
+        a: [number, number, number],
+        b: [number, number, number],
+      ): boolean =>
+        Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) < 1e-6;
+      const loop = [...segments.shift()!];
+      while (segments.length > 0) {
+        const tail = loop[loop.length - 1]!;
+        const index = segments.findIndex(
+          (segment) =>
+            close(segment[0]!, tail) ||
+            close(segment[segment.length - 1]!, tail),
+        );
+        if (index < 0) break;
+        const [segment] = segments.splice(index, 1);
+        if (!segment) continue;
+        const ordered = close(segment[0]!, tail)
+          ? segment
+          : [...segment].reverse();
+        for (let pointIndex = 1; pointIndex < ordered.length; pointIndex++) {
+          const point = ordered[pointIndex]!;
+          if (!close(loop[loop.length - 1]!, point)) loop.push(point);
         }
       }
-      if (loop.length >= 3) loops.push(loop);
+      if (loop.length >= 2 && close(loop[0]!, loop[loop.length - 1]!)) {
+        loop.pop();
+      }
+      if (loop.length < 3) continue;
+
+      // Normalize winding and start so repeated rebuilds compare equal even if
+      // the kernel returns the wire edges in a different order.
+      const normal = hint.normal;
+      let areaX = 0;
+      let areaY = 0;
+      let areaZ = 0;
+      for (let index = 0; index < loop.length; index++) {
+        const a = loop[index]!;
+        const b = loop[(index + 1) % loop.length]!;
+        areaX += (a[1] - b[1]) * (a[2] + b[2]);
+        areaY += (a[2] - b[2]) * (a[0] + b[0]);
+        areaZ += (a[0] - b[0]) * (a[1] + b[1]);
+      }
+      if (areaX * normal[0] + areaY * normal[1] + areaZ * normal[2] < 0) {
+        loop.reverse();
+      }
+      let startIndex = 0;
+      for (let index = 1; index < loop.length; index++) {
+        const point = loop[index]!;
+        const best = loop[startIndex]!;
+        if (
+          point[0] < best[0] - 1e-9 ||
+          (Math.abs(point[0] - best[0]) <= 1e-9 &&
+            (point[1] < best[1] - 1e-9 ||
+              (Math.abs(point[1] - best[1]) <= 1e-9 &&
+                point[2] < best[2] - 1e-9)))
+        ) {
+          startIndex = index;
+        }
+      }
+      loops.push([
+        ...loop.slice(startIndex),
+        ...loop.slice(0, startIndex),
+      ]);
     }
     if (loops.length === 0) return null;
     return {

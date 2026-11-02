@@ -1,3 +1,4 @@
+import type { WorldPlane } from "../core/doc/types";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
 
 interface SupportPopoverProps {
@@ -8,11 +9,14 @@ interface SupportPopoverProps {
   /** A current body-face pick, used as the sketch support when planar. */
   faceLabel?: string;
   faceSupported?: boolean;
+  /** World plane used when no face is picked. */
+  plane: WorldPlane;
+  onPlane: (plane: WorldPlane) => void;
 }
 
 /**
  * New sketches are created from an explicit support choice, not a header action
- * that silently uses XY. World XZ/YZ and planar faces land with M4.
+ * that silently uses XY. Datum planes land next in M4.
  */
 export function SupportPopover({
   position,
@@ -21,13 +25,15 @@ export function SupportPopover({
   onApply,
   faceLabel,
   faceSupported = false,
+  plane,
+  onPlane,
 }: SupportPopoverProps) {
   const face = Boolean(faceLabel);
   const hint = face
     ? faceSupported
       ? "sketch on the selected planar face"
       : "this face is curved; cancel and pick a world plane"
-    : "world XZ/YZ and datum planes arrive with M4";
+    : "world planes; datum planes arrive next in M4";
   return (
     <StagePopover
       kicker="new feature"
@@ -36,7 +42,7 @@ export function SupportPopover({
       position={position}
       onMove={onMove}
       hint={hint}
-      summary={face ? "planar face · selected" : "world plane · XY"}
+      summary={face ? "planar face · selected" : `world plane · ${plane}`}
       cancel={{ label: "cancel", onClick: onCancel, testId: "support-cancel" }}
       primary={{
         label: "sketch",
@@ -63,17 +69,18 @@ export function SupportPopover({
               face
             </button>
           ) : (
-            <>
-              <button className="is-selected" type="button">
-                XY
+            (["XY", "XZ", "YZ"] as const).map((candidate) => (
+              <button
+                key={candidate}
+                className={candidate === plane ? "is-selected" : undefined}
+                type="button"
+                onClick={() => onPlane(candidate)}
+                aria-pressed={candidate === plane}
+                data-testid={`support-${candidate.toLowerCase()}`}
+              >
+                {candidate}
               </button>
-              <button type="button" disabled title="Arrives with M4">
-                XZ
-              </button>
-              <button type="button" disabled title="Arrives with M4">
-                YZ
-              </button>
-            </>
+            ))
           )}
         </span>
       </div>

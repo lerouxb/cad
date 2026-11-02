@@ -68,8 +68,20 @@ async function pickTopFace(page: Page): Promise<void> {
   );
 }
 
-/** Create the demo face sketch on the picked top face and wait for its
- * projected boundary to arrive from the worker. */
+/** Fit the model and pick the front side face of the demo plate. */
+async function pickSideFace(page: Page): Promise<void> {
+  const canvas = page.locator("canvas.viewport-canvas");
+  await page.getByRole("button", { name: "Fit view" }).click();
+  await page.waitForTimeout(200);
+  await page.mouse.move(520, 340);
+  await expect(canvas).toHaveAttribute("data-hover-kind", "face");
+  await page.mouse.click(520, 340);
+  await expect(page.getByTestId("body-pick")).toHaveAttribute(
+    "data-kind",
+    "face",
+  );
+}
+
 async function sketchOnPickedFace(page: Page): Promise<void> {
   await page.getByTestId("add-sketch").click();
   await expect(page.getByTestId("support-popover")).toContainText(
@@ -488,6 +500,42 @@ test("creates a sketch on a planar face and extrudes from it", async ({
   expect(errors).toEqual([]);
 });
 
+test("creates a sketch on the XZ world plane and joins an extrude", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await page.getByTestId("add-sketch").click();
+  await expect(page.getByTestId("support-popover")).toBeVisible();
+  await page.getByTestId("support-xz").click();
+  await expect(page.getByTestId("support-popover")).toContainText(
+    "world plane · XZ",
+  );
+  await page.getByTestId("new-sketch").click();
+  await expect(page.getByTestId("timeline-detail")).toContainText("XZ");
+
+  // Local X/Y on XZ are world X/Z; extrude along local +Z maps to world -Y.
+  await page.getByTestId("tool-circle").click();
+  await clickSketch(page, 30, 6);
+  await clickSketch(page, 35, 6);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("finish-sketch").click();
+
+  await page.getByTestId("new-extrude").click();
+  await clickSketch(page, 30, 6);
+  await expect(page.getByTestId("extrude-apply")).toBeEnabled();
+  await page.getByTestId("extrude-height").fill("5");
+  await page.getByTestId("extrude-apply").click();
+
+  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(plate + Math.PI * 5 * 5 * 5, -1);
+  await expect.poll(() => meshBounds(page)).toBe("0,-5,0,60,40,12");
+  await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
+    "data-status",
+    "ok",
+  );
+  expect(errors).toEqual([]);
+});
+
 test("snaps a drawn line to a projected face boundary", async ({
   app: page,
 }) => {
@@ -538,6 +586,84 @@ test("snaps a drawn line to a projected face boundary", async ({
   // The auto horizontal constraint lets the solver settle a few hundredths of
   // a millimetre; the point is still off the 5 mm grid, proving edge snapping.
   expect(snapped.y).toBeCloseTo(13.3, 1);
+  expect(errors).toEqual([]);
+});
+
+test("projects a side face as a closed rectangle", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await pickSideFace(page);
+  await page.getByTestId("add-sketch").click();
+  await page.getByTestId("new-sketch").click();
+
+  // Every edge of the side face must be projected, not just the two that the
+  // kernel happened to return first.
+  await expect(page.locator("[data-projection-id]")).toHaveCount(4);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const raw = localStorage.getItem("cad.doc");
+        if (!raw) return null;
+        const doc = JSON.parse(raw);
+        const sketch = [...doc.features]
+          .reverse()
+          .find((feature: { type: string }) => feature.type === "sketch");
+        return sketch?.projections?.[0]?.loops?.[0]?.length ?? null;
+      }),
+    )
+    .toBe(4);
+
+  const corners = await page.evaluate(() => {
+    const doc = JSON.parse(localStorage.getItem("cad.doc")!);
+    const sketch = [...doc.features]
+      .reverse()
+      .find((feature: { type: string }) => feature.type === "sketch");
+    return (sketch.projections[0].loops[0] as [number, number][])
+      .map(([x, y]) => `${Math.round(x)},${Math.round(y)}`)
+      .sort();
+  });
+  expect(corners).toEqual(["-30,-6", "-30,6", "30,-6", "30,6"]);
+  expect(errors).toEqual([]);
+});
+
+test("dragging a line endpoint leaves the other endpoint alone", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await pickSideFace(page);
+  await page.getByTestId("add-sketch").click();
+  await page.getByTestId("new-sketch").click();
+  await expect(page.locator("[data-projection-id]")).toHaveCount(4);
+
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, -29, 1);
+  await clickSketch(page, -1, -5);
+  await page.keyboard.press("Enter");
+  await page.getByTestId("tool-select").click();
+
+  await dragSketch(page, [-1, -6], [-10, -4]);
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const raw = localStorage.getItem("cad.doc");
+        if (!raw) return null;
+        const doc = JSON.parse(raw);
+        const sketch = [...doc.features]
+          .reverse()
+          .find((feature: { type: string }) => feature.type === "sketch");
+        const points = sketch?.sketch.points as
+          | { x: number; y: number }[]
+          | undefined;
+        if (!points || points.length < 2) return null;
+        const left = points.reduce((a, b) => (a.x < b.x ? a : b));
+        const right = points.reduce((a, b) => (a.x > b.x ? a : b));
+        return {
+          left: [Math.round(left.x), Math.round(left.y)],
+          right: [Math.round(right.x), Math.round(right.y)],
+        };
+      }),
+    )
+    .toEqual({ left: [-30, 1], right: [-10, -6] });
   expect(errors).toEqual([]);
 });
 

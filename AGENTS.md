@@ -357,10 +357,10 @@ docs/
   are `extrude-draft-popover`, `extrude-apply` and `extrude-cancel`; existing features
   keep `feature-popover-apply` / `...-cancel`.
 - **Creation is contextual, never a header default.** `+ sketch` at the end of the
-  timeline opens `SupportPopover`; it shows the support explicitly (XY today, XZ/YZ and
-  faces with M4) and the primary is `new-sketch`. `new-extrude` lives on the selected
-  sketch step. There is no header New Sketch/New Extrude button and no implicit XY or
-  first-consumer fallback.
+  timeline opens `SupportPopover`; it shows the support explicitly (world XY/XZ/YZ and
+  planar faces; datum planes are next) and the primary is `new-sketch`. `new-extrude`
+  lives on the selected sketch step. There is no header New Sketch/New Extrude button
+  and no implicit XY or first-consumer fallback.
 - **A sketch step never owns region editing.** `activeExtrudeFor` returns null for a
   sketch. Select an extrude step to edit its existing regions, or start an extrude draft
   from the sketch step. Without an active extrude or draft, region fills are read-only
@@ -407,7 +407,9 @@ docs/
   `source` and `role`, so downstream booleans cannot move or split the reference
   outline. Projected points and edges are snap targets; snapping a new vertex to a
   projected edge adds an ordinary `pointOnLine` constraint, so the drawn geometry stays
-  attached when the body changes. Exact `resolveRef` and lost-support recovery are still
+  attached when the body changes. `faceBoundary` chains wire edges by endpoint before
+  returning a loop; never trust kernel edge order/orientation or a side face can project
+  as two stray lines. Exact `resolveRef` and lost-support recovery are still
   pending M4 work.
 - **Box/lasso selection is a sketch tool, not a pan gesture.** `tool === "box"` uses
   `regionsFullyInside` (fully enclosed); `tool === "lasso"` uses

@@ -56,6 +56,7 @@ import {
   type ExtrudeFeature,
   type Feature,
   type SketchFeature,
+  type WorldPlane,
 } from "../core/doc/types";
 import { extrudeParams, selectExtrudeRegions } from "../core/features/extrude";
 import { KernelClient } from "../core/kernel/client";
@@ -309,6 +310,7 @@ export function App() {
   const [rollbackIndex, setRollbackIndex] = useState<number | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
+  const [supportPlane, setSupportPlane] = useState<WorldPlane>("XY");
   const [editorBaseline, setEditorBaseline] = useState<EditorBaseline | null>(
     null,
   );
@@ -1008,14 +1010,15 @@ export function App() {
     }
     const frame = hintFrame;
     const support =
-      faceRef && frame ? ({ kind: "face", ref: faceRef, frame } as const) : undefined;
+      faceRef && frame
+        ? ({ kind: "face", ref: faceRef, frame } as const)
+        : ({ kind: "world", plane: supportPlane } as const);
     // The projected boundary arrives from the kernel's exact face wire via the
     // live-reference effect below; do not materialize a mesh approximation here
     // or its first exact update would look like a topology change.
-    const { doc: nextDoc, feature } = addSketchFeature(
-      current.doc,
-      support ? { support } : {},
-    );
+    const { doc: nextDoc, feature } = addSketchFeature(current.doc, {
+      support,
+    });
     const outcome = isSolverReady() ? solveSketch(feature.sketch) : null;
     commit({ doc: nextDoc, solved: outcome, solvedFor: feature.id });
     setActiveFeatureId(feature.id);
@@ -2836,6 +2839,8 @@ export function App() {
               }}
               faceLabel={supportFace?.role}
               faceSupported={supportFaceSupported}
+              plane={supportPlane}
+              onPlane={setSupportPlane}
             />
           ) : null}
 
@@ -3065,6 +3070,7 @@ export function App() {
               className="timeline-add"
               type="button"
               onClick={() => {
+                setSupportPlane("XY");
                 setSupportOpen(true);
                 setFileMenuOpen(false);
               }}
