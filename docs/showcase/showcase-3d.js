@@ -600,14 +600,23 @@
     return bd.names[o.id] || o.label;
   }
 
-  function bdDrawBody(iso, box, selected) {
-    var html = drawBox(iso, box, null, false);
-    if (selected) {
-      var f = boxFaces(box);
-      html += poly(pts3(iso, f.top), "bo-select-top");
-      html += poly(pts3(iso, f.xmax), "bo-select-x");
-      html += poly(pts3(iso, f.ymax), "bo-select-y");
-    }
+  function bdSelectOverlay(iso, box, hole) {
+    var f = boxFaces(box);
+    var html = "";
+    html += poly(pts3(iso, f.xmax), "bo-select-x");
+    html += poly(pts3(iso, f.ymax), "bo-select-y");
+    var top = pts3(iso, f.top);
+    var d =
+      "M " +
+      top
+        .map(function (q) {
+          return q[0].toFixed(1) + " " + q[1].toFixed(1);
+        })
+        .join(" L ") +
+      " Z";
+    // cut the hole out of the tint so the hole itself is not highlighted
+    if (hole) d += " " + ellipsePath(iso, hole.x, hole.y, box.z1, hole.r);
+    html += '<path d="' + d + '" fill-rule="evenodd" class="bo-select-top"/>';
     return html;
   }
 
@@ -620,25 +629,51 @@
       return;
     }
     var merged = bd.connected || bd.active >= 8;
+    var hasHole = bd.active >= 7;
+    var hole = { x: BD_HOLE.x, y: BD_HOLE.y, r: BD_HOLE.r };
     var selBody = bd.selected && bd.selected.id === "body";
     var selLid = bd.selected && bd.selected.id === "lid";
+
+    // 1. the bodies (the lid's top face is drawn with the hole cut out)
     if (merged) {
-      html += bdDrawBody(iso, BD_RM, selBody);
+      if (hasHole) {
+        html += boreWall(iso, hole.x, hole.y, hole.r, BD_RM.z1, BD_RM.z0);
+        html += drawBoxHole(iso, BD_RM, hole);
+      } else {
+        html += drawBox(iso, BD_RM, null, false);
+      }
     } else {
-      html += bdDrawBody(iso, BD_R1, selBody);
-      html += bdDrawBody(iso, BD_R2, selLid);
+      html += drawBox(iso, BD_R1, null, false);
+      if (hasHole) {
+        html += boreWall(iso, hole.x, hole.y, hole.r, BD_R2.z1, BD_R2.z0);
+        html += drawBoxHole(iso, BD_R2, hole);
+      } else {
+        html += drawBox(iso, BD_R2, null, false);
+      }
     }
+
+    // 2. the selection tint, over the body but under the boss
+    if (selBody) {
+      html += bdSelectOverlay(iso, merged ? BD_RM : BD_R1, merged && hasHole ? hole : null);
+    }
+    if (selLid && !merged) {
+      html += bdSelectOverlay(iso, BD_R2, hasHole ? hole : null);
+    }
+
+    // 3. the boss, on top
     if (bd.active >= 5) {
       html += cylinderSolid(
         iso, BD_BOSS.x, BD_BOSS.y, BD_BOSS.r, BD_BOSS.z0, BD_BOSS.z1,
         "bo-face-x", "bo-face-top"
       );
+      if (selBody) {
+        html += cylinderSolid(
+          iso, BD_BOSS.x, BD_BOSS.y, BD_BOSS.r, BD_BOSS.z0, BD_BOSS.z1,
+          "bo-select-x", "bo-select-top"
+        );
+      }
     }
-    if (bd.active >= 7) {
-      var hb = merged ? BD_RM : BD_R2;
-      html += boreWall(iso, BD_HOLE.x, BD_HOLE.y, BD_HOLE.r, hb.z1, hb.z0);
-      html += drawBoxHole(iso, hb, { x: BD_HOLE.x, y: BD_HOLE.y, r: BD_HOLE.r });
-    }
+
     layer.innerHTML = html;
   }
 
