@@ -854,52 +854,47 @@
   text-underline-offset: 2px;
 }
 
-/* one insert affordance per gap: a full-height, narrow column, invisible until
-   hovered so the steps never shift. The one after the active step stays
-   visible, which keeps the affordance usable on touch. Clicking one selects
-   the step before it and opens the insert menu. */
+/* the gap doubles as a divider and the insert button: a faint full-height line
+   at rest, widening into a narrow marker rectangle on hover (and after the
+   active step, so it works on touch). It always occupies the same space, so
+   the steps never shift. */
 .bd-timeline .insert-gap {
   flex: none;
   align-self: stretch;
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   justify-content: center;
   width: 26px;
   margin: 0;
-  padding: 38px 0 0;
+  padding: 0;
   border: 0;
   background: none;
   cursor: pointer;
-}
-
-/* inside a group the row starts lower than an ungrouped step's content */
-.bd-timeline .group-steps .insert-gap {
-  padding-top: 7px;
 }
 
 .bd-timeline .insert-gap::before {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
-  border: 1px solid var(--rule-strong);
-  background: var(--bg);
-  color: var(--ink-3);
+  width: 1px;
+  overflow: hidden;
+  background: var(--rule);
+  color: transparent;
   font-family: var(--font-mono);
   font-size: var(--type-value);
   line-height: 1;
   content: "+";
-  opacity: 0;
+  transition: width 0.12s ease, background 0.12s ease;
 }
 
-.bd-timeline .insert-gap.is-near::before,
-.bd-timeline .insert-gap:hover::before {
-  opacity: 1;
+.bd-timeline .insert-gap.is-near::before {
+  width: 14px;
+  background: var(--marker-soft);
+  color: var(--ink-3);
 }
 
 .bd-timeline .insert-gap:hover::before {
-  border-color: var(--marker);
+  width: 14px;
   background: var(--marker);
   color: var(--marker-ink);
 }
