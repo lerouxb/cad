@@ -527,8 +527,63 @@
     nextGid: 1,
     names: {},
     editing: null,
-    drag: null
+    drag: null,
+    insertMenu: false,
+    custom: [],
+    nextNum: 8
   };
+
+  var INSERT_TYPES = [
+    { kind: "sketch", name: "sketch", note: "on a support" },
+    { kind: "plane", name: "plane", note: "datum plane" }
+  ];
+
+  function bdStep(n) {
+    var base = bdSteps();
+    if (n >= 1 && n <= base.length) return base[n - 1];
+    for (var i = 0; i < bd.custom.length; i++) {
+      if (bd.custom[i].num === n) return bd.custom[i];
+    }
+    return { kind: "?", name: "?", meta: "", out: [] };
+  }
+
+  // a step's identity is stable; the number it shows is its position in the
+  // timeline, so inserting in the middle renumbers the display, not the step.
+  function bdPos(n) {
+    return bd.order.indexOf(n) + 1;
+  }
+
+  function bdInsert(kind) {
+    bd.nextNum++;
+    var n = bd.nextNum;
+    bd.custom.push({
+      num: n,
+      kind: kind,
+      name: kind === "sketch" ? "new sketch" : "new plane",
+      meta: kind === "sketch" ? "choosing support" : "offset 10.0 mm",
+      out: [
+        {
+          op: "",
+          kind: kind,
+          id: (kind === "sketch" ? "s" : "p") + n,
+          label: kind === "sketch" ? "new sketch" : "new plane"
+        }
+      ]
+    });
+    // insert directly after the selected step (or after its group)
+    var g = bdGroupOf(bd.active);
+    var pos = g
+      ? Math.max.apply(
+          null,
+          g.ids.map(function (x) {
+            return bd.order.indexOf(x);
+          })
+        )
+      : bd.order.indexOf(bd.active);
+    bd.order.splice(pos + 1, 0, n);
+    bd.active = n;
+    bd.insertMenu = false;
+  }
 
   function bdGroup(id) {
     for (var i = 0; i < bd.groups.length; i++) {
@@ -690,15 +745,16 @@
   }
 
   function bdRenderStage(iso, layer) {
+    var at = bdPos(bd.active);
     var html = "";
-    if (bd.active <= 1) {
+    if (at <= 1) {
       html += profileQuad(iso, BD_R1, 0, "bo-profile");
       if (!bd.connected) html += profileQuad(iso, BD_R2, 0, "bo-profile");
       layer.innerHTML = html;
       return;
     }
-    var merged = bd.connected || bd.active >= 8;
-    var hasHole = bd.active >= 7;
+    var merged = bd.connected || at >= 8;
+    var hasHole = at >= 7;
     var hole = { x: BD_HOLE.x, y: BD_HOLE.y, r: BD_HOLE.r };
     var selBody = bd.selected && bd.selected.id === "body";
     var selLid = bd.selected && bd.selected.id === "lid";
@@ -730,7 +786,7 @@
     }
 
     // 3. the boss, on top
-    if (bd.active >= 5) {
+    if (at >= 5) {
       html += cylinderSolid(
         iso, BD_BOSS.x, BD_BOSS.y, BD_BOSS.r, BD_BOSS.z0, BD_BOSS.z1,
         "bo-face-x", "bo-face-top"
@@ -782,15 +838,16 @@
     var lost = s.out.some(function (o) {
       return o.lost;
     });
+    var disp = bdPos(n);
     var cls = "step";
     if (n === bd.active) cls += " is-active";
-    if (n > bd.active) cls += " is-paused";
+    if (disp > bdPos(bd.active)) cls += " is-paused";
     if (lost) cls += " is-error";
     var chips = s.out.map(bdChip).join("");
     return (
       '<div class="' + cls + '" data-step="' + n + '" role="button" tabindex="0">' +
       '<span class="step-grip" data-grip="1" aria-hidden="true"></span>' +
-      '<span class="step-head"><span class="step-index">' + bdPad(n) +
+      '<span class="step-head"><span class="step-index">' + bdPad(disp) +
       '</span><span class="step-kind">' + s.kind + "</span></span>" +
       '<span class="step-name">' + s.name + "</span>" +
       '<span class="step-meta">' + s.meta + "</span>" +
@@ -799,7 +856,7 @@
     );
   }
 
-  function bdGroupHtml(g, steps) {
+  function bdGroupHtml(g) {
     var members = bdMembersInOrder(g);
     var activeIn = members.indexOf(bd.active) !== -1;
     var editing = bd.editing && bd.editing.kind === "group" && bd.editing.id === g.id;
@@ -818,7 +875,7 @@
     }
     var inner = "";
     members.forEach(function (n) {
-      inner += bdStepHtml(steps[n - 1], n);
+      inner += bdStepHtml(bdStep(n), n);
     });
     var collapseBtn = activeIn
       ? '<button class="group-btn" type="button" disabled ' +
@@ -839,24 +896,33 @@
     );
   }
 
+  function bdInsertMarker() {
+    return (
+      '<button class="insert-marker" type="button" data-insert="1" ' +
+      'aria-label="Insert a step here">+</button>'
+    );
+  }
+
   function bdRenderTimeline(stepsEl, detailEl) {
-    var steps = bdSteps();
     var html = "";
     var i = 0;
     while (i < bd.order.length) {
       var n = bd.order[i];
       var g = bdGroupOf(n);
       if (g) {
-        html += bdGroupHtml(g, steps);
+        html += bdGroupHtml(g);
+        var inGroup = g.ids.indexOf(bd.active) !== -1;
         i += g.ids.length;
+        if (inGroup) html += bdInsertMarker();
         continue;
       }
-      html += bdStepHtml(steps[n - 1], n);
+      html += bdStepHtml(bdStep(n), n);
       i++;
+      if (n === bd.active) html += bdInsertMarker();
     }
     stepsEl.innerHTML = html;
 
-    var cur = steps[bd.active - 1];
+    var cur = bdStep(bd.active);
     var curLost = cur.out.some(function (o) {
       return o.lost;
     });
@@ -870,13 +936,42 @@
       : "";
   }
 
+  function bdRenderMenu(menuEl, timelineEl, stepsEl) {
+    if (!bd.insertMenu) {
+      menuEl.hidden = true;
+      return;
+    }
+    menuEl.hidden = false;
+    menuEl.innerHTML =
+      '<div class="grid-menu-head">insert after step ' + bdPad(bdPos(bd.active)) + "</div>" +
+      INSERT_TYPES.map(function (t) {
+        return (
+          '<button class="grid-option" type="button" data-insert-kind="' +
+          t.kind + '"><span>' + t.name +
+          '</span><span class="grid-option-note">' + t.note + "</span></button>"
+        );
+      }).join("");
+    var marker = stepsEl.querySelector(".insert-marker");
+    if (marker) {
+      var mr = marker.getBoundingClientRect();
+      var tr = timelineEl.getBoundingClientRect();
+      menuEl.style.left = Math.max(0, mr.left - tr.left) + "px";
+    }
+  }
+
   function bdFindOutput(id) {
     var steps = bdSteps();
     for (var i = 0; i < steps.length; i++) {
       for (var j = 0; j < steps[i].out.length; j++) {
         if (steps[i].out[j].id === id) {
-          return { o: steps[i].out[j], step: i + 1 };
+          return { o: steps[i].out[j], step: bdPos(i + 1) };
         }
+      }
+    }
+    for (var k = 0; k < bd.custom.length; k++) {
+      var c = bd.custom[k];
+      for (var m = 0; m < c.out.length; m++) {
+        if (c.out[m].id === id) return { o: c.out[m], step: bdPos(c.num) };
       }
     }
     return null;
@@ -932,17 +1027,20 @@
     var foot = document.getElementById("bd-foot");
     var panel = document.getElementById("tool-panel");
     var whatif = document.getElementById("bd-whatif");
+    var menuEl = document.getElementById("bd-insert-menu");
+    var timelineEl = document.querySelector(".timeline");
     var iso = makeIso(560, 380, 2.6);
     ShowcaseUI.makeDraggable(panel, document.getElementById("viewport"));
 
     function render() {
       bdRenderStage(iso, layer);
       bdRenderTimeline(stepsEl, detailEl);
+      bdRenderMenu(menuEl, timelineEl, stepsEl);
       bdRenderPanel(panel);
-      var count = bd.connected || bd.active >= 8 ? 1 : 2;
+      var count = bd.connected || bdPos(bd.active) >= 8 ? 1 : 2;
       foot.innerHTML =
         "<b>" + count + (count === 1 ? " body" : " bodies") + "</b> \u00b7 step " +
-        bd.active + " of " + bdSteps().length +
+        bdPos(bd.active) + " of " + bd.order.length +
         (bd.connected ? " \u00b7 what-if: profiles connected" : "");
       if (whatif) {
         whatif.textContent = bd.connected
@@ -1049,6 +1147,12 @@
     stepsEl.addEventListener("click", function (e) {
       if (e.target.closest("[data-rename]")) return;
       if (bd.dragMoved) return;
+      var ins = e.target.closest("[data-insert]");
+      if (ins) {
+        bd.insertMenu = !bd.insertMenu;
+        render();
+        return;
+      }
       var collapse = e.target.closest("[data-collapse]");
       if (collapse) {
         var gc = bdGroup(collapse.getAttribute("data-collapse"));
@@ -1132,6 +1236,27 @@
         render();
       });
     }
+    if (menuEl) {
+      menuEl.addEventListener("click", function (e) {
+        var opt = e.target.closest("[data-insert-kind]");
+        if (opt) {
+          bdInsert(opt.getAttribute("data-insert-kind"));
+          render();
+        }
+      });
+    }
+    document.addEventListener("click", function (e) {
+      if (!bd.insertMenu) return;
+      if (e.target.closest("#bd-insert-menu") || e.target.closest("[data-insert]")) return;
+      bd.insertMenu = false;
+      render();
+    });
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && bd.insertMenu) {
+        bd.insertMenu = false;
+        render();
+      }
+    });
 
     render();
   }

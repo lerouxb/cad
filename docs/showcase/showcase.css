@@ -822,6 +822,45 @@
   display: none;
 }
 
+/* one insert affordance, placed after the selected step */
+.insert-marker {
+  flex: none;
+  align-self: flex-start;
+  width: 22px;
+  height: 22px;
+  margin: 38px 12px 0;
+  padding: 0;
+  border: 1px solid var(--rule-strong);
+  background: var(--bg);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-value);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.insert-marker:hover {
+  border-color: var(--marker);
+  background: var(--marker);
+  color: var(--marker-ink);
+}
+
+.insert-menu {
+  position: absolute;
+  z-index: 12;
+  bottom: 100%;
+  min-width: 176px;
+  margin-bottom: 6px;
+  padding: 8px 12px 7px;
+  border-top: 1px solid var(--rule-strong);
+  border-bottom: 1px solid var(--rule-strong);
+  background: var(--bg);
+}
+
+.insert-menu[hidden] {
+  display: none;
+}
+
 .step-bodies {
   display: flex;
   flex-wrap: wrap;
