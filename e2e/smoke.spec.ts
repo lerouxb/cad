@@ -1191,7 +1191,11 @@ test("clicking outside a selection clears it before starting a draft", async ({
   // With nothing selected, the same click starts an explicit extrude draft.
   await clickSketch(page, 10, 20);
   await expect(page.getByTestId("extrude-draft-popover")).toHaveCount(1);
-  await page.getByTestId("extrude-cancel").click();
+
+  // Clicking the empty grid cancels the draft and leaves the sketch open.
+  await clickSketch(page, 70, 20);
+  await expect(page.getByTestId("extrude-draft-popover")).toHaveCount(0);
+  await expect(page.getByTestId("tool-select")).toBeVisible();
 
   expect(errors).toEqual([]);
 });
@@ -1854,7 +1858,7 @@ test("cancel restores the previous extrude and discards a draft", async ({
   await page.getByTestId("extrude-cancel").click();
   await expect(page.getByTestId("extrude-draft-popover")).toHaveCount(0);
   await expect(page.locator("[data-feature-id]")).toHaveCount(5);
-  await expect(page.getByTestId("tool-select")).toBeHidden();
+  await expect(page.getByTestId("tool-select")).toBeVisible();
   await expect.poll(() => volume(page)).toBeCloseTo(plate12, -1);
 });
 

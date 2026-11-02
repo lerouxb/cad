@@ -1029,8 +1029,8 @@ export function App() {
 
   const cancelExtrudeDraft = (): void => {
     setExtrudeDraft(null);
-    setMode("model");
     setSelection([]);
+    // The draft was started from a sketch step; cancelling returns to that sketch.
   };
 
   const beginRename = (feature: Feature): void => {
@@ -1056,6 +1056,10 @@ export function App() {
       setFilletRadiusBefore(null);
     }
     if (entityId === null) {
+      if (extrudeDraft) {
+        cancelExtrudeDraft();
+        return;
+      }
       setSelection((current) => (current.length === 0 ? current : []));
       return;
     }
