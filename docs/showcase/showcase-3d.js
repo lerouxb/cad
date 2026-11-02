@@ -780,12 +780,16 @@
     }
     var inner = "";
     for (var n = g.from; n <= g.to; n++) inner += bdStepHtml(steps[n - 1], n);
+    var collapseBtn = activeIn
+      ? '<button class="group-btn" type="button" disabled ' +
+        'title="the active step is inside this group \u2014 roll back first">\u2212</button>'
+      : '<button class="group-btn" type="button" data-collapse="' + g.id +
+        '" aria-label="Collapse group">\u2212</button>';
     return (
       '<div class="step-group' + (activeIn ? " is-active" : "") +
       '" data-group="' + g.id + '">' +
       '<div class="group-head">' +
-      '<button class="group-btn" type="button" data-collapse="' + g.id +
-      '" aria-label="Collapse group">\u2212</button>' +
+      collapseBtn +
       name +
       '<span class="group-meta">' + (g.to - g.from + 1) + " steps</span>" +
       '<button class="group-btn" type="button" data-ungroup="' + g.id +
@@ -804,25 +808,42 @@
     var lo = sel[0];
     var hi = sel[sel.length - 1];
     if (hi - lo !== sel.length - 1) return "";
-    var exact = bdGroupCovering(lo, hi);
-    var grow = null;
-    bd.groups.forEach(function (g) {
-      if (g.from >= lo && g.to <= hi && (g.from > lo || g.to < hi)) grow = g;
+
+    function overlaps(from, to, exceptId) {
+      return bd.groups.some(function (g) {
+        return g.id !== exceptId && g.from <= to && g.to >= from;
+      });
+    }
+
+    var inside = bd.groups.filter(function (g) {
+      return g.from >= lo && g.to <= hi;
     });
-    if (grow) {
+
+    // groups are flat: a selection may contain at most one whole group
+    if (inside.length > 1) {
+      return '<span class="detail-actions"><span class="tool-note">overlaps more than one group</span></span>';
+    }
+    if (inside.length === 1) {
+      var g = inside[0];
+      if (g.from === lo && g.to === hi) {
+        return (
+          '<span class="detail-actions">' +
+          '<button class="text-action" type="button" data-action="rename" data-gid="' +
+          g.id + '">rename</button>' +
+          '<button class="text-action is-quiet" type="button" data-action="ungroup" data-gid="' +
+          g.id + '">ungroup</button></span>'
+        );
+      }
+      if (overlaps(lo, hi, g.id)) {
+        return '<span class="detail-actions"><span class="tool-note">would overlap another group</span></span>';
+      }
       return (
         '<span class="detail-actions"><button class="text-action" type="button" data-action="grow" data-gid="' +
-        grow.id + '">add to \u201c' + grow.name + "\u201d</button></span>"
+        g.id + '">add to \u201c' + g.name + "\u201d</button></span>"
       );
     }
-    if (exact) {
-      return (
-        '<span class="detail-actions">' +
-        '<button class="text-action" type="button" data-action="rename" data-gid="' +
-        exact.id + '">rename</button>' +
-        '<button class="text-action is-quiet" type="button" data-action="ungroup" data-gid="' +
-        exact.id + '">ungroup</button></span>'
-      );
+    if (overlaps(lo, hi, null)) {
+      return '<span class="detail-actions"><span class="tool-note">overlaps a group \u2014 groups are flat</span></span>';
     }
     return (
       '<span class="detail-actions"><button class="text-action" type="button" data-action="group">group ' +
@@ -1005,16 +1026,13 @@
         render();
         return;
       }
-      var grp = e.target.closest("[data-group]");
-      if (grp) {
-        var g = bdGroup(grp.getAttribute("data-group"));
-        if (g && g.collapsed) {
-          g.collapsed = false;
-          bd.sel = [];
-          for (var k = g.from; k <= g.to; k++) bd.sel.push(k);
-          bd.active = g.to;
-          render();
-        }
+      var step = e.target.closest("[data-step]");
+      if (step) {
+        var n = Number(step.getAttribute("data-step"));
+        bd.sel = e.shiftKey ? bdExtendRange(bd.sel, n) : [n];
+        bd.active = n;
+        bd.selected = null;
+        render();
         return;
       }
       var chip = e.target.closest("[data-out]");
@@ -1033,13 +1051,16 @@
         render();
         return;
       }
-      var step = e.target.closest("[data-step]");
-      if (step) {
-        var n = Number(step.getAttribute("data-step"));
-        bd.sel = e.shiftKey ? bdExtendRange(bd.sel, n) : [n];
-        bd.active = n;
-        bd.selected = null;
-        render();
+      var grp = e.target.closest("[data-group]");
+      if (grp) {
+        var g = bdGroup(grp.getAttribute("data-group"));
+        if (g && g.collapsed) {
+          g.collapsed = false;
+          bd.sel = [];
+          for (var k = g.from; k <= g.to; k++) bd.sel.push(k);
+          bd.active = g.to;
+          render();
+        }
       }
     });
 
@@ -1068,8 +1089,15 @@
       } else if (kind === "grow") {
         var g = bdGroup(act.getAttribute("data-gid"));
         if (g) {
-          g.from = Math.min(g.from, sel[0]);
-          g.to = Math.max(g.to, sel[sel.length - 1]);
+          var nf = Math.min(g.from, sel[0]);
+          var nt = Math.max(g.to, sel[sel.length - 1]);
+          var clash = bd.groups.some(function (x) {
+            return x.id !== g.id && x.from <= nt && x.to >= nf;
+          });
+          if (!clash) {
+            g.from = nf;
+            g.to = nt;
+          }
         }
         render();
       } else if (kind === "rename") {

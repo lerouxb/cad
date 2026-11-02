@@ -979,6 +979,16 @@
   color: var(--ink);
 }
 
+.group-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.group-btn:disabled:hover {
+  background: none;
+  color: var(--ink-3);
+}
+
 .group-steps {
   display: flex;
   align-items: flex-start;
