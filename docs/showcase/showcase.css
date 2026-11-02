@@ -1015,7 +1015,7 @@
 
 /* a group: a bracket (expanded) or a stack chip (collapsed) */
 .timeline .steps {
-  align-items: flex-start;
+  align-items: stretch;
 }
 
 /* every step's content starts below the head band, so the indices align
@@ -1124,7 +1124,8 @@
 
 .group-steps {
   display: flex;
-  align-items: flex-start;
+  flex: 1;
+  align-items: stretch;
 }
 
 .bo-select-top,
