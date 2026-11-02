@@ -1165,6 +1165,12 @@ body.is-embed .app {
   color: var(--ink);
 }
 
+.step-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
 .step-index {
   color: var(--ink-3);
   font-family: var(--font-mono);

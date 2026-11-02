@@ -790,8 +790,8 @@
     return (
       '<div class="' + cls + '" data-step="' + n + '" role="button" tabindex="0">' +
       '<span class="step-grip" data-grip="1" aria-hidden="true"></span>' +
-      '<span class="step-index">' + bdPad(n) + "</span>" +
-      '<span class="step-kind">' + s.kind + "</span>" +
+      '<span class="step-head"><span class="step-index">' + bdPad(n) +
+      '</span><span class="step-kind">' + s.kind + "</span></span>" +
       '<span class="step-name">' + s.name + "</span>" +
       '<span class="step-meta">' + s.meta + "</span>" +
       (chips ? '<span class="step-bodies">' + chips + "</span>" : "") +
@@ -860,33 +860,14 @@
     var curLost = cur.out.some(function (o) {
       return o.lost;
     });
-    var items = [["step", cur.name], ["type", cur.kind]];
-    if (cur.out.length) {
-      items.push([
-        "outputs",
-        cur.out
-          .map(function (o) {
-            return o.op + " " + bdName(o);
-          })
-          .join(", ")
-      ]);
-    }
-    detailEl.innerHTML =
-      items
-        .map(function (d) {
-          return (
-            '<span class="detail-item"><span class="detail-key">' + d[0] +
-            '</span><span class="detail-value">' + d[1] + "</span></span>"
-          );
-        })
-        .join("") +
-      (curLost
-        ? '<span class="detail-item"><span class="detail-key">lost</span>' +
-          '<span class="detail-value">body \u201clid\u201d no longer exists</span></span>' +
-          '<span class="detail-actions">' +
-          '<button class="text-action" type="button">reselect body</button>' +
-          '<button class="text-action is-quiet" type="button">open sketch</button></span>'
-        : "");
+    detailEl.hidden = !curLost;
+    detailEl.innerHTML = curLost
+      ? '<span class="detail-item"><span class="detail-key">lost</span>' +
+        '<span class="detail-value">body \u201clid\u201d no longer exists</span></span>' +
+        '<span class="detail-actions">' +
+        '<button class="text-action" type="button">reselect body</button>' +
+        '<button class="text-action is-quiet" type="button">open sketch</button></span>'
+      : "";
   }
 
   function bdFindOutput(id) {

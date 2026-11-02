@@ -479,11 +479,13 @@
         '<button class="' +
           classes.join(" ") +
           '" type="button">' +
+          '<span class="step-head">' +
           '<span class="step-index">' +
           step.num +
           "</span>" +
           '<span class="step-kind">' +
           step.kind +
+          "</span>" +
           "</span>" +
           '<span class="step-name">' +
           step.name +
@@ -500,11 +502,13 @@
       var pendingNum = ("0" + (HISTORY.length + 1)).slice(-2);
       out.push(
         '<button class="step is-active is-pending" type="button">' +
+          '<span class="step-head">' +
           '<span class="step-index">' +
           pendingNum +
           "</span>" +
           '<span class="step-kind">' +
           pending.kind +
+          "</span>" +
           "</span>" +
           '<span class="step-name">' +
           pending.name +

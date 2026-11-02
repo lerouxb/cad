@@ -817,6 +817,11 @@
   outline-offset: 4px;
 }
 
+/* the bodies timeline has no detail summary — the step block says it all */
+.timeline-detail[hidden] {
+  display: none;
+}
+
 .step-bodies {
   display: flex;
   flex-wrap: wrap;
