@@ -560,6 +560,9 @@ and evolution-based role propagation through booleans are in.
 - [x] Cut/join extrudes and a saved multi-feature rebuild
 - [x] Extrude end conditions: blind, through-all (cuts) and symmetric/two-sided;
       up-to-face remains M4
+- [ ] Extrude start offset — begin the solid at a distance from the sketch plane
+- [ ] Extrude taper angle — drafted side walls without a separate Draft feature
+- [ ] Extrude intersect — the third boolean operation
 - [x] First TopoRef plumbing: worker `assignRoles` + `captureHint`/`createRef` on the
       final body, carried through `FaceGroup`/`BodyPick` as JSON-safe refs
 - [x] Evolution-based `updateRoles` across fuse/cut; the worker keeps a role table per
@@ -633,6 +636,12 @@ with face sketches.
       keep the last-good body, show “cached frame” in the step detail, and offer
       reselect / open sketch / revert (mockup 06)
 - [ ] Handle flipped face normals and sketches created on the "back" of a face
+- [ ] Redefine/edit a sketch's support after creation, through the same support picker,
+      keeping the cached frame until the new support resolves
+- [ ] Extrude to-object / to-next end condition, resolved through `TopoRef`
+- [ ] Project arbitrary edges/faces into a sketch in addition to the support boundary.
+      The full Fusion projection suite (project / include 3D / intersect /
+      project-to-surface) is deferred; see M9
 - [x] Topological-naming regression test: change base height, boss on top face follows
 - [x] UI: unsupported (curved) face → clear explanation, no broken state
 - [x] **First slice landed:** face refs + deterministic cached frame, sketch on a planar
@@ -657,11 +666,22 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
 
 ## M5 — Refinement features (4–5 days)
 
+### Sketch refinements (from gap backlog)
+
+- [ ] Collinear constraint (one `drag.ts` row, small)
+- [ ] Sketch-create variants: center / 3-point rectangle, center-point / tangent arc,
+      2-point / 3-point circle; polygon is low priority
+
+### Model refinement
+
 - [ ] Fillet (constant radius) on selected edges, with failure handling
       (`filletWithEvolution` so downstream refs survive)
 - [ ] Chamfer
 - [ ] Shell (open faces) — maybe defer
-- [ ] Selection UX: edge chain selection, box select where sensible, hover prehighlight
+- [ ] Selection UX: edge chain selection, box select where sensible, hover prehighlight,
+      selection filters, and Select Other for cycling overlapping picks
+- [ ] Section Analysis: a view-only inspect overlay (never in history), with the
+      visibility questions resolved first
 - [ ] Feature selection highlights the geometry that feature created (mockup 03:
       selecting the gusset extrude washes the gusset, not the whole body)
 - [ ] Measure tool (distance, angle, radius, area, perimeter, centre of mass); overall
@@ -702,8 +722,9 @@ re-editable** operations, not one-shot copied geometry. See **ADR-0004**.
       current parameters; changing count/spacing/axis/mirror/offset regenerates copies
 - [ ] Derived instances participate in regions/profiles/extrude but are not individually
       draggable or constrainable in v1; constrain the source
+- [ ] Move / Copy sketch geometry, using the same preview/apply/re-edit grammar
 - [ ] Keep the sketch as one history step; operation rows nested under the sketch are a
-      later timeline refinement
+      later timeline refinement (deferred design pass)
 - [ ] Tests: pattern/mirror/offset volumes, re-edit updates downstream, JSON round-trip,
       undo, invalid offset reports, e2e preview/apply/re-edit
 
@@ -718,7 +739,13 @@ reopened, tweaked, and the solid updates — with no materialised copies in the 
 - [ ] Feature/body mirror (sketch mirror lives in M6.0; this one uses `TopoRef` evolution)
 - [ ] Datum axes and points (revolve axes, through-point planes, sweep paths)
 - [ ] Helix (threads, springs) — optional
-- [ ] General body booleans (beyond extrude join/cut)
+- [ ] **Combine** — join / cut / intersect, keep tool bodies, use a body as a tool
+      (elevate general body booleans to a real feature)
+- [ ] **Split Body** — split with a plane / face / body, keep both halves as independent
+      bodies with stable references
+- [ ] **Move / Copy bodies** — materialised transform or persistent body operation
+      (design decision below)
+- [ ] **Align** — line up bodies/faces without hand-measuring
 
 ## M7 — Parameters (3–4 days)
 
@@ -731,6 +758,10 @@ reopened, tweaked, and the solid updates — with no materialised copies in the 
 
 Assemblies and joints, drawings, STEP import, curved-face sketches, sheet metal,
 collaboration, plugin API.
+
+- [ ] Visibility toggles: show/hide sketches, bodies, constraints, construction,
+      dimensions; isolate; opacity. This is a coherent surface of its own — design it
+      before bolting it onto the timeline/panel (deferred design pass).
 
 ## M8.5 — Scripted features and AI access (unscheduled; ADR-0005)
 
@@ -842,6 +873,8 @@ milestone.
 | Feature/body mirror, linear/polar patterns | Sketch symmetry constraint exists; no feature transforms | Duplicate/rotate sketches/features manually | Feature transforms + history pattern feature | M6 — **mirror is high priority** |
 | Draft for moulds/castings | Not implemented | None | OCCT draft on selected faces + neutral plane | M9 (promote to M5 if needed) |
 | Shell / thickness / offset | Shell is planned M5; offset/thicken not | Nested sketches and holes | `brepjs` shell/offset/thicken, open-face selection | M5/M9 |
+| Press/Pull / multi-face offset | Only sketch-on-face workaround | Nested sketches and holes | Multi-face offset/thicken; pair with M9 offset-face work | M9 (low) |
+| Full sketch projection suite | Support boundary is projected (M4); arbitrary project/include 3D/intersect/project-to-surface is not | Draw construction geometry manually | Projection feature/selection grammar, projected edges, solver refs | M4 subset / M9 rest (low) |
 | Hole/thread feature | Circle + cut extrude | Manual circle/cut | Hole profiles, standard sizes, helix/thread | M6/M9 |
 | Text/images in sketches | Not implemented | None | Text/image entities and profiles | M9 |
 | 3D curves for sweeps | Solver/document gap (above) | Planar path only | 3D curve entity + constraints | M9 |
@@ -882,6 +915,35 @@ through the app.
 
 **Done when:** an item is promoted out of M9 into a real milestone or ADR with tests. M9
 itself stays documentation-only.
+
+### Covered by existing tools (no new work)
+
+- **Concentric:** two circles/arcs sharing a coincident centre are concentric; add Equal
+  only when the radii must match. Remaining work is UX convenience (auto-pick centres).
+- **Curvature / Smooth (G2):** only meaningful for splines/Béziers, which are M9.
+- **Sketch region selection:** planar arrangement + half-edge faces already handle
+  intersecting sub-profiles (M2.9).
+
+### Dropped (decided no)
+
+Slot · Sketch scale · Sketch extend · Sketch chamfer · arc-length / tangent-distance /
+ordinate dimensions · Rib · Web · Emboss · primitive bodies (box/cylinder/sphere/torus)
+· silhouette split · replace / delete / offset face · boundary fill · stitch / unstitch
+/ simplify · direct modeling ("Capture Design History", base feature, paste-new, derive).
+
+### Open design questions (from the gap backlog)
+
+- **Combine / Split Body:** are tool bodies a selection in the feature dialog, or a
+  separate bodies list on the document? How do result bodies keep stable identity
+  (`TopoRef`) across a split?
+- **Section Analysis:** view-only overlay (never in history)? How does it interact with
+  visibility toggles and isolate?
+- **Move / Copy:** materialised one-shot transform or persistent feature? Sketch geometry
+  should use the M6.0 persistent grammar; bodies are closer to a feature.
+- **Sketch-create variants:** one tool with modes or separate tool-line entries?
+  Fusion uses press-and-hold flyouts.
+- **Visibility toggles:** show/hide sketches, bodies, constraints, construction,
+  dimensions, isolate/opacity — design as a coherent surface before implementation.
 
 ---
 

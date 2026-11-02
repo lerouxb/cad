@@ -1,8 +1,10 @@
 # Gap backlog
 
-A decision record for Fusion 360 (Design / Solid) features that are **not yet in
-`docs/PLAN.md`**, captured here so it does not collide with the plan while M3/M4 are
-being finished. Once an item here lands in a real milestone, move it into `PLAN.md`.
+A decision record for Fusion 360 (Design / Solid) features that were **not yet in
+`docs/PLAN.md`** when this was captured. The Keep/Low/Defer/Covered/Drop decisions and
+open questions below were incorporated into `docs/PLAN.md` on 2026-11-02; the plan is now
+the source of truth for milestones and status. Keep this file as the rationale/history
+behind those placements.
 
 Source: a feature-by-feature pass over the Solid tab and the sketch editor, plus a
 Fusion-vs-FreeCAD-vs-SolveSpace comparison. Only features **we** are missing are listed;
