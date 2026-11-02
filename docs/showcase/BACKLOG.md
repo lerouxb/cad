@@ -10,6 +10,10 @@ Source: a feature-by-feature pass over the Solid tab and the sketch editor, plus
 Fusion-vs-FreeCAD-vs-SolveSpace comparison. Only features **we** are missing are listed;
 features already done or already scheduled are not repeated.
 
+**Addendum, 2026-11-02:** the real part (`Disqo / rounded-square`) was read through the
+Fusion MCP and the audit changed two decisions — see
+[Design audit](#design-audit--what-the-real-part-uses-2026-11-02).
+
 Several Keep items now have interactive design targets in this folder:
 **combine + split body** ([`body-ops.html`](body-ops.html)), **move/copy + align**
 ([`transform.html`](transform.html)), **extrude start/end/taper/operation**
@@ -21,6 +25,50 @@ Several Keep items now have interactive design targets in this folder:
 Status vocabulary: **Keep** (wanted, with a proposed home) · **Low** (nice, not soon) ·
 **Defer** (wanted, but needs its own design pass) · **Drop** (decided no) ·
 **Covered** (reachable with existing tools, no new work).
+
+## Design audit — what the real part uses (2026-11-02)
+
+`Disqo / rounded-square` was read through the Fusion MCP (read-only): **113 timeline
+steps, 14 sketches, 17 components**, nothing suppressed. It is an **assembly**, not a
+single body — the `case` component alone has a body and a lid, and vendor STEP models
+are inserted as components.
+
+| Feature | Uses | In the plan? |
+| --- | --- | --- |
+| Sketch | 14 | done (M1) |
+| Extrude | ~38 | done (M2/M3); options M3/M4 |
+| **Offset Faces** | **11** | **was Drop → now Keep** |
+| Chamfer | 6 | M5 |
+| Combine | 6 | M6 (BACKLOG) |
+| Fillet | 5 | M5 |
+| Construction plane | 4 | M4 (offset + midplane) |
+| Mirror | 4 | M6 |
+| Rectangular pattern | 2 | M6 |
+| Circular pattern | 1 | M6 |
+| Shell | 1 | M5 |
+| Split Body | 1 | M6 (BACKLOG) |
+| Move (free) | 1 | M6 (BACKLOG) |
+| Component insert | 6 | M8 |
+| Rigid Group | 1 | M8 |
+| Snapshot / capture position | 2 | not planned (M8) |
+| Timeline group | 10 | now Keep (M3/M6) |
+
+Conclusions:
+
+1. **Offset Faces is not a Drop.** It is the third most-used modelling feature after
+   extrude and chamfer, and every use is a tolerance/fit adjustment ("tolerance for
+   glass", "pcb-tolerance", "gasket tolerance", "enlarge battery space", …). Moved to
+   **Keep**.
+2. **The real workflow is an assembly.** Components are inserted (many as STEP),
+   positioned, rigid-grouped, and the case is cut around them. The plan's single-body
+   scope — assemblies are M8 — is the largest structural gap between the plan and the
+   part it is meant to make.
+3. **The M6 feature items are not speculative:** patterns, mirror, combine and split
+   body are all used.
+4. **Timeline groups are used heavily (10).** Grouping is part of the real workflow,
+   not a nicety.
+5. **Not used at all:** revolve, loft, sweep, draft, hole/thread, primitives, thicken,
+   boundary fill, delete/replace face — so those remain Low/M9/Drop.
 
 ## Keep
 
@@ -41,6 +89,11 @@ Status vocabulary: **Keep** (wanted, with a proposed home) · **Low** (nice, not
 | **Center-point / tangent arc** | Frequently used drawing variants | Sketch-create variants (small) |
 | **2-point / 3-point circle** | Frequently used drawing variants | Sketch-create variants (small) |
 | **Selection filters / Select Other** | Cycle overlapping picks; restrict to edges/faces | M5 selection UX (box/lasso is done, M2.9) |
+| **Offset Faces** | Offset a face by a distance — tolerance/fit and wall adjustments. **Used 11× in the real part.** | **M5/M6** (reversed from *Drop* by the design audit) |
+| **Component insert / occurrences** | Insert parts (including imported STEP) into an assembly | **M8** |
+| **Rigid Group** | Fix a set of components together | **M8** |
+| **Capture Position / Snapshot** | Record and restore component positions | **M8** |
+| **Timeline groups** | Collapse related steps into one named group | **M3/M6** (timeline refinement) |
 
 ## Low priority
 
@@ -69,8 +122,10 @@ Status vocabulary: **Keep** (wanted, with a proposed home) · **Low** (nice, not
 
 Slot · Sketch scale · Sketch extend · Sketch chamfer · arc-length / tangent-distance /
 ordinate dimensions · Rib · Web · Emboss · primitive bodies (box/cylinder/sphere/torus)
-· silhouette split · replace / delete / offset face · boundary fill · stitch / unstitch
+· silhouette split · replace / delete face · boundary fill · stitch / unstitch
 / simplify · direct modeling ("Capture Design History", base feature, paste-new, derive).
+
+(Offset face was here and is now **Keep** — see the design audit.)
 
 ## Where we already match or beat FreeCAD / SolveSpace
 
