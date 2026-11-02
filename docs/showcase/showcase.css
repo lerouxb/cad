@@ -889,6 +889,7 @@
    active step, so it works on touch). It always occupies the same space, so
    the steps never shift. */
 .bd-timeline .insert-gap {
+  position: relative;
   flex: none;
   align-self: stretch;
   display: flex;
@@ -902,29 +903,40 @@
   cursor: pointer;
 }
 
+/* the divider: always full height, meeting the rules above and below */
 .bd-timeline .insert-gap::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--rule);
+  content: "";
+  transform: translateX(-50%);
+}
+
+/* the + button: a separate, inset mark that grows out from the middle on hover
+   (and stays out after the active step, since touch cannot hover) */
+.bd-timeline .insert-gap::after {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1px;
+  width: 0;
+  min-width: 0;
   margin: 6px 0;
   overflow: hidden;
-  background: var(--rule);
-  color: transparent;
+  background: var(--marker);
+  color: var(--marker-ink);
   font-family: var(--font-mono);
   font-size: var(--type-value);
   line-height: 1;
   content: "+";
-  transition: width 0.12s ease, background 0.12s ease;
+  transition: width 0.12s ease;
 }
 
-/* the always-visible one (after the active step) looks fully hovered, since a
-   touch device cannot hover it */
-.bd-timeline .insert-gap.is-near::before,
-.bd-timeline .insert-gap:hover::before {
+.bd-timeline .insert-gap.is-near::after,
+.bd-timeline .insert-gap:hover::after {
   width: 14px;
-  background: var(--marker);
-  color: var(--marker-ink);
 }
 
 /* the gaps supply the spacing now, so the steps sit flush against them */
