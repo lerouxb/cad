@@ -1,12 +1,21 @@
 import {
+  isDatumPlaneFeature,
   isExtrudeFeature,
   isSketchFeature,
+  type DatumPlaneFeature,
   type Doc,
   type ExtrudeFeature,
   type Feature,
+  type PlaneRef,
   type SketchFeature,
 } from "../doc/types";
-import { isDefaultSupport, supportFrame } from "../doc/support";
+import {
+  isDefaultSupport,
+  midplaneFrame,
+  offsetFrame,
+  supportFrame,
+} from "../doc/support";
+import type { PlaneFrame } from "../types";
 import type { KernelFeature } from "../kernel/protocol";
 import { extrudeParams, selectExtrudeRegions } from "../features/extrude";
 import { applySolution } from "../sketch/geometry";
@@ -136,7 +145,10 @@ function evaluateFeature(
 
   try {
     if (isSketchFeature(feature)) {
-      return evaluateSketch(feature, base, inputs, deps);
+      return evaluateSketch(feature, base, byId, inputs, deps);
+    }
+    if (isDatumPlaneFeature(feature)) {
+      return evaluateDatumPlane(feature, base, byId);
     }
     if (isExtrudeFeature(feature)) {
       return evaluateExtrude(feature, base, byId, deps);
@@ -172,6 +184,7 @@ function evaluateFeature(
 function evaluateSketch(
   feature: SketchFeature,
   base: Omit<FeatureResult, "status" | "output" | "diagnostics">,
+  byId: Map<string, FeatureResult>,
   inputs: RebuildInputs,
   deps: RebuildDeps,
 ): FeatureResult {
@@ -222,19 +235,135 @@ function evaluateSketch(
     });
   }
 
+  let supportLost = false;
+  const frame = isDefaultSupport(feature.support)
+    ? undefined
+    : resolveSupportFrame(feature.support, byId, () => {
+        supportLost = true;
+      });
   const output: SketchRebuildOutput = {
     kind: "sketch",
     sketch,
     regions,
-    ...(isDefaultSupport(feature.support)
-      ? {}
-      : { frame: supportFrame(feature.support) }),
+    ...(frame ? { frame } : {}),
     dof: outcome.dof,
     solveStatus: outcome.status,
     conflicting: outcome.conflicting,
     ...(outcome.message ? { message: outcome.message } : {}),
   };
+  if (supportLost) {
+    diagnostics.push({
+      severity: "error",
+      code: "support-lost",
+      message: "The sketch support could not be resolved; using its cached frame.",
+    });
+    return { ...base, status: "error", output, diagnostics };
+  }
   return { ...base, status: "ok", output, diagnostics };
+}
+
+/** Resolve a support frame through earlier feature results. */
+function resolveSupportFrame(
+  ref: PlaneRef,
+  byId: Map<string, FeatureResult>,
+  onLost?: () => void,
+): PlaneFrame {
+  if (ref.kind !== "datum") return supportFrame(ref);
+  const result = byId.get(ref.featureId);
+  if (result?.status === "ok" && result.output?.kind === "datum") {
+    return result.output.frame;
+  }
+  onLost?.();
+  return ref.frame;
+}
+
+function evaluateDatumPlane(
+  feature: DatumPlaneFeature,
+  base: Omit<FeatureResult, "status" | "output" | "diagnostics">,
+  byId: Map<string, FeatureResult>,
+): FeatureResult {
+  const definition = feature.definition;
+  let lost = false;
+  const resolve = (ref: PlaneRef): PlaneFrame =>
+    resolveSupportFrame(ref, byId, () => {
+      lost = true;
+    });
+
+  if (definition.kind === "offset") {
+    if (!Number.isFinite(definition.distance)) {
+      return {
+        ...base,
+        status: "error",
+        output: null,
+        diagnostics: [
+          {
+            severity: "error",
+            code: "invalid-offset",
+            message: "Datum plane offset must be a finite number.",
+          },
+        ],
+      };
+    }
+    const frame = offsetFrame(resolve(definition.base), definition.distance);
+    if (lost) {
+      return {
+        ...base,
+        status: "error",
+        output: { kind: "datum", frame: feature.frame },
+        diagnostics: [
+          {
+            severity: "error",
+            code: "support-lost",
+            message: "The datum plane base could not be resolved; using its cached frame.",
+          },
+        ],
+      };
+    }
+    return {
+      ...base,
+      status: "ok",
+      output: { kind: "datum", frame },
+      diagnostics: [],
+    };
+  }
+
+  const a = resolve(definition.a);
+  const b = resolve(definition.b);
+  if (lost) {
+    return {
+      ...base,
+      status: "error",
+      output: { kind: "datum", frame: feature.frame },
+      diagnostics: [
+        {
+          severity: "error",
+          code: "support-lost",
+          message: "A datum plane base could not be resolved; using its cached frame.",
+        },
+      ],
+    };
+  }
+  const frame = midplaneFrame(a, b);
+  if (!frame) {
+    return {
+      ...base,
+      status: "error",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "midplane-not-parallel",
+          message: "A midplane needs two parallel supports.",
+        },
+      ],
+    };
+  }
+  return {
+    ...base,
+    status: "ok",
+    output: { kind: "datum", frame },
+    diagnostics: [],
+  };
 }
 
 function evaluateExtrude(

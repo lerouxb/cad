@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useEffectEvent,
   useMemo,
@@ -8,6 +9,7 @@ import {
 import { copyDocument, createBlankDocument } from "../core/doc/create";
 import { createExampleDocument } from "../core/doc/example";
 import {
+  datumDefinitionFrame,
   frameFromHint,
   frameFromNormalAndOrigin,
   framesClose,
@@ -33,8 +35,10 @@ import {
   type LocalFileEntry,
 } from "../core/doc/persistence";
 import {
+  addDatumPlaneFeature,
   addExtrudeFeature,
   addSketchFeature,
+  datumPlaneFeatures,
   deleteFeature,
   extrudesForSketch,
   findFeature,
@@ -46,15 +50,20 @@ import {
   renameFeature,
   setFeatureSuppressed,
   sketchFeatureById,
+  updateDatumPlaneFeature,
   updateExtrudeFeature,
   updateSketchFeature,
 } from "../core/doc/selectors";
 import {
+  isDatumPlaneFeature,
   isExtrudeFeature,
   isSketchFeature,
+  type DatumPlaneDefinition,
+  type DatumPlaneFeature,
   type Doc,
   type ExtrudeFeature,
   type Feature,
+  type PlaneRef,
   type SketchFeature,
   type WorldPlane,
 } from "../core/doc/types";
@@ -143,6 +152,11 @@ import {
 } from "../viewer/Viewport";
 import { FeaturePopover } from "./FeaturePopover";
 import { SupportPopover } from "./SupportPopover";
+import {
+  DatumPlanePopover,
+  type DatumPlaneDraft,
+  type DatumSupportOption,
+} from "./DatumPlanePopover";
 import { SelectionPopover } from "./SelectionPopover";
 import { FilletPopover } from "./FilletPopover";
 import type { PopoverPosition } from "./StagePopover";
@@ -163,6 +177,18 @@ interface TreeFeatureState {
   result: FeatureResult | null;
   worker: FeatureBuildStatus | null;
   cached: boolean;
+}
+
+function datumDefinitionLabel(definition: DatumPlaneDefinition): string {
+  const refLabel = (ref: PlaneRef): string =>
+    ref.kind === "world"
+      ? ref.plane
+      : ref.kind === "face"
+        ? `Face · ${ref.ref.role}`
+        : `Datum · ${ref.label}`;
+  return definition.kind === "offset"
+    ? `offset ${definition.distance} mm · from ${refLabel(definition.base)}`
+    : `midplane · ${refLabel(definition.a)} / ${refLabel(definition.b)}`;
 }
 
 /** Start on the first extrude (model view), or the first feature if none. */
@@ -186,6 +212,7 @@ function sketchForFeature(doc: Doc, feature: Feature | null): SketchFeature | nu
   if (feature?.type === "extrude") {
     return sketchFeatureById(doc, feature.sketchId) ?? primarySketchFeature(doc);
   }
+  if (feature?.type === "datum") return null;
   return primarySketchFeature(doc);
 }
 
@@ -200,7 +227,7 @@ function activeExtrudeFor(
   _sketchFeature: SketchFeature | null,
 ): ExtrudeFeature | null {
   if (feature?.type === "extrude") return feature;
-  if (feature?.type === "sketch") return null;
+  if (feature?.type === "sketch" || feature?.type === "datum") return null;
   return primaryExtrudeFeature(doc);
 }
 
@@ -259,6 +286,7 @@ export function App() {
   const primarySketchId = primarySketchFeature(doc)?.id ?? null;
   const primaryExtrudeId = primaryExtrudeFeature(doc)?.id ?? null;
   const [extrudeDraft, setExtrudeDraft] = useState<ExtrudeDraft | null>(null);
+  const [datumDraft, setDatumDraft] = useState<DatumPlaneDraft | null>(null);
   const extrudeHeight = activeExtrude?.height ?? 12;
   const storedRegionIds = extrudeDraft
     ? extrudeDraft.regions
@@ -311,6 +339,7 @@ export function App() {
   const [editorOpen, setEditorOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportPlane, setSupportPlane] = useState<WorldPlane>("XY");
+  const [supportDatumId, setSupportDatumId] = useState<string | null>(null);
   const [editorBaseline, setEditorBaseline] = useState<EditorBaseline | null>(
     null,
   );
@@ -401,9 +430,11 @@ export function App() {
     }
     const points = geometry.points;
     const curves: Array<SketchOverlayData["curves"][number]> = [];
-    const frame = isDefaultSupport(activeSketchFeature.support)
-      ? undefined
-      : supportFrame(activeSketchFeature.support);
+    const frame =
+      activeSketchBuild?.frame ??
+      (isDefaultSupport(activeSketchFeature.support)
+        ? undefined
+        : supportFrame(activeSketchFeature.support));
 
     // When an extrude step is active, show only the profile loops that extrude
     // actually uses. The full sketch is still visible in profile-selection mode.
@@ -525,6 +556,7 @@ export function App() {
     activeFeature,
     activeRegions,
     geometry,
+    activeSketchBuild,
   ]);
   const activeVoidCount = useMemo(
     () => activeRegions.filter((region) => region.kind === "void").length,
@@ -901,7 +933,7 @@ export function App() {
     }
     if (result.removedIds.length > 1) {
       setHistoryNotice(
-        `Deleted ${result.removedIds.length} features including dependent extrudes.`,
+        `Deleted ${result.removedIds.length} features including dependants.`,
       );
     }
   };
@@ -990,9 +1022,123 @@ export function App() {
     setFitToken((token) => token + 1);
   };
 
+  const resolvedDatumFrame = useCallback(
+    (feature: DatumPlaneFeature): PlaneFrame => {
+      const result = featureStates.get(feature.id)?.result;
+      if (result?.status === "ok" && result.output?.kind === "datum") {
+        return result.output.frame;
+      }
+      return feature.frame;
+    },
+    [featureStates],
+  );
+
+  const datumPlaneFrames = useMemo(
+    () =>
+      datumPlaneFeatures(doc)
+        .filter((feature) => feature.suppressed !== true)
+        .map((feature) => resolvedDatumFrame(feature)),
+    [doc, resolvedDatumFrame],
+  );
+
+  const openDatumEditor = (feature: DatumPlaneFeature): void => {
+    const definition = feature.definition;
+    setDatumDraft({
+      id: feature.id,
+      name: feature.name,
+      kind: definition.kind,
+      base: definition.kind === "offset" ? definition.base : definition.a,
+      second:
+        definition.kind === "midplane"
+          ? definition.b
+          : { kind: "world", plane: "XZ" },
+      distance: definition.kind === "offset" ? definition.distance : 10,
+    });
+    dismissEditor();
+    setActiveFeatureId(feature.id);
+    setMode("model");
+    setSelection([]);
+    setBodyPick(null);
+    viewportRef.current?.clearPick();
+  };
+
+  const openDatumDraft = (): void => {
+    dismissEditor();
+    setExtrudeDraft(null);
+    setDatumDraft({
+      id: null,
+      kind: "offset",
+      base: { kind: "world", plane: "XY" },
+      second: { kind: "world", plane: "YZ" },
+      distance: 10,
+    });
+    setSupportOpen(false);
+    setFileMenuOpen(false);
+    setHistoryNotice(null);
+    setSelection([]);
+    setMode("model");
+  };
+
+  const commitDatumDraft = (): void => {
+    if (!datumDraft) return;
+    const definition: DatumPlaneDefinition =
+      datumDraft.kind === "offset"
+        ? {
+            kind: "offset",
+            base: datumDraft.base,
+            distance: datumDraft.distance,
+          }
+        : {
+            kind: "midplane",
+            a: datumDraft.base,
+            b: datumDraft.second,
+          };
+    const frame = datumDefinitionFrame(definition);
+    if (!frame) {
+      setHistoryNotice(
+        datumDraft.kind === "midplane"
+          ? "A midplane needs two parallel supports."
+          : "The datum plane base could not be resolved.",
+      );
+      return;
+    }
+    const current = getState();
+    if (datumDraft.id) {
+      const next = updateDatumPlaneFeature(current.doc, datumDraft.id, (feature) => ({
+        ...feature,
+        definition,
+        frame,
+      }));
+      if (next === current.doc) {
+        setDatumDraft(null);
+        return;
+      }
+      commit({ doc: next, solved: current.solved, solvedFor: current.solvedFor });
+      setActiveFeatureId(datumDraft.id);
+    } else {
+      const { doc, feature } = addDatumPlaneFeature(current.doc, definition, frame);
+      commit({ doc, solved: current.solved, solvedFor: current.solvedFor });
+      setActiveFeatureId(feature.id);
+    }
+    setDatumDraft(null);
+    setHistoryNotice(null);
+    setSelection([]);
+  };
+
+  const cancelDatumDraft = (): void => {
+    setDatumDraft(null);
+    setHistoryNotice(null);
+  };
+
   const openFeatureEditor = (): void => {
-    if (activeFeature?.type !== "extrude" || editorOpen) return;
-    openExtrudeEditor(activeFeature);
+    if (editorOpen || !activeFeature) return;
+    if (activeFeature.type === "extrude") {
+      openExtrudeEditor(activeFeature);
+      return;
+    }
+    if (activeFeature.type === "datum") {
+      openDatumEditor(activeFeature);
+    }
   };
 
   const handleNewSketch = (): void => {
@@ -1009,10 +1155,33 @@ export function App() {
       return;
     }
     const frame = hintFrame;
+    const datumFeature =
+      !faceRef && supportDatumId
+        ? findFeature(current.doc, supportDatumId)
+        : null;
+    if (supportDatumId && (!datumFeature || !isDatumPlaneFeature(datumFeature))) {
+      setHistoryNotice("The selected datum plane no longer exists.");
+      return;
+    }
+    const datumFrame =
+      datumFeature && isDatumPlaneFeature(datumFeature)
+        ? resolvedDatumFrame(datumFeature)
+        : null;
+    if (datumFeature && !datumFrame) {
+      setHistoryNotice("The selected datum plane could not be resolved.");
+      return;
+    }
     const support =
       faceRef && frame
         ? ({ kind: "face", ref: faceRef, frame } as const)
-        : ({ kind: "world", plane: supportPlane } as const);
+        : datumFeature && datumFrame
+          ? ({
+              kind: "datum",
+              featureId: datumFeature.id,
+              label: datumFeature.name,
+              frame: datumFrame,
+            } as const)
+          : ({ kind: "world", plane: supportPlane } as const);
     // The projected boundary arrives from the kernel's exact face wire via the
     // live-reference effect below; do not materialize a mesh approximation here
     // or its first exact update would look like a topology change.
@@ -1024,6 +1193,7 @@ export function App() {
     setActiveFeatureId(feature.id);
     dismissEditor();
     setSupportOpen(false);
+    setSupportDatumId(null);
     setHistoryNotice(null);
     setMode("sketch");
     setRollbackIndex(null);
@@ -1408,6 +1578,10 @@ export function App() {
   useEffect(() => {
     viewportRef.current?.setSketchOverlay(modelSketchOverlay);
   }, [modelSketchOverlay]);
+
+  useEffect(() => {
+    viewportRef.current?.setDatumPlanes(datumPlaneFrames);
+  }, [datumPlaneFrames]);
 
   useEffect(() => {
     applyTheme(themeSettings);
@@ -2163,6 +2337,58 @@ export function App() {
     ? frameFromHint(supportFace.hint)
     : null;
   const supportFaceSupported = Boolean(supportFace && supportFaceFrame);
+  const datumSupportOptions = useMemo<DatumSupportOption[]>(() => {
+    const options: DatumSupportOption[] = [
+      {
+        key: "world:XY",
+        label: "XY",
+        ref: { kind: "world", plane: "XY" },
+      },
+      {
+        key: "world:XZ",
+        label: "XZ",
+        ref: { kind: "world", plane: "XZ" },
+      },
+      {
+        key: "world:YZ",
+        label: "YZ",
+        ref: { kind: "world", plane: "YZ" },
+      },
+    ];
+    if (supportFace && supportFaceFrame) {
+      options.push({
+        key: `face:${supportFace.role}`,
+        label: `Face · ${supportFace.role}`,
+        ref: { kind: "face", ref: supportFace, frame: supportFaceFrame },
+      });
+    }
+    for (const feature of datumPlaneFeatures(doc)) {
+      options.push({
+        key: `datum:${feature.id}`,
+        label: feature.name,
+        ref: {
+          kind: "datum",
+          featureId: feature.id,
+          label: feature.name,
+          frame: resolvedDatumFrame(feature),
+        },
+      });
+    }
+    return options;
+  }, [doc, supportFace, supportFaceFrame, resolvedDatumFrame]);
+  const datumDraftOptions = useMemo(() => {
+    const draftIndex = datumDraft?.id
+      ? doc.features.findIndex((feature) => feature.id === datumDraft.id)
+      : doc.features.length;
+    return datumSupportOptions.filter((option) => {
+      const ref = option.ref;
+      if (ref.kind !== "datum") return true;
+      const index = doc.features.findIndex(
+        (feature) => feature.id === ref.featureId,
+      );
+      return index >= 0 && index < draftIndex;
+    });
+  }, [datumSupportOptions, datumDraft, doc.features]);
 
   return (
     <div className="app">
@@ -2840,7 +3066,53 @@ export function App() {
               faceLabel={supportFace?.role}
               faceSupported={supportFaceSupported}
               plane={supportPlane}
-              onPlane={setSupportPlane}
+              onPlane={(plane) => {
+                setSupportPlane(plane);
+                setSupportDatumId(null);
+              }}
+              datums={datumPlaneFeatures(doc).map((feature) => ({
+                id: feature.id,
+                name: feature.name,
+              }))}
+              datumId={supportDatumId}
+              onDatum={setSupportDatumId}
+            />
+          ) : null}
+
+          {datumDraft ? (
+            <DatumPlanePopover
+              draft={datumDraft}
+              options={datumDraftOptions}
+              position={popoverPosition}
+              onMove={setPopoverPosition}
+              onCancel={cancelDatumDraft}
+              onApply={commitDatumDraft}
+              onKind={(kind) =>
+                setDatumDraft((draft) => (draft ? { ...draft, kind } : draft))
+              }
+              onBase={(key) => {
+                const option = datumDraftOptions.find(
+                  (candidate) => candidate.key === key,
+                );
+                if (!option) return;
+                setDatumDraft((draft) =>
+                  draft ? { ...draft, base: option.ref } : draft,
+                );
+              }}
+              onSecond={(key) => {
+                const option = datumDraftOptions.find(
+                  (candidate) => candidate.key === key,
+                );
+                if (!option) return;
+                setDatumDraft((draft) =>
+                  draft ? { ...draft, second: option.ref } : draft,
+                );
+              }}
+              onDistance={(distance) =>
+                setDatumDraft((draft) =>
+                  draft ? { ...draft, distance } : draft,
+                )
+              }
             />
           ) : null}
 
@@ -2943,9 +3215,11 @@ export function App() {
                 (isExtrudeFeature(feature) ? feature.regions.length : 0);
               const meta = isSketchFeature(feature)
                 ? `${supportLabel(feature.support)} · ${feature.sketch.curves.length} curves`
-                : `${feature.height} mm · ${feature.operation} · ${regionCount} region${
-                    regionCount === 1 ? "" : "s"
-                  }`;
+                : isDatumPlaneFeature(feature)
+                  ? datumDefinitionLabel(feature.definition)
+                  : `${feature.height} mm · ${feature.operation} · ${regionCount} region${
+                      regionCount === 1 ? "" : "s"
+                    }`;
               const metaSuffix =
                 status === "paused"
                   ? " · paused"
@@ -3024,7 +3298,11 @@ export function App() {
                     {String(index + 1).padStart(2, "0")}
                   </span>
                   <span className="step-type">
-                    {isSketchFeature(feature) ? "sketch" : "extrude"}
+                    {isSketchFeature(feature)
+                      ? "sketch"
+                      : isDatumPlaneFeature(feature)
+                        ? "plane"
+                        : "extrude"}
                   </span>
                   {renaming?.id === feature.id ? (
                     <input
@@ -3071,12 +3349,21 @@ export function App() {
               type="button"
               onClick={() => {
                 setSupportPlane("XY");
+                setSupportDatumId(null);
                 setSupportOpen(true);
                 setFileMenuOpen(false);
               }}
               data-testid="add-sketch"
             >
               + sketch
+            </button>
+            <button
+              className="timeline-add"
+              type="button"
+              onClick={openDatumDraft}
+              data-testid="add-plane"
+            >
+              + plane
             </button>
           </div>
 
@@ -3101,6 +3388,40 @@ export function App() {
                       <span className="detail-key">dof</span>
                       <span className="detail-value">
                         {activeSketchDof ?? "?"}
+                      </span>
+                    </span>
+                  </>
+                ) : isDatumPlaneFeature(activeFeature) ? (
+                  <>
+                    <span className="detail-item">
+                      <span className="detail-key">type</span>
+                      <span className="detail-value">
+                        {activeFeature.definition.kind}
+                      </span>
+                    </span>
+                    <span className="detail-item">
+                      <span className="detail-key">base</span>
+                      <span className="detail-value">
+                        {activeFeature.definition.kind === "offset"
+                          ? supportLabel(activeFeature.definition.base)
+                          : `${supportLabel(activeFeature.definition.a)} / ${supportLabel(activeFeature.definition.b)}`}
+                      </span>
+                    </span>
+                    {activeFeature.definition.kind === "offset" ? (
+                      <span className="detail-item">
+                        <span className="detail-key">distance</span>
+                        <span className="detail-value">
+                          {activeFeature.definition.distance} mm
+                        </span>
+                      </span>
+                    ) : null}
+                    <span className="detail-item">
+                      <span className="detail-key">origin</span>
+                      <span className="detail-value">
+                        {activeFeature.frame.origin
+                          .map((value) => formatLength(value))
+                          .join(", ")}{" "}
+                        mm
                       </span>
                     </span>
                   </>
@@ -3142,7 +3463,8 @@ export function App() {
                   </>
                 )}
                 <span className="detail-actions">
-                  {isExtrudeFeature(activeFeature) ? (
+                  {isExtrudeFeature(activeFeature) ||
+                  isDatumPlaneFeature(activeFeature) ? (
                     <button
                       className="text-action"
                       type="button"

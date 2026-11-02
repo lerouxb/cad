@@ -30,6 +30,11 @@ export interface SketchRebuildOutput {
   message?: string;
 }
 
+export interface DatumRebuildOutput {
+  kind: "datum";
+  frame: PlaneFrame;
+}
+
 export interface ExtrudeRebuildOutput {
   kind: "extrude";
   params: ExtrudeParams;
@@ -44,7 +49,10 @@ export interface ExtrudeRebuildOutput {
   end: "blind" | "throughAll";
 }
 
-export type FeatureOutput = SketchRebuildOutput | ExtrudeRebuildOutput;
+export type FeatureOutput =
+  | SketchRebuildOutput
+  | ExtrudeRebuildOutput
+  | DatumRebuildOutput;
 
 export interface FeatureResult {
   featureId: string;

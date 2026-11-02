@@ -1,6 +1,6 @@
 import type { PlaneFrame, Vec3 } from "../types";
 import type { TopoHint } from "../kernel/protocol";
-import type { PlaneRef, WorldPlane } from "./types";
+import type { DatumPlaneDefinition, PlaneRef, WorldPlane } from "./types";
 
 const X: Vec3 = [1, 0, 0];
 const Y: Vec3 = [0, 1, 0];
@@ -63,6 +63,55 @@ export function supportFrame(support: PlaneRef): PlaneFrame {
     : support.frame;
 }
 
+/** Offset a support along its own normal, keeping its axes. */
+export function offsetFrame(base: PlaneFrame, distance: number): PlaneFrame {
+  return {
+    origin: [
+      base.origin[0] + base.normal[0] * distance,
+      base.origin[1] + base.normal[1] * distance,
+      base.origin[2] + base.normal[2] * distance,
+    ],
+    normal: base.normal,
+    xAxis: base.xAxis,
+    yAxis: base.yAxis,
+  };
+}
+
+/** Midpoint plane between two parallel supports, using the first's axes. */
+export function midplaneFrame(
+  a: PlaneFrame,
+  b: PlaneFrame,
+  tolerance = 1e-6,
+): PlaneFrame | null {
+  if (Math.abs(dot(a.normal, b.normal)) < 1 - tolerance) return null;
+  const along = dot(subtract(b.origin, a.origin), a.normal);
+  return {
+    origin: [
+      a.origin[0] + a.normal[0] * (along / 2),
+      a.origin[1] + a.normal[1] * (along / 2),
+      a.origin[2] + a.normal[2] * (along / 2),
+    ],
+    normal: a.normal,
+    xAxis: a.xAxis,
+    yAxis: a.yAxis,
+  };
+}
+
+/** Resolve a datum definition from already-resolved base frames. */
+export function datumDefinitionFrame(
+  definition: DatumPlaneDefinition,
+): PlaneFrame | null {
+  if (definition.kind === "offset") {
+    return Number.isFinite(definition.distance)
+      ? offsetFrame(supportFrame(definition.base), definition.distance)
+      : null;
+  }
+  return midplaneFrame(
+    supportFrame(definition.a),
+    supportFrame(definition.b),
+  );
+}
+
 /** True for the default XY plane, whose frame can be omitted in kernel input. */
 export function isDefaultSupport(support: PlaneRef): boolean {
   return support.kind === "world" && support.plane === "XY";
@@ -70,6 +119,7 @@ export function isDefaultSupport(support: PlaneRef): boolean {
 
 export function supportLabel(support: PlaneRef): string {
   if (support.kind === "world") return support.plane;
+  if (support.kind === "datum") return `Datum · ${support.label}`;
   return `Face · ${support.ref.role}`;
 }
 

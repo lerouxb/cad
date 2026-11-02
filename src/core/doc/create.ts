@@ -1,7 +1,10 @@
+import type { PlaneFrame } from "../types";
 import { emptySketch, newId } from "../sketch/create";
 import type { Sketch } from "../sketch/types";
 import {
   CURRENT_SCHEMA_VERSION,
+  type DatumPlaneDefinition,
+  type DatumPlaneFeature,
   type Doc,
   type ExtrudeFeature,
   type FaceProjection,
@@ -37,6 +40,20 @@ export function createSketchFeature(
     ...(options.projections && options.projections.length > 0
       ? { projections: options.projections }
       : {}),
+  };
+}
+
+export function createDatumPlaneFeature(
+  definition: DatumPlaneDefinition,
+  frame: PlaneFrame,
+  options: { name?: string; id?: string } = {},
+): DatumPlaneFeature {
+  return {
+    id: options.id ?? newId("feat"),
+    type: "datum",
+    name: options.name ?? "Plane 1",
+    definition,
+    frame,
   };
 }
 

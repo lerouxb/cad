@@ -12,11 +12,15 @@ interface SupportPopoverProps {
   /** World plane used when no face is picked. */
   plane: WorldPlane;
   onPlane: (plane: WorldPlane) => void;
+  /** Existing datum planes, selectable as a support. */
+  datums?: ReadonlyArray<{ id: string; name: string }>;
+  datumId?: string | null;
+  onDatum?: (id: string | null) => void;
 }
 
 /**
  * New sketches are created from an explicit support choice, not a header action
- * that silently uses XY. Datum planes land next in M4.
+ * that silently uses XY. Existing datum planes are listed alongside world planes.
  */
 export function SupportPopover({
   position,
@@ -27,13 +31,17 @@ export function SupportPopover({
   faceSupported = false,
   plane,
   onPlane,
+  datums = [],
+  datumId = null,
+  onDatum,
 }: SupportPopoverProps) {
   const face = Boolean(faceLabel);
+  const datum = datums.find((candidate) => candidate.id === datumId) ?? null;
   const hint = face
     ? faceSupported
       ? "sketch on the selected planar face"
       : "this face is curved; cancel and pick a world plane"
-    : "world planes; datum planes arrive next in M4";
+    : "pick a world plane or an existing datum plane";
   return (
     <StagePopover
       kicker="new feature"
@@ -42,7 +50,13 @@ export function SupportPopover({
       position={position}
       onMove={onMove}
       hint={hint}
-      summary={face ? "planar face · selected" : `world plane · ${plane}`}
+      summary={
+        face
+          ? "planar face · selected"
+          : datum
+            ? `datum plane · ${datum.name}`
+            : `world plane · ${plane}`
+      }
       cancel={{ label: "cancel", onClick: onCancel, testId: "support-cancel" }}
       primary={{
         label: "sketch",
@@ -84,6 +98,25 @@ export function SupportPopover({
           )}
         </span>
       </div>
+      {!face && datums.length > 0 && onDatum ? (
+        <label className="feature-row">
+          <span className="detail-key">datum</span>
+          <select
+            className="detail-select"
+            value={datumId ?? ""}
+            onChange={(event) => onDatum(event.target.value || null)}
+            aria-label="Datum plane support"
+            data-testid="support-datum"
+          >
+            <option value="">none</option>
+            {datums.map((candidate) => (
+              <option key={candidate.id} value={candidate.id}>
+                {candidate.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
     </StagePopover>
   );
 }

@@ -552,10 +552,11 @@ assigns roles to each tool with `assignRoles(tool, "extrude")`, uses
 `updateRoles` before caching the prefix. `captureHint`/`createRef` then produce JSON-safe
 `TopoRef`s for the final body's faces; `FaceGroup.ref` and `BodyPick.ref` carry them to
 the main thread. Schema v5 stores a face `TopoRef` plus its cached `PlaneFrame` on
-`SketchFeature.support`; schema v6 adds cached face-boundary projections. The worker maps
-the local extrude solid through that frame, and resolves a projected boundary from the
-cached prefix solid that owns the face (never from a downstream boolean). Exact
-`resolveRef` on rebuild and lost-support recovery are still pending.
+`SketchFeature.support`; schema v6 adds cached face-boundary projections and schema v7
+adds datum-plane features/supports. The worker maps the local extrude solid through that
+frame, and resolves a projected boundary from the cached prefix solid that owns the face
+(never from a downstream boolean). Exact `resolveRef` on rebuild and lost-support
+recovery are still pending.
 
 This is the part to test hardest. Every kernel test that edits an upstream feature and
 re-runs a downstream fillet is a topological-naming regression test.
@@ -591,9 +592,11 @@ and datum planes.
 - Planes are features in the timeline: they can be edited, suppressed, and reused by
   several sketches. They do not produce a body; a rebuild records their frame and errors.
 - Render them as translucent quads with axes, pickable in 3D. While sketching, show only
-  the active support (and the model, dimmed) to keep the sketch readable.
+  the active support (and the model, dimmed) to keep the sketch readable. Quads + axes are
+  rendered today; 3D picking/hover preview is still pending.
 - A lost base face/plane errors the plane feature; every dependent sketch/feature shows
-  "support lost" and uses its cached frame until reselected.
+  "support lost" and uses its cached frame until reselected. Datum bases already resolve
+  through earlier rebuild results; exact face-ref fallback and reselect UI are pending.
 
 ### Projected reference geometry ("On Face / On Line")
 
@@ -778,20 +781,21 @@ the honest map, so nobody assumes a layer exists because it is described above.
 
 | Layer | Status |
 | --- | --- |
-| `core/doc` | Real: `Doc` schema with sketch/extrude features, selectors, migrations, schema v6 face sketch supports (`TopoRef` + cached `PlaneFrame`) and face-boundary projections, and `localStorage` autosave. |
+| `core/doc` | Real: `Doc` schema with sketch/extrude/datum features, selectors, migrations, schema v7 face/datum sketch supports (`TopoRef`/feature id + cached `PlaneFrame`), face-boundary projections, and `localStorage` autosave. |
 | `core/sketch` | Real: types, `slvs` adapter, tangent-space `solveDrag`, pure drawing edits, loop extraction, geometry helpers, tests. `demo.ts` is the loadable example. |
-| `core/features` | Real: region selection + extrude params, including a face-plane frame mapped in the worker. The worker supports ordered new/join/cut; projected face-boundary references live in the sketch-support path. No datum planes or feature fillets yet. |
-| `core/rebuild` | Real: ordered sketch/extrude evaluation, prefix cache, per-feature diagnostics. Worker solid cache + new/join/cut are in; feature-tree creation UI is M3. |
+| `core/features` | Real: region selection + extrude params, including face/datum-plane frames mapped in the worker. The worker supports ordered new/join/cut; projected face-boundary references live in the sketch-support path. No feature fillets yet. |
+| `core/rebuild` | Real: ordered sketch/datum/extrude evaluation, prefix cache, per-feature diagnostics. Worker solid cache + new/join/cut are in. |
 | `core/kernel` | Real: typed protocol, worker client, OCCT worker, feature cache, face-frame extrude transforms, cached-prefix face-boundary requests, hole validation, exact stats + bounds. |
 | `viewer` | Real: Z-up scene, framing, meshing, edges, face/edge raycast picking, hover/selection highlights. |
 | `sketch` UI | Real: full-stage sketch editor with a grouped text tool line, stage-foot DOF/status, contextual selection popover, adaptive/free-form grid, scale bar and fit/50/100/200 zoom. Select/drag, box-select profile regions, line/point/rectangle/circle/arc, fillet, explicit region fills (material and void, with All/Voids/Auto), contextual dimension/trim chips, inline dimension and point editors, construction toggle, snapping, auto H/V, Enter-to-finish, undo/redo. Standalone points are normal solver geometry but never profiles. |
-| Feature tree | Real: lists all `doc.features`, selects/renames/creates/edits, drag-reorders, suppresses, deletes with cascade, rolls back/forward, and shows per-feature status/diagnostics. |
+| Feature tree | Real: lists all `doc.features` (sketches, datum planes, extrudes), selects/renames/creates/edits, drag-reorders, suppresses, deletes with cascade, rolls back/forward, and shows per-feature status/diagnostics. |
 | Persistence | Autosave to `localStorage` with migration-on-load, a local file index/list (open/copy/delete/download/rename/new), and `.cad` import/export. |
 
 Known shortcuts, all scheduled: existing extrude features with an empty region list still
 resolve to the largest material region for legacy documents, while new extrude drafts
-require an explicit profile; datum planes and lost-support recovery are not implemented
-yet (M4). Sketches on planar faces and their live projected boundaries are in.
-Unsupported geometry and kernel features are collected in PLAN M9 with current
+require an explicit profile; datum-plane 3D picking and lost-support recovery are not
+implemented yet (M4). Sketches on planar faces, live projected boundaries and
+offset/midplane datum features are in. Unsupported geometry and kernel features are
+collected in PLAN M9 with current
 workarounds and the upstream SolveSpace/OCCT work each would need.
 

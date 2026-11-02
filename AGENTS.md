@@ -58,8 +58,9 @@ an editable sketcher driving an exact extrude:
   material region (legacy documents); new extrude drafts require an explicit profile.
   Trim supports lines and arcs but not turning a circle into an arc; body
   selection starts a sketch on a planar face when `+ sketch` is used, and the
-  supporting boundary is projected live as fixed dashed references (datum
-  planes and lost-support recovery are still M4); the example part is
+  supporting boundary is projected live as fixed dashed references. Offset and
+  midplane datum features are in, with a support picker and 3D preview; datum
+  picking/full lost-support recovery are still M4. The example part is
   hand-authored (`core/sketch/demo.ts` + `core/doc/example.ts`, including a suppressed
   center-pin extrude from the same sketch and a suppressed mounting-holes cut); the
   timeline now lists the real feature history with select,
@@ -70,9 +71,9 @@ an editable sketcher driving an exact extrude:
   `updateRoles`. Free 3D sketches, splines/text/images and drawing exports are out of
   scope.
 
-Next: **M4** — datum planes and lost-support recovery (planar face sketches, cached
-frames, projected face boundaries and live prefix resolution are in), then **M6.0**
-(re-editable sketch
+Next: **M4** — datum-plane picking/hover preview, flipped normals, and lost-support
+recovery (planar faces, cached frames, projections, offset/midplane datum features are
+in), then **M6.0** (re-editable sketch
 pattern/mirror/offset, ADR-0004). Read `docs/PLAN.md`; it is the source of truth
 for done. Unsupported geometry/features (ellipses, conics, B-splines, free
 3D sketches, 3D fillets, lofts/sweeps, patterns/mirror, drafts, shelling/offsets,
@@ -363,10 +364,11 @@ docs/
   are `extrude-draft-popover`, `extrude-apply` and `extrude-cancel`; existing features
   keep `feature-popover-apply` / `...-cancel`.
 - **Creation is contextual, never a header default.** `+ sketch` at the end of the
-  timeline opens `SupportPopover`; it shows the support explicitly (world XY/XZ/YZ and
-  planar faces; datum planes are next) and the primary is `new-sketch`. `new-extrude`
-  lives on the selected sketch step. There is no header New Sketch/New Extrude button
-  and no implicit XY or first-consumer fallback.
+  timeline opens `SupportPopover`; it shows the support explicitly (world XY/XZ/YZ,
+  planar faces and existing datum planes) and the primary is `new-sketch`.
+  `+ plane` opens the datum-plane draft popover. `new-extrude` lives on the selected
+  sketch step. There is no header New Sketch/New Extrude button and no implicit XY or
+  first-consumer fallback.
 - **A sketch step never owns region editing.** `activeExtrudeFor` returns null for a
   sketch. Select an extrude step to edit its existing regions, or start an extrude draft
   from the sketch step. Without an active extrude or draft, region fills are read-only
@@ -403,6 +405,16 @@ docs/
   The worker applies that frame to the local XY extrude solid (`applyMatrix`), and
   `Viewport` applies the same frame to the overlay geometry. Through-all measures the
   body extent along the frame normal, not world Z.
+- **Datum planes are history features, not sketch properties.** Schema v7 adds
+  `DatumPlaneFeature` (`type: "datum"`) with an `offset` or `midplane` definition and a
+  cached `PlaneFrame`; `PlaneRef.kind = "datum"` points at the feature id and caches the
+  label/frame for display. The rebuild resolves bases through earlier feature results in
+  history order, so dependent sketches/extrudes follow edits. Offset keeps the base axes
+  and moves along its normal; midplane requires parallel normals and uses the first's
+  axes. `updateSketchFeature`/extrude consumers use the resolved output frame, not the
+  cached support frame. Deleting a datum cascades dependent sketches, extrudes and datum
+  chains. Renaming one relabels cached supports. Kernel picking and hover preview of
+  datums are still M4.
 - **Projected face boundaries are live fixed references.** Schema v6 adds
   `SketchFeature.projections` (the cached projected loops) and materializes them in
   `Sketch.references` as fixed points/lines with `projectionId`/`referenceLabel`, so

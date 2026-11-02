@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import { createDocument } from "../doc/create";
 import {
+  addDatumPlaneFeature,
+  addSketchFeature,
+  updateDatumPlaneFeature,
   updateExtrudeFeature,
   updateExtrudeHeight,
   updateExtrudeRegions,
   updatePrimarySketch,
 } from "../doc/selectors";
+import { datumDefinitionFrame } from "../doc/support";
 import { extrudeParams } from "../features/extrude";
 import { addCircle, emptySketch } from "../sketch/create";
 import { createDemoModel } from "../sketch/demo";
@@ -99,6 +103,77 @@ describe("ordered rebuild", () => {
     expect(result.features[1]?.cached).toBe(false);
     expect(result.params?.height).toBe(30);
     expect(calls).toEqual({ solve: 1, regions: 1, extrude: 2 });
+  });
+
+  it("resolves datum planes and keeps dependent sketches in sync", () => {
+    const { deps } = countingDeps();
+    const doc = exampleDoc();
+    const reference = { kind: "world" as const, plane: "XY" as const };
+    const first = addDatumPlaneFeature(
+      doc,
+      { kind: "offset", base: reference, distance: 10 },
+      datumDefinitionFrame({ kind: "offset", base: reference, distance: 10 })!,
+      { name: "Plane 1" },
+    );
+    const support = {
+      kind: "datum" as const,
+      featureId: first.feature.id,
+      label: first.feature.name,
+      frame: first.feature.frame,
+    };
+    const withSketch = addSketchFeature(first.doc, { support });
+    const cache = new RebuildCache();
+    const result = rebuildDocument(withSketch.doc, { cache }, deps);
+    const datum = result.features.find((feature) => feature.type === "datum");
+    const sketch = result.features
+      .filter((feature) => feature.type === "sketch")
+      .at(-1);
+    expect(datum?.status).toBe("ok");
+    expect(datum?.output?.kind).toBe("datum");
+    if (datum?.output?.kind === "datum") {
+      expect(datum.output.frame.origin).toEqual([0, 0, 10]);
+    }
+    expect(sketch?.status).toBe("ok");
+    expect(sketch?.output?.kind).toBe("sketch");
+    if (sketch?.output?.kind === "sketch") {
+      expect(sketch.output.frame?.origin).toEqual([0, 0, 10]);
+    }
+
+    const moved = updateDatumPlaneFeature(withSketch.doc, first.feature.id, (feature) => ({
+      ...feature,
+      definition: { kind: "offset", base: reference, distance: 20 },
+      frame: datumDefinitionFrame({ kind: "offset", base: reference, distance: 20 })!,
+    }));
+    const movedResult = rebuildDocument(moved, { cache }, deps);
+    const movedSketch = movedResult.features
+      .filter((feature) => feature.type === "sketch")
+      .at(-1);
+    expect(movedSketch?.output?.kind).toBe("sketch");
+    if (movedSketch?.output?.kind === "sketch") {
+      expect(movedSketch.output.frame?.origin).toEqual([0, 0, 20]);
+    }
+  });
+
+  it("rejects a midplane between non-parallel supports", () => {
+    const { deps } = countingDeps();
+    const doc = exampleDoc();
+    const a = { kind: "world" as const, plane: "XY" as const };
+    const b = { kind: "world" as const, plane: "XZ" as const };
+    const frame = datumDefinitionFrame({ kind: "midplane", a, b });
+    expect(frame).toBeNull();
+    const baseFrame = datumDefinitionFrame({ kind: "offset", base: a, distance: 0 })!;
+    const added = addDatumPlaneFeature(
+      doc,
+      { kind: "midplane", a, b },
+      baseFrame,
+      { name: "Midplane" },
+    );
+    const result = rebuildDocument(added.doc, { cache: new RebuildCache() }, deps);
+    const datum = result.features.find((feature) => feature.type === "datum");
+    expect(datum?.status).toBe("error");
+    expect(datum?.diagnostics.some((d) => d.code === "midplane-not-parallel")).toBe(
+      true,
+    );
   });
 
   it("invalidates the extrude when the upstream sketch changes", () => {

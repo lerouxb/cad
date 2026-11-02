@@ -3,7 +3,7 @@ import type { PlaneFrame, Vec2 } from "../types";
 import type { TopoRef } from "../kernel/protocol";
 
 /** The document schema version. Bump this on every shape change. */
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
 
 export type WorldPlane = "XY" | "XZ" | "YZ";
 
@@ -11,11 +11,33 @@ export type ExtrudeEnd = "blind" | "throughAll";
 
 /**
  * Where a sketch lives. World planes are intrinsic; a face support stores the
- * JSON-safe TopoRef plus the last-known frame (M4's cached-frame fallback).
+ * JSON-safe TopoRef plus the last-known frame (M4's cached-frame fallback); a
+ * datum support points at a datum-plane feature and keeps the last-known frame.
  */
 export type PlaneRef =
   | { kind: "world"; plane: WorldPlane }
-  | { kind: "face"; ref: TopoRef; frame: PlaneFrame };
+  | { kind: "face"; ref: TopoRef; frame: PlaneFrame }
+  | {
+      kind: "datum";
+      featureId: string;
+      label: string;
+      frame: PlaneFrame;
+    };
+
+/** How a datum plane is derived from existing supports. */
+export type DatumPlaneDefinition =
+  | { kind: "offset"; base: PlaneRef; distance: number }
+  | { kind: "midplane"; a: PlaneRef; b: PlaneRef };
+
+export interface DatumPlaneFeature {
+  id: string;
+  type: "datum";
+  name: string;
+  definition: DatumPlaneDefinition;
+  /** Last-known resolved frame, used for display/recovery before rebuild. */
+  frame: PlaneFrame;
+  suppressed?: boolean;
+}
 
 export interface SketchFeature {
   id: string;
@@ -58,7 +80,7 @@ export interface ExtrudeFeature {
   suppressed?: boolean;
 }
 
-export type Feature = SketchFeature | ExtrudeFeature;
+export type Feature = SketchFeature | ExtrudeFeature | DatumPlaneFeature;
 
 /**
  * The whole persisted part. Plain JSON only: no kernel handles, no solver
@@ -77,4 +99,10 @@ export function isSketchFeature(feature: Feature): feature is SketchFeature {
 
 export function isExtrudeFeature(feature: Feature): feature is ExtrudeFeature {
   return feature.type === "extrude";
+}
+
+export function isDatumPlaneFeature(
+  feature: Feature,
+): feature is DatumPlaneFeature {
+  return feature.type === "datum";
 }

@@ -4,8 +4,10 @@ import { createDemoModel } from "../sketch/demo";
 import { createDocument } from "./create";
 import { createExampleDocument } from "./example";
 import { migrateDoc, validateDoc } from "./migrations";
+import { datumDefinitionFrame } from "./support";
 import { deserializeDoc, serializeDoc } from "./persistence";
 import {
+  addDatumPlaneFeature,
   addExtrudeFeature,
   addSketchFeature,
   deleteFeature,
@@ -40,7 +42,7 @@ function exampleDoc(): Doc {
 describe("document schema", () => {
   it("creates a two-feature part with stable ids", () => {
     const doc = exampleDoc();
-    expect(doc.schemaVersion).toBe(6);
+    expect(doc.schemaVersion).toBe(7);
     expect(doc.features.map((feature) => feature.type)).toEqual([
       "sketch",
       "extrude",
@@ -287,7 +289,7 @@ describe("document migrations", () => {
     });
 
     expect(migrated).not.toBeNull();
-    expect(migrated!.schemaVersion).toBe(6);
+    expect(migrated!.schemaVersion).toBe(7);
     expect(migrated!.name).toBe("Legacy part");
     expect(migrated!.features).toHaveLength(2);
     expect(primaryExtrudeFeature(migrated!)?.height).toBe(25);
@@ -301,13 +303,13 @@ describe("document migrations", () => {
     const doc = exampleDoc();
     const migrated = migrateDoc({ ...doc, schemaVersion: 1 });
     expect(migrated).toEqual(doc);
-    expect(migrated?.schemaVersion).toBe(6);
+    expect(migrated?.schemaVersion).toBe(7);
   });
 
   it("opens a v2 document and adds the extrude defaults", () => {
     const doc = exampleDoc();
     const migrated = migrateDoc({ ...doc, schemaVersion: 2 });
-    expect(migrated?.schemaVersion).toBe(6);
+    expect(migrated?.schemaVersion).toBe(7);
     expect(primaryExtrudeFeature(migrated!)?.end).toBe("blind");
     expect(primaryExtrudeFeature(migrated!)?.suppressed).toBeUndefined();
   });
@@ -315,7 +317,7 @@ describe("document migrations", () => {
   it("opens a v3 document and keeps its dimension placements", () => {
     const doc = exampleDoc();
     const migrated = migrateDoc({ ...doc, schemaVersion: 3 });
-    expect(migrated?.schemaVersion).toBe(6);
+    expect(migrated?.schemaVersion).toBe(7);
   });
 
   it("opens a v4 document with a face-supported sketch", () => {
@@ -346,7 +348,7 @@ describe("document migrations", () => {
       schemaVersion: 4,
       features: [{ ...sketch, support }, ...doc.features.slice(1)],
     });
-    expect(migrated?.schemaVersion).toBe(6);
+    expect(migrated?.schemaVersion).toBe(7);
     expect(primarySketchFeature(migrated!)?.support).toEqual(support);
     expect(
       migrateDoc({
@@ -403,15 +405,57 @@ describe("document migrations", () => {
         ...doc.features.slice(1),
       ],
     });
-    expect(migrated?.schemaVersion).toBe(6);
+    expect(migrated?.schemaVersion).toBe(7);
     expect(primarySketchFeature(migrated!)?.projections).toEqual(projections);
+  });
+
+  it("opens a v6 document with a datum plane and datum support", () => {
+    const doc = exampleDoc();
+    const definition = {
+      kind: "offset" as const,
+      base: { kind: "world" as const, plane: "XY" as const },
+      distance: 10,
+    };
+    const frame = datumDefinitionFrame(definition)!;
+    const datum = addDatumPlaneFeature(doc, definition, frame, {
+      id: "plane-1",
+      name: "Plane 1",
+    });
+    const withSketch = addSketchFeature(datum.doc, {
+      id: "sketch-2",
+      support: {
+        kind: "datum",
+        featureId: "plane-1",
+        label: "Plane 1",
+        frame,
+      },
+    });
+    const migrated = migrateDoc({
+      ...withSketch.doc,
+      schemaVersion: 6,
+    });
+    expect(migrated?.schemaVersion).toBe(7);
+    expect(migrated?.features.map((feature) => feature.type)).toEqual([
+      "sketch",
+      "extrude",
+      "datum",
+      "sketch",
+    ]);
+    expect(
+      migrateDoc({
+        ...withSketch.doc,
+        features: withSketch.doc.features.filter(
+          (feature) => feature.id !== "plane-1",
+        ),
+      }),
+    ).toBeNull();
   });
 
   it("rejects malformed, unknown and newer documents", () => {
     const doc = exampleDoc();
     expect(migrateDoc(null)).toBeNull();
     expect(migrateDoc("nope")).toBeNull();
-    expect(migrateDoc({ ...doc, schemaVersion: 7 })).toBeNull();
+    expect(migrateDoc({ ...doc, schemaVersion: 8 })).toBeNull();
     expect(migrateDoc({ ...doc, features: "nope" })).toBeNull();
     expect(
       migrateDoc({

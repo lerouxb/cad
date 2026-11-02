@@ -4,8 +4,10 @@ import type { TopoRef } from "../kernel/protocol";
 import { createDocument } from "./create";
 import {
   CURRENT_SCHEMA_VERSION,
+  isDatumPlaneFeature,
   isExtrudeFeature,
   isSketchFeature,
+  type DatumPlaneDefinition,
   type Doc,
   type ExtrudeOperation,
   type FaceProjection,
@@ -31,13 +33,15 @@ export function migrateDoc(raw: unknown): Doc | null {
   // v2 → v3 adds extrude `end` (defaults to blind) and `suppressed` (defaults off);
   // v3 → v4 adds optional dimension label placement (`along`/`distance`);
   // v4 → v5 adds face sketch supports (TopoRef + cached frame);
-  // v5 → v6 adds cached face-boundary projections on sketch features.
+  // v5 → v6 adds cached face-boundary projections on sketch features;
+  // v6 → v7 adds datum-plane features and datum sketch supports.
   if (
     version === 1 ||
     version === 2 ||
     version === 3 ||
     version === 4 ||
-    version === 5
+    version === 5 ||
+    version === 6
   ) {
     return validateDoc(raw);
   }
@@ -74,16 +78,53 @@ export function validateDoc(raw: unknown): Doc | null {
     features.push(feature);
   }
 
-  // An extrude must point at a sketch that exists in this document.
+  // References must point at features in this document, in history order.
+  const indexById = new Map(
+    features.map((feature, index) => [feature.id, index]),
+  );
+  const before = (dependencyId: string, featureId: string): boolean => {
+    const dependencyIndex = indexById.get(dependencyId);
+    return (
+      dependencyIndex !== undefined &&
+      dependencyIndex < (indexById.get(featureId) ?? -1)
+    );
+  };
   for (const feature of features) {
-    if (
-      isExtrudeFeature(feature) &&
-      !features.some(
-        (candidate) =>
-          isSketchFeature(candidate) && candidate.id === feature.sketchId,
-      )
-    ) {
-      return null;
+    if (isExtrudeFeature(feature)) {
+      const source = features.find(
+        (candidate) => candidate.id === feature.sketchId,
+      );
+      if (!source || !isSketchFeature(source) || !before(source.id, feature.id)) {
+        return null;
+      }
+    }
+    if (isDatumPlaneFeature(feature)) {
+      for (const base of datumDefinitionRefs(feature.definition)) {
+        if (base.kind !== "datum") continue;
+        const source = features.find(
+          (candidate) => candidate.id === base.featureId,
+        );
+        if (
+          !source ||
+          !isDatumPlaneFeature(source) ||
+          !before(source.id, feature.id)
+        ) {
+          return null;
+        }
+      }
+    }
+    if (isSketchFeature(feature) && feature.support.kind === "datum") {
+      const support = feature.support;
+      const source = features.find(
+        (candidate) => candidate.id === support.featureId,
+      );
+      if (
+        !source ||
+        !isDatumPlaneFeature(source) ||
+        !before(source.id, feature.id)
+      ) {
+        return null;
+      }
     }
   }
 
@@ -140,7 +181,50 @@ function validateFeature(raw: unknown): Feature | null {
     };
   }
 
+  if (raw.type === "datum") {
+    const definition = validateDatumDefinition(raw.definition);
+    const frame = validateFrame(raw.frame);
+    if (!definition || !frame) return null;
+    return {
+      id,
+      type: "datum",
+      name,
+      definition,
+      frame,
+      ...(raw.suppressed === true ? { suppressed: true } : {}),
+    };
+  }
+
   return null;
+}
+
+function validateDatumDefinition(
+  raw: unknown,
+): DatumPlaneDefinition | null {
+  if (!isRecord(raw)) return null;
+  if (raw.kind === "offset") {
+    const base = validateSupport(raw.base);
+    if (!base) return null;
+    if (typeof raw.distance !== "number" || !Number.isFinite(raw.distance)) {
+      return null;
+    }
+    return { kind: "offset", base, distance: raw.distance };
+  }
+  if (raw.kind === "midplane") {
+    const a = validateSupport(raw.a);
+    const b = validateSupport(raw.b);
+    if (!a || !b) return null;
+    return { kind: "midplane", a, b };
+  }
+  return null;
+}
+
+function datumDefinitionRefs(
+  definition: DatumPlaneDefinition,
+): PlaneRef[] {
+  return definition.kind === "offset"
+    ? [definition.base]
+    : [definition.a, definition.b];
 }
 
 function validateProjections(raw: unknown): FaceProjection[] | null {
@@ -193,6 +277,22 @@ function validateSupport(raw: unknown): PlaneRef | null {
     const ref = validateTopoRef(raw.ref);
     const frame = validateFrame(raw.frame);
     if (ref && frame) return { kind: "face", ref, frame };
+  }
+  if (
+    isRecord(raw) &&
+    raw.kind === "datum" &&
+    typeof raw.featureId === "string" &&
+    typeof raw.label === "string"
+  ) {
+    const frame = validateFrame(raw.frame);
+    if (frame) {
+      return {
+        kind: "datum",
+        featureId: raw.featureId,
+        label: raw.label,
+        frame,
+      };
+    }
   }
   return null;
 }

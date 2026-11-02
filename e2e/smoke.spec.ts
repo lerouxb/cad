@@ -550,6 +550,94 @@ test("creates a sketch on the XZ world plane and joins an extrude", async ({
   expect(errors).toEqual([]);
 });
 
+test("creates an offset datum plane and sketches on it", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await page.getByTestId("add-plane").click();
+  await expect(page.getByTestId("datum-draft-popover")).toBeVisible();
+  await page.getByTestId("datum-distance").fill("10");
+  await page.getByTestId("datum-apply").click();
+
+  const datum = page.locator('[data-feature-type="datum"]');
+  await expect(datum).toHaveCount(1);
+  await expect(datum).toContainText("offset 10 mm · from XY");
+  await expect(page.locator("canvas.viewport-canvas")).toHaveAttribute(
+    "data-datum-planes",
+    "1",
+  );
+
+  await page.getByTestId("add-sketch").click();
+  await page.getByTestId("support-datum").selectOption({ label: "Plane 1" });
+  await expect(page.getByTestId("support-popover")).toContainText(
+    "datum plane · Plane 1",
+  );
+  await page.getByTestId("new-sketch").click();
+  await expect(page.getByTestId("timeline-detail")).toContainText(
+    "Datum · Plane 1",
+  );
+
+  // Plane-local (10, 10) is world (10, 10); the plane sits at z = 10.
+  await page.getByTestId("tool-circle").click();
+  await clickSketch(page, 10, 10);
+  await clickSketch(page, 15, 10);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("finish-sketch").click();
+  await page.getByTestId("new-extrude").click();
+  await clickSketch(page, 10, 10);
+  await expect(page.getByTestId("extrude-apply")).toBeEnabled();
+  await page.getByTestId("extrude-height").fill("5");
+  await page.getByTestId("extrude-apply").click();
+
+  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(plate + Math.PI * 5 * 5 * 3, -1);
+  await expect.poll(() => meshBounds(page)).toBe("0,0,0,60,40,15");
+
+  // Move the datum plane down: the boss follows, so two more millimetres of
+  // the 5 mm cylinder are outside the 12 mm plate.
+  await datum.click();
+  await page.getByTestId("edit-feature").click();
+  await expect(page.getByTestId("datum-popover")).toBeVisible();
+  await page.getByTestId("datum-distance").fill("8");
+  await page.getByTestId("datum-popover-apply").click();
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(plate + Math.PI * 5 * 5 * 1, -1);
+  await expect.poll(() => meshBounds(page)).toBe("0,0,0,60,40,13");
+  await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
+    "data-status",
+    "ok",
+  );
+  expect(errors).toEqual([]);
+});
+
+test("creates a midplane between two offset planes", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await page.getByTestId("add-plane").click();
+  await page.getByTestId("datum-distance").fill("2");
+  await page.getByTestId("datum-apply").click();
+
+  await page.getByTestId("add-plane").click();
+  await page.getByTestId("datum-base").selectOption({ label: "Plane 1" });
+  await page.getByTestId("datum-distance").fill("8");
+  await page.getByTestId("datum-apply").click();
+
+  await page.getByTestId("add-plane").click();
+  await page.getByTestId("datum-kind-midplane").click();
+  await page.getByTestId("datum-base").selectOption({ label: "Plane 1" });
+  await page.getByTestId("datum-second").selectOption({ label: "Plane 2" });
+  await page.getByTestId("datum-apply").click();
+
+  const planes = page.locator('[data-feature-type="datum"]');
+  await expect(planes).toHaveCount(3);
+  await planes.nth(2).click();
+  await expect(page.getByTestId("timeline-detail")).toContainText("midplane");
+  await expect(page.getByTestId("timeline-detail")).toContainText("0, 0, 6 mm");
+  expect(errors).toEqual([]);
+});
+
 test("snaps a drawn line to a projected face boundary", async ({
   app: page,
 }) => {
@@ -1985,7 +2073,7 @@ test("autosaves the document and reopens it", async ({ app: page }) => {
     const raw = localStorage.getItem("cad.doc");
     return raw ? JSON.parse(raw) : null;
   });
-  expect(stored?.schemaVersion).toBe(6);
+  expect(stored?.schemaVersion).toBe(7);
 
   // A new document in the same context reads the saved part, migrates it, and
   // rebuilds the same solid.

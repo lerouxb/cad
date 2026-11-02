@@ -60,6 +60,8 @@ export class Viewport {
   private controls: OrbitControls;
   private body = new THREE.Group();
   private sketch = new THREE.Group();
+  private datums = new THREE.Group();
+  private datumPlanes: ReadonlyArray<PlaneFrame> = [];
   private sketchOverlay: SketchOverlayData | null = null;
   private readonly sketchLineMaterials = new Set<LineMaterial>();
   private environment = new THREE.Group();
@@ -117,6 +119,7 @@ export class Viewport {
 
     this.scene.add(this.body);
     this.scene.add(this.sketch);
+    this.scene.add(this.datums);
     this.scene.add(this.environment);
     this.scene.add(this.hoverGroup);
     this.scene.add(this.selectionGroup);
@@ -142,6 +145,7 @@ export class Viewport {
     this.addEnvironment();
     this.applyBodyTheme();
     this.rebuildSketchOverlay();
+    this.setDatumPlanes(this.datumPlanes);
     this.dirty = true;
   }
 
@@ -164,6 +168,64 @@ export class Viewport {
     this.canvas.dataset.sketchCurves = String(overlay?.curves.length ?? 0);
     this.canvas.dataset.sketchFills = String(overlay?.fills?.length ?? 0);
     this.rebuildSketchOverlay();
+    this.dirty = true;
+  }
+
+  /** Show datum planes as faint translucent quads with their local axes. */
+  setDatumPlanes(planes: ReadonlyArray<PlaneFrame>): void {
+    if (this.disposed) return;
+    this.datumPlanes = planes;
+    this.canvas.dataset.datumPlanes = String(planes.length);
+    this.clearGroup(this.datums);
+    const day = this.theme === "day";
+    const fill = new THREE.MeshBasicMaterial({
+      color: day ? 0x8c9aa6 : 0x8f9ca8,
+      transparent: true,
+      opacity: 0.07,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    });
+    const line = new THREE.LineBasicMaterial({
+      color: day ? 0x6d7b88 : 0x9aa7b3,
+      transparent: true,
+      opacity: 0.55,
+      depthWrite: false,
+    });
+    const size = 80;
+    for (const frame of planes) {
+      const matrix = new THREE.Matrix4()
+        .makeBasis(
+          new THREE.Vector3(...frame.xAxis),
+          new THREE.Vector3(...frame.yAxis),
+          new THREE.Vector3(...frame.normal),
+        )
+        .setPosition(new THREE.Vector3(...frame.origin));
+      const plane = new THREE.PlaneGeometry(size, size);
+      plane.applyMatrix4(matrix);
+      const mesh = new THREE.Mesh(plane, fill.clone());
+      mesh.renderOrder = 1;
+      mesh.raycast = () => {};
+      const border = new THREE.EdgesGeometry(plane);
+      border.applyMatrix4(matrix);
+      const outline = new THREE.LineSegments(border, line.clone());
+      outline.renderOrder = 2;
+      outline.raycast = () => {};
+      this.datums.add(mesh);
+      this.datums.add(outline);
+
+      const axisGeometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(-size / 2, 0, 0).applyMatrix4(matrix),
+        new THREE.Vector3(size / 2, 0, 0).applyMatrix4(matrix),
+        new THREE.Vector3(0, -size / 2, 0).applyMatrix4(matrix),
+        new THREE.Vector3(0, size / 2, 0).applyMatrix4(matrix),
+      ]);
+      const axes = new THREE.LineSegments(axisGeometry, line.clone());
+      axes.renderOrder = 2;
+      axes.raycast = () => {};
+      this.datums.add(axes);
+    }
+    fill.dispose();
+    line.dispose();
     this.dirty = true;
   }
 

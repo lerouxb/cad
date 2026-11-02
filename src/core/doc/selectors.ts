@@ -1,9 +1,17 @@
+import type { PlaneFrame } from "../types";
 import { emptySketch } from "../sketch/create";
 import type { Sketch } from "../sketch/types";
-import { createExtrudeFeature, createSketchFeature } from "./create";
 import {
+  createDatumPlaneFeature,
+  createExtrudeFeature,
+  createSketchFeature,
+} from "./create";
+import {
+  isDatumPlaneFeature,
   isExtrudeFeature,
   isSketchFeature,
+  type DatumPlaneDefinition,
+  type DatumPlaneFeature,
   type Doc,
   type ExtrudeFeature,
   type ExtrudeOperation,
@@ -23,6 +31,10 @@ export function sketchFeatures(doc: Doc): SketchFeature[] {
 
 export function extrudeFeatures(doc: Doc): ExtrudeFeature[] {
   return doc.features.filter(isExtrudeFeature);
+}
+
+export function datumPlaneFeatures(doc: Doc): DatumPlaneFeature[] {
+  return doc.features.filter(isDatumPlaneFeature);
 }
 
 export function primarySketchFeature(doc: Doc): SketchFeature | null {
@@ -88,6 +100,16 @@ export function updateSketchFeature(
 }
 
 /** Update one extrude by id; the updater must return the same object for a no-op. */
+export function updateDatumPlaneFeature(
+  doc: Doc,
+  featureId: string,
+  update: (feature: DatumPlaneFeature) => DatumPlaneFeature,
+): Doc {
+  return updateFeature(doc, featureId, (feature) =>
+    isDatumPlaneFeature(feature) ? update(feature) : feature,
+  );
+}
+
 export function updateExtrudeFeature(
   doc: Doc,
   featureId: string,
@@ -132,9 +154,10 @@ export function updateExtrudeRegions(doc: Doc, regions: readonly string[]): Doc 
   });
 }
 
-/** `Sketch 2`, `Extrude 3`, ... based on how many of that type already exist. */
+/** `Sketch 2`, `Extrude 3`, `Plane 2`, ... based on how many exist. */
 export function nextFeatureName(doc: Doc, type: Feature["type"]): string {
-  const prefix = type === "sketch" ? "Sketch" : "Extrude";
+  const prefix =
+    type === "sketch" ? "Sketch" : type === "datum" ? "Plane" : "Extrude";
   const count = doc.features.filter((feature) => feature.type === type).length;
   return `${prefix} ${count + 1}`;
 }
@@ -158,6 +181,22 @@ export function addSketchFeature(
     ...(options.id ? { id: options.id } : {}),
     ...(options.support ? { support: options.support } : {}),
     ...(options.projections ? { projections: options.projections } : {}),
+  });
+  return {
+    doc: { ...doc, features: [...doc.features, feature] },
+    feature,
+  };
+}
+
+export function addDatumPlaneFeature(
+  doc: Doc,
+  definition: DatumPlaneDefinition,
+  frame: PlaneFrame,
+  options: { name?: string; id?: string } = {},
+): { doc: Doc; feature: DatumPlaneFeature } {
+  const feature = createDatumPlaneFeature(definition, frame, {
+    name: options.name ?? nextFeatureName(doc, "datum"),
+    ...(options.id ? { id: options.id } : {}),
   });
   return {
     doc: { ...doc, features: [...doc.features, feature] },
@@ -226,7 +265,7 @@ export function moveFeature(
   const target = Math.max(0, Math.min(features.length, Math.round(toIndex)));
   features.splice(target, 0, feature);
   if (!hasValidOrder(features)) {
-    return { error: "An extrude must come after the sketch it consumes." };
+    return { error: "A feature must come after the features it depends on." };
   }
   return { doc: { ...doc, features } };
 }
@@ -243,13 +282,28 @@ export function deleteFeature(
   const target = doc.features.find((feature) => feature.id === featureId);
   if (!target) return { doc, removedIds: [] };
   const removed = new Set<string>([featureId]);
-  if (isSketchFeature(target)) {
+
+  // Removing a sketch or a datum plane invalidates everything that directly
+  // depends on it. Repeat until the cascade closes (datum planes can chain).
+  let changed = true;
+  while (changed) {
+    changed = false;
     for (const feature of doc.features) {
-      if (isExtrudeFeature(feature) && feature.sketchId === featureId) {
+      if (removed.has(feature.id)) continue;
+      const dependsOnRemoved =
+        (isExtrudeFeature(feature) && removed.has(feature.sketchId)) ||
+        (isSketchFeature(feature) &&
+          feature.support.kind === "datum" &&
+          removed.has(feature.support.featureId)) ||
+        (isDatumPlaneFeature(feature) &&
+          datumBaseFeatureIds(feature.definition).some((id) => removed.has(id)));
+      if (dependsOnRemoved) {
         removed.add(feature.id);
+        changed = true;
       }
     }
   }
+
   return {
     doc: {
       ...doc,
@@ -259,21 +313,83 @@ export function deleteFeature(
   };
 }
 
+/** Datum feature ids directly referenced by a datum definition. */
+export function datumBaseFeatureIds(
+  definition: DatumPlaneDefinition,
+): string[] {
+  const ids: string[] = [];
+  const add = (ref: PlaneRef): void => {
+    if (ref.kind === "datum") ids.push(ref.featureId);
+  };
+  if (definition.kind === "offset") add(definition.base);
+  else {
+    add(definition.a);
+    add(definition.b);
+  }
+  return ids;
+}
+
 function hasValidOrder(features: readonly Feature[]): boolean {
   const index = new Map(features.map((feature, position) => [feature.id, position]));
+  const before = (dependencyId: string, featureId: string): boolean => {
+    const dependencyIndex = index.get(dependencyId);
+    return dependencyIndex !== undefined && dependencyIndex < (index.get(featureId) ?? -1);
+  };
   return features.every((feature) => {
-    if (!isExtrudeFeature(feature)) return true;
-    const sketchIndex = index.get(feature.sketchId);
-    return sketchIndex !== undefined && sketchIndex < (index.get(feature.id) ?? -1);
+    if (isExtrudeFeature(feature)) return before(feature.sketchId, feature.id);
+    if (isDatumPlaneFeature(feature)) {
+      return datumBaseFeatureIds(feature.definition).every((id) =>
+        before(id, feature.id),
+      );
+    }
+    if (isSketchFeature(feature) && feature.support.kind === "datum") {
+      return before(feature.support.featureId, feature.id);
+    }
+    return true;
   });
 }
 
 export function renameFeature(doc: Doc, featureId: string, name: string): Doc {
   const trimmed = name.trim();
   if (!trimmed) return doc;
-  return updateFeature(doc, featureId, (feature) =>
+  const target = findFeature(doc, featureId);
+  const renamed = updateFeature(doc, featureId, (feature) =>
     feature.name === trimmed ? feature : { ...feature, name: trimmed },
   );
+  if (!target || !isDatumPlaneFeature(target)) return renamed;
+
+  // Datum supports cache a display label. Keep it in sync with the feature name
+  // without making the sketch depend on the datum's mutable name at render time.
+  const relabel = (ref: PlaneRef): PlaneRef =>
+    ref.kind === "datum" && ref.featureId === featureId
+      ? { ...ref, label: trimmed }
+      : ref;
+  return {
+    ...renamed,
+    features: renamed.features.map((feature) => {
+      if (isSketchFeature(feature) && feature.support.kind === "datum") {
+        const support = relabel(feature.support);
+        return support === feature.support ? feature : { ...feature, support };
+      }
+      if (isDatumPlaneFeature(feature)) {
+        const definition = feature.definition;
+        const nextDefinition: DatumPlaneDefinition =
+          definition.kind === "offset"
+            ? { ...definition, base: relabel(definition.base) }
+            : { ...definition, a: relabel(definition.a), b: relabel(definition.b) };
+        const changed =
+          (definition.kind === "offset" &&
+            nextDefinition.kind === "offset" &&
+            nextDefinition.base !== definition.base) ||
+          (definition.kind === "midplane" &&
+            nextDefinition.kind === "midplane" &&
+            (nextDefinition.a !== definition.a ||
+              nextDefinition.b !== definition.b));
+        return changed ? { ...feature, definition: nextDefinition } : feature;
+      }
+      return feature;
+    }),
+  };
 }
 
 export function renameDocument(doc: Doc, name: string): Doc {

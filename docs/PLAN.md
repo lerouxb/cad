@@ -108,11 +108,12 @@ feature work then lands inside that system.
   suppressed through-all cut. The two suppressed features keep the familiar plate and
   picking goldens while exercising same-sketch region ownership, a second sketch,
   suppression, edits and the 3D sketch overlay. A new sketch is added from the timeline's
-  `+ sketch` support popover (world XY/XZ/YZ explicit; datum planes are M4). A new extrude is
+  `+ sketch` support popover (world XY/XZ/YZ, planar faces and datum planes) and
+  `+ plane` geometry. A new extrude is
   started from the selected sketch step and begins with **no profile selected**; the
   draft only becomes a history feature after at least one profile and the parameters are
   applied. Existing extrudes are edited by selecting their step.
-- `npm run verify` (176 unit tests) and `npm run e2e` (54 tests) are green. The e2e asserts
+- `npm run verify` (179 unit tests) and `npm run e2e` (56 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -122,8 +123,8 @@ Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
 95 017.7 mm³ and rebuilds in ~35 ms after warm-up.
 
 **Still temporary** (all scheduled below): auto mode defaults to the largest material
-region until you click one; trim handles lines/arcs but not circles; **datum planes are
-M4**. M3 is done: the history supports create/edit/reorder by drag/
+region until you click one; trim handles lines/arcs but not circles; datum-plane
+picking and lost-support recovery are the remaining M4 pieces. M3 is done: the history supports create/edit/reorder by drag/
 suppress/delete/rollback, a local file menu/list with copy/open/download/rename/new,
 blind/symmetric/through-all extrudes, and role propagation through booleans, with the
 multi-feature rebuild covered by e2e. Free 3D sketches, splines/text/images and drawing
@@ -585,21 +586,24 @@ with face sketches.
 
 ### Datum planes
 
-- [ ] `DatumPlaneFeature` in the document (a history step, no body):
-      `offset(base: PlaneRef, distance: Expr)` and `midplane(a: PlaneRef, b: PlaneRef)`
-- [ ] Resolve offset: origin = base origin + base normal × distance; keep the base frame's
+- [x] `DatumPlaneFeature` in the document (a history step, no body):
+      `offset(base: PlaneRef, distance)` and `midplane(a: PlaneRef, b: PlaneRef)`.
+      Distance is a number until M7 expressions.
+- [x] Resolve offset: origin = base origin + base normal × distance; keep the base frame's
       axes. `base` can be a world plane, a face, or another datum plane (chains).
-- [ ] Resolve midplane: both bases must be parallel; origin = midpoint, axes from the
+- [x] Resolve midplane: both bases must be parallel; origin = midpoint, axes from the
       first. Non-parallel bases produce a visible feature error.
-- [ ] Offset from XY is the "thin air" case; a midplane between two parallel faces is the
-      other one. Both follow their bases when history changes.
-- [ ] Timeline rows for planes; edit distance / swap midplane bases; suppress/delete with
-      dependent-feature errors.
+- [x] Offset from XY is the "thin air" case. Datum-chain bases follow edits via the
+      ordered rebuild.
+- [ ] Midplane/live follow from a **face** base waits for exact face-ref resolution
+      (the cached face frame is stable but does not track a changed source face yet).
+- [x] Timeline rows for planes; edit type/bases/distance; suppress/delete cascades through
+      dependent sketches, extrudes and datum chains.
 - [ ] Render planes in 3D (translucent quad + axes), pick them to start a sketch, and hide
-      inactive ones while sketching.
+      inactive ones while sketching. Quads + axes are rendered; picking is next.
 - [ ] Sketch-support picker: one typographic list for world planes / planar faces / datum
-      planes. Hover/select previews the candidate on a dimmed body; the sketch stores
-      `PlaneRef` + last-known frame; a lost reference errors the sketch visibly.
+      planes. World/face/datum choices are in; hover preview and lost-reference errors are
+      still pending.
 - [ ] Support-list details: face name + area, curved “unsupported” explanation, datum
       “between faces”, and a pending “untitled” history row while choosing (mockup 04)
 - [ ] Through-3-points and angled planes after datum points/axes land (M6), unless needed
@@ -634,8 +638,11 @@ with face sketches.
       face, and frame-aware extrude/overlay.
 - [x] **Second slice landed:** live projected face-boundary references, cached
       projections with stable identities, solver participation, and source-height
-      regression coverage. Datum planes, exact `resolveRef` and lost-support recovery
-      remain.
+      regression coverage.
+- [x] **Datum slice landed:** offset/midplane features with chained bases, timeline
+      edit/suppress/delete cascade, datum supports in the sketch picker, dependent
+      sketches/extrudes following offset edits, and 3D plane quads. Datum picking,
+      exact `resolveRef` and lost-support recovery remain.
 
 **Done when:** sketch on an offset plane in empty space; sketch on a midplane between two
 faces; change the offset or the base plate height and every dependent sketch/feature
