@@ -640,7 +640,9 @@ test("dragging a line endpoint leaves the other endpoint alone", async ({
   await page.keyboard.press("Enter");
   await page.getByTestId("tool-select").click();
 
-  await dragSketch(page, [-1, -6], [-10, -4]);
+  // Grab a few pixels away from the endpoint, still on the line. A slightly-off
+  // grab must still drag the endpoint, not translate the whole line.
+  await dragSketch(page, [-3.7, -5.3], [-10, -4]);
 
   await expect
     .poll(() =>

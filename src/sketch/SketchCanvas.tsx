@@ -1232,9 +1232,35 @@ export function SketchCanvas({
       const a = points[curve.a];
       const b = points[curve.b];
       if (!a || !b) return;
+      // Near an endpoint, dragging the endpoint is almost always what the user
+      // means. Without this fallback a slightly-off grab starts a whole-line
+      // translation and both endpoints appear to move together.
+      const raw = toSketch(event);
+      let endpoint: { id: string; distance: number } | null = null;
+      for (const [id, position] of [
+        [curve.a, a],
+        [curve.b, b],
+      ] as const) {
+        const point = sketch.points.find((candidate) => candidate.id === id);
+        if (!point || point.fixed || point.construction) continue;
+        const distance = Math.hypot(
+          position[0] - raw[0],
+          position[1] - raw[1],
+        );
+        if (
+          distance <= hitRadius * 2.2 &&
+          (!endpoint || distance < endpoint.distance)
+        ) {
+          endpoint = { id, distance };
+        }
+      }
+      if (endpoint) {
+        startPointDrag(event, endpoint.id);
+        return;
+      }
       lineDragRef.current = {
         lineId: curve.id,
-        start: toSketch(event),
+        start: raw,
         a: { id: curve.a, point: a },
         b: { id: curve.b, point: b },
         active: false,
