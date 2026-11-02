@@ -796,7 +796,7 @@
 }
 
 .steps > .step .step-grip {
-  top: 40px;
+  top: 10px;
 }
 
 .step:hover .step-grip {
@@ -1046,14 +1046,22 @@
 }
 
 /* a group: a bracket (expanded) or a stack chip (collapsed) */
+.timeline {
+  /* the band the group head sits in */
+  --bd-band: 31px;
+}
+
 .timeline .steps {
   align-items: stretch;
 }
 
-/* every step's content starts below the head band, so the indices align
-   whether a step is grouped or not */
-.steps > .step {
-  padding-top: 40px;
+/* a step outside a group starts below the head band, so its content lines up
+   with a grouped step's — but as a margin, not padding, so its box stays the
+   same height as a grouped step rather than growing to include the band. The
+   gap dividers do the same, so every divider is the same height. */
+.steps > .step,
+.steps > .insert-gap {
+  margin-top: var(--bd-band);
 }
 
 .group-head {
