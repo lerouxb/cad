@@ -20,6 +20,7 @@ rules are in [`INTERACTION.md`](INTERACTION.md).
 | **Sketch selection** | [`sketch-edit.html`](sketch-edit.html) | selection popover (constraints), inline dimension editor | app consistency (see INTERACTION.md) |
 | **Sketch create** | [`sketch-create.html`](sketch-create.html) | rectangle / circle / arc variants, polygon | M6.0-era sketch polish |
 | **Body ops** | [`body-ops.html`](body-ops.html) | **combine** (join/cut/intersect, keep tools), **split body** | M6 |
+| **Bodies** | [`bodies.html`](bodies.html) | several bodies in one timeline, inline with the step that made them | M3/M6 (document model) |
 | **Body transforms** | [`transform.html`](transform.html) | **move / copy**, **align** | M6 |
 | **Extrude options** | [`extrude.html`](extrude.html) | start offset, to-object / to-next / all, taper, operation | **M3/M4** |
 | **Inspect** | [`inspect.html`](inspect.html) | **section analysis** | M5 |
@@ -144,6 +145,7 @@ index.html           sketch layout: pattern / mirror / offset / move-copy
 sketch-edit.html     sketch selection: constraint popover + inline dimension editor
 sketch-create.html   sketch create variants: rectangle / circle / arc / polygon
 body-ops.html        combine + split body
+bodies.html          multiple bodies inline in one timeline
 transform.html       move / copy + align
 extrude.html         extrude options (start, end, taper, operation)
 inspect.html         section analysis

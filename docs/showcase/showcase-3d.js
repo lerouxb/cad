@@ -509,6 +509,211 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* bodies in the timeline                                              */
+  /* ------------------------------------------------------------------ */
+
+  var BD_R1 = { x0: 10, y0: 10, z0: 0, x1: 60, y1: 50, z1: 8 };
+  var BD_R2 = { x0: 70, y0: 10, z0: 0, x1: 120, y1: 50, z1: 8 };
+  var BD_RM = { x0: 10, y0: 10, z0: 0, x1: 120, y1: 50, z1: 8 };
+  var BD_BOSS = { x: 35, y: 30, r: 9, z0: 8, z1: 20 };
+  var BD_HOLE = { x: 95, y: 30, r: 7 };
+
+  var bd = { active: 6, connected: false, selected: null };
+
+  function bdSteps() {
+    return [
+      { kind: "sketch", name: "base profiles", meta: bd.connected ? "XY \u00b7 1 profile" : "XY \u00b7 2 profiles", out: [] },
+      {
+        kind: "extrude",
+        name: "tab bodies",
+        meta: "8.0 mm \u00b7 new body",
+        out: bd.connected ? [["+", "body"]] : [["+", "body"], ["+", "lid"]]
+      },
+      { kind: "sketch", name: "boss profile", meta: "top of body", out: [] },
+      { kind: "extrude", name: "boss", meta: "6.0 mm \u00b7 join", out: [["\u2192", "body"]] },
+      { kind: "sketch", name: "mounting hole", meta: "top of lid", out: [] },
+      {
+        kind: "extrude",
+        name: "hole",
+        meta: "through all \u00b7 cut",
+        out: bd.connected ? [["\u2192", "lid", true]] : [["\u2192", "lid"]]
+      }
+    ];
+  }
+
+  function bdRenderStage(iso, layer) {
+    var html = "";
+    if (bd.active <= 1) {
+      html += profileQuad(iso, BD_R1, 0, "bo-profile");
+      if (!bd.connected) html += profileQuad(iso, BD_R2, 0, "bo-profile");
+    } else {
+      html += drawBox(iso, bd.connected ? BD_RM : BD_R1, null, false);
+      if (bd.active >= 4) {
+        html += cylinderSolid(
+          iso, BD_BOSS.x, BD_BOSS.y, BD_BOSS.r, BD_BOSS.z0, BD_BOSS.z1,
+          "bo-face-x", "bo-face-top"
+        );
+      }
+      if (!bd.connected) {
+        if (bd.active >= 6) {
+          html += boreWall(iso, BD_HOLE.x, BD_HOLE.y, BD_HOLE.r, BD_R2.z1, BD_R2.z0);
+          html += drawBoxHole(iso, BD_R2, { x: BD_HOLE.x, y: BD_HOLE.y, r: BD_HOLE.r });
+        } else {
+          html += drawBox(iso, BD_R2, null, false);
+        }
+      }
+    }
+    layer.innerHTML = html;
+  }
+
+  function bdRenderTimeline(stepsEl, detailEl) {
+    var steps = bdSteps();
+    stepsEl.innerHTML = steps
+      .map(function (s, i) {
+        var n = i + 1;
+        var lost = s.out.some(function (o) {
+          return o[2];
+        });
+        var cls = "step";
+        if (n === bd.active) cls += " is-active";
+        if (n > bd.active) cls += " is-paused";
+        if (lost) cls += " is-error";
+        var chips = s.out
+          .map(function (o) {
+            return (
+              '<button class="body-chip' +
+              (bd.selected === o[1] ? " is-selected" : "") +
+              (o[2] ? " is-lost" : "") +
+              '" type="button" data-body="' + o[1] + '">' +
+              '<span class="body-op">' + o[0] + "</span>" +
+              '<span class="body-dot"></span>' + o[1] + "</button>"
+            );
+          })
+          .join("");
+        return (
+          '<div class="' + cls + '" data-step="' + n + '" role="button" tabindex="0">' +
+          '<span class="step-index">0' + n + "</span>" +
+          '<span class="step-kind">' + s.kind + "</span>" +
+          '<span class="step-name">' + s.name + "</span>" +
+          '<span class="step-meta">' + s.meta + "</span>" +
+          (chips ? '<span class="step-bodies">' + chips + "</span>" : "") +
+          "</div>"
+        );
+      })
+      .join("");
+
+    var cur = steps[bd.active - 1];
+    var lost = cur.out.some(function (o) {
+      return o[2];
+    });
+    var items = [["step", cur.name], ["type", cur.kind]];
+    if (cur.out.length) {
+      items.push([
+        "bodies",
+        cur.out
+          .map(function (o) {
+            return o[0] + " " + o[1];
+          })
+          .join(", ")
+      ]);
+    }
+    detailEl.innerHTML =
+      items
+        .map(function (d) {
+          return (
+            '<span class="detail-item"><span class="detail-key">' + d[0] +
+            '</span><span class="detail-value">' + d[1] + "</span></span>"
+          );
+        })
+        .join("") +
+      (lost
+        ? '<span class="detail-item"><span class="detail-key">lost</span>' +
+          '<span class="detail-value">body \u201clid\u201d no longer exists</span></span>' +
+          '<span class="detail-actions">' +
+          '<button class="text-action" type="button">reselect body</button>' +
+          '<button class="text-action is-quiet" type="button">open sketch</button></span>'
+        : "");
+  }
+
+  function bdRenderPanel(panel) {
+    if (!bd.selected) {
+      panel.hidden = true;
+      return;
+    }
+    panel.hidden = false;
+    panel.innerHTML =
+      '<div class="tool-panel-head"><div>' +
+      '<div class="tool-panel-kicker">body</div>' +
+      '<h2 class="tool-panel-title">' + bd.selected + "</h2></div></div>" +
+      '<div class="tool-panel-body">' +
+      '<div class="tool-row"><span class="tool-label">created by</span>' +
+      '<span class="tool-note">extrude 02</span></div>' +
+      '<div class="tool-row"><span class="tool-label">visibility</span>' +
+      '<button class="toggle" type="button" aria-pressed="true">on</button></div>' +
+      '<div class="tool-row"><span class="tool-label">appearance</span>' +
+      '<span class="tool-note">warm grey</span></div>' +
+      "</div>" +
+      '<div class="tool-hint">appearance and visibility attach to the body, not the step</div>' +
+      ShowcaseUI.footer("1 body", [
+        { id: "isolate", label: "isolate", quiet: true }
+      ]);
+    if (!panel.dataset.dragged) {
+      panel.style.left = "auto";
+      panel.style.top = "24px";
+      panel.style.right = "24px";
+    }
+  }
+
+  function bootBodies() {
+    var layer = document.getElementById("bd-layer");
+    var stepsEl = document.getElementById("bd-steps");
+    var detailEl = document.getElementById("bd-detail");
+    var foot = document.getElementById("bd-foot");
+    var panel = document.getElementById("tool-panel");
+    var whatif = document.getElementById("bd-whatif");
+    var iso = makeIso(560, 380, 2.6);
+    ShowcaseUI.makeDraggable(panel, document.getElementById("viewport"));
+
+    function render() {
+      bdRenderStage(iso, layer);
+      bdRenderTimeline(stepsEl, detailEl);
+      bdRenderPanel(panel);
+      foot.innerHTML =
+        "<b>" + (bd.connected ? "1 body" : "2 bodies") + "</b> \u00b7 step " +
+        bd.active + " of 6" +
+        (bd.connected ? " \u00b7 what-if: profiles connected" : "");
+      if (whatif) {
+        whatif.textContent = bd.connected ? "separate the profiles" : "connect the profiles";
+      }
+    }
+
+    stepsEl.addEventListener("click", function (e) {
+      var chip = e.target.closest("[data-body]");
+      if (chip) {
+        bd.selected = chip.getAttribute("data-body");
+        render();
+        return;
+      }
+      var step = e.target.closest("[data-step]");
+      if (step) {
+        bd.active = Number(step.getAttribute("data-step"));
+        bd.selected = null;
+        render();
+      }
+    });
+
+    if (whatif) {
+      whatif.addEventListener("click", function () {
+        bd.connected = !bd.connected;
+        bd.selected = null;
+        render();
+      });
+    }
+
+    render();
+  }
+
+  /* ------------------------------------------------------------------ */
   /* section analysis                                                    */
   /* ------------------------------------------------------------------ */
 
@@ -989,7 +1194,8 @@
     render();
   }
 
-  function bootSection() {    var layer = document.getElementById("sec-layer");
+  function bootSection() {
+    var layer = document.getElementById("sec-layer");
     var panel = document.getElementById("tool-panel");
     ShowcaseUI.makeDraggable(panel, document.getElementById("viewport"));
     var meta = document.getElementById("sec-meta");
@@ -1048,6 +1254,7 @@
     if (document.getElementById("bo-layer")) bootBodyOps();
     if (document.getElementById("tr-layer")) bootTransform();
     if (document.getElementById("ex-layer")) bootExtrude();
+    if (document.getElementById("bd-layer")) bootBodies();
     if (document.getElementById("sec-layer")) bootSection();
     if (window.M && window.M.hydrateIcons) window.M.hydrateIcons(document);
   }

@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — bodies in the timeline</title>
+    <link rel="stylesheet" href="../mockups/mockup.css" />
+    <link rel="stylesheet" href="showcase.css" />
+    <script src="../mockups/theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="../mockups/index.html">
+        cad <span class="tag">tool showcase</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Showcase">
+        <a href="index.html">sketch layout</a>
+        <a href="sketch-edit.html">sketch edit</a>
+        <a href="sketch-create.html">sketch create</a>
+        <a href="body-ops.html">body ops</a>
+        <a class="is-active" href="bodies.html">bodies</a>
+        <a href="transform.html">transform</a>
+        <a href="extrude.html">extrude</a>
+        <a href="inspect.html">inspect</a>
+        <a href="BACKLOG.md">backlog</a>
+      </nav>
+      <div class="mockbar-right">
+        <a class="mockbar-btn" href="../mockups/index.html">studies</a>
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" title="File menu">
+            <span class="doc-name">bodies</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-center">
+          <span>model</span>
+          <span class="mode">2 bodies</span>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage" id="stage">
+          <div class="stage-head">
+            <div class="stage-kicker">model</div>
+            <h2 class="stage-title">Bodies</h2>
+            <div class="stage-meta">
+              <span>one timeline · bodies inline with the step that made them</span>
+            </div>
+          </div>
+
+          <div class="sketch-viewport" id="viewport">
+            <svg
+              class="stage-svg"
+              viewBox="0 0 1200 700"
+              preserveAspectRatio="xMidYMid meet"
+              role="img"
+              aria-label="Two bodies from one sketch, with the boss joined into one and the hole cut from the other."
+            >
+              <g id="bd-layer"></g>
+            </svg>
+            <div class="tool-panel" id="tool-panel" role="dialog" aria-label="Body"></div>
+          </div>
+
+          <div class="stage-foot">
+            <div class="stage-foot-left">
+              <span id="bd-foot"></span>
+            </div>
+            <div class="stage-foot-right">
+              <button class="text-action" id="bd-whatif" type="button">connect the profiles</button>
+            </div>
+          </div>
+        </section>
+
+        <footer class="timeline">
+          <div class="steps" id="bd-steps"></div>
+          <div class="timeline-detail" id="bd-detail"></div>
+        </footer>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · bodies</div>
+          <h2>Bodies live with their step</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        Still one timeline — but a body appears <b>next to the step that created
+        it</b>, not in a separate browser. That is the fix for Fusion's split: there,
+        the object list is disjointed from the timeline, so it is unclear that the
+        bodies are the things as they exist <em>at that step</em>. Here the origin is
+        explicit, and rolling back visibly pauses the steps — and therefore the
+        bodies — that no longer exist.
+      </p>
+      <h3>What this study tests</h3>
+      <ul>
+        <li><b>One step can make several bodies.</b> One sketch, two disjoint profiles, one extrude → <b>+ body, + lid</b>. Bodies that share an edge fuse; disjoint ones stay separate.</li>
+        <li><b>Later steps reference bodies, not create them.</b> The boss <b>joins → body</b>; the hole <b>cuts → lid</b>. The chip stays at the creating step.</li>
+        <li><b>Rollback pauses outputs.</b> Select step 2 and the boss and hole disappear with their steps; the bodies line dims on the paused steps.</li>
+        <li><b>The body popover.</b> Click a chip: appearance, visibility and isolate attach to the body, not the step. This is where the deferred visibility work lands.</li>
+        <li><b>Identity breaks visibly.</b> “Connect the profiles” merges the two rectangles into one body, so the cut that targeted <b>lid</b> loses its body — ink, a dotted rule and a “!”, with reselect/open sketch, exactly like a lost face.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Do the steps show <b>only bodies</b>, or sketches and datum planes too?</li>
+        <li>Default target for a new feature: <b>all bodies</b> (Fusion), or the body you last touched?</li>
+        <li>Is the body's <b>name</b> editable in the chip or only in the popover? Do names renumber when a feature is suppressed?</li>
+        <li>When a body is consumed (joined), does its chip strike through at the consuming step, or vanish?</li>
+        <li>The timeline gets long with many bodies — grouping (already a Keep item) is the mitigation, but what does a <em>collapsed</em> group show of its bodies?</li>
+      </ul>
+      <div class="mini-note">
+        Components are deliberately out of scope: a component is a namespaced set of
+        bodies with its own timeline, which is a separate model. The only thing to
+        protect now is the seam — a body id should be namespacable later
+        (<span class="mono">componentId/bodyId</span>).
+      </div>
+    </aside>
+
+    <script src="../mockups/mockups.js"></script>
+    <script src="showcase-ui.js"></script>
+    <script src="showcase-3d.js"></script>
+  </body>
+</html>

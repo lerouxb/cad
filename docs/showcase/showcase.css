@@ -774,3 +774,68 @@
   stroke: var(--ink);
   stroke-width: 1.4;
 }
+
+/* --------------------------------------------------------------------------
+   bodies in the timeline (see docs/showcase/bodies.html)
+   -------------------------------------------------------------------------- */
+
+.step {
+  cursor: pointer;
+}
+
+.step-bodies {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px 8px;
+  margin-top: 5px;
+}
+
+.body-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 1px 5px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+  cursor: pointer;
+}
+
+.body-chip:hover {
+  background: var(--marker-soft);
+  color: var(--ink);
+}
+
+.body-chip.is-selected {
+  background: var(--marker);
+  color: var(--marker-ink);
+}
+
+.body-op {
+  color: var(--ink-3);
+}
+
+.body-chip.is-selected .body-op {
+  color: var(--marker-ink);
+  opacity: 0.7;
+}
+
+.body-dot {
+  width: 6px;
+  height: 6px;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+}
+
+.body-chip.is-selected .body-dot {
+  background: var(--marker-ink);
+}
+
+.body-chip.is-lost {
+  color: var(--ink-3);
+  text-decoration: line-through;
+}
