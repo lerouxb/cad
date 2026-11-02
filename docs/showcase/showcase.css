@@ -907,6 +907,7 @@
   align-items: center;
   justify-content: center;
   width: 1px;
+  margin: 6px 0;
   overflow: hidden;
   background: var(--rule);
   color: transparent;
@@ -917,12 +918,9 @@
   transition: width 0.12s ease, background 0.12s ease;
 }
 
-.bd-timeline .insert-gap.is-near::before {
-  width: 14px;
-  background: var(--marker-soft);
-  color: var(--ink-3);
-}
-
+/* the always-visible one (after the active step) looks fully hovered, since a
+   touch device cannot hover it */
+.bd-timeline .insert-gap.is-near::before,
 .bd-timeline .insert-gap:hover::before {
   width: 14px;
   background: var(--marker);
