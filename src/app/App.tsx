@@ -15,10 +15,12 @@ import {
 } from "../core/doc/datum";
 import {
   datumDefinitionFrame,
+  flipFrame,
   frameFromHint,
   frameFromNormalAndOrigin,
   framesClose,
   isDefaultSupport,
+  stabilizeFrame,
   supportFrame,
   supportLabel,
 } from "../core/doc/support";
@@ -358,6 +360,7 @@ export function App() {
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportPlane, setSupportPlane] = useState<WorldPlane>("XY");
   const [supportDatumId, setSupportDatumId] = useState<string | null>(null);
+  const [supportFaceFlipped, setSupportFaceFlipped] = useState(false);
   const [editorBaseline, setEditorBaseline] = useState<EditorBaseline | null>(
     null,
   );
@@ -1168,7 +1171,10 @@ export function App() {
     }
     if (support.kind !== "face") return;
     const faceRef = bodyPick?.kind === "face" ? (bodyPick.ref ?? null) : null;
-    const frame = faceRef ? frameFromHint(faceRef.hint) : null;
+    const rawFrame = faceRef ? frameFromHint(faceRef.hint) : null;
+    const frame = rawFrame
+      ? stabilizeFrame(rawFrame, support.frame)
+      : null;
     if (!faceRef || !frame) {
       setHistoryNotice("Pick a planar face first, then reselect.");
       return;
@@ -1210,7 +1216,8 @@ export function App() {
       setHistoryNotice("Only planar faces can support a sketch.");
       return;
     }
-    const frame = hintFrame;
+    const frame =
+      hintFrame && supportFaceFlipped ? flipFrame(hintFrame) : hintFrame;
     const datumFeature =
       !faceRef && supportDatumId
         ? findFeature(current.doc, supportDatumId)
@@ -1250,6 +1257,7 @@ export function App() {
     dismissEditor();
     setSupportOpen(false);
     setSupportDatumId(null);
+    setSupportFaceFlipped(false);
     setHistoryNotice(null);
     setMode("sketch");
     setRollbackIndex(null);
@@ -1528,12 +1536,15 @@ export function App() {
         .then((result) => {
           faceBoundaryPending.current.delete(key);
           markFaceRefLost(lostKey, false);
-          const frame = frameFromNormalAndOrigin(
+          const rawFrame = frameFromNormalAndOrigin(
             result.normal,
             result.centroid,
           );
-          if (!frame) return;
-          faceBoundaryCache.current.set(key, { frame, loops: result.loops });
+          if (!rawFrame) return;
+          faceBoundaryCache.current.set(key, {
+            frame: rawFrame,
+            loops: result.loops,
+          });
           const latest = getState();
           const target = findFeature(latest.doc, feature.id);
           if (!target || !isSketchFeature(target) || target.support.kind !== "face") {
@@ -1546,6 +1557,7 @@ export function App() {
           ) {
             return;
           }
+          const frame = stabilizeFrame(rawFrame, faceSupport.frame);
           const loops = result.loops.map((loop) =>
             loop.map((point) => projectPointToPlane(point, frame)),
           );
@@ -3230,6 +3242,8 @@ export function App() {
               }))}
               datumId={supportDatumId}
               onDatum={setSupportDatumId}
+              faceFlipped={supportFaceFlipped}
+              onFlipFace={() => setSupportFaceFlipped((flipped) => !flipped)}
             />
           ) : null}
 
@@ -3507,6 +3521,7 @@ export function App() {
                 setSupportDatumId(
                   bodyPick?.kind === "datum" ? bodyPick.datumId ?? null : null,
                 );
+                setSupportFaceFlipped(false);
                 setSupportOpen(true);
                 setFileMenuOpen(false);
               }}

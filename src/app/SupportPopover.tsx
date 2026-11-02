@@ -9,6 +9,9 @@ interface SupportPopoverProps {
   /** A current body-face pick, used as the sketch support when planar. */
   faceLabel?: string;
   faceSupported?: boolean;
+  /** Sketch on the opposite side of the picked face. */
+  faceFlipped?: boolean;
+  onFlipFace?: () => void;
   /** World plane used when no face is picked. */
   plane: WorldPlane;
   onPlane: (plane: WorldPlane) => void;
@@ -29,6 +32,8 @@ export function SupportPopover({
   onApply,
   faceLabel,
   faceSupported = false,
+  faceFlipped = false,
+  onFlipFace,
   plane,
   onPlane,
   datums = [],
@@ -52,7 +57,7 @@ export function SupportPopover({
       hint={hint}
       summary={
         face
-          ? "planar face · selected"
+          ? `planar face · ${faceFlipped ? "flipped" : "outward"}`
           : datum
             ? `datum plane · ${datum.name}`
             : `world plane · ${plane}`
@@ -69,6 +74,17 @@ export function SupportPopover({
         <div className="feature-row">
           <span className="detail-key">selected face</span>
           <span className="detail-value">{faceLabel}</span>
+          {onFlipFace ? (
+            <button
+              className={`text-action${faceFlipped ? " is-primary" : ""}`}
+              type="button"
+              onClick={onFlipFace}
+              aria-pressed={faceFlipped}
+              data-testid="flip-face"
+            >
+              {faceFlipped ? "flipped" : "flip side"}
+            </button>
+          ) : null}
         </div>
       ) : null}
       <div className="feature-row">

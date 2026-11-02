@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createDocument } from "./create";
 import { faceRefKey, refreshDatumFrames } from "./datum";
 import { addDatumPlaneFeature, addSketchFeature } from "./selectors";
-import { datumDefinitionFrame } from "./support";
+import { datumDefinitionFrame, flipFrame } from "./support";
 import type { PlaneFrame } from "../types";
 import type { TopoRef } from "../kernel/protocol";
 import { emptySketch } from "../sketch/create";
@@ -72,6 +72,21 @@ describe("datum frame refresh", () => {
     const sketch = moved.features.find((feature) => feature.id === "sketch-2");
     if (sketch?.type !== "sketch") throw new Error("Expected a sketch");
     expect(sketch.support).toMatchObject({ frame: frameAt(35) });
+  });
+
+  it("keeps a datum on its original side when the face normal flips", () => {
+    const doc = docWithFaceDatum();
+    const moved = refreshDatumFrames(
+      doc,
+      new Map([[faceRefKey(face), flipFrame(frameAt(12))]]),
+    );
+    const datum = moved.features.find((feature) => feature.id === "plane-1");
+    if (datum?.type !== "datum") throw new Error("Expected a datum feature");
+    expect(datum.frame.normal).toEqual([0, 0, 1]);
+    expect(datum.frame.origin).toEqual([30, 20, 17]);
+    if (datum.definition.kind === "offset") {
+      expect(datum.definition.base).toMatchObject({ frame: frameAt(12) });
+    }
   });
 
   it("returns the same document when every frame is unchanged", () => {

@@ -741,6 +741,51 @@ test("datum planes based on a face follow source body edits", async ({
   expect(errors).toEqual([]);
 });
 
+test("flips a face sketch support and keeps that side stable", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await pickTopFace(page);
+  await page.getByTestId("add-sketch").click();
+  await page.getByTestId("flip-face").click();
+  await expect(page.getByTestId("support-popover")).toContainText(
+    "planar face · flipped",
+  );
+  await page.getByTestId("new-sketch").click();
+
+  const support = () =>
+    page.evaluate(() => {
+      const raw = localStorage.getItem("cad.doc");
+      if (!raw) return null;
+      const doc = JSON.parse(raw);
+      const sketch = [...doc.features]
+        .reverse()
+        .find(
+          (feature: { type: string; support?: { kind: string } }) =>
+            feature.type === "sketch" && feature.support?.kind === "face",
+        );
+      return sketch?.support?.frame ?? null;
+    });
+  await expect
+    .poll(async () => (await support())?.normal ?? null)
+    .toEqual([0, 0, -1]);
+
+  await page.getByTestId("timeline-extrude").click();
+  await page.getByTestId("edit-feature").click();
+  await page.getByTestId("extrude-height").fill("30");
+  await page.getByTestId("feature-popover-apply").click();
+
+  await expect
+    .poll(support)
+    .toMatchObject({
+      origin: [30, 20, 30],
+      normal: [0, 0, -1],
+      xAxis: [1, 0, 0],
+      yAxis: [0, -1, 0],
+    });
+  expect(errors).toEqual([]);
+});
+
 test("shows and clears a lost face support", async ({ app: page }) => {
   const errors = collectErrors(page);
   await pickTopFace(page);

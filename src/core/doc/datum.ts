@@ -1,6 +1,6 @@
 import type { TopoRef } from "../kernel/protocol";
 import type { PlaneFrame } from "../types";
-import { datumDefinitionFrame, framesClose } from "./support";
+import { datumDefinitionFrame, framesClose, stabilizeFrame } from "./support";
 import {
   isDatumPlaneFeature,
   isSketchFeature,
@@ -45,10 +45,11 @@ export function refreshDatumFrames(
 
   const updateRef = (ref: PlaneRef): PlaneRef => {
     if (ref.kind === "world") return ref;
-    const frame =
+    const raw =
       ref.kind === "face"
         ? faceFrames.get(faceRefKey(ref.ref))
         : frames.get(ref.featureId);
+    const frame = raw ? stabilizeFrame(raw, ref.frame) : undefined;
     return frame && !framesClose(frame, ref.frame) ? { ...ref, frame } : ref;
   };
 

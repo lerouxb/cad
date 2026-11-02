@@ -60,9 +60,10 @@ an editable sketcher driving an exact extrude:
   selection starts a sketch on a planar face when `+ sketch` is used, and the
   supporting boundary is projected live as fixed dashed references. Offset and
   midplane datum features are in, with a support picker, 3D preview and ray-picking;
-  face-backed datums follow source body edits, and lost face support is visible with
-  reselect/revert. Exact `resolveRef` fallback and flipped normals are still M4. The
-  example part is
+  face-backed datums follow source body edits, lost face support is visible with
+  reselect/revert, and face sketches can flip sides while keeping that side stable.
+  Exact `resolveRef` fallback and support-list hover preview are still M4. The example
+  part is
   hand-authored (`core/sketch/demo.ts` + `core/doc/example.ts`, including a suppressed
   center-pin extrude from the same sketch and a suppressed mounting-holes cut); the
   timeline now lists the real feature history with select,
@@ -73,9 +74,9 @@ an editable sketcher driving an exact extrude:
   `updateRoles`. Free 3D sketches, splines/text/images and drawing exports are out of
   scope.
 
-Next: **M4** — flipped normals and exact `resolveRef` fallback (planar faces, cached
-frames, projections, datum features, datum picking, live face-base resolution and lost
-support are in), then **M6.0** (re-editable sketch
+Next: **M4** — exact `resolveRef` fallback and support-list hover preview (planar faces,
+cached frames, projections, datum features, datum picking, live face-base resolution,
+lost support and flipped normals are in), then **M6.0** (re-editable sketch
 pattern/mirror/offset, ADR-0004). Read `docs/PLAN.md`; it is the source of truth
 for done. Unsupported geometry/features (ellipses, conics, B-splines, free
 3D sketches, 3D fillets, lofts/sweeps, patterns/mirror, drafts, shelling/offsets,
@@ -406,7 +407,10 @@ docs/
   `PlaneFrame` (`frameFromHint`: world X projected into the face plane, fallback cross).
   The worker applies that frame to the local XY extrude solid (`applyMatrix`), and
   `Viewport` applies the same frame to the overlay geometry. Through-all measures the
-  body extent along the frame normal, not world Z.
+  body extent along the frame normal, not world Z. Live updates use `stabilizeFrame`:
+  when the face normal flips but the plane is parallel, the stored side wins, so a sketch
+  never mirrors or reverses its extrude direction. `flip side` in the support popover
+  reverses the frame at creation; later updates keep the chosen side.
 - **Datum planes are history features, not sketch properties.** Schema v7 adds
   `DatumPlaneFeature` (`type: "datum"`) with an `offset` or `midplane` definition and a
   cached `PlaneFrame`; `PlaneRef.kind = "datum"` points at the feature id and caches the

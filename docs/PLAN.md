@@ -113,7 +113,7 @@ feature work then lands inside that system.
   started from the selected sketch step and begins with **no profile selected**; the
   draft only becomes a history feature after at least one profile and the parameters are
   applied. Existing extrudes are edited by selecting their step.
-- `npm run verify` (182 unit tests) and `npm run e2e` (59 tests) are green. The e2e asserts
+- `npm run verify` (186 unit tests) and `npm run e2e` (60 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -123,8 +123,8 @@ Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
 95 017.7 mm³ and rebuilds in ~35 ms after warm-up.
 
 **Still temporary** (all scheduled below): auto mode defaults to the largest material
-region until you click one; trim handles lines/arcs but not circles; flipped face normals
-and exact `resolveRef` fallback are the remaining M4 pieces. M3 is done: the history supports
+region until you click one; trim handles lines/arcs but not circles; exact `resolveRef`
+fallback and support-list hover preview are the remaining M4 pieces. M3 is done: the history supports
 create/edit/reorder by drag/suppress/delete/rollback, a local file menu/list with
 copy/open/download/rename/new, blind/symmetric/through-all extrudes, and role propagation
 through booleans, with the multi-feature rebuild covered by e2e. Free 3D sketches,
@@ -675,7 +675,9 @@ with face sketches.
       detail offers reselect (pick a face first) / open sketch / revert. Datum bases open
       the datum editor for reselect. Exact `resolveRef` fallback and richer recovery are
       still pending.
-- [ ] Handle flipped face normals and sketches created on the "back" of a face
+- [x] Handle flipped face normals and sketches created on the "back" of a face. Face
+      frames preserve their original side when a live normal flips (up to sign), and the
+      support popover has a `flip side` action for a face before creating the sketch.
 - [ ] Redefine/edit a sketch's support after creation, through the same support picker,
       keeping the cached frame until the new support resolves
 - [ ] Extrude to-object / to-next end condition, resolved through `TopoRef`
@@ -698,6 +700,9 @@ with face sketches.
       body edits.
 - [x] **Lost-support slice landed:** live face-ref failures mark the step and use the
       cached frame, with reselect/open sketch/revert. Exact `resolveRef` fallback remains.
+- [x] **Flip/normal slice landed:** live face frames stabilize against the side the sketch
+      was created on, and `flip side` lets a face sketch start on the opposite side of the
+      face. A base-height edit keeps the flipped frame stable.
 
 **Done when:** sketch on an offset plane in empty space; sketch on a midplane between two
 faces; change the offset or the base plate height and every dependent sketch/feature

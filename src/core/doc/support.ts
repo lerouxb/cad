@@ -150,6 +150,39 @@ export function frameFromHint(hint: TopoHint): PlaneFrame | null {
   return frameFromNormalAndOrigin(hint.normal, hint.centroid);
 }
 
+/** Reverse the side of a plane while keeping its origin and X direction. */
+export function flipFrame(frame: PlaneFrame): PlaneFrame {
+  return {
+    origin: frame.origin,
+    normal: scale(frame.normal, -1),
+    xAxis: frame.xAxis,
+    yAxis: scale(frame.yAxis, -1),
+  };
+}
+
+/**
+ * Keep a live face frame on the side it was created on. A face normal may flip
+ * during a boolean or topology rebuild; the plane is unchanged, so preserve the
+ * previous normal sign and reconstruct y from the same X axis instead of
+ * mirroring the sketch frame.
+ */
+export function stabilizeFrame(
+  next: PlaneFrame,
+  previous: PlaneFrame,
+): PlaneFrame {
+  const parallel =
+    Math.abs(dot(next.normal, previous.normal)) >= 1 - 1e-6;
+  if (!parallel) return next;
+  const normal =
+    dot(next.normal, previous.normal) < 0 ? scale(next.normal, -1) : next.normal;
+  return {
+    origin: next.origin,
+    normal,
+    xAxis: next.xAxis,
+    yAxis: normalize(cross(normal, next.xAxis)) ?? previous.yAxis,
+  };
+}
+
 /** Deterministic right-handed frame from a plane normal and origin. */
 export function frameFromNormalAndOrigin(
   normalInput: Vec3,
