@@ -123,12 +123,50 @@ Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
 95 017.7 mm³ and rebuilds in ~35 ms after warm-up.
 
 **Still temporary** (all scheduled below): auto mode defaults to the largest material
-region until you click one; trim handles lines/arcs but not circles; datum-plane
-picking and lost-support recovery are the remaining M4 pieces. M3 is done: the history supports create/edit/reorder by drag/
-suppress/delete/rollback, a local file menu/list with copy/open/download/rename/new,
-blind/symmetric/through-all extrudes, and role propagation through booleans, with the
-multi-feature rebuild covered by e2e. Free 3D sketches, splines/text/images and drawing
-exports remain out of scope.
+region until you click one; trim handles lines/arcs but not circles; flipped face normals
+and lost-support recovery are the remaining M4 pieces. M3 is done: the history supports
+create/edit/reorder by drag/suppress/delete/rollback, a local file menu/list with
+copy/open/download/rename/new, blind/symmetric/through-all extrudes, and role propagation
+through booleans, with the multi-feature rebuild covered by e2e. Free 3D sketches,
+splines/text/images and drawing exports remain out of scope.
+
+---
+
+## Design audit — real usage (2026-11-02)
+
+The reference part (`Disqo / rounded-square`) was read through the Fusion MCP: **113
+timeline steps, 14 sketches, 17 components**, nothing suppressed. It is an **assembly**,
+not a single body: vendor STEP parts are inserted as components, rigid-grouped, and the
+case is cut around them. The full table lives in
+[`docs/showcase/BACKLOG.md`](showcase/BACKLOG.md).
+
+Usage that changes priorities:
+
+| Feature | Uses | Consequence |
+| --- | --- | --- |
+| Sketch | 14 | done (M1) |
+| Extrude | ~38 | done; options in M3/M4 |
+| **Offset Faces** | **11** | **reversed from Drop to Keep** (M5/M6); every use is tolerance/fit |
+| Chamfer / Fillet | 6 / 5 | M5 |
+| Combine | 6 | M6, confirmed used |
+| Construction plane | 4 | M4 (offset/midplane in) |
+| Mirror / Rectangular pattern / Circular pattern | 4 / 2 / 1 | M6, confirmed used |
+| Shell | 1 | M5 |
+| Split Body / Move | 1 / 1 | M6, confirmed used |
+| Component insert | 6 | M8 assembly layer |
+| Rigid Group / Snapshot | 1 / 2 | M8 assembly layer; Snapshot was previously unplanned |
+| Timeline group | 10 | Keep, M3/M6 timeline refinement |
+
+Conclusions incorporated below:
+
+1. **Offset Faces is Keep**, not Drop; it is the third most-used modelling feature after
+   extrude and chamfer.
+2. **The real workflow is an assembly.** Single-body scope is the largest structural gap
+   between this plan and the part it is meant to make.
+3. **M6 patterns/mirror/combine/split-body are confirmed**, not speculative.
+4. **Timeline groups are part of the workflow**, used 10 times.
+5. **Not used in the reference part:** revolve, loft, sweep, draft, hole/thread,
+   primitives, thicken, boundary fill, delete/replace face. Those stay Low/M9/Drop.
 
 ---
 
@@ -193,13 +231,13 @@ edges**, which is how the gusset is anchored between the inner walls.
 | Two-sided / symmetric extrude | M3 (`symmetric`) |
 | Through-all / up-to-face extrude end condition | M3 blind + through-all; up-to-face in M4 (needs `TopoRef`) |
 | Boolean union / difference (join / cut) | M3 |
-| Revolve / lathe | M6 |
+| Revolve / lathe | M9 low; not used in the reference part |
 | 3D fillet / chamfer | M5 (OCCT/`brepjs`, not a `slvs` gap) |
-| Loft / sweep | M6 (OCCT; a 3D sweep path also needs the M9 3D-curve work) |
+| Loft / sweep | M9 low; not used in the reference part (OCCT; a 3D sweep path also needs M9 curve work) |
 | Draft | Not planned yet; M9 |
-| Shell / thickness / offset | M5 shell; offset/thicken M9 |
+| Shell / thickness / offset | M5 shell; **Offset Faces M5/M6**; thicken M9 |
 | Linear/circular patterns, feature/body mirror | M6; sketch symmetry constraint is done. Mirror is high priority. |
-| Hole/thread feature | Circle + cut extrude now; M6/M9 |
+| Hole/thread feature | Circle + cut extrude now; M9 low (not used in the reference part) |
 | Helix (threads/springs) | M6 optional |
 | Link / assemble | M8 |
 | Measure volume / area / perimeter / centre of mass | Volume in stats; the rest M5 |
@@ -680,6 +718,9 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       (`filletWithEvolution` so downstream refs survive)
 - [ ] Chamfer
 - [ ] Shell (open faces) — maybe defer
+- [ ] **Offset Faces** — move selected faces by a distance; tolerance/fit and wall
+      adjustments. The design audit shows 11 uses (third most-used modelling feature),
+      so this is Keep at M5/M6 rather than Drop
 - [ ] Selection UX: edge chain selection, box select where sensible, hover prehighlight,
       selection filters, and Select Other for cycling overlapping picks
 - [ ] Section Analysis: a view-only inspect overlay (never in history), with the
@@ -704,6 +745,10 @@ size and the fillets survive. The printer export page reports real checks and pr
 an STL derived from the current history.
 
 ## M6 — More shape (1–2 weeks, can reorder)
+
+The design audit confirms patterns, mirror, Combine and Split Body are used in the
+reference part; they are not speculative. Timeline groups are also a real workflow item
+(10 uses), added below.
 
 ### M6.0 — Sketch layout operations (pattern, mirror, offset)
 
@@ -735,11 +780,16 @@ reopened, tweaked, and the solid updates — with no materialised copies in the 
 
 ### Feature/body patterns and shape
 
-- [ ] Revolve
-- [ ] Loft / sweep (profile + path)
+The design audit confirms feature/body patterns, mirror, Combine and Split Body are used
+in the reference part. Revolve, loft and sweep are **not used there**; keep them behind
+the proven items rather than letting them displace the workflow-critical work.
+
 - [ ] Feature/body linear and circular patterns (reuse the M6.0 popup/preview grammar)
 - [ ] Feature/body mirror (sketch mirror lives in M6.0; this one uses `TopoRef` evolution)
-- [ ] Datum axes and points (revolve axes, through-point planes, sweep paths)
+- [ ] Datum axes and points (revolve axes, through-point planes, sweep paths); the audit
+      uses construction planes heavily, so these stay as enabling infrastructure
+- [ ] Revolve, loft/sweep — not used by the reference part; promote from M9 only when a
+      real part needs them
 - [ ] Helix (threads, springs) — optional
 - [ ] **Combine** — join / cut / intersect, keep tool bodies, use a body as a tool
       (elevate general body booleans to a real feature)
@@ -748,6 +798,13 @@ reopened, tweaked, and the solid updates — with no materialised copies in the 
 - [ ] **Move / Copy bodies** — materialised transform or persistent body operation
       (design decision below)
 - [ ] **Align** — line up bodies/faces without hand-measuring
+
+### Timeline groups
+
+- [ ] Named, collapsible groups of related history steps; group/ungroup, preserve step
+      order, and keep dependent-feature diagnostics visible. The audit uses 10 groups.
+      This is history refinement, distinct from the deferred sketch-operation rows nested
+      under a sketch (M6.0).
 
 ## M7 — Parameters (3–4 days)
 
@@ -760,6 +817,23 @@ reopened, tweaked, and the solid updates — with no materialised copies in the 
 
 Assemblies and joints, drawings, STEP import, curved-face sketches, sheet metal,
 collaboration, plugin API.
+
+### Assemblies (largest structural gap)
+
+The design audit shows the reference part is an assembly: 17 components, 6 component
+inserts, 1 rigid group and 2 snapshots. Single-body scope is therefore the biggest
+structural gap between the plan and the part it must make. This is a layer, not one
+feature, and needs its own design pass before v1 scope is fixed.
+
+- [ ] Component / occurrence layer: insert parts, including STEP bodies, as components
+      with stable instance identity; assemblies can contain assemblies
+- [ ] Rigid Group: fix a set of components together
+- [ ] Capture Position / Snapshot: record and restore component positions (previously
+      unplanned)
+- [ ] Assembly `TopoRef` addressing across instances; stable references through snapshot
+      and rigid-group edits
+
+### Other M8 work
 
 - [ ] Visibility toggles: show/hide sketches, bodies, constraints, construction,
       dimensions; isolate; opacity. This is a coherent surface of its own — design it
@@ -870,14 +944,15 @@ milestone.
 | Feature | Limitation today | Workaround today | What it needs | Target |
 | --- | --- | --- | --- | --- |
 | 3D edge fillet/chamfer | Only 2D sketch fillets before extrude | Draw the fillet into the sketch | `brepjs`/OCCT fillet/chamfer with evolution, feature UI | M5 |
-| Loft | Not implemented | Multiple extrudes/manual blends | OCCT loft between sections | M6 |
-| Sweep along a path | Not implemented | Planar sweep not yet; 3D path impossible | OCCT pipe/sweep; 3D path needs the M9 3D-curve work | M6 (planar) / M9 (3D) |
+| Revolve | Not implemented; not used in the reference part | Manual extrudes/rotations | OCCT revolve + axis selection | M9 (low) |
+| Loft | Not implemented; not used in the reference part | Multiple extrudes/manual blends | OCCT loft between sections | M9 (low) |
+| Sweep along a path | Not implemented; not used in the reference part | Planar sweep not yet; 3D path impossible | OCCT pipe/sweep; 3D path needs the M9 3D-curve work | M9 (low; 3D path also M9-curve work) |
 | Feature/body mirror, linear/polar patterns | Sketch symmetry constraint exists; no feature transforms | Duplicate/rotate sketches/features manually | Feature transforms + history pattern feature | M6 — **mirror is high priority** |
 | Draft for moulds/castings | Not implemented | None | OCCT draft on selected faces + neutral plane | M9 (promote to M5 if needed) |
 | Shell / thickness / offset | Shell is planned M5; offset/thicken not | Nested sketches and holes | `brepjs` shell/offset/thicken, open-face selection | M5/M9 |
-| Press/Pull / multi-face offset | Only sketch-on-face workaround | Nested sketches and holes | Multi-face offset/thicken; pair with M9 offset-face work | M9 (low) |
+| Press/Pull / multi-face offset | Single-face Offset Faces is promoted to M5/M6; multi-face Press/Pull is not | Nested sketches and holes | Multi-face offset/thicken; pair with Offset Faces | M9 (low) |
 | Full sketch projection suite | Support boundary is projected (M4); arbitrary project/include 3D/intersect/project-to-surface is not | Draw construction geometry manually | Projection feature/selection grammar, projected edges, solver refs | M4 subset / M9 rest (low) |
-| Hole/thread feature | Circle + cut extrude | Manual circle/cut | Hole profiles, standard sizes, helix/thread | M6/M9 |
+| Hole/thread feature | Circle + cut extrude; not used in the reference part | Manual circle/cut | Hole profiles, standard sizes, helix/thread | M9 (low) |
 | Text/images in sketches | Not implemented | None | Text/image entities and profiles | M9 |
 | 3D curves for sweeps | Solver/document gap (above) | Planar path only | 3D curve entity + constraints | M9 |
 | Drawings, assemblies | Not implemented | M8 | Separate modules | M8 |
@@ -904,6 +979,10 @@ through the app.
 
 ### Priority notes
 
+- **Workflow-critical from the design audit:** Offset Faces, feature/body patterns,
+  mirror, Combine, Split Body, timeline groups and assemblies. Promote those ahead of
+  revolve, loft, sweep, draft, hole/thread and primitives, which the reference part does
+  not use.
 - **Mirror/symmetry** is high-use; pull the M6 feature/body Mirror forward into M5 if M6
   slips. The sketch **symmetric** constraint already covers 2D symmetry about a line.
 - **3D fillet/chamfer and shell** are M5; they are OCCT features, not solver gaps.
@@ -930,8 +1009,11 @@ itself stays documentation-only.
 
 Slot · Sketch scale · Sketch extend · Sketch chamfer · arc-length / tangent-distance /
 ordinate dimensions · Rib · Web · Emboss · primitive bodies (box/cylinder/sphere/torus)
-· silhouette split · replace / delete / offset face · boundary fill · stitch / unstitch
+· silhouette split · replace / delete face · boundary fill · stitch / unstitch
 / simplify · direct modeling ("Capture Design History", base feature, paste-new, derive).
+
+**Offset Faces was removed from this Drop list** after the 2026-11-02 design audit: it is
+Keep at M5/M6 (11 real uses, all tolerance/fit work).
 
 ### Open design questions (from the gap backlog)
 
@@ -946,6 +1028,11 @@ ordinate dimensions · Rib · Web · Emboss · primitive bodies (box/cylinder/sp
   Fusion uses press-and-hold flyouts.
 - **Visibility toggles:** show/hide sketches, bodies, constraints, construction,
   dimensions, isolate/opacity — design as a coherent surface before implementation.
+- **Assemblies:** what is a component/occurrence in the plain-JSON document? How do
+  inserted STEP bodies keep stable identity, and how does `TopoRef` address a face inside
+  an instance? What exactly does Snapshot capture (transforms only, or visibility too)?
+- **Timeline groups:** are groups document data or presentation state? How do they
+  interact with rollback, suppression and nested sketch-operation rows?
 - **Projecting sketch geometry onto a datum plane / project-to-surface:** is this a
   projection feature, a sketch import, or a view transform? It needs a separate design
   pass; the M4 subset only projects a supporting face boundary and arbitrary solid edges.
