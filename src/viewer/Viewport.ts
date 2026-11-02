@@ -210,12 +210,14 @@ export class Viewport {
         )
         .setPosition(new THREE.Vector3(...frame.origin));
       const plane = new THREE.PlaneGeometry(size, size);
+      // Build the outline from the local plane, then transform both once. Edges
+      // built from an already-transformed geometry would be transformed twice.
+      const border = new THREE.EdgesGeometry(plane);
       plane.applyMatrix4(matrix);
+      border.applyMatrix4(matrix);
       const mesh = new THREE.Mesh(plane, fill.clone());
       mesh.userData.datumId = featureId;
       mesh.renderOrder = 1;
-      const border = new THREE.EdgesGeometry(plane);
-      border.applyMatrix4(matrix);
       const outline = new THREE.LineSegments(border, line.clone());
       outline.renderOrder = 2;
       outline.raycast = () => {};
@@ -488,7 +490,7 @@ export class Viewport {
         color: this.highlightColor,
         transparent: true,
         opacity: selected ? 0.3 : 0.14,
-        depthTest: false,
+        depthTest: true,
         depthWrite: false,
         side: THREE.DoubleSide,
       });
