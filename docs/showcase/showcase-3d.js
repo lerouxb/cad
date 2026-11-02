@@ -941,14 +941,13 @@
     var curLost = cur.out.some(function (o) {
       return o.lost;
     });
-    detailEl.hidden = !curLost;
     detailEl.innerHTML = curLost
       ? '<span class="detail-item"><span class="detail-key">lost</span>' +
         '<span class="detail-value">body \u201clid\u201d no longer exists</span></span>' +
         '<span class="detail-actions">' +
         '<button class="text-action" type="button">reselect body</button>' +
         '<button class="text-action is-quiet" type="button">open sketch</button></span>'
-      : "";
+      : '<span class="timeline-note">autosaved locally</span>';
   }
 
   function bdRenderMenu(menuEl, timelineEl, stepsEl) {

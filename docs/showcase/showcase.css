@@ -817,9 +817,41 @@
   outline-offset: 4px;
 }
 
-/* the bodies timeline has no detail summary — the step block says it all */
-.timeline-detail[hidden] {
+/* the bodies timeline keeps the app's bottom status line, and its rule runs
+   the full width under the steps (the app's timeline is a track over a detail
+   row). The step block already says everything, so the line carries only the
+   status note — never the redundant step/type/outputs. */
+.bd-timeline {
+  padding: 13px 0 14px;
+}
+
+.bd-timeline .steps {
+  padding: 0 26px;
+}
+
+.bd-timeline .timeline-detail {
+  margin-top: 0;
+  padding: 9px 26px 0;
+  border-top: 1px solid var(--rule);
+}
+
+.bd-timeline .timeline-detail:empty {
   display: none;
+}
+
+.bd-timeline .timeline-note {
+  margin-left: auto;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-micro);
+}
+
+.bd-timeline .timeline-note.is-error {
+  margin-left: 0;
+  color: var(--ink);
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
 }
 
 /* one insert affordance, placed after the selected step */
