@@ -3,6 +3,7 @@ import type { ExtrudeParams } from "../kernel/protocol";
 import type { SketchRegion } from "../sketch/loops";
 import type { SolveOutcome, SolveStatus } from "../sketch/solver";
 import type { Sketch } from "../sketch/types";
+import type { PlaneFrame } from "../types";
 
 export type RebuildStatus = "ok" | "error";
 
@@ -20,6 +21,8 @@ export interface SketchRebuildOutput {
   /** The document sketch after the solver's applied solution. */
   sketch: Sketch;
   regions: SketchRegion[];
+  /** Local plane -> world. Omitted for the default XY plane. */
+  frame?: PlaneFrame;
   dof: number;
   solveStatus: SolveStatus;
   /** Constraint ids the solver could not satisfy, for the DOF/conflict UI. */
@@ -89,7 +92,11 @@ export interface RebuildDeps {
   extrudeParams: (
     regions: readonly SketchRegion[],
     height: number,
-    options?: { symmetric?: boolean; end?: "blind" | "throughAll" },
+    options?: {
+      symmetric?: boolean;
+      end?: "blind" | "throughAll";
+      frame?: PlaneFrame;
+    },
   ) => ExtrudeParams;
 }
 

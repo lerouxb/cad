@@ -1,4 +1,4 @@
-import type { ProfileLoop } from "../types";
+import type { PlaneFrame, ProfileLoop } from "../types";
 
 export type { ProfileLoop };
 
@@ -16,6 +16,8 @@ export interface ExtrudeParams {
   symmetric?: boolean;
   /** `blind` uses height; `throughAll` cuts the current body's full extent. */
   end?: "blind" | "throughAll";
+  /** Local sketch plane -> world. Omitted for the XY world plane. */
+  frame?: PlaneFrame;
 }
 
 /** Plain-JSON geometric hint for fallback matching when a role dies. */

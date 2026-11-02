@@ -1,4 +1,6 @@
 import type { Sketch, SketchConstraint, SketchCurve, SketchPoint } from "../sketch/types";
+import type { PlaneFrame } from "../types";
+import type { TopoRef } from "../kernel/protocol";
 import { createDocument } from "./create";
 import {
   CURRENT_SCHEMA_VERSION,
@@ -26,8 +28,11 @@ export function migrateDoc(raw: unknown): Doc | null {
   // Shape-compatible upgrades:
   // v1 → v2 adds the optional `standalone` point flag;
   // v2 → v3 adds extrude `end` (defaults to blind) and `suppressed` (defaults off);
-  // v3 → v4 adds optional dimension label placement (`along`/`distance`).
-  if (version === 1 || version === 2 || version === 3) return validateDoc(raw);
+  // v3 → v4 adds optional dimension label placement (`along`/`distance`);
+  // v4 → v5 adds face sketch supports (TopoRef + cached frame).
+  if (version === 1 || version === 2 || version === 3 || version === 4) {
+    return validateDoc(raw);
+  }
   if (version === 0 || (version === undefined && "sketch" in raw)) {
     return migrateLegacy(raw);
   }
@@ -91,11 +96,13 @@ function validateFeature(raw: unknown): Feature | null {
   if (raw.type === "sketch") {
     const sketch = isSketch(raw.sketch) ? raw.sketch : null;
     if (!sketch) return null;
+    const support = validateSupport(raw.support);
+    if (!support) return null;
     return {
       id,
       type: "sketch",
       name,
-      support: validateSupport(raw.support),
+      support,
       sketch,
       ...(raw.suppressed === true ? { suppressed: true } : {}),
     };
@@ -125,13 +132,75 @@ function validateFeature(raw: unknown): Feature | null {
   return null;
 }
 
-function validateSupport(raw: unknown): PlaneRef {
+function validateSupport(raw: unknown): PlaneRef | null {
+  if (raw === undefined) {
+    // Legacy/hand-written v1 documents without a support default to XY.
+    return { kind: "world", plane: "XY" };
+  }
   if (isRecord(raw) && raw.kind === "world" && isWorldPlane(raw.plane)) {
     return { kind: "world", plane: raw.plane };
   }
-  // The spike only ever had XY sketches. Legacy/hand-written v1 documents
-  // without a support default to it rather than losing the sketch.
-  return { kind: "world", plane: "XY" };
+  if (isRecord(raw) && raw.kind === "face") {
+    const ref = validateTopoRef(raw.ref);
+    const frame = validateFrame(raw.frame);
+    if (ref && frame) return { kind: "face", ref, frame };
+  }
+  return null;
+}
+
+function validateFrame(raw: unknown): PlaneFrame | null {
+  if (!isRecord(raw)) return null;
+  if (
+    !isVec3(raw.origin) ||
+    !isVec3(raw.normal) ||
+    !isVec3(raw.xAxis) ||
+    !isVec3(raw.yAxis)
+  ) {
+    return null;
+  }
+  return {
+    origin: raw.origin,
+    normal: raw.normal,
+    xAxis: raw.xAxis,
+    yAxis: raw.yAxis,
+  };
+}
+
+function validateTopoRef(raw: unknown): TopoRef | null {
+  if (
+    !isRecord(raw) ||
+    typeof raw.source !== "string" ||
+    raw.kind !== "face" ||
+    typeof raw.role !== "string" ||
+    !isRecord(raw.hint)
+  ) {
+    return null;
+  }
+  const hint = raw.hint;
+  return {
+    source: raw.source,
+    kind: "face",
+    role: raw.role,
+    hint: {
+      entityType: "face",
+      ...(typeof hint.surfaceType === "string"
+        ? { surfaceType: hint.surfaceType }
+        : {}),
+      ...(isVec3(hint.normal) ? { normal: hint.normal } : {}),
+      ...(isVec3(hint.centroid) ? { centroid: hint.centroid } : {}),
+      ...(typeof hint.area === "number" && Number.isFinite(hint.area)
+        ? { area: hint.area }
+        : {}),
+    },
+  };
+}
+
+function isVec3(value: unknown): value is [number, number, number] {
+  return (
+    Array.isArray(value) &&
+    value.length === 3 &&
+    value.every((part) => typeof part === "number" && Number.isFinite(part))
+  );
 }
 
 function isWorldPlane(value: unknown): value is WorldPlane {

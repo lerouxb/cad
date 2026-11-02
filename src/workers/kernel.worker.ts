@@ -2,6 +2,7 @@ import {
   OcctWasmAdapter,
   addHoles,
   assignRoles,
+  applyMatrix,
   captureHint,
   circle,
   clearMeshCache,
@@ -27,11 +28,13 @@ import {
   wireLoop,
   withScope,
   type ClosedWire,
+  type Matrix4x4,
   type PlanarWire,
   type RoleTable,
   type Solid,
 } from "brepjs";
 import { OcctKernel } from "occt-wasm";
+import type { PlaneFrame } from "../core/types";
 import type {
   BodyMesh,
   ExtrudeParams,
@@ -272,14 +275,17 @@ function buildSolid(params: ExtrudeParams, base: Solid | null): Solid {
   }
   for (const region of params.regions) validateRegion(region);
 
+  const frame = params.frame;
   let startZ = 0;
   let totalHeight = params.height;
   if (params.end === "throughAll") {
     if (!base) throw new Error("Through-all needs an existing body to cut.");
-    const bounds = getBounds(base);
-    const span = Math.max(bounds.zMax - bounds.zMin, 1);
+    const extent = frame
+      ? extentAlongFrame(base, frame)
+      : { min: getBounds(base).zMin, max: getBounds(base).zMax };
+    const span = Math.max(extent.max - extent.min, 1);
     const margin = Math.max(5, span * 0.1);
-    startZ = bounds.zMin - margin;
+    startZ = extent.min - margin;
     totalHeight = span + margin * 2;
   } else if (params.symmetric) {
     startZ = -params.height / 2;
@@ -305,8 +311,48 @@ function buildSolid(params: ExtrudeParams, base: Solid | null): Solid {
         : scope.track(unwrap(fuseAll(solids)));
     // The scope disposes the inputs and the original solid; the caller owns the
     // clone independently, which is what the prefix cache retains.
-    return unwrap(clone(solid));
+    const local = unwrap(clone(solid));
+    if (!frame) return local;
+    const moved = unwrap(applyMatrix(local, frameMatrix(frame)));
+    local.delete();
+    return moved;
   });
+}
+
+function frameMatrix(frame: PlaneFrame): Matrix4x4 {
+  const { origin, normal, xAxis, yAxis } = frame;
+  return [
+    [xAxis[0], yAxis[0], normal[0], origin[0]],
+    [xAxis[1], yAxis[1], normal[1], origin[1]],
+    [xAxis[2], yAxis[2], normal[2], origin[2]],
+    [0, 0, 0, 1],
+  ];
+}
+
+/** Body extent along the thread's plane normal, relative to its origin. */
+function extentAlongFrame(
+  solid: Solid,
+  frame: PlaneFrame,
+): { min: number; max: number } {
+  const bounds = getBounds(solid);
+  const { origin, normal } = frame;
+  let min = Infinity;
+  let max = -Infinity;
+  for (const x of [bounds.xMin, bounds.xMax]) {
+    for (const y of [bounds.yMin, bounds.yMax]) {
+      for (const z of [bounds.zMin, bounds.zMax]) {
+        const distance =
+          (x - origin[0]) * normal[0] +
+          (y - origin[1]) * normal[1] +
+          (z - origin[2]) * normal[2];
+        if (distance < min) min = distance;
+        if (distance > max) max = distance;
+      }
+    }
+  }
+  return Number.isFinite(min) && Number.isFinite(max)
+    ? { min, max }
+    : { min: 0, max: 1 };
 }
 
 function meshSolid(solid: Solid, roles: RoleTable): BodyMesh {

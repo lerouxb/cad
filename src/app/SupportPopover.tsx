@@ -5,8 +5,9 @@ interface SupportPopoverProps {
   onMove: (position: PopoverPosition) => void;
   onCancel: () => void;
   onApply: () => void;
-  /** A current body-face pick, acknowledged even though face support is M4. */
+  /** A current body-face pick, used as the sketch support when planar. */
   faceLabel?: string;
+  faceSupported?: boolean;
 }
 
 /**
@@ -19,7 +20,14 @@ export function SupportPopover({
   onCancel,
   onApply,
   faceLabel,
+  faceSupported = false,
 }: SupportPopoverProps) {
+  const face = Boolean(faceLabel);
+  const hint = face
+    ? faceSupported
+      ? "sketch on the selected planar face"
+      : "this face is curved; cancel and pick a world plane"
+    : "world XZ/YZ and datum planes arrive with M4";
   return (
     <StagePopover
       kicker="new feature"
@@ -27,14 +35,15 @@ export function SupportPopover({
       testId="support-popover"
       position={position}
       onMove={onMove}
-      hint={
-        faceLabel
-          ? "face supports arrive with M4; choose a world plane for now"
-          : "world XZ/YZ and planar faces arrive with M4"
-      }
-      summary="world plane · XY"
+      hint={hint}
+      summary={face ? "planar face · selected" : "world plane · XY"}
       cancel={{ label: "cancel", onClick: onCancel, testId: "support-cancel" }}
-      primary={{ label: "sketch", onClick: onApply, testId: "new-sketch" }}
+      primary={{
+        label: "sketch",
+        onClick: onApply,
+        testId: "new-sketch",
+        disabled: face && !faceSupported,
+      }}
     >
       {faceLabel ? (
         <div className="feature-row">
@@ -45,15 +54,27 @@ export function SupportPopover({
       <div className="feature-row">
         <span className="detail-key">support</span>
         <span className="seg" role="group" aria-label="Sketch support">
-          <button className="is-selected" type="button">
-            XY
-          </button>
-          <button type="button" disabled title="Arrives with M4">
-            XZ
-          </button>
-          <button type="button" disabled title="Arrives with M4">
-            YZ
-          </button>
+          {face ? (
+            <button
+              className="is-selected"
+              type="button"
+              disabled={!faceSupported}
+            >
+              face
+            </button>
+          ) : (
+            <>
+              <button className="is-selected" type="button">
+                XY
+              </button>
+              <button type="button" disabled title="Arrives with M4">
+                XZ
+              </button>
+              <button type="button" disabled title="Arrives with M4">
+                YZ
+              </button>
+            </>
+          )}
         </span>
       </div>
     </StagePopover>

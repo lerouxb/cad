@@ -8,6 +8,12 @@ import {
 import { copyDocument, createBlankDocument } from "../core/doc/create";
 import { createExampleDocument } from "../core/doc/example";
 import {
+  frameFromHint,
+  isDefaultSupport,
+  supportFrame,
+  supportLabel,
+} from "../core/doc/support";
+import {
   deleteLocalFile,
   deserializeDoc,
   loadDoc,
@@ -373,6 +379,9 @@ export function App() {
     }
     const points = geometry.points;
     const curves: Array<SketchOverlayData["curves"][number]> = [];
+    const frame = isDefaultSupport(activeSketchFeature.support)
+      ? undefined
+      : supportFrame(activeSketchFeature.support);
 
     // When an extrude step is active, show only the profile loops that extrude
     // actually uses. The full sketch is still visible in profile-selection mode.
@@ -433,7 +442,7 @@ export function App() {
         pushCurve(outer);
         for (const hole of holes) pushCurve(hole);
       }
-      return { curves, points: [], fills };
+      return { curves, points: [], fills, ...(frame ? { frame } : {}) };
     }
 
     for (const curve of activeSketchFeature.sketch.curves) {
@@ -486,6 +495,7 @@ export function App() {
             ]
           : [];
       }),
+      ...(frame ? { frame } : {}),
     };
   }, [
     mode,
@@ -951,12 +961,29 @@ export function App() {
 
   const handleNewSketch = (): void => {
     const current = getState();
-    const { doc: nextDoc, feature } = addSketchFeature(current.doc);
+    const faceRef =
+      bodyPick?.kind === "face" ? (bodyPick.ref ?? null) : null;
+    if (bodyPick?.kind === "face" && !faceRef) {
+      setHistoryNotice("This face has no stable reference; choose a world plane.");
+      return;
+    }
+    const frame = faceRef ? frameFromHint(faceRef.hint) : null;
+    if (faceRef && !frame) {
+      setHistoryNotice("Only planar faces can support a sketch.");
+      return;
+    }
+    const support =
+      faceRef && frame ? ({ kind: "face", ref: faceRef, frame } as const) : undefined;
+    const { doc: nextDoc, feature } = addSketchFeature(
+      current.doc,
+      support ? { support } : {},
+    );
     const outcome = isSolverReady() ? solveSketch(feature.sketch) : null;
     commit({ doc: nextDoc, solved: outcome, solvedFor: feature.id });
     setActiveFeatureId(feature.id);
     dismissEditor();
     setSupportOpen(false);
+    setHistoryNotice(null);
     setMode("sketch");
     setRollbackIndex(null);
     setSelection([]);
@@ -964,6 +991,8 @@ export function App() {
     setTool("select");
     setZoomPreset("fit");
     setFitToken((token) => token + 1);
+    setBodyPick(null);
+    viewportRef.current?.clearPick();
   };
 
   const beginExtrudeDraft = (regions: readonly string[] = []): void => {
@@ -1907,6 +1936,12 @@ export function App() {
         end: extrudeDraft.end,
       }
     : null;
+  const supportFace =
+    bodyPick?.kind === "face" ? (bodyPick.ref ?? null) : null;
+  const supportFaceFrame = supportFace
+    ? frameFromHint(supportFace.hint)
+    : null;
+  const supportFaceSupported = Boolean(supportFace && supportFaceFrame);
 
   return (
     <div className="app">
@@ -2581,11 +2616,8 @@ export function App() {
                 handleNewSketch();
                 setSupportOpen(false);
               }}
-              faceLabel={
-                bodyPick?.kind === "face"
-                  ? bodyPick.ref?.role ?? "Selected face"
-                  : undefined
-              }
+              faceLabel={supportFace?.role}
+              faceSupported={supportFaceSupported}
             />
           ) : null}
 
@@ -2687,7 +2719,7 @@ export function App() {
                 extrudeOutput?.regionIds.length ??
                 (isExtrudeFeature(feature) ? feature.regions.length : 0);
               const meta = isSketchFeature(feature)
-                ? `${feature.support.plane} · ${feature.sketch.curves.length} curves`
+                ? `${supportLabel(feature.support)} · ${feature.sketch.curves.length} curves`
                 : `${feature.height} mm · ${feature.operation} · ${regionCount} region${
                     regionCount === 1 ? "" : "s"
                   }`;
@@ -2832,7 +2864,7 @@ export function App() {
                     <span className="detail-item">
                       <span className="detail-key">plane</span>
                       <span className="detail-value">
-                        {activeFeature.support.plane}
+                        {supportLabel(activeFeature.support)}
                       </span>
                     </span>
                     <span className="detail-item">

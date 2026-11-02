@@ -8,6 +8,7 @@ import {
   type ExtrudeFeature,
   type ExtrudeOperation,
   type Feature,
+  type PlaneRef,
   type SketchFeature,
 } from "./types";
 
@@ -143,11 +144,17 @@ export function nextFeatureName(doc: Doc, type: Feature["type"]): string {
  */
 export function addSketchFeature(
   doc: Doc,
-  options: { name?: string; id?: string; sketch?: Sketch } = {},
+  options: {
+    name?: string;
+    id?: string;
+    sketch?: Sketch;
+    support?: PlaneRef;
+  } = {},
 ): { doc: Doc; feature: SketchFeature } {
   const feature = createSketchFeature(options.sketch ?? emptySketch(), {
     name: options.name ?? nextFeatureName(doc, "sketch"),
     ...(options.id ? { id: options.id } : {}),
+    ...(options.support ? { support: options.support } : {}),
   });
   return {
     doc: { ...doc, features: [...doc.features, feature] },

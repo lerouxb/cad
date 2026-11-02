@@ -87,7 +87,7 @@ Everything OCCT runs in the worker (slow, can take 100s of ms).
 type Id = string; // nanoid, opaque, stable forever
 
 interface Doc {
-  schemaVersion: 4;
+  schemaVersion: 5;
   units: "mm";
   name: string;
   features: Feature[];        // ordered history, single body in v1
@@ -170,14 +170,15 @@ Placement is deliberately separate from geometry:
 ```ts
 type PlaneRef =
   | { kind: "world"; plane: "XY" | "XZ" | "YZ" }
-  | { kind: "face"; ref: TopoRef; frame: Frame } // frame is a cached last-known placement
-  | { kind: "datum"; feature: Id; frame: Frame }; // a DatumPlaneFeature, cached frame
+  | { kind: "face"; ref: TopoRef; frame: PlaneFrame } // cached last-known placement
+  | { kind: "datum"; feature: Id; frame: PlaneFrame }; // a DatumPlaneFeature
 
-interface Frame {
+interface PlaneFrame {
   origin: [number, number, number];
-  x: [number, number, number];       // unit
-  y: [number, number, number];       // unit
-}                                    // normal = x × y
+  normal: [number, number, number]; // unit
+  xAxis: [number, number, number];  // unit
+  yAxis: [number, number, number];  // unit, normal = xAxis × yAxis
+}
 ```
 
 3D features reference a sketch plus the specific closed **regions** to use:
@@ -549,8 +550,9 @@ assigns roles to each tool with `assignRoles(tool, "extrude")`, uses
 `fuseWithEvolution`/`cutWithEvolution`, and advances every origin's roles with
 `updateRoles` before caching the prefix. `captureHint`/`createRef` then produce JSON-safe
 `TopoRef`s for the final body's faces; `FaceGroup.ref` and `BodyPick.ref` carry them to
-the main thread. Storing refs on features (face/datum supports) and resolving `PlaneRef`s
-is the first M4 task.
+the main thread. Schema v5 stores a face `TopoRef` plus its cached `PlaneFrame` on
+`SketchFeature.support`; the worker maps the local extrude solid through that frame. Exact
+`resolveRef` on rebuild and projected face-boundary references are still pending.
 
 This is the part to test hardest. Every kernel test that edits an upstream feature and
 re-runs a downstream fillet is a topological-naming regression test.
@@ -641,10 +643,11 @@ solver has no 3D sketch representation.
   is drawn on its plane with a thick highlighter underlay plus a dark ink centerline
   (`Line2`). Only the region loops that extrude uses are drawn, and their outer/hole
   loops are also shaded with a transparent highlighter fill (the hole stays open).
-  Construction/unused curves and all points are hidden until profile-selection mode,
-  where the full sketch and every region return. It is `depthTest:false` so it reads
-  through the body, and it is separate from the mesh/raycast groups. It is hidden in
-  sketch mode and for a suppressed source sketch.
+  A face-supported sketch transforms the whole overlay through its `PlaneFrame`
+  (`Matrix4.makeBasis`). Construction/unused curves and all points are hidden until
+  profile-selection mode, where the full sketch and every region return. It is
+  `depthTest:false` so it reads through the body, and it is separate from the
+  mesh/raycast groups. It is hidden in sketch mode and for a suppressed source sketch.
 - **Sketch mode:** a full-stage 2D surface rather than a sidebar. The timeline switches
   between this and the 3D model; the 3D renderer is paused while the sketch is active.
   `slvs` stays on the main thread, and a **separate SVG surface** carries sketch curves,
@@ -765,11 +768,11 @@ the honest map, so nobody assumes a layer exists because it is described above.
 
 | Layer | Status |
 | --- | --- |
-| `core/doc` | Real: `Doc` schema with sketch/extrude features, selectors, migrations and `localStorage` autosave. |
+| `core/doc` | Real: `Doc` schema with sketch/extrude features, selectors, migrations, schema v5 face sketch supports (`TopoRef` + cached `PlaneFrame`) and `localStorage` autosave. |
 | `core/sketch` | Real: types, `slvs` adapter, tangent-space `solveDrag`, pure drawing edits, loop extraction, geometry helpers, tests. `demo.ts` is the loadable example. |
-| `core/features` | Real: region selection + extrude params. The worker supports ordered new/join/cut; no datum planes or fillets yet. |
+| `core/features` | Real: region selection + extrude params, including a face-plane frame mapped in the worker. The worker supports ordered new/join/cut; no datum planes, projected refs or fillets yet. |
 | `core/rebuild` | Real: ordered sketch/extrude evaluation, prefix cache, per-feature diagnostics. Worker solid cache + new/join/cut are in; feature-tree creation UI is M3. |
-| `core/kernel` | Real: typed protocol, worker client, OCCT worker, feature cache, hole validation, exact stats + bounds. |
+| `core/kernel` | Real: typed protocol, worker client, OCCT worker, feature cache, face-frame extrude transforms, hole validation, exact stats + bounds. |
 | `viewer` | Real: Z-up scene, framing, meshing, edges, face/edge raycast picking, hover/selection highlights. |
 | `sketch` UI | Real: full-stage sketch editor with a grouped text tool line, stage-foot DOF/status, contextual selection popover, adaptive/free-form grid, scale bar and fit/50/100/200 zoom. Select/drag, box-select profile regions, line/point/rectangle/circle/arc, fillet, explicit region fills (material and void, with All/Voids/Auto), contextual dimension/trim chips, inline dimension and point editors, construction toggle, snapping, auto H/V, Enter-to-finish, undo/redo. Standalone points are normal solver geometry but never profiles. |
 | Feature tree | Real: lists all `doc.features`, selects/renames/creates/edits, drag-reorders, suppresses, deletes with cascade, rolls back/forward, and shows per-feature status/diagnostics. |

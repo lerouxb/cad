@@ -40,7 +40,7 @@ function exampleDoc(): Doc {
 describe("document schema", () => {
   it("creates a two-feature part with stable ids", () => {
     const doc = exampleDoc();
-    expect(doc.schemaVersion).toBe(4);
+    expect(doc.schemaVersion).toBe(5);
     expect(doc.features.map((feature) => feature.type)).toEqual([
       "sketch",
       "extrude",
@@ -287,7 +287,7 @@ describe("document migrations", () => {
     });
 
     expect(migrated).not.toBeNull();
-    expect(migrated!.schemaVersion).toBe(4);
+    expect(migrated!.schemaVersion).toBe(5);
     expect(migrated!.name).toBe("Legacy part");
     expect(migrated!.features).toHaveLength(2);
     expect(primaryExtrudeFeature(migrated!)?.height).toBe(25);
@@ -301,13 +301,13 @@ describe("document migrations", () => {
     const doc = exampleDoc();
     const migrated = migrateDoc({ ...doc, schemaVersion: 1 });
     expect(migrated).toEqual(doc);
-    expect(migrated?.schemaVersion).toBe(4);
+    expect(migrated?.schemaVersion).toBe(5);
   });
 
   it("opens a v2 document and adds the extrude defaults", () => {
     const doc = exampleDoc();
     const migrated = migrateDoc({ ...doc, schemaVersion: 2 });
-    expect(migrated?.schemaVersion).toBe(4);
+    expect(migrated?.schemaVersion).toBe(5);
     expect(primaryExtrudeFeature(migrated!)?.end).toBe("blind");
     expect(primaryExtrudeFeature(migrated!)?.suppressed).toBeUndefined();
   });
@@ -315,14 +315,53 @@ describe("document migrations", () => {
   it("opens a v3 document and keeps its dimension placements", () => {
     const doc = exampleDoc();
     const migrated = migrateDoc({ ...doc, schemaVersion: 3 });
-    expect(migrated?.schemaVersion).toBe(4);
+    expect(migrated?.schemaVersion).toBe(5);
+  });
+
+  it("opens a v4 document with a face-supported sketch", () => {
+    const doc = exampleDoc();
+    const sketch = doc.features[0]!;
+    if (sketch.type !== "sketch") throw new Error("Expected the example sketch");
+    const support = {
+      kind: "face" as const,
+      ref: {
+        source: "extrude",
+        kind: "face" as const,
+        role: "top",
+        hint: {
+          entityType: "face" as const,
+          normal: [0, 0, 1] as [number, number, number],
+          centroid: [30, 20, 12] as [number, number, number],
+        },
+      },
+      frame: {
+        origin: [30, 20, 12] as [number, number, number],
+        normal: [0, 0, 1] as [number, number, number],
+        xAxis: [1, 0, 0] as [number, number, number],
+        yAxis: [0, 1, 0] as [number, number, number],
+      },
+    };
+    const migrated = migrateDoc({
+      ...doc,
+      schemaVersion: 4,
+      features: [{ ...sketch, support }, ...doc.features.slice(1)],
+    });
+    expect(migrated?.schemaVersion).toBe(5);
+    expect(primarySketchFeature(migrated!)?.support).toEqual(support);
+    expect(
+      migrateDoc({
+        ...doc,
+        schemaVersion: 5,
+        features: [{ ...sketch, support: { kind: "face" } }, ...doc.features.slice(1)],
+      }),
+    ).toBeNull();
   });
 
   it("rejects malformed, unknown and newer documents", () => {
     const doc = exampleDoc();
     expect(migrateDoc(null)).toBeNull();
     expect(migrateDoc("nope")).toBeNull();
-    expect(migrateDoc({ ...doc, schemaVersion: 5 })).toBeNull();
+    expect(migrateDoc({ ...doc, schemaVersion: 6 })).toBeNull();
     expect(migrateDoc({ ...doc, features: "nope" })).toBeNull();
     expect(
       migrateDoc({

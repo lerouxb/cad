@@ -1,7 +1,7 @@
 import type { ExtrudeParams, ProfileRegion } from "../kernel/protocol";
 import { ensureCounterClockwise, signedArea } from "../sketch/geometry";
 import type { SketchRegion } from "../sketch/loops";
-import type { ProfileLoop, ProfileSegment } from "../types";
+import type { PlaneFrame, ProfileLoop, ProfileSegment } from "../types";
 
 export interface ExtrudeRegionSelection {
   /** Region ids actually used, in canvas/area order. */
@@ -48,7 +48,11 @@ export function selectExtrudeRegions(
 export function extrudeParams(
   regions: readonly SketchRegion[],
   height: number,
-  options: { symmetric?: boolean; end?: "blind" | "throughAll" } = {},
+  options: {
+    symmetric?: boolean;
+    end?: "blind" | "throughAll";
+    frame?: PlaneFrame;
+  } = {},
 ): ExtrudeParams {
   return {
     regions: regions.map(
@@ -60,6 +64,7 @@ export function extrudeParams(
     height,
     ...(options.symmetric ? { symmetric: true } : {}),
     ...(options.end === "throughAll" ? { end: "throughAll" } : {}),
+    ...(options.frame ? { frame: options.frame } : {}),
   };
 }
 

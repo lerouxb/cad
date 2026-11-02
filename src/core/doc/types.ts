@@ -1,18 +1,21 @@
 import type { Sketch } from "../sketch/types";
+import type { PlaneFrame } from "../types";
+import type { TopoRef } from "../kernel/protocol";
 
 /** The document schema version. Bump this on every shape change. */
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 export type WorldPlane = "XY" | "XZ" | "YZ";
 
 export type ExtrudeEnd = "blind" | "throughAll";
 
 /**
- * Where a sketch lives. M3 only resolves world planes; M4 adds datum planes and
- * planar faces. Keeping the ref in the document (instead of hard-coding XY) is
- * the prerequisite for sketch-on-face.
+ * Where a sketch lives. World planes are intrinsic; a face support stores the
+ * JSON-safe TopoRef plus the last-known frame (M4's cached-frame fallback).
  */
-export type PlaneRef = { kind: "world"; plane: WorldPlane };
+export type PlaneRef =
+  | { kind: "world"; plane: WorldPlane }
+  | { kind: "face"; ref: TopoRef; frame: PlaneFrame };
 
 export interface SketchFeature {
   id: string;

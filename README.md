@@ -104,11 +104,13 @@ selection/dimension inspector; there is no permanent sidebar.
 
 It is intentionally narrow: auto mode defaults to the largest region until you click one,
 split/trim works on lines and arcs (trimming a circle into an arc is still unsupported),
-and datum planes and sketches on faces are M4. M3 is done: the history supports
+and datum planes and projected face-boundary references are M4; sketches on planar
+faces work now. M3 is done: the history supports
 create/edit, drag-reorder, suppress, delete-cascade, rollback/roll-forward, `.cad`
 download/open/rename/new, a local file list with copy and delete, blind/symmetric/through-all
-extrudes, and JSON-safe face refs whose roles now survive joins/cuts. Storing those refs
-on features and projected face-boundary geometry are the first M4 tasks. Sketch pattern,
+extrudes, and JSON-safe face refs whose roles now survive joins/cuts. A sketch can store
+a face `TopoRef` plus its cached plane frame; projected boundaries, live reference
+resolution and datum planes are the remaining M4 work. Sketch pattern,
 mirror and offset are planned as
 **re-editable parametric operations** (M6.0, ADR-0004), not one-shot copies;
 feature/body patterns/mirror are M6. Ellipses/conics/B-splines, free 3D sketches, 3D

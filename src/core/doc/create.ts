@@ -4,6 +4,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   type Doc,
   type ExtrudeFeature,
+  type PlaneRef,
   type SketchFeature,
 } from "./types";
 
@@ -14,17 +15,18 @@ export interface CreateDocOptions {
   id?: string;
   sketchId?: string;
   extrudeId?: string;
+  support?: PlaneRef;
 }
 
 export function createSketchFeature(
   sketch: Sketch = emptySketch(),
-  options: { name?: string; id?: string } = {},
+  options: { name?: string; id?: string; support?: PlaneRef } = {},
 ): SketchFeature {
   return {
     id: options.id ?? newId("feat"),
     type: "sketch",
     name: options.name ?? "Sketch 1",
-    support: { kind: "world", plane: "XY" },
+    support: options.support ?? { kind: "world", plane: "XY" },
     sketch,
   };
 }
@@ -72,6 +74,7 @@ export function createDocument(
   const sketchFeature = createSketchFeature(sketch, {
     name: "Sketch 1",
     ...(options.sketchId ? { id: options.sketchId } : {}),
+    ...(options.support ? { support: options.support } : {}),
   });
   const extrudeFeature = createExtrudeFeature(sketchFeature.id, {
     name: "Extrude 1",

@@ -6,6 +6,7 @@ import {
   type Feature,
   type SketchFeature,
 } from "../doc/types";
+import { isDefaultSupport, supportFrame } from "../doc/support";
 import type { KernelFeature } from "../kernel/protocol";
 import { extrudeParams, selectExtrudeRegions } from "../features/extrude";
 import { applySolution } from "../sketch/geometry";
@@ -225,6 +226,9 @@ function evaluateSketch(
     kind: "sketch",
     sketch,
     regions,
+    ...(isDefaultSupport(feature.support)
+      ? {}
+      : { frame: supportFrame(feature.support) }),
     dof: outcome.dof,
     solveStatus: outcome.status,
     conflicting: outcome.conflicting,
@@ -332,6 +336,7 @@ function evaluateExtrude(
     params: deps.extrudeParams(selection.regions, feature.height, {
       symmetric: feature.symmetric,
       end: feature.end,
+      frame: source.output.frame,
     }),
     sketchId: feature.sketchId,
     regionIds: selection.ids,

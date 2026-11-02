@@ -400,6 +400,60 @@ test("shows only the selected extrude's profiles on the model overlay", async ({
   await expect(canvas).toHaveAttribute("data-sketch-fills", "1");
 });
 
+test("creates a sketch on a planar face and extrudes from it", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await page.getByRole("button", { name: "Fit view" }).click();
+  await page.waitForTimeout(200);
+  await page.mouse.move(700, 330);
+  await expect(page.locator("canvas.viewport-canvas")).toHaveAttribute(
+    "data-hover-kind",
+    "face",
+  );
+  await page.mouse.click(700, 330);
+  await expect(page.getByTestId("body-pick")).toHaveAttribute(
+    "data-kind",
+    "face",
+  );
+
+  await page.getByTestId("add-sketch").click();
+  await expect(page.getByTestId("support-popover")).toContainText(
+    "selected face",
+  );
+  await expect(page.getByTestId("support-popover")).toContainText(
+    "planar face",
+  );
+  await expect(page.getByTestId("new-sketch")).toBeEnabled();
+  await page.getByTestId("new-sketch").click();
+
+  await expect(page.getByTestId("timeline-detail")).toContainText("Face ·");
+  await expect(page.getByTestId("tool-select")).toBeVisible();
+
+  // The sketch is plane-local at the face centroid; draw a 10 mm circle.
+  await page.getByTestId("tool-circle").click();
+  await clickSketch(page, 0, 0);
+  await clickSketch(page, 10, 0);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("finish-sketch").click();
+
+  await page.getByTestId("new-extrude").click();
+  await clickSketch(page, 0, 0);
+  await expect(page.getByTestId("extrude-apply")).toBeEnabled();
+  await page.getByTestId("extrude-height").fill("5");
+  await page.getByTestId("extrude-apply").click();
+
+  const expected =
+    60 * 40 * 12 - Math.PI * 8 * 8 * 12 + Math.PI * 10 * 10 * 5;
+  await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
+  await expect.poll(() => meshBounds(page)).toBe("0,0,0,60,40,17");
+  await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
+    "data-status",
+    "ok",
+  );
+  expect(errors).toEqual([]);
+});
+
 test("picks faces and edges in the model view", async ({ app: page }) => {
   const canvas = page.locator("canvas.viewport-canvas");
   await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
@@ -1645,7 +1699,7 @@ test("autosaves the document and reopens it", async ({ app: page }) => {
     const raw = localStorage.getItem("cad.doc");
     return raw ? JSON.parse(raw) : null;
   });
-  expect(stored?.schemaVersion).toBe(4);
+  expect(stored?.schemaVersion).toBe(5);
 
   // A new document in the same context reads the saved part, migrates it, and
   // rebuilds the same solid.

@@ -112,7 +112,7 @@ feature work then lands inside that system.
   started from the selected sketch step and begins with **no profile selected**; the
   draft only becomes a history feature after at least one profile and the parameters are
   applied. Existing extrudes are edited by selecting their step.
-- `npm run verify` (163 unit tests) and `npm run e2e` (45 tests) are green. The e2e asserts
+- `npm run verify` (169 unit tests) and `npm run e2e` (48 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -523,7 +523,8 @@ and evolution-based role propagation through booleans are in.
 
 - [x] `core/doc`: feature/document schema (`Doc`, `schemaVersion`, ids, migrations) and
       the sketch in the document store rather than component state; schema v4 adds
-      optional dimension label placement (`along` for linear, `distance` for radial)
+      optional dimension label placement (`along` for linear, `distance` for radial);
+      schema v5 adds planar face supports (`TopoRef` + cached `PlaneFrame`)
 - [x] `core/rebuild`: ordered evaluation, per-feature status, prefix cache, generation
       counters, cancellation of stale results, and the worker solid cache
 - [x] Feature tree UI: select, rename, create, reorder (drag), suppress, delete
@@ -606,9 +607,10 @@ with face sketches.
 
 ### Sketches on faces
 
-- [ ] Face → `TopoRef` on selection; `PlaneRef.kind = "face"`
-- [ ] Deterministic face frame (origin, x-axis) + cached frame fallback
-- [ ] Sketch on a planar face of a solid; camera aligns to the face normal
+- [x] Face → `TopoRef` on selection; `PlaneRef.kind = "face"` (schema v5)
+- [x] Deterministic face frame (origin, x-axis) + cached frame fallback
+- [x] Sketch on a planar face of a solid; the 2D sketch surface uses the face frame and
+      the model overlay/extrude map through it (no 3D camera turn needed)
 - [ ] Project the supporting face's boundary into the sketch as fixed construction
       geometry (`drawFaceOutline`); project arbitrary edges (`drawProjection`). Projected
       geometry is dashed, labelled, fixed and never selectable as user geometry
@@ -626,7 +628,10 @@ with face sketches.
       reselect / open sketch / revert (mockup 06)
 - [ ] Handle flipped face normals and sketches created on the "back" of a face
 - [ ] Topological-naming regression test: change base height, boss on top face follows
-- [ ] UI: unsupported (curved) face → clear explanation, no broken state
+- [x] UI: unsupported (curved) face → clear explanation, no broken state
+- [x] **First slice landed:** face refs + deterministic cached frame, sketch on a planar
+      face, and frame-aware extrude/overlay. Projected boundary/live references, datum
+      planes, exact `resolveRef` and lost-support recovery remain.
 
 **Done when:** sketch on an offset plane in empty space; sketch on a midplane between two
 faces; change the offset or the base plate height and every dependent sketch/feature

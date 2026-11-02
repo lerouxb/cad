@@ -4,6 +4,7 @@ import { Line2 } from "three/addons/lines/Line2.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import type { BodyMesh } from "../core/kernel/protocol";
+import type { PlaneFrame } from "../core/types";
 import {
   edgeGroupForVertex,
   edgePick,
@@ -33,6 +34,8 @@ export interface ViewportOptions {
 
 /** A sketch rendered on its plane in the model view. Plain data, no three.js. */
 export interface SketchOverlayData {
+  /** Local sketch plane -> world. Omitted for the default XY plane. */
+  frame?: PlaneFrame;
   curves: ReadonlyArray<{
     points: ReadonlyArray<readonly [number, number]>;
     construction?: boolean;
@@ -552,6 +555,19 @@ export class Viewport {
       Math.max(1, this.canvas.clientWidth),
       Math.max(1, this.canvas.clientHeight),
     );
+    const frameMatrix = overlay.frame
+      ? new THREE.Matrix4()
+          .makeBasis(
+            new THREE.Vector3(...overlay.frame.xAxis),
+            new THREE.Vector3(...overlay.frame.yAxis),
+            new THREE.Vector3(...overlay.frame.normal),
+          )
+          .setPosition(new THREE.Vector3(...overlay.frame.origin))
+      : null;
+    const frameGeometry = <T extends THREE.BufferGeometry>(geometry: T): T => {
+      if (frameMatrix) geometry.applyMatrix4(frameMatrix);
+      return geometry;
+    };
 
     const lineMaterial = (
       color: string,
@@ -594,7 +610,7 @@ export class Viewport {
         const loop = ring(hole);
         if (loop.length >= 3) shape.holes.push(new THREE.Path(loop));
       }
-      const geometry = new THREE.ShapeGeometry(shape);
+      const geometry = frameGeometry(new THREE.ShapeGeometry(shape));
       const material = new THREE.MeshBasicMaterial({
         color: highlighter,
         transparent: true,
@@ -614,6 +630,7 @@ export class Viewport {
       const makeLine = (material: LineMaterial, order: number): Line2 => {
         const geometry = new LineGeometry();
         geometry.setPositions(positions);
+        frameGeometry(geometry);
         const line = new Line2(geometry, material);
         if (material.dashed) line.computeLineDistances();
         line.renderOrder = order;
@@ -639,6 +656,7 @@ export class Viewport {
       });
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      frameGeometry(geometry);
       const material = new THREE.PointsMaterial({
         color: ink,
         size: 3.5,
