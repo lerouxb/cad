@@ -902,14 +902,15 @@
 .step-bodies {
   display: flex;
   flex-wrap: wrap;
+  align-items: baseline;
   gap: 3px 8px;
   margin-top: 5px;
 }
 
+/* the chip's contents are inline so the type dot can align itself to the
+   x-height with vertical-align: middle (font-relative, no tuned offset) */
 .body-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  display: inline-block;
   margin: 0;
   padding: 1px 5px;
   border: 0;
@@ -940,14 +941,15 @@
   opacity: 0.7;
 }
 
-/* align the dot to the text's x-height. Flex centring puts it on the line-box
-   centre; the x-height centre is a hair higher, so lift it by that much.
-   Value dialled in by eye in DevTools (-0.15em at the chip's 8.5px font) */
+/* centre the dot on the text's x-height. vertical-align: middle aligns the
+   box midpoint to the baseline plus half the x-height, so this is correct for
+   whatever monospace the viewer has — no tuned pixel offset */
 .body-dot {
-  position: relative;
-  top: -0.15em;
+  display: inline-block;
+  vertical-align: middle;
   width: 7px;
   height: 7px;
+  margin: 0 4px;
   border: 1px solid var(--ink);
 }
 
