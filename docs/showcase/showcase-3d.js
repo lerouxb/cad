@@ -563,7 +563,7 @@
       meta: kind === "sketch" ? "choosing support" : "offset 10.0 mm",
       out: [
         {
-          op: "",
+          op: "+",
           kind: kind,
           id: (kind === "sketch" ? "s" : "p") + n,
           label: kind === "sketch" ? "new sketch" : "new plane"
@@ -672,7 +672,7 @@
         kind: "sketch",
         name: "base profiles",
         meta: merged ? "XY \u00b7 1 profile" : "XY \u00b7 2 profiles",
-        out: [{ op: "", kind: "sketch", id: "s1", label: "base profiles" }]
+        out: [{ op: "+", kind: "sketch", id: "s1", label: "base profiles" }]
       },
       {
         kind: "extrude",
@@ -689,14 +689,14 @@
         kind: "plane",
         name: "symmetry",
         meta: "midplane",
-        out: [{ op: "", kind: "plane", id: "p1", label: "symmetry" }]
+        out: [{ op: "+", kind: "plane", id: "p1", label: "symmetry" }]
       },
       {
         kind: "sketch",
         name: "boss profile",
         meta: "on symmetry",
         group: true,
-        out: [{ op: "", kind: "sketch", id: "s2", label: "boss profile" }]
+        out: [{ op: "+", kind: "sketch", id: "s2", label: "boss profile" }]
       },
       {
         kind: "extrude",
@@ -710,7 +710,7 @@
         name: "mounting hole",
         meta: "top of lid",
         group: true,
-        out: [{ op: "", kind: "sketch", id: "s3", label: "mounting hole" }]
+        out: [{ op: "+", kind: "sketch", id: "s3", label: "mounting hole" }]
       },
       {
         kind: "extrude",

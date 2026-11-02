@@ -829,6 +829,36 @@
   padding: 0 26px;
 }
 
+/* a rule above the steps that runs the full width, sitting below the group
+   head band so it passes behind/under the group info */
+.bd-timeline::before {
+  position: absolute;
+  top: calc(13px + var(--bd-band));
+  right: 0;
+  left: 0;
+  height: 1px;
+  background: var(--rule);
+  content: "";
+  pointer-events: none;
+}
+
+/* the active step's marker reaches its cell edges, running under the
+   dividers on either side */
+.bd-timeline .step.is-active {
+  box-shadow: none;
+}
+
+.bd-timeline .step.is-active::after {
+  position: absolute;
+  right: calc(var(--bd-gap) / -2);
+  bottom: 0;
+  left: calc(var(--bd-gap) / -2);
+  height: 2px;
+  background: var(--marker);
+  content: "";
+  pointer-events: none;
+}
+
 .bd-timeline .timeline-detail {
   margin-top: 0;
   padding: 9px 26px 0;
@@ -864,7 +894,7 @@
   display: flex;
   align-items: stretch;
   justify-content: center;
-  width: 26px;
+  width: var(--bd-gap);
   margin: 0;
   padding: 0;
   border: 0;
@@ -1049,6 +1079,8 @@
 .timeline {
   /* the band the group head sits in */
   --bd-band: 31px;
+  /* the width of a gap / divider column between steps */
+  --bd-gap: 26px;
 }
 
 .timeline .steps {
