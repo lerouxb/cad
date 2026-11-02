@@ -780,10 +780,35 @@
    -------------------------------------------------------------------------- */
 
 .step {
-  cursor: grab;
+  cursor: pointer;
 }
 
-.steps.is-dragging .step {
+.step-grip {
+  position: absolute;
+  top: 10px;
+  right: 0;
+  width: 9px;
+  height: 13px;
+  opacity: 0;
+  cursor: grab;
+  background-image: radial-gradient(var(--ink-3) 1px, transparent 1.3px);
+  background-size: 4.5px 4.5px;
+}
+
+.steps > .step .step-grip {
+  top: 40px;
+}
+
+.step:hover .step-grip {
+  opacity: 0.55;
+}
+
+.step-grip:hover {
+  opacity: 1;
+}
+
+.steps.is-dragging .step-grip {
+  opacity: 0;
   cursor: grabbing;
 }
 
@@ -907,6 +932,21 @@
 /* a group: a bracket (expanded) or a stack chip (collapsed) */
 .timeline .steps {
   align-items: flex-start;
+}
+
+/* every step's content starts below the head band, so the indices align
+   whether a step is grouped or not */
+.steps > .step {
+  padding-top: 40px;
+}
+
+.group-head {
+  min-height: 22px;
+  margin-bottom: 8px;
+}
+
+.step-group.is-collapsed {
+  margin-top: 32px;
 }
 
 .step-group {

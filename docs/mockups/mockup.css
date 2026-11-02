@@ -1128,12 +1128,6 @@ body.is-embed .app {
   box-shadow: inset 0 -2px 0 var(--marker);
 }
 
-.step.is-active .step-name {
-  background: var(--marker-wash);
-  box-shadow: 0 0 0 2px var(--marker-wash);
-  color: var(--ink);
-}
-
 .step.is-active .step-index {
   color: var(--ink);
 }

@@ -789,6 +789,7 @@
     var chips = s.out.map(bdChip).join("");
     return (
       '<div class="' + cls + '" data-step="' + n + '" role="button" tabindex="0">' +
+      '<span class="step-grip" data-grip="1" aria-hidden="true"></span>' +
       '<span class="step-index">' + bdPad(n) + "</span>" +
       '<span class="step-kind">' + s.kind + "</span>" +
       '<span class="step-name">' + s.name + "</span>" +
@@ -1003,9 +1004,9 @@
       );
     }
 
-    // pointer drag: drop a step onto another step to group, or out to ungroup
+    // pointer drag: only from the grip; drop a step onto another step to group
     stepsEl.addEventListener("pointerdown", function (e) {
-      if (e.target.closest("button") || e.target.closest("[data-rename]")) return;
+      if (!e.target.closest("[data-grip]")) return;
       var step = e.target.closest("[data-step]");
       if (!step) return;
       bd.drag = {
