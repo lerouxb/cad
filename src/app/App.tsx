@@ -9,6 +9,11 @@ import {
 import { copyDocument, createBlankDocument } from "../core/doc/create";
 import { createExampleDocument } from "../core/doc/example";
 import {
+  collectDatumFaceRefs,
+  faceRefKey,
+  refreshDatumFrames,
+} from "../core/doc/datum";
+import {
   datumDefinitionFrame,
   frameFromHint,
   frameFromNormalAndOrigin,
@@ -1570,6 +1575,66 @@ export function App() {
             solved: outcome,
             solvedFor: target.id,
           });
+        })
+        .catch(() => {
+          faceBoundaryPending.current.delete(key);
+        });
+    }
+  }, [rebuild, kernelVersion, getState, replace]);
+
+  // Datum planes can be based on a face. Resolve those frames from the source
+  // feature's cached prefix solid (not the final body), then refresh the datum
+  // chain and its dependent sketch snapshots. This is derived state: no undo
+  // entry and no solver reset.
+  useEffect(() => {
+    const client = clientRef.current;
+    if (!client || !rebuild) return;
+
+    const applyCachedFrames = (): void => {
+      const latest = getState();
+      const frames = new Map<string, PlaneFrame>();
+      for (const ref of collectDatumFaceRefs(latest.doc)) {
+        const source = rebuild.features.find(
+          (feature) => feature.featureId === ref.source,
+        );
+        if (!source?.cacheKey) continue;
+        const cached = faceBoundaryCache.current.get(
+          `${source.cacheKey}|${ref.role}`,
+        );
+        if (cached) frames.set(faceRefKey(ref), cached.frame);
+      }
+      const nextDoc = refreshDatumFrames(latest.doc, frames);
+      if (nextDoc === latest.doc) return;
+      replace({
+        doc: nextDoc,
+        solved: latest.solved,
+        solvedFor: latest.solvedFor,
+      });
+    };
+
+    applyCachedFrames();
+
+    for (const ref of collectDatumFaceRefs(getState().doc)) {
+      const source = rebuild.features.find(
+        (feature) => feature.featureId === ref.source,
+      );
+      if (!source?.cacheKey) continue;
+      const key = `${source.cacheKey}|${ref.role}`;
+      if (
+        faceBoundaryCache.current.has(key) ||
+        faceBoundaryPending.current.has(key)
+      ) {
+        continue;
+      }
+      faceBoundaryPending.current.add(key);
+      client
+        .requestFaceBoundary(source.cacheKey, ref.source, ref.role)
+        .then((result) => {
+          faceBoundaryPending.current.delete(key);
+          const frame = frameFromNormalAndOrigin(result.normal, result.centroid);
+          if (!frame) return;
+          faceBoundaryCache.current.set(key, { frame, loops: result.loops });
+          applyCachedFrames();
         })
         .catch(() => {
           faceBoundaryPending.current.delete(key);

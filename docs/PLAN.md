@@ -113,7 +113,7 @@ feature work then lands inside that system.
   started from the selected sketch step and begins with **no profile selected**; the
   draft only becomes a history feature after at least one profile and the parameters are
   applied. Existing extrudes are edited by selecting their step.
-- `npm run verify` (179 unit tests) and `npm run e2e` (57 tests) are green. The e2e asserts
+- `npm run verify` (181 unit tests) and `npm run e2e` (58 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -598,8 +598,8 @@ with face sketches.
       first. Non-parallel bases produce a visible feature error.
 - [x] Offset from XY is the "thin air" case. Datum-chain bases follow edits via the
       ordered rebuild.
-- [ ] Midplane/live follow from a **face** base waits for exact face-ref resolution
-      (the cached face frame is stable but does not track a changed source face yet).
+- [x] Face-backed datum planes (and midplanes) refresh from the source feature's cached
+      prefix solid, then propagate through datum chains and dependent sketch snapshots.
 - [x] Timeline rows for planes; edit type/bases/distance; suppress/delete cascades through
       dependent sketches, extrudes and datum chains.
 - [x] Render planes in 3D (translucent quad + axes), pick them to start a sketch, and hide
@@ -652,8 +652,10 @@ with face sketches.
 - [x] **Datum slice landed:** offset/midplane features with chained bases, timeline
       edit/suppress/delete cascade, datum supports in the sketch picker, dependent
       sketches/extrudes following offset edits, 3D plane quads, and ray-picking a datum
-      to start a sketch. Exact `resolveRef`, live face-base resolution and lost-support
-      recovery remain.
+      to start a sketch.
+- [x] **Live face-base slice landed:** face-backed datums refresh from the source prefix,
+      propagate through datum chains and dependent sketches/extrudes, and follow base
+      body edits. Exact `resolveRef` and lost-support recovery remain.
 
 **Done when:** sketch on an offset plane in empty space; sketch on a midplane between two
 faces; change the offset or the base plate height and every dependent sketch/feature
@@ -944,6 +946,10 @@ ordinate dimensions · Rib · Web · Emboss · primitive bodies (box/cylinder/sp
   Fusion uses press-and-hold flyouts.
 - **Visibility toggles:** show/hide sketches, bodies, constraints, construction,
   dimensions, isolate/opacity — design as a coherent surface before implementation.
+- **Projecting sketch geometry onto a datum plane / project-to-surface:** is this a
+  projection feature, a sketch import, or a view transform? It needs a separate design
+  pass; the M4 subset only projects a supporting face boundary and arbitrary solid edges.
+  Keep the full suite in M9 until that grammar is clear.
 
 ---
 

@@ -683,6 +683,64 @@ test("creates a midplane between two offset planes", async ({ app: page }) => {
   expect(errors).toEqual([]);
 });
 
+test("datum planes based on a face follow source body edits", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await pickTopFace(page);
+  const role = await page
+    .getByTestId("body-pick")
+    .getAttribute("data-ref-role");
+  expect(role).toBeTruthy();
+
+  await page.getByTestId("add-plane").click();
+  await page.getByTestId("datum-base").selectOption({
+    label: `Face · ${role}`,
+  });
+  await page.getByTestId("datum-distance").fill("0");
+  await page.getByTestId("datum-apply").click();
+
+  await page.getByTestId("add-sketch").click();
+  await page.getByTestId("support-datum").selectOption({ label: "Plane 1" });
+  await page.getByTestId("new-sketch").click();
+  await page.getByTestId("tool-circle").click();
+  await clickSketch(page, 10, 10);
+  await clickSketch(page, 15, 10);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("finish-sketch").click();
+  await page.getByTestId("new-extrude").click();
+  await clickSketch(page, 10, 10);
+  await page.getByTestId("extrude-height").fill("5");
+  await page.getByTestId("extrude-apply").click();
+
+  const boss = Math.PI * 5 * 5 * 5;
+  const plate12 = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(plate12 + boss, -1);
+  await expect.poll(() => meshBounds(page)).toBe("0,0,0,60,40,17");
+
+  await page.getByTestId("timeline-extrude").click();
+  await page.getByTestId("edit-feature").click();
+  await page.getByTestId("extrude-height").fill("30");
+  await page.getByTestId("feature-popover-apply").click();
+
+  const plate30 = 60 * 40 * 30 - Math.PI * 8 * 8 * 30;
+  await expect.poll(() => volume(page)).toBeCloseTo(plate30 + boss, -1);
+  await expect.poll(() => meshBounds(page)).toBe("0,0,0,60,40,35");
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const doc = JSON.parse(localStorage.getItem("cad.doc")!);
+        const datum = doc.features.find(
+          (feature: { type: string }) => feature.type === "datum",
+        );
+        return datum?.frame?.origin ?? null;
+      }),
+    )
+    .toEqual([30, 20, 30]);
+  expect(errors).toEqual([]);
+});
+
 test("snaps a drawn line to a projected face boundary", async ({
   app: page,
 }) => {
