@@ -884,6 +884,30 @@ test("resolves a stale face role by geometric fallback", async ({ browser }) => 
   await context.close();
 });
 
+test("previews a datum plane while creating it", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  const canvas = page.locator("canvas.viewport-canvas");
+  await page.getByTestId("add-plane").click();
+  await expect(canvas).toHaveAttribute("data-support-preview", "on");
+  await expect(canvas).toHaveAttribute("data-body-dimmed", "on");
+  await expect(canvas).toHaveAttribute(
+    "data-support-preview-origin",
+    "0.000,0.000,10.000",
+  );
+
+  await page.getByTestId("datum-distance").fill("25");
+  await expect(canvas).toHaveAttribute(
+    "data-support-preview-origin",
+    "0.000,0.000,25.000",
+  );
+
+  await page.getByTestId("datum-apply").click();
+  await expect(canvas).toHaveAttribute("data-datum-planes", "1");
+  await expect(canvas).toHaveAttribute("data-support-preview", "off");
+  await expect(canvas).toHaveAttribute("data-body-dimmed", "off");
+  expect(errors).toEqual([]);
+});
+
 test("hides a datum plane without suppressing it", async ({ app: page }) => {
   const errors = collectErrors(page);
   await page.getByTestId("add-plane").click();

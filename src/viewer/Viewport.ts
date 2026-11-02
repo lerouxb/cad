@@ -260,6 +260,9 @@ export class Viewport {
     if (this.disposed) return;
     this.supportPreviewFrame = frame;
     this.canvas.dataset.supportPreview = frame ? "on" : "off";
+    this.canvas.dataset.supportPreviewOrigin = frame
+      ? frame.origin.map((value) => value.toFixed(3)).join(",")
+      : "";
     this.clearGroup(this.supportPreviewGroup);
     if (!frame) {
       this.dirty = true;

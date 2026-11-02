@@ -2549,8 +2549,24 @@ export function App() {
     }
     return options;
   }, [doc, supportFace, supportFaceFrame, resolvedDatumFrame]);
+  const supportPreviewActive = supportOpen || datumDraft !== null;
   const supportPreviewFrame = useMemo<PlaneFrame | null>(() => {
-    if (!supportOpen) return null;
+    if (!supportPreviewActive) return null;
+    if (!supportOpen && datumDraft) {
+      const definition: DatumPlaneDefinition =
+        datumDraft.kind === "offset"
+          ? {
+              kind: "offset",
+              base: datumDraft.base,
+              distance: datumDraft.distance,
+            }
+          : {
+              kind: "midplane",
+              a: datumDraft.base,
+              b: datumDraft.second,
+            };
+      return datumDefinitionFrame(definition);
+    }
     if (supportFace && supportFaceFrame) {
       return supportFaceFlipped
         ? flipFrame(supportFaceFrame)
@@ -2562,7 +2578,9 @@ export function App() {
     }
     return worldPlaneFrame(supportPlane);
   }, [
+    supportPreviewActive,
     supportOpen,
+    datumDraft,
     supportFace,
     supportFaceFrame,
     supportFaceFlipped,
@@ -2576,8 +2594,8 @@ export function App() {
     const viewport = viewportRef.current;
     if (!viewport) return;
     viewport.setSupportPreview(supportPreviewFrame);
-    viewport.setDimmed(supportOpen);
-  }, [supportPreviewFrame, supportOpen]);
+    viewport.setDimmed(supportPreviewActive);
+  }, [supportPreviewFrame, supportPreviewActive]);
 
   const datumDraftOptions = useMemo(() => {
     const draftIndex = datumDraft?.id

@@ -62,8 +62,9 @@ an editable sketcher driving an exact extrude:
   midplane datum features are in, with a support picker, 3D preview and ray-picking;
   face-backed datums follow source body edits, lost face support is visible with
   reselect/revert, face sketches can flip sides while keeping that side stable, and the
-  support picker previews the chosen plane on a dimmed body. M4's core flow is in; only
-  support-list detail copy and through-3-point planes remain. The example part is
+  support picker previews the chosen plane on a dimmed body, and datum-plane drafts
+  preview their candidate frame live. M4's core flow is in; only support-list detail copy
+  and through-3-point planes remain. The example part is
   hand-authored (`core/sketch/demo.ts` + `core/doc/example.ts`, including a suppressed
   center-pin extrude from the same sketch and a suppressed mounting-holes cut); the
   timeline now lists the real feature history with select,
