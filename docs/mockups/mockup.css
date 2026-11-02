@@ -1168,7 +1168,14 @@ body.is-embed .app {
 .step-head {
   display: flex;
   align-items: baseline;
-  gap: 6px;
+  gap: 5px;
+}
+
+.step-sep {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  line-height: var(--leading-display);
 }
 
 .step-index {

@@ -483,6 +483,7 @@
           '<span class="step-index">' +
           step.num +
           "</span>" +
+          '<span class="step-sep">\u00b7</span>' +
           '<span class="step-kind">' +
           step.kind +
           "</span>" +
@@ -506,6 +507,7 @@
           '<span class="step-index">' +
           pendingNum +
           "</span>" +
+          '<span class="step-sep">\u00b7</span>' +
           '<span class="step-kind">' +
           pending.kind +
           "</span>" +

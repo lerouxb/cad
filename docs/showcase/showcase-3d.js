@@ -570,16 +570,13 @@
         }
       ]
     });
-    // insert directly after the selected step (or after its group)
+    // insert directly after the selected step, inside its group if it has one
     var g = bdGroupOf(bd.active);
-    var pos = g
-      ? Math.max.apply(
-          null,
-          g.ids.map(function (x) {
-            return bd.order.indexOf(x);
-          })
-        )
-      : bd.order.indexOf(bd.active);
+    var pos = bd.order.indexOf(bd.active);
+    if (g) {
+      var ai = g.ids.indexOf(bd.active);
+      g.ids.splice(ai + 1, 0, n);
+    }
     bd.order.splice(pos + 1, 0, n);
     bd.active = n;
     bd.insertMenu = false;
@@ -611,10 +608,21 @@
     });
   }
 
+  // groups stay contiguous: only the first or last member can leave, and a
+  // step that is not in a group can only group with an adjacent step.
+  function bdCanDrag(n) {
+    var g = bdGroupOf(n);
+    if (!g) return true;
+    var m = bdMembersInOrder(g);
+    return n === m[0] || n === m[m.length - 1];
+  }
+
   // Drag a step onto another step:
   //  - neither in a group and adjacent  -> start a group
   //  - dropped onto a group's edge       -> grow the group
-  //  - dragging a step out of a group    -> leave the group, landing next to b
+  //  - first/last member dragged out     -> leave, landing beside the group
+  // Groups stay contiguous and steps are not reordered, so a middle member is
+  // not draggable and an ungrouped step only groups with an adjacent one.
   function bdApplyDrag(a, b) {
     if (a === b) return;
     var ga = bdGroupOf(a);
@@ -623,12 +631,17 @@
     var pa = bd.order.indexOf(a);
     var pb = bd.order.indexOf(b);
     if (ga) {
+      var mem = bdMembersInOrder(ga);
+      if (a !== mem[0] && a !== mem[mem.length - 1]) return;
+      var first = a === mem[0];
       ga.ids = ga.ids.filter(function (x) {
         return x !== a;
       });
       bd.order.splice(pa, 1);
-      var ib = bd.order.indexOf(b);
-      bd.order.splice(pa < pb ? ib + 1 : ib, 0, a);
+      var left = bdMembersInOrder(ga);
+      var anchor = first ? left[0] : left[left.length - 1];
+      var ai = bd.order.indexOf(anchor);
+      bd.order.splice(first ? ai : ai + 1, 0, a);
       bdDissolve();
       return;
     }
@@ -846,9 +859,12 @@
     var chips = s.out.map(bdChip).join("");
     return (
       '<div class="' + cls + '" data-step="' + n + '" role="button" tabindex="0">' +
-      '<span class="step-grip" data-grip="1" aria-hidden="true"></span>' +
+      (bdCanDrag(n)
+        ? '<span class="step-grip" data-grip="1" aria-hidden="true"></span>'
+        : "") +
       '<span class="step-head"><span class="step-index">' + bdPad(disp) +
-      '</span><span class="step-kind">' + s.kind + "</span></span>" +
+      '</span><span class="step-sep">\u00b7</span>' +
+      '<span class="step-kind">' + s.kind + "</span></span>" +
       '<span class="step-name">' + s.name + "</span>" +
       '<span class="step-meta">' + s.meta + "</span>" +
       (chips ? '<span class="step-bodies">' + chips + "</span>" : "") +
@@ -876,6 +892,7 @@
     var inner = "";
     members.forEach(function (n) {
       inner += bdStepHtml(bdStep(n), n);
+      if (n === bd.active) inner += bdInsertMarker();
     });
     var collapseBtn = activeIn
       ? '<button class="group-btn" type="button" disabled ' +
@@ -911,9 +928,7 @@
       var g = bdGroupOf(n);
       if (g) {
         html += bdGroupHtml(g);
-        var inGroup = g.ids.indexOf(bd.active) !== -1;
         i += g.ids.length;
-        if (inGroup) html += bdInsertMarker();
         continue;
       }
       html += bdStepHtml(bdStep(n), n);

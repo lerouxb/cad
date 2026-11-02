@@ -845,6 +845,12 @@
   color: var(--marker-ink);
 }
 
+/* inside a group the marker sits in the group's step row, which starts lower
+   than an ungrouped step's content, so it needs a smaller top offset */
+.group-steps .insert-marker {
+  margin-top: 7px;
+}
+
 .insert-menu {
   position: absolute;
   z-index: 12;
@@ -903,6 +909,8 @@
 }
 
 .body-dot {
+  position: relative;
+  top: 0.5px;
   width: 7px;
   height: 7px;
   border: 1px solid var(--ink);
