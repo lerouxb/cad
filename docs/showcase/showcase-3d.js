@@ -518,27 +518,97 @@
   var BD_BOSS = { x: 35, y: 30, r: 9, z0: 8, z1: 20 };
   var BD_HOLE = { x: 95, y: 30, r: 7 };
 
-  var bd = { active: 6, connected: false, selected: null };
+  var bd = {
+    active: 8,
+    connected: false,
+    selected: null,
+    grouped: false,
+    groupName: "case details",
+    names: {},
+    editing: null
+  };
 
   function bdSteps() {
+    var merged = bd.connected;
     return [
-      { kind: "sketch", name: "base profiles", meta: bd.connected ? "XY \u00b7 1 profile" : "XY \u00b7 2 profiles", out: [] },
+      {
+        kind: "sketch",
+        name: "base profiles",
+        meta: merged ? "XY \u00b7 1 profile" : "XY \u00b7 2 profiles",
+        out: [{ op: "", kind: "sketch", id: "s1", label: "base profiles" }]
+      },
       {
         kind: "extrude",
         name: "tab bodies",
         meta: "8.0 mm \u00b7 new body",
-        out: bd.connected ? [["+", "body"]] : [["+", "body"], ["+", "lid"]]
+        out: merged
+          ? [{ op: "+", kind: "body", id: "body", label: "body" }]
+          : [
+              { op: "+", kind: "body", id: "body", label: "body" },
+              { op: "+", kind: "body", id: "lid", label: "lid" }
+            ]
       },
-      { kind: "sketch", name: "boss profile", meta: "top of body", out: [] },
-      { kind: "extrude", name: "boss", meta: "6.0 mm \u00b7 join", out: [["\u2192", "body"]] },
-      { kind: "sketch", name: "mounting hole", meta: "top of lid", out: [] },
+      {
+        kind: "plane",
+        name: "symmetry",
+        meta: "midplane",
+        out: [{ op: "", kind: "plane", id: "p1", label: "symmetry" }]
+      },
+      {
+        kind: "sketch",
+        name: "boss profile",
+        meta: "on symmetry",
+        group: true,
+        out: [{ op: "", kind: "sketch", id: "s2", label: "boss profile" }]
+      },
+      {
+        kind: "extrude",
+        name: "boss",
+        meta: "6.0 mm \u00b7 join",
+        group: true,
+        out: [{ op: "\u2192", kind: "body", id: "body", label: "body" }]
+      },
+      {
+        kind: "sketch",
+        name: "mounting hole",
+        meta: "top of lid",
+        group: true,
+        out: [{ op: "", kind: "sketch", id: "s3", label: "mounting hole" }]
+      },
       {
         kind: "extrude",
         name: "hole",
         meta: "through all \u00b7 cut",
-        out: bd.connected ? [["\u2192", "lid", true]] : [["\u2192", "lid"]]
+        group: true,
+        out: [
+          { op: "\u2192", kind: "body", id: "lid", label: "lid", lost: merged }
+        ]
+      },
+      {
+        kind: "combine",
+        name: "merge lid",
+        meta: "join \u00b7 lid into body",
+        out: [
+          { op: "\u2192", kind: "body", id: "body", label: "body" },
+          { op: "\u2715", kind: "body", id: "lid", label: "lid", consumed: true, lost: merged }
+        ]
       }
     ];
+  }
+
+  function bdName(o) {
+    return bd.names[o.id] || o.label;
+  }
+
+  function bdDrawBody(iso, box, selected) {
+    var html = drawBox(iso, box, null, false);
+    if (selected) {
+      var f = boxFaces(box);
+      html += poly(pts3(iso, f.top), "bo-select-top");
+      html += poly(pts3(iso, f.xmax), "bo-select-x");
+      html += poly(pts3(iso, f.ymax), "bo-select-y");
+    }
+    return html;
   }
 
   function bdRenderStage(iso, layer) {
@@ -546,73 +616,123 @@
     if (bd.active <= 1) {
       html += profileQuad(iso, BD_R1, 0, "bo-profile");
       if (!bd.connected) html += profileQuad(iso, BD_R2, 0, "bo-profile");
+      layer.innerHTML = html;
+      return;
+    }
+    var merged = bd.connected || bd.active >= 8;
+    var selBody = bd.selected && bd.selected.id === "body";
+    var selLid = bd.selected && bd.selected.id === "lid";
+    if (merged) {
+      html += bdDrawBody(iso, BD_RM, selBody);
     } else {
-      html += drawBox(iso, bd.connected ? BD_RM : BD_R1, null, false);
-      if (bd.active >= 4) {
-        html += cylinderSolid(
-          iso, BD_BOSS.x, BD_BOSS.y, BD_BOSS.r, BD_BOSS.z0, BD_BOSS.z1,
-          "bo-face-x", "bo-face-top"
-        );
-      }
-      if (!bd.connected) {
-        if (bd.active >= 6) {
-          html += boreWall(iso, BD_HOLE.x, BD_HOLE.y, BD_HOLE.r, BD_R2.z1, BD_R2.z0);
-          html += drawBoxHole(iso, BD_R2, { x: BD_HOLE.x, y: BD_HOLE.y, r: BD_HOLE.r });
-        } else {
-          html += drawBox(iso, BD_R2, null, false);
-        }
-      }
+      html += bdDrawBody(iso, BD_R1, selBody);
+      html += bdDrawBody(iso, BD_R2, selLid);
+    }
+    if (bd.active >= 5) {
+      html += cylinderSolid(
+        iso, BD_BOSS.x, BD_BOSS.y, BD_BOSS.r, BD_BOSS.z0, BD_BOSS.z1,
+        "bo-face-x", "bo-face-top"
+      );
+    }
+    if (bd.active >= 7) {
+      var hb = merged ? BD_RM : BD_R2;
+      html += boreWall(iso, BD_HOLE.x, BD_HOLE.y, BD_HOLE.r, hb.z1, hb.z0);
+      html += drawBoxHole(iso, hb, { x: BD_HOLE.x, y: BD_HOLE.y, r: BD_HOLE.r });
     }
     layer.innerHTML = html;
   }
 
+  function bdPad(n) {
+    return (n < 10 ? "0" : "") + n;
+  }
+
+  function bdChip(o) {
+    var name = bdName(o);
+    var dot = '<span class="body-dot is-' + o.kind + '"></span>';
+    if (bd.editing && bd.editing.id === o.id) {
+      return (
+        '<span class="body-chip is-editing">' + dot +
+        '<input class="chip-input" data-rename="' + o.id + '" value="' + name +
+        '" aria-label="Name">' +
+        "</span>"
+      );
+    }
+    var cls = "body-chip";
+    if (bd.selected && bd.selected.id === o.id && !o.consumed) cls += " is-selected";
+    if (o.consumed) cls += " is-consumed";
+    if (o.lost) cls += " is-lost";
+    if (o.consumed) {
+      return (
+        '<span class="' + cls + '" title="consumed by this step">' +
+        '<span class="body-op">' + o.op + "</span>" + dot + name + "</span>"
+      );
+    }
+    return (
+      '<button class="' + cls + '" type="button" data-out="' + o.id +
+      '" data-kind="' + o.kind + '">' +
+      '<span class="body-op">' + o.op + "</span>" + dot + name + "</button>"
+    );
+  }
+
   function bdRenderTimeline(stepsEl, detailEl) {
     var steps = bdSteps();
-    stepsEl.innerHTML = steps
-      .map(function (s, i) {
-        var n = i + 1;
-        var lost = s.out.some(function (o) {
-          return o[2];
-        });
-        var cls = "step";
-        if (n === bd.active) cls += " is-active";
-        if (n > bd.active) cls += " is-paused";
-        if (lost) cls += " is-error";
-        var chips = s.out
-          .map(function (o) {
-            return (
-              '<button class="body-chip' +
-              (bd.selected === o[1] ? " is-selected" : "") +
-              (o[2] ? " is-lost" : "") +
-              '" type="button" data-body="' + o[1] + '">' +
-              '<span class="body-op">' + o[0] + "</span>" +
-              '<span class="body-dot"></span>' + o[1] + "</button>"
-            );
-          })
-          .join("");
-        return (
-          '<div class="' + cls + '" data-step="' + n + '" role="button" tabindex="0">' +
-          '<span class="step-index">0' + n + "</span>" +
-          '<span class="step-kind">' + s.kind + "</span>" +
-          '<span class="step-name">' + s.name + "</span>" +
-          '<span class="step-meta">' + s.meta + "</span>" +
-          (chips ? '<span class="step-bodies">' + chips + "</span>" : "") +
-          "</div>"
-        );
-      })
-      .join("");
+    var html = "";
+    var i = 0;
+    while (i < steps.length) {
+      var s = steps[i];
+      var n = i + 1;
+      if (bd.grouped && s.group) {
+        var end = i;
+        while (end < steps.length && steps[end].group) end++;
+        var inGroup = bd.active > i && bd.active <= end;
+        var groupName =
+          bd.editing && bd.editing.id === "__group"
+            ? '<input class="chip-input" data-rename="__group" value="' +
+              bd.groupName + '" aria-label="Group name">'
+            : bd.groupName;
+        html +=
+          '<div class="step is-group' + (inGroup ? " is-active" : "") +
+          '" data-group="1" role="button" tabindex="0">' +
+          '<span class="group-mark"></span>' +
+          '<span class="step-index">' + bdPad(n) + "\u2013" + bdPad(end) + "</span>" +
+          '<span class="step-kind">group</span>' +
+          '<span class="step-name">' + groupName + "</span>" +
+          '<span class="step-meta">' + (end - i) + " steps</span>" +
+          "</div>";
+        i = end;
+        continue;
+      }
+      var lost = s.out.some(function (o) {
+        return o.lost;
+      });
+      var cls = "step";
+      if (n === bd.active) cls += " is-active";
+      if (n > bd.active) cls += " is-paused";
+      if (lost) cls += " is-error";
+      var chips = s.out.map(bdChip).join("");
+      html +=
+        '<div class="' + cls + '" data-step="' + n + '" role="button" tabindex="0">' +
+        '<span class="step-index">' + bdPad(n) + "</span>" +
+        '<span class="step-kind">' + s.kind + "</span>" +
+        '<span class="step-name">' + s.name + "</span>" +
+        '<span class="step-meta">' + s.meta + "</span>" +
+        (chips ? '<span class="step-bodies">' + chips + "</span>" : "") +
+        "</div>";
+      i++;
+    }
+    stepsEl.innerHTML = html;
 
     var cur = steps[bd.active - 1];
-    var lost = cur.out.some(function (o) {
-      return o[2];
+    var curLost = cur.out.some(function (o) {
+      return o.lost;
     });
     var items = [["step", cur.name], ["type", cur.kind]];
     if (cur.out.length) {
       items.push([
-        "bodies",
+        "outputs",
         cur.out
           .map(function (o) {
-            return o[0] + " " + o[1];
+            return o.op + " " + bdName(o);
           })
           .join(", ")
       ]);
@@ -626,7 +746,7 @@
           );
         })
         .join("") +
-      (lost
+      (curLost
         ? '<span class="detail-item"><span class="detail-key">lost</span>' +
           '<span class="detail-value">body \u201clid\u201d no longer exists</span></span>' +
           '<span class="detail-actions">' +
@@ -635,28 +755,54 @@
         : "");
   }
 
+  function bdFindOutput(id) {
+    var steps = bdSteps();
+    for (var i = 0; i < steps.length; i++) {
+      for (var j = 0; j < steps[i].out.length; j++) {
+        if (steps[i].out[j].id === id) {
+          return { o: steps[i].out[j], step: i + 1 };
+        }
+      }
+    }
+    return null;
+  }
+
   function bdRenderPanel(panel) {
     if (!bd.selected) {
       panel.hidden = true;
       return;
     }
-    panel.hidden = false;
+    var sel = bd.selected;
+    var title = bd.names[sel.id] || sel.label;
+    var rows =
+      '<div class="tool-row"><span class="tool-label">kind</span>' +
+      '<span class="tool-note">' + sel.kind + "</span></div>" +
+      '<div class="tool-row"><span class="tool-label">created by</span>' +
+      '<span class="tool-note">step ' + bdPad(sel.step) + "</span></div>";
+    if (sel.kind === "body") {
+      rows +=
+        '<div class="tool-row"><span class="tool-label">visibility</span>' +
+        '<button class="toggle" type="button" aria-pressed="true">on</button></div>' +
+        '<div class="tool-row"><span class="tool-label">appearance</span>' +
+        '<span class="tool-note">warm grey</span></div>';
+    }
+    var actions =
+      sel.kind === "body"
+        ? [{ id: "isolate", label: "isolate", quiet: true }]
+        : [
+            {
+              id: "open",
+              label: sel.kind === "sketch" ? "open sketch" : "edit plane",
+              quiet: true
+            }
+          ];
     panel.innerHTML =
       '<div class="tool-panel-head"><div>' +
-      '<div class="tool-panel-kicker">body</div>' +
-      '<h2 class="tool-panel-title">' + bd.selected + "</h2></div></div>" +
-      '<div class="tool-panel-body">' +
-      '<div class="tool-row"><span class="tool-label">created by</span>' +
-      '<span class="tool-note">extrude 02</span></div>' +
-      '<div class="tool-row"><span class="tool-label">visibility</span>' +
-      '<button class="toggle" type="button" aria-pressed="true">on</button></div>' +
-      '<div class="tool-row"><span class="tool-label">appearance</span>' +
-      '<span class="tool-note">warm grey</span></div>' +
-      "</div>" +
-      '<div class="tool-hint">appearance and visibility attach to the body, not the step</div>' +
-      ShowcaseUI.footer("1 body", [
-        { id: "isolate", label: "isolate", quiet: true }
-      ]);
+      '<div class="tool-panel-kicker">' + sel.kind + "</div>" +
+      '<h2 class="tool-panel-title">' + title + "</h2></div></div>" +
+      '<div class="tool-panel-body">' + rows + "</div>" +
+      '<div class="tool-hint">double-click the chip to rename it</div>' +
+      ShowcaseUI.footer(sel.kind, actions);
     if (!panel.dataset.dragged) {
       panel.style.left = "auto";
       panel.style.top = "24px";
@@ -671,6 +817,7 @@
     var foot = document.getElementById("bd-foot");
     var panel = document.getElementById("tool-panel");
     var whatif = document.getElementById("bd-whatif");
+    var groupBtn = document.getElementById("bd-group");
     var iso = makeIso(560, 380, 2.6);
     ShowcaseUI.makeDraggable(panel, document.getElementById("viewport"));
 
@@ -678,19 +825,52 @@
       bdRenderStage(iso, layer);
       bdRenderTimeline(stepsEl, detailEl);
       bdRenderPanel(panel);
+      var count = bd.connected || bd.active >= 8 ? 1 : 2;
       foot.innerHTML =
-        "<b>" + (bd.connected ? "1 body" : "2 bodies") + "</b> \u00b7 step " +
-        bd.active + " of 6" +
+        "<b>" + count + (count === 1 ? " body" : " bodies") + "</b> \u00b7 step " +
+        bd.active + " of " + bdSteps().length +
         (bd.connected ? " \u00b7 what-if: profiles connected" : "");
       if (whatif) {
-        whatif.textContent = bd.connected ? "separate the profiles" : "connect the profiles";
+        whatif.textContent = bd.connected
+          ? "separate the profiles"
+          : "connect the profiles";
+      }
+      if (groupBtn) {
+        groupBtn.textContent = bd.grouped ? "expand the group" : "collapse the details";
       }
     }
 
+    function commitRename(inp) {
+      var id = inp.getAttribute("data-rename");
+      var v = inp.value.trim();
+      if (v) {
+        if (id === "__group") bd.groupName = v;
+        else bd.names[id] = v;
+      }
+      bd.editing = null;
+      render();
+    }
+
     stepsEl.addEventListener("click", function (e) {
-      var chip = e.target.closest("[data-body]");
+      if (e.target.closest("[data-rename]")) return;
+      var chip = e.target.closest("[data-out]");
       if (chip) {
-        bd.selected = chip.getAttribute("data-body");
+        var id = chip.getAttribute("data-out");
+        if (bd.selected && bd.selected.id === id) return;
+        var found = bdFindOutput(id);
+        if (found) {
+          bd.selected = {
+            id: found.o.id,
+            kind: found.o.kind,
+            label: found.o.label,
+            step: found.step
+          };
+        }
+        render();
+        return;
+      }
+      if (e.target.closest("[data-group]")) {
+        bd.grouped = false;
         render();
         return;
       }
@@ -702,10 +882,47 @@
       }
     });
 
+    stepsEl.addEventListener("dblclick", function (e) {
+      var chip = e.target.closest("[data-out]");
+      var grp = e.target.closest("[data-group]");
+      if (chip) bd.editing = { id: chip.getAttribute("data-out") };
+      else if (grp) bd.editing = { id: "__group" };
+      else return;
+      render();
+      var inp = stepsEl.querySelector("[data-rename]");
+      if (inp) {
+        inp.focus();
+        inp.select();
+      }
+    });
+
+    stepsEl.addEventListener("keydown", function (e) {
+      var inp = e.target.closest("[data-rename]");
+      if (!inp) return;
+      if (e.key === "Enter") {
+        e.preventDefault();
+        commitRename(inp);
+      } else if (e.key === "Escape") {
+        bd.editing = null;
+        render();
+      }
+    });
+
+    stepsEl.addEventListener("focusout", function (e) {
+      var inp = e.target.closest("[data-rename]");
+      if (inp && bd.editing) commitRename(inp);
+    });
+
     if (whatif) {
       whatif.addEventListener("click", function () {
         bd.connected = !bd.connected;
         bd.selected = null;
+        render();
+      });
+    }
+    if (groupBtn) {
+      groupBtn.addEventListener("click", function () {
+        bd.grouped = !bd.grouped;
         render();
       });
     }

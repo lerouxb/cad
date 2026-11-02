@@ -825,14 +825,93 @@
 }
 
 .body-dot {
-  width: 6px;
-  height: 6px;
+  width: 7px;
+  height: 7px;
   border: 1px solid var(--ink);
+}
+
+.body-dot.is-body {
   border-radius: 50%;
+}
+
+.body-dot.is-sketch {
+  border-style: dashed;
+}
+
+.body-dot.is-plane {
+  transform: rotate(45deg);
 }
 
 .body-chip.is-selected .body-dot {
   background: var(--marker-ink);
+}
+
+.body-chip.is-consumed {
+  color: var(--ink-3);
+  text-decoration: line-through;
+  cursor: default;
+}
+
+.body-chip.is-consumed .body-op {
+  color: var(--ink-3);
+}
+
+.body-chip.is-editing {
+  background: var(--marker-fill);
+}
+
+.chip-input {
+  width: 96px;
+  padding: 0 2px;
+  border: 0;
+  border-bottom: 1px solid var(--ink);
+  outline: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+}
+
+.group-mark {
+  position: relative;
+  width: 13px;
+  height: 11px;
+  margin-bottom: 3px;
+}
+
+.group-mark::before,
+.group-mark::after {
+  position: absolute;
+  border: 1px solid var(--ink-3);
+  content: "";
+}
+
+.group-mark::before {
+  inset: 0 4px 4px 0;
+}
+
+.group-mark::after {
+  inset: 4px 0 0 4px;
+}
+
+.bo-select-top,
+.bo-select-x,
+.bo-select-y {
+  fill: var(--marker);
+  stroke: none;
+}
+
+.bo-select-top {
+  opacity: 0.18;
+}
+
+.bo-select-x {
+  opacity: 0.24;
+}
+
+.bo-select-y {
+  opacity: 0.28;
 }
 
 .body-chip.is-lost {

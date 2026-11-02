@@ -85,6 +85,7 @@
               <span id="bd-foot"></span>
             </div>
             <div class="stage-foot-right">
+              <button class="text-action" id="bd-group" type="button">collapse the details</button>
               <button class="text-action" id="bd-whatif" type="button">connect the profiles</button>
             </div>
           </div>
@@ -115,19 +116,22 @@
       </p>
       <h3>What this study tests</h3>
       <ul>
+        <li><b>The step is the step; the output is the thing.</b> Every step lists what it <em>creates</em> — a sketch, a datum plane or a body — so the chip is where you edit that thing, not the step.</li>
         <li><b>One step can make several bodies.</b> One sketch, two disjoint profiles, one extrude → <b>+ body, + lid</b>. Bodies that share an edge fuse; disjoint ones stay separate.</li>
-        <li><b>Later steps reference bodies, not create them.</b> The boss <b>joins → body</b>; the hole <b>cuts → lid</b>. The chip stays at the creating step.</li>
-        <li><b>Rollback pauses outputs.</b> Select step 2 and the boss and hole disappear with their steps; the bodies line dims on the paused steps.</li>
-        <li><b>The body popover.</b> Click a chip: appearance, visibility and isolate attach to the body, not the step. This is where the deferred visibility work lands.</li>
-        <li><b>Identity breaks visibly.</b> “Connect the profiles” merges the two rectangles into one body, so the cut that targeted <b>lid</b> loses its body — ink, a dotted rule and a “!”, with reselect/open sketch, exactly like a lost face.</li>
+        <li><b>Later steps reference, not create.</b> The boss <b>joins → body</b>; the hole <b>cuts → lid</b>. The chip stays at the creating step.</li>
+        <li><b>Selecting a body highlights it</b> — a quiet highlighter wash on the solid, not just the chip — and opens its popover (appearance, visibility, isolate).</li>
+        <li><b>Double-click a chip to rename it</b>, exactly like a timeline step name. Sketches and planes rename the same way.</li>
+        <li><b>Consuming a body strikes it through.</b> “merge lid” shows <b>→ body</b> and a struck-through <b>✕ lid</b> — visual only, not selectable.</li>
+        <li><b>Groups collapse to a stack.</b> “collapse the details” folds four steps into one chip that shows the count, a stacked mark and a name (double-click to rename).</li>
+        <li><b>Identity breaks visibly.</b> “Connect the profiles” merges the rectangles into one body, so the cut that targeted <b>lid</b> loses its body — ink, a dotted rule and a “!”, with reselect/open sketch, exactly like a lost face.</li>
       </ul>
       <h3>Open questions</h3>
       <ul>
-        <li>Do the steps show <b>only bodies</b>, or sketches and datum planes too?</li>
-        <li>Default target for a new feature: <b>all bodies</b> (Fusion), or the body you last touched?</li>
-        <li>Is the body's <b>name</b> editable in the chip or only in the popover? Do names renumber when a feature is suppressed?</li>
-        <li>When a body is consumed (joined), does its chip strike through at the consuming step, or vanish?</li>
-        <li>The timeline gets long with many bodies — grouping (already a Keep item) is the mitigation, but what does a <em>collapsed</em> group show of its bodies?</li>
+        <li><b>Deliberate merges.</b> If a sketch edit joins two bodies on purpose, that is not a break — the user changed their mind. The lever is probably the feature's <b>operation</b> (<em>join</em> vs <em>new body</em>), and a downstream ref that loses its body gets <b>reselect</b>. Whether that is enough needs a real example; defer.</li>
+        <li><b>Default operation.</b> A new extrude should default to <b>join</b> (Fusion) and fall back to <b>new body</b> when the result cannot be joined (no body to join, or disjoint). Is that the right fallback, or should it ask?</li>
+        <li>Do the steps show only bodies, or sketches and planes too? <em>(This study says all three.)</em></li>
+        <li>Is the body <b>name</b> editable in the chip (double-click) or only in the popover? Do names renumber when a feature is suppressed?</li>
+        <li>Collapsed group: is a count + stack + name enough, or does it need a peek (a body count, a mini stack of the bodies it made)?</li>
       </ul>
       <div class="mini-note">
         Components are deliberately out of scope: a component is a namespaced set of
