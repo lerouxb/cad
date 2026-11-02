@@ -9,6 +9,9 @@ The one-line version: **input is a draggable popover, actions are in its footer,
 editing reuses the controls that created the thing, and the stage foot is a
 readout, never a form.**
 
+The **timeline** is a separate surface with its own contract — steps, bodies,
+groups and insertion — in [`TIMELINE.md`](TIMELINE.md).
+
 ## The rules
 
 ### 1. Input lives in a floating popover

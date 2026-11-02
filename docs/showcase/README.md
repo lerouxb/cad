@@ -1,6 +1,6 @@
 # Tool showcase
 
-Interactive design targets for tools that do not exist yet, split into seven pages.
+Interactive design targets for tools that do not exist yet, split into eight pages.
 
 This folder and [`../mockups/`](../mockups/) are the two halves of one design
 system:
@@ -12,7 +12,9 @@ system:
   selection inputs.
 
 The [study index](../mockups/index.html) lists both, and the shared interaction
-rules are in [`INTERACTION.md`](INTERACTION.md).
+rules are in [`INTERACTION.md`](INTERACTION.md). The timeline surface — steps,
+bodies, groups and insertion — has its own contract in
+[`TIMELINE.md`](TIMELINE.md).
 
 | Study | Page | What it covers | Milestone |
 | --- | --- | --- | --- |
@@ -156,6 +158,7 @@ showcase-create.js   the create-tool atlas
 showcase-edit.js     the selection popover + inline editor
 showcase-3d.js       isometric helpers + body ops + transforms + extrude + section
 INTERACTION.md       the interaction contract (popover, actions, foot)
+TIMELINE.md          the timeline contract (steps, bodies, groups, insert)
 BACKLOG.md           the gap decisions (keep / drop / defer) and their homes
 README.md            this file
 ```
