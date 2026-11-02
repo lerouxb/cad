@@ -10,6 +10,7 @@ import {
   updatePrimarySketch,
 } from "../doc/selectors";
 import { datumDefinitionFrame } from "../doc/support";
+import { faceRefKey } from "../doc/datum";
 import { extrudeParams } from "../features/extrude";
 import { addCircle, emptySketch } from "../sketch/create";
 import { createDemoModel } from "../sketch/demo";
@@ -152,6 +153,52 @@ describe("ordered rebuild", () => {
     if (movedSketch?.output?.kind === "sketch") {
       expect(movedSketch.output.frame?.origin).toEqual([0, 0, 20]);
     }
+  });
+
+  it("marks a lost face support without masking it with the rebuild cache", () => {
+    const { deps } = countingDeps();
+    const doc = exampleDoc();
+    const frame = {
+      origin: [30, 20, 12] as [number, number, number],
+      normal: [0, 0, 1] as [number, number, number],
+      xAxis: [1, 0, 0] as [number, number, number],
+      yAxis: [0, 1, 0] as [number, number, number],
+    };
+    const ref = {
+      source: "extrude",
+      kind: "face" as const,
+      role: "extrude:top",
+      hint: {
+        entityType: "face" as const,
+        normal: [0, 0, 1] as [number, number, number],
+        centroid: [30, 20, 12] as [number, number, number],
+      },
+    };
+    const withSketch = addSketchFeature(doc, {
+      support: { kind: "face", ref, frame },
+    });
+    const cache = new RebuildCache();
+    const healthy = rebuildDocument(withSketch.doc, { cache }, deps);
+    expect(healthy.features.at(-1)?.status).toBe("ok");
+
+    const lost = rebuildDocument(
+      withSketch.doc,
+      { cache, lostFaceRefs: new Set([faceRefKey(ref)]) },
+      deps,
+    );
+    const lostSketch = lost.features.at(-1);
+    expect(lostSketch?.status).toBe("error");
+    expect(lostSketch?.cached).toBe(false);
+    expect(lostSketch?.diagnostics.some((d) => d.code === "support-lost")).toBe(
+      true,
+    );
+    expect(lostSketch?.output?.kind).toBe("sketch");
+    if (lostSketch?.output?.kind === "sketch") {
+      expect(lostSketch.output.frame).toEqual(frame);
+    }
+
+    const recovered = rebuildDocument(withSketch.doc, { cache }, deps);
+    expect(recovered.features.at(-1)?.status).toBe("ok");
   });
 
   it("rejects a midplane between non-parallel supports", () => {

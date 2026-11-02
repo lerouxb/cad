@@ -60,8 +60,9 @@ an editable sketcher driving an exact extrude:
   selection starts a sketch on a planar face when `+ sketch` is used, and the
   supporting boundary is projected live as fixed dashed references. Offset and
   midplane datum features are in, with a support picker, 3D preview and ray-picking;
-  face-backed datums follow source body edits. Full lost-support recovery and flipped
-  normals are still M4. The example part is
+  face-backed datums follow source body edits, and lost face support is visible with
+  reselect/revert. Exact `resolveRef` fallback and flipped normals are still M4. The
+  example part is
   hand-authored (`core/sketch/demo.ts` + `core/doc/example.ts`, including a suppressed
   center-pin extrude from the same sketch and a suppressed mounting-holes cut); the
   timeline now lists the real feature history with select,
@@ -72,9 +73,9 @@ an editable sketcher driving an exact extrude:
   `updateRoles`. Free 3D sketches, splines/text/images and drawing exports are out of
   scope.
 
-Next: **M4** — flipped normals and lost-support recovery (planar faces, cached frames,
-projections, offset/midplane datum features, datum picking and live face-base resolution
-are in), then **M6.0** (re-editable sketch
+Next: **M4** — flipped normals and exact `resolveRef` fallback (planar faces, cached
+frames, projections, datum features, datum picking, live face-base resolution and lost
+support are in), then **M6.0** (re-editable sketch
 pattern/mirror/offset, ADR-0004). Read `docs/PLAN.md`; it is the source of truth
 for done. Unsupported geometry/features (ellipses, conics, B-splines, free
 3D sketches, 3D fillets, lofts/sweeps, patterns/mirror, drafts, shelling/offsets,
@@ -418,7 +419,15 @@ docs/
   `BodyPick.kind = "datum"` (with the feature id) and selected from the same support
   popover. Face-backed datum frames are refreshed from the source prefix solid and
   propagated through the datum chain by `refreshDatumFrames`; this is derived state, no
-  undo step. Lost-support recovery remains.
+  undo step.
+- **Lost face support is derived input, not document state.** The live effects put
+  `faceRefKey(ref)` into `RebuildInputs.lostFaceRefs` when the source feature is missing/
+  skipped or the worker says the face was not found. `rebuildDocument` folds those keys
+  into its root cache key (so a cached success cannot mask a loss), keeps the cached frame
+  in the output, and adds a `support-lost` diagnostic. The timeline shows
+  `lost · cached frame` plus reselect/open sketch/revert. `reselect` uses the currently
+  picked planar face for a face sketch, or opens the datum editor for a datum base.
+  Transient "prefix solid no longer cached" errors must not be treated as lost.
 - **Projected face boundaries are live fixed references.** Schema v6 adds
   `SketchFeature.projections` (the cached projected loops) and materializes them in
   `Sketch.references` as fixed points/lines with `projectionId`/`referenceLabel`, so

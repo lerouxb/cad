@@ -598,7 +598,8 @@ and datum planes.
 - A lost base face/plane errors the plane feature; every dependent sketch/feature shows
   "support lost" and uses its cached frame until reselected. Datum bases resolve through
   earlier rebuild results, and face-backed datum frames refresh from the source prefix
-  solid. Exact face-ref fallback/reselect UI is still pending.
+  solid. Lost refs are derived `RebuildInputs.lostFaceRefs`, and the step offers
+  reselect/open sketch/revert. Exact `resolveRef` fallback is still pending.
 
 ### Projected reference geometry ("On Face / On Line")
 
@@ -795,9 +796,10 @@ the honest map, so nobody assumes a layer exists because it is described above.
 
 Known shortcuts, all scheduled: existing extrude features with an empty region list still
 resolve to the largest material region for legacy documents, while new extrude drafts
-require an explicit profile; flipped normals and full lost-support recovery are not
+require an explicit profile; flipped normals and exact `resolveRef` fallback are not
 implemented yet (M4). Sketches on planar faces, live projected boundaries, offset/midplane
-datum features, datum picking and live face-base datum resolution are in. Unsupported geometry and kernel features are
+datum features, datum picking, live face-base datum resolution and lost-support recovery
+are in. Unsupported geometry and kernel features are
 collected in PLAN M9 with current
 workarounds and the upstream SolveSpace/OCCT work each would need.
 

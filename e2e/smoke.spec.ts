@@ -741,6 +741,39 @@ test("datum planes based on a face follow source body edits", async ({
   expect(errors).toEqual([]);
 });
 
+test("shows and clears a lost face support", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await pickTopFace(page);
+  await sketchOnPickedFace(page);
+
+  await page.getByTestId("timeline-extrude").click();
+  await page.getByTestId("feature-suppress").click();
+  await expect(page.getByTestId("timeline")).toHaveAttribute(
+    "data-lost-supports",
+    "1",
+  );
+  await page.locator('[data-feature-type="sketch"]').last().click();
+  await expect(page.getByTestId("timeline-detail")).toContainText(
+    "lost · cached frame",
+  );
+  await expect(page.getByTestId("reselect-support")).toBeVisible();
+  await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
+    "data-status",
+    "error",
+  );
+
+  await page.getByTestId("timeline-extrude").click();
+  await page.getByTestId("feature-suppress").click();
+  await expect
+    .poll(() => page.getByTestId("rebuild-status").getAttribute("data-status"))
+    .toBe("ok");
+  await page.locator('[data-feature-type="sketch"]').last().click();
+  await expect(page.getByTestId("timeline-detail")).not.toContainText(
+    "lost · cached frame",
+  );
+  expect(errors).toEqual([]);
+});
+
 test("snaps a drawn line to a projected face boundary", async ({
   app: page,
 }) => {

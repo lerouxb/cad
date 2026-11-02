@@ -92,6 +92,8 @@ export interface RebuildInputs {
    * sketch id is present, the engine does not solve it again.
    */
   sketchOutcomes?: ReadonlyMap<string, SolveOutcome>;
+  /** Face refs the live resolver could not find on the source prefix solid. */
+  lostFaceRefs?: ReadonlySet<string>;
 }
 
 export interface RebuildDeps {

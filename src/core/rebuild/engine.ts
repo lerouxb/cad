@@ -15,6 +15,7 @@ import {
   offsetFrame,
   supportFrame,
 } from "../doc/support";
+import { faceRefKey } from "../doc/datum";
 import type { PlaneFrame } from "../types";
 import type { KernelFeature } from "../kernel/protocol";
 import { extrudeParams, selectExtrudeRegions } from "../features/extrude";
@@ -56,7 +57,12 @@ export function rebuildDocument(
   const results: FeatureResult[] = [];
   const byId = new Map<string, FeatureResult>();
   const sketchById = new Map<string, SketchRebuildOutput>();
-  let upstreamKey = "root";
+  // Support-loss changes are derived input, not document content. Fold them into
+  // the root key so a cached successful result cannot mask a newly lost face.
+  let upstreamKey =
+    inputs.lostFaceRefs && inputs.lostFaceRefs.size > 0
+      ? stableHash(`lost:${[...inputs.lostFaceRefs].sort().join(",")}`)
+      : "root";
   let params: RebuildResult["params"] = null;
   let sketch: SketchRebuildOutput | null = null;
 
@@ -148,7 +154,7 @@ function evaluateFeature(
       return evaluateSketch(feature, base, byId, inputs, deps);
     }
     if (isDatumPlaneFeature(feature)) {
-      return evaluateDatumPlane(feature, base, byId);
+      return evaluateDatumPlane(feature, base, byId, inputs);
     }
     if (isExtrudeFeature(feature)) {
       return evaluateExtrude(feature, base, byId, deps);
@@ -235,7 +241,9 @@ function evaluateSketch(
     });
   }
 
-  let supportLost = false;
+  let supportLost =
+    feature.support.kind === "face" &&
+    (inputs.lostFaceRefs?.has(faceRefKey(feature.support.ref)) ?? false);
   const frame = isDefaultSupport(feature.support)
     ? undefined
     : resolveSupportFrame(feature.support, byId, () => {
@@ -255,7 +263,7 @@ function evaluateSketch(
     diagnostics.push({
       severity: "error",
       code: "support-lost",
-      message: "The sketch support could not be resolved; using its cached frame.",
+      message: "Support lost; using the cached frame. Reselect the support, open the sketch, or revert.",
     });
     return { ...base, status: "error", output, diagnostics };
   }
@@ -281,13 +289,21 @@ function evaluateDatumPlane(
   feature: DatumPlaneFeature,
   base: Omit<FeatureResult, "status" | "output" | "diagnostics">,
   byId: Map<string, FeatureResult>,
+  inputs: RebuildInputs,
 ): FeatureResult {
   const definition = feature.definition;
   let lost = false;
-  const resolve = (ref: PlaneRef): PlaneFrame =>
-    resolveSupportFrame(ref, byId, () => {
+  const resolve = (ref: PlaneRef): PlaneFrame => {
+    if (
+      ref.kind === "face" &&
+      inputs.lostFaceRefs?.has(faceRefKey(ref.ref))
+    ) {
+      lost = true;
+    }
+    return resolveSupportFrame(ref, byId, () => {
       lost = true;
     });
+  };
 
   if (definition.kind === "offset") {
     if (!Number.isFinite(definition.distance)) {

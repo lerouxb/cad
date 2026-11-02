@@ -57,6 +57,7 @@ import {
   sketchFeatureById,
   updateDatumPlaneFeature,
   updateExtrudeFeature,
+  updateFeature,
   updateSketchFeature,
 } from "../core/doc/selectors";
 import {
@@ -325,6 +326,18 @@ export function App() {
     value: "fit" | number;
   } | null>(null);
   const [solveError, setSolveError] = useState<SolveOutcome | null>(null);
+  const [lostFaceRefs, setLostFaceRefs] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const markFaceRefLost = useCallback((key: string, lost: boolean): void => {
+    setLostFaceRefs((current) => {
+      if (current.has(key) === lost) return current;
+      const next = new Set(current);
+      if (lost) next.add(key);
+      else next.delete(key);
+      return next;
+    });
+  }, []);
   /** A constraint that would be valid on its own but made the sketch
    * inconsistent. It is shown as an active chip so the same click releases it;
    * it is not written to the document. */
@@ -403,8 +416,9 @@ export function App() {
     return rebuildDocument(buildDoc, {
       cache: rebuildCache,
       sketchOutcomes,
+      lostFaceRefs,
     });
-  }, [buildDoc, solverState, sketchOutcomes, rebuildCache]);
+  }, [buildDoc, solverState, sketchOutcomes, rebuildCache, lostFaceRefs]);
   const activeSketchBuild = activeSketchFeature
     ? rebuild?.sketchById.get(activeSketchFeature.id) ?? null
     : null;
@@ -1138,6 +1152,40 @@ export function App() {
     setHistoryNotice(null);
   };
 
+  /** Recover a sketch/datum whose live face support disappeared. */
+  const reselectActiveSupport = (): void => {
+    if (!activeFeature) return;
+    if (activeFeature.type === "datum") {
+      openDatumEditor(activeFeature);
+      return;
+    }
+    if (activeFeature.type !== "sketch") return;
+    const support = activeFeature.support;
+    if (support.kind === "datum") {
+      const datum = findFeature(getState().doc, support.featureId);
+      if (datum?.type === "datum") openDatumEditor(datum);
+      return;
+    }
+    if (support.kind !== "face") return;
+    const faceRef = bodyPick?.kind === "face" ? (bodyPick.ref ?? null) : null;
+    const frame = faceRef ? frameFromHint(faceRef.hint) : null;
+    if (!faceRef || !frame) {
+      setHistoryNotice("Pick a planar face first, then reselect.");
+      return;
+    }
+    const current = getState();
+    markFaceRefLost(faceRefKey(support.ref), false);
+    const nextDoc = updateFeature(current.doc, activeFeature.id, (feature) =>
+      feature.type === "sketch"
+        ? { ...feature, support: { kind: "face", ref: faceRef, frame } }
+        : feature,
+    );
+    commit({ doc: nextDoc, solved: current.solved, solvedFor: current.solvedFor });
+    setBodyPick(null);
+    viewportRef.current?.clearPick();
+    setHistoryNotice(null);
+  };
+
   const openFeatureEditor = (): void => {
     if (editorOpen || !activeFeature) return;
     if (activeFeature.type === "extrude") {
@@ -1459,14 +1507,17 @@ export function App() {
       const sourceResult = rebuild.features.find(
         (result) => result.featureId === sourceSupport.ref.source,
       );
-      if (!sourceResult?.cacheKey) continue;
-      const key = `${sourceResult.cacheKey}|${sourceSupport.ref.role}`;
-      if (
-        faceBoundaryCache.current.has(key) ||
-        faceBoundaryPending.current.has(key)
-      ) {
+      const lostKey = faceRefKey(sourceSupport.ref);
+      if (!sourceResult || sourceResult.status !== "ok" || !sourceResult.cacheKey) {
+        queueMicrotask(() => markFaceRefLost(lostKey, true));
         continue;
       }
+      const key = `${sourceResult.cacheKey}|${sourceSupport.ref.role}`;
+      if (faceBoundaryCache.current.has(key)) {
+        queueMicrotask(() => markFaceRefLost(lostKey, false));
+        continue;
+      }
+      if (faceBoundaryPending.current.has(key)) continue;
       faceBoundaryPending.current.add(key);
       client
         .requestFaceBoundary(
@@ -1476,6 +1527,7 @@ export function App() {
         )
         .then((result) => {
           faceBoundaryPending.current.delete(key);
+          markFaceRefLost(lostKey, false);
           const frame = frameFromNormalAndOrigin(
             result.normal,
             result.centroid,
@@ -1576,11 +1628,17 @@ export function App() {
             solvedFor: target.id,
           });
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           faceBoundaryPending.current.delete(key);
+          if (
+            error instanceof Error &&
+            error.message.includes("face was not found")
+          ) {
+            markFaceRefLost(lostKey, true);
+          }
         });
     }
-  }, [rebuild, kernelVersion, getState, replace]);
+  }, [rebuild, kernelVersion, getState, replace, markFaceRefLost]);
 
   // Datum planes can be based on a face. Resolve those frames from the source
   // feature's cached prefix solid (not the final body), then refresh the datum
@@ -1597,7 +1655,10 @@ export function App() {
         const source = rebuild.features.find(
           (feature) => feature.featureId === ref.source,
         );
-        if (!source?.cacheKey) continue;
+        if (!source || source.status !== "ok" || !source.cacheKey) {
+          queueMicrotask(() => markFaceRefLost(faceRefKey(ref), true));
+          continue;
+        }
         const cached = faceBoundaryCache.current.get(
           `${source.cacheKey}|${ref.role}`,
         );
@@ -1618,29 +1679,39 @@ export function App() {
       const source = rebuild.features.find(
         (feature) => feature.featureId === ref.source,
       );
-      if (!source?.cacheKey) continue;
-      const key = `${source.cacheKey}|${ref.role}`;
-      if (
-        faceBoundaryCache.current.has(key) ||
-        faceBoundaryPending.current.has(key)
-      ) {
+      const lostKey = faceRefKey(ref);
+      if (!source || source.status !== "ok" || !source.cacheKey) {
+        queueMicrotask(() => markFaceRefLost(lostKey, true));
         continue;
       }
+      const key = `${source.cacheKey}|${ref.role}`;
+      if (faceBoundaryCache.current.has(key)) {
+        queueMicrotask(() => markFaceRefLost(lostKey, false));
+        continue;
+      }
+      if (faceBoundaryPending.current.has(key)) continue;
       faceBoundaryPending.current.add(key);
       client
         .requestFaceBoundary(source.cacheKey, ref.source, ref.role)
         .then((result) => {
           faceBoundaryPending.current.delete(key);
+          markFaceRefLost(lostKey, false);
           const frame = frameFromNormalAndOrigin(result.normal, result.centroid);
           if (!frame) return;
           faceBoundaryCache.current.set(key, { frame, loops: result.loops });
           applyCachedFrames();
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           faceBoundaryPending.current.delete(key);
+          if (
+            error instanceof Error &&
+            error.message.includes("face was not found")
+          ) {
+            markFaceRefLost(lostKey, true);
+          }
         });
     }
-  }, [rebuild, kernelVersion, getState, replace]);
+  }, [rebuild, kernelVersion, getState, replace, markFaceRefLost]);
 
   useEffect(() => {
     viewportRef.current?.setActive(mode === "model");
@@ -2365,6 +2436,10 @@ export function App() {
   const activeState = activeFeature
     ? featureStates.get(activeFeature.id)
     : undefined;
+  const activeSupportLost =
+    activeState?.result?.diagnostics.some(
+      (diagnostic) => diagnostic.code === "support-lost",
+    ) ?? false;
   const activeExtrudeOutput =
     activeState?.result?.output?.kind === "extrude"
       ? activeState.result.output
@@ -3279,6 +3354,7 @@ export function App() {
           data-active-feature={activeFeature?.id ?? ""}
           data-active-sketch={activeSketchFeature?.id ?? ""}
           data-active-extrude={activeExtrude?.id ?? ""}
+          data-lost-supports={lostFaceRefs.size}
         >
           <div className="timeline-track">
             {doc.features.map((feature, index) => {
@@ -3543,7 +3619,33 @@ export function App() {
                     </span>
                   </>
                 )}
+                {activeSupportLost ? (
+                  <span className="detail-item">
+                    <span className="detail-key">support</span>
+                    <span className="detail-value">lost · cached frame</span>
+                  </span>
+                ) : null}
                 <span className="detail-actions">
+                  {activeSupportLost ? (
+                    <button
+                      className="text-action"
+                      type="button"
+                      onClick={reselectActiveSupport}
+                      data-testid="reselect-support"
+                    >
+                      reselect
+                    </button>
+                  ) : null}
+                  {activeSupportLost ? (
+                    <button
+                      className="text-action"
+                      type="button"
+                      onClick={goBack}
+                      data-testid="revert-support"
+                    >
+                      revert
+                    </button>
+                  ) : null}
                   {isExtrudeFeature(activeFeature) ||
                   isDatumPlaneFeature(activeFeature) ? (
                     <button
