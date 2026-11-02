@@ -940,9 +940,12 @@
   opacity: 0.7;
 }
 
+/* centre the dot on the text's x-height (half the x-height up from the
+   baseline), then a hair lower — a round shape reads a touch high at the
+   geometric centre, so this is the optical one */
 .body-dot {
   position: relative;
-  top: -0.5ex;
+  top: -0.4ex;
   width: 7px;
   height: 7px;
   border: 1px solid var(--ink);
