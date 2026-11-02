@@ -780,7 +780,16 @@
    -------------------------------------------------------------------------- */
 
 .step {
-  cursor: pointer;
+  cursor: grab;
+}
+
+.steps.is-dragging .step {
+  cursor: grabbing;
+}
+
+.step.is-drop {
+  outline: 1px dashed var(--ink-2);
+  outline-offset: 4px;
 }
 
 .step-bodies {
@@ -992,10 +1001,6 @@
 .group-steps {
   display: flex;
   align-items: flex-start;
-}
-
-.step.is-selected {
-  background: var(--marker-fill);
 }
 
 .bo-select-top,

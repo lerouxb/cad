@@ -522,11 +522,12 @@
     active: 8,
     connected: false,
     selected: null,
-    sel: [8],
-    groups: [{ id: "g1", name: "case details", from: 4, to: 7, collapsed: false }],
+    order: [1, 2, 3, 4, 5, 6, 7, 8],
+    groups: [{ id: "g1", name: "case details", ids: [4, 5, 6, 7], collapsed: false }],
     nextGid: 1,
     names: {},
-    editing: null
+    editing: null,
+    drag: null
   };
 
   function bdGroup(id) {
@@ -536,28 +537,64 @@
     return null;
   }
 
-  function bdGroupAt(n) {
+  function bdGroupOf(n) {
     for (var i = 0; i < bd.groups.length; i++) {
-      if (bd.groups[i].from === n) return bd.groups[i];
+      if (bd.groups[i].ids.indexOf(n) !== -1) return bd.groups[i];
     }
     return null;
   }
 
-  function bdGroupCovering(from, to) {
-    for (var i = 0; i < bd.groups.length; i++) {
-      var g = bd.groups[i];
-      if (g.from === from && g.to === to) return g;
-    }
-    return null;
+  function bdDissolve() {
+    bd.groups = bd.groups.filter(function (g) {
+      return g.ids.length > 1;
+    });
   }
 
-  function bdExtendRange(sel, n) {
-    if (!sel.length) return [n];
-    var lo = Math.min.apply(null, sel.concat([n]));
-    var hi = Math.max.apply(null, sel.concat([n]));
-    var out = [];
-    for (var i = lo; i <= hi; i++) out.push(i);
-    return out;
+  function bdMembersInOrder(g) {
+    return g.ids.slice().sort(function (a, b) {
+      return bd.order.indexOf(a) - bd.order.indexOf(b);
+    });
+  }
+
+  // Drag a step onto another step:
+  //  - neither in a group and adjacent  -> start a group
+  //  - dropped onto a group's edge       -> grow the group
+  //  - dragging a step out of a group    -> leave the group, landing next to b
+  function bdApplyDrag(a, b) {
+    if (a === b) return;
+    var ga = bdGroupOf(a);
+    var gb = bdGroupOf(b);
+    if (ga && gb && ga === gb) return;
+    var pa = bd.order.indexOf(a);
+    var pb = bd.order.indexOf(b);
+    if (ga) {
+      ga.ids = ga.ids.filter(function (x) {
+        return x !== a;
+      });
+      bd.order.splice(pa, 1);
+      var ib = bd.order.indexOf(b);
+      bd.order.splice(pa < pb ? ib + 1 : ib, 0, a);
+      bdDissolve();
+      return;
+    }
+    if (gb) {
+      var pos = gb.ids.map(function (x) {
+        return bd.order.indexOf(x);
+      });
+      var lo = Math.min.apply(null, pos);
+      var hi = Math.max.apply(null, pos);
+      if (pa === lo - 1 || pa === hi + 1) gb.ids.push(a);
+      return;
+    }
+    if (Math.abs(pa - pb) === 1) {
+      bd.nextGid = (bd.nextGid || 1) + 1;
+      bd.groups.push({
+        id: "g" + bd.nextGid,
+        name: "group " + bd.nextGid,
+        ids: [a, b],
+        collapsed: false
+      });
+    }
   }
 
   function bdSteps() {
@@ -746,7 +783,6 @@
       return o.lost;
     });
     var cls = "step";
-    if (bd.sel.indexOf(n) !== -1) cls += " is-selected";
     if (n === bd.active) cls += " is-active";
     if (n > bd.active) cls += " is-paused";
     if (lost) cls += " is-error";
@@ -763,7 +799,8 @@
   }
 
   function bdGroupHtml(g, steps) {
-    var activeIn = bd.active >= g.from && bd.active <= g.to;
+    var members = bdMembersInOrder(g);
+    var activeIn = members.indexOf(bd.active) !== -1;
     var editing = bd.editing && bd.editing.kind === "group" && bd.editing.id === g.id;
     var name = editing
       ? '<input class="chip-input" data-rename="__group:' + g.id + '" value="' +
@@ -771,27 +808,28 @@
       : '<span class="group-name">' + g.name + "</span>";
     if (g.collapsed) {
       return (
-        '<div class="step-group is-collapsed' + (activeIn ? " is-active" : "") +
-        '" data-group="' + g.id + '" role="button" tabindex="0" title="Expand group">' +
+        '<div class="step-group is-collapsed" data-group="' + g.id +
+        '" role="button" tabindex="0" title="Expand group">' +
         '<span class="group-mark"></span>' + name +
-        '<span class="group-meta">' + (g.to - g.from + 1) + " steps</span>" +
+        '<span class="group-meta">' + members.length + " steps</span>" +
         "</div>"
       );
     }
     var inner = "";
-    for (var n = g.from; n <= g.to; n++) inner += bdStepHtml(steps[n - 1], n);
+    members.forEach(function (n) {
+      inner += bdStepHtml(steps[n - 1], n);
+    });
     var collapseBtn = activeIn
       ? '<button class="group-btn" type="button" disabled ' +
         'title="the active step is inside this group \u2014 roll back first">\u2212</button>'
       : '<button class="group-btn" type="button" data-collapse="' + g.id +
         '" aria-label="Collapse group">\u2212</button>';
     return (
-      '<div class="step-group' + (activeIn ? " is-active" : "") +
-      '" data-group="' + g.id + '">' +
+      '<div class="step-group" data-group="' + g.id + '">' +
       '<div class="group-head">' +
       collapseBtn +
       name +
-      '<span class="group-meta">' + (g.to - g.from + 1) + " steps</span>" +
+      '<span class="group-meta">' + members.length + " steps</span>" +
       '<button class="group-btn" type="button" data-ungroup="' + g.id +
       '">ungroup</button>' +
       "</div>" +
@@ -800,70 +838,19 @@
     );
   }
 
-  function bdGroupActions() {
-    var sel = bd.sel.slice().sort(function (a, b) {
-      return a - b;
-    });
-    if (sel.length < 2) return "";
-    var lo = sel[0];
-    var hi = sel[sel.length - 1];
-    if (hi - lo !== sel.length - 1) return "";
-
-    function overlaps(from, to, exceptId) {
-      return bd.groups.some(function (g) {
-        return g.id !== exceptId && g.from <= to && g.to >= from;
-      });
-    }
-
-    var inside = bd.groups.filter(function (g) {
-      return g.from >= lo && g.to <= hi;
-    });
-
-    // groups are flat: a selection may contain at most one whole group
-    if (inside.length > 1) {
-      return '<span class="detail-actions"><span class="tool-note">overlaps more than one group</span></span>';
-    }
-    if (inside.length === 1) {
-      var g = inside[0];
-      if (g.from === lo && g.to === hi) {
-        return (
-          '<span class="detail-actions">' +
-          '<button class="text-action" type="button" data-action="rename" data-gid="' +
-          g.id + '">rename</button>' +
-          '<button class="text-action is-quiet" type="button" data-action="ungroup" data-gid="' +
-          g.id + '">ungroup</button></span>'
-        );
-      }
-      if (overlaps(lo, hi, g.id)) {
-        return '<span class="detail-actions"><span class="tool-note">would overlap another group</span></span>';
-      }
-      return (
-        '<span class="detail-actions"><button class="text-action" type="button" data-action="grow" data-gid="' +
-        g.id + '">add to \u201c' + g.name + "\u201d</button></span>"
-      );
-    }
-    if (overlaps(lo, hi, null)) {
-      return '<span class="detail-actions"><span class="tool-note">overlaps a group \u2014 groups are flat</span></span>';
-    }
-    return (
-      '<span class="detail-actions"><button class="text-action" type="button" data-action="group">group ' +
-      sel.length + " steps</button></span>"
-    );
-  }
-
   function bdRenderTimeline(stepsEl, detailEl) {
     var steps = bdSteps();
     var html = "";
     var i = 0;
-    while (i < steps.length) {
-      var n = i + 1;
-      var g = bdGroupAt(n);
+    while (i < bd.order.length) {
+      var n = bd.order[i];
+      var g = bdGroupOf(n);
       if (g) {
         html += bdGroupHtml(g, steps);
-        i = g.to;
+        i += g.ids.length;
         continue;
       }
-      html += bdStepHtml(steps[i], n);
+      html += bdStepHtml(steps[n - 1], n);
       i++;
     }
     stepsEl.innerHTML = html;
@@ -892,7 +879,6 @@
           );
         })
         .join("") +
-      bdGroupActions() +
       (curLost
         ? '<span class="detail-item"><span class="detail-key">lost</span>' +
           '<span class="detail-value">body \u201clid\u201d no longer exists</span></span>' +
@@ -975,7 +961,6 @@
       foot.innerHTML =
         "<b>" + count + (count === 1 ? " body" : " bodies") + "</b> \u00b7 step " +
         bd.active + " of " + bdSteps().length +
-        (bd.sel.length > 1 ? " \u00b7 " + bd.sel.length + " steps selected" : "") +
         (bd.connected ? " \u00b7 what-if: profiles connected" : "");
       if (whatif) {
         whatif.textContent = bd.connected
@@ -1009,8 +994,79 @@
       }
     }
 
+    function clearDrop() {
+      Array.prototype.forEach.call(
+        stepsEl.querySelectorAll(".is-drop"),
+        function (el) {
+          el.classList.remove("is-drop");
+        }
+      );
+    }
+
+    // pointer drag: drop a step onto another step to group, or out to ungroup
+    stepsEl.addEventListener("pointerdown", function (e) {
+      if (e.target.closest("button") || e.target.closest("[data-rename]")) return;
+      var step = e.target.closest("[data-step]");
+      if (!step) return;
+      bd.drag = {
+        from: Number(step.getAttribute("data-step")),
+        over: null,
+        x: e.clientX,
+        y: e.clientY,
+        active: false,
+        pid: e.pointerId
+      };
+    });
+
+    stepsEl.addEventListener("pointermove", function (e) {
+      if (!bd.drag) return;
+      if (!bd.drag.active) {
+        if (
+          Math.abs(e.clientX - bd.drag.x) < 6 &&
+          Math.abs(e.clientY - bd.drag.y) < 6
+        ) {
+          return;
+        }
+        bd.drag.active = true;
+        bd.dragMoved = true;
+        try {
+          stepsEl.setPointerCapture(bd.drag.pid);
+        } catch (err) {
+          /* ignore */
+        }
+        stepsEl.classList.add("is-dragging");
+      }
+      clearDrop();
+      var el = document.elementFromPoint(e.clientX, e.clientY);
+      var step = el && el.closest ? el.closest("[data-step]") : null;
+      if (step) {
+        step.classList.add("is-drop");
+        bd.drag.over = Number(step.getAttribute("data-step"));
+      } else {
+        bd.drag.over = null;
+      }
+    });
+
+    function endDrag() {
+      if (!bd.drag) return;
+      var d = bd.drag;
+      bd.drag = null;
+      stepsEl.classList.remove("is-dragging");
+      clearDrop();
+      if (d.active && d.over != null) {
+        bdApplyDrag(d.from, d.over);
+        render();
+      }
+      setTimeout(function () {
+        bd.dragMoved = false;
+      }, 0);
+    }
+    stepsEl.addEventListener("pointerup", endDrag);
+    stepsEl.addEventListener("pointercancel", endDrag);
+
     stepsEl.addEventListener("click", function (e) {
       if (e.target.closest("[data-rename]")) return;
+      if (bd.dragMoved) return;
       var collapse = e.target.closest("[data-collapse]");
       if (collapse) {
         var gc = bdGroup(collapse.getAttribute("data-collapse"));
@@ -1023,15 +1079,6 @@
         bd.groups = bd.groups.filter(function (x) {
           return x.id !== ungroup.getAttribute("data-ungroup");
         });
-        render();
-        return;
-      }
-      var step = e.target.closest("[data-step]");
-      if (step) {
-        var n = Number(step.getAttribute("data-step"));
-        bd.sel = e.shiftKey ? bdExtendRange(bd.sel, n) : [n];
-        bd.active = n;
-        bd.selected = null;
         render();
         return;
       }
@@ -1051,57 +1098,21 @@
         render();
         return;
       }
-      var grp = e.target.closest("[data-group]");
+      var step = e.target.closest("[data-step]");
+      if (step) {
+        bd.active = Number(step.getAttribute("data-step"));
+        bd.selected = null;
+        render();
+        return;
+      }
+      // a group is not selectable; clicking a collapsed chip just expands it
+      var grp = e.target.closest(".step-group");
       if (grp) {
         var g = bdGroup(grp.getAttribute("data-group"));
         if (g && g.collapsed) {
           g.collapsed = false;
-          bd.sel = [];
-          for (var k = g.from; k <= g.to; k++) bd.sel.push(k);
-          bd.active = g.to;
           render();
         }
-      }
-    });
-
-    detailEl.addEventListener("click", function (e) {
-      var act = e.target.closest("[data-action]");
-      if (!act) return;
-      var kind = act.getAttribute("data-action");
-      var sel = bd.sel.slice().sort(function (a, b) {
-        return a - b;
-      });
-      if (kind === "group") {
-        bd.nextGid = (bd.nextGid || 1) + 1;
-        bd.groups.push({
-          id: "g" + bd.nextGid,
-          name: "group " + bd.nextGid,
-          from: sel[0],
-          to: sel[sel.length - 1],
-          collapsed: false
-        });
-        render();
-      } else if (kind === "ungroup") {
-        bd.groups = bd.groups.filter(function (x) {
-          return x.id !== act.getAttribute("data-gid");
-        });
-        render();
-      } else if (kind === "grow") {
-        var g = bdGroup(act.getAttribute("data-gid"));
-        if (g) {
-          var nf = Math.min(g.from, sel[0]);
-          var nt = Math.max(g.to, sel[sel.length - 1]);
-          var clash = bd.groups.some(function (x) {
-            return x.id !== g.id && x.from <= nt && x.to >= nf;
-          });
-          if (!clash) {
-            g.from = nf;
-            g.to = nt;
-          }
-        }
-        render();
-      } else if (kind === "rename") {
-        startRename("group", act.getAttribute("data-gid"));
       }
     });
 

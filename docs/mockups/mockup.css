@@ -1124,12 +1124,14 @@ body.is-embed .app {
   background: var(--marker-soft);
 }
 
+.step.is-active {
+  box-shadow: inset 0 -2px 0 var(--marker);
+}
+
 .step.is-active .step-name {
-  display: inline;
-  margin: 0 -3px;
-  padding: 0 3px;
-  background: var(--marker);
-  color: var(--marker-ink);
+  background: var(--marker-wash);
+  box-shadow: 0 0 0 2px var(--marker-wash);
+  color: var(--ink);
 }
 
 .step.is-active .step-index {
@@ -1166,7 +1168,7 @@ body.is-embed .app {
 }
 
 .step.is-active .step-error {
-  color: var(--marker-ink);
+  color: var(--ink);
 }
 
 .step-index {
