@@ -216,7 +216,10 @@ docs/
   applying, so click and shift-click do not nudge geometry. A slightly-off grab near a
   free line endpoint still drags that endpoint (within 2.2× the point hit radius);
   otherwise it starts a whole-line translation and both points appear to move together.
-  The origin marker must stay
+  The drag projection also re-pins points with no constraint path to the dragged point:
+  SolveSpace drifts unrelated free variables while converging, so a point on one
+  projected edge would otherwise creep when dragging a point on another edge. The origin
+  marker must stay
   `pointerEvents="none"` — it is drawn above the curve hit targets and otherwise eats the
   grab.
 - Dimension labels stop `pointerdown` propagation. Without that the SVG's pan handler

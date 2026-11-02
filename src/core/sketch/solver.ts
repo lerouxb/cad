@@ -146,7 +146,16 @@ export function solveDragTargets(
       moved = Math.max(moved, Math.hypot(solved[0] - origin.x, solved[1] - origin.y));
     }
     if (moved < 1e-4) return null;
-    return outcome;
+    if (projected.detached.length === 0) return outcome;
+    // The solver may drift free points that have no constraint path to the
+    // dragged geometry. Restore those exactly; they were feasible before the
+    // drag and are not coupled to it.
+    const points = { ...outcome.points };
+    for (const id of projected.detached) {
+      const original = sketch.points.find((point) => point.id === id);
+      if (original) points[id] = [original.x, original.y];
+    }
+    return { ...outcome, points };
   }
   return null;
 }

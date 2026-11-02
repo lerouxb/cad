@@ -2,10 +2,10 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { addCircle, addPolyline, emptySketch, isSketchEmpty } from "./create";
 import { applicableConstraints, applyConstraint } from "./constraints";
 import { addDimension, setDimensionValue } from "./dimensions";
-import { distance, sketchGeometry } from "./geometry";
+import { applySolution, distance, sketchGeometry } from "./geometry";
 import { profileFromSketch } from "./loops";
 import { applyProjectionGeometry } from "./projection";
-import { initSolver, solveSketch } from "./solver";
+import { initSolver, solveDrag, solveSketch } from "./solver";
 import type { Sketch } from "./types";
 
 function withPoint(x: number, y: number): Sketch {
@@ -141,5 +141,49 @@ describe("sketch reference frame", () => {
     const solved = solveSketch(sketch);
     expect(solved.ok).toBe(true);
     expect(solved.points[pointId]![1]).toBeCloseTo(0, 6);
+  });
+
+  it("does not drift a detached point when dragging another projected point", () => {
+    const projected = applyProjectionGeometry(
+      emptySketch(),
+      "proj-1",
+      "Projected face",
+      [
+        [
+          [-30, -6],
+          [30, -6],
+          [30, 6],
+          [-30, 6],
+        ],
+      ],
+    );
+    if (!projected) throw new Error("Expected the projection to apply");
+    const sketch = addPolyline(
+      projected,
+      [
+        { point: [-30, 1], referenceLineId: "proj-1-l0-3" },
+        { point: [-1, -6], referenceLineId: "proj-1-l0-0" },
+      ],
+      false,
+    );
+    const leftId = sketch.points[0]!.id;
+    const rightId = sketch.points[1]!.id;
+    const settled = solveSketch(sketch);
+    expect(settled.ok).toBe(true);
+    const dragged = solveDrag(applySolution(sketch, settled), {
+      pointId: rightId,
+      x: -10,
+      y: -6,
+    });
+    if (!dragged) throw new Error("Expected the drag to move");
+    expect(dragged.points[rightId]![0]).toBeCloseTo(-10, 1);
+    expect(dragged.points[leftId]![0]).toBeCloseTo(
+      settled.points[leftId]![0],
+      6,
+    );
+    expect(dragged.points[leftId]![1]).toBeCloseTo(
+      settled.points[leftId]![1],
+      6,
+    );
   });
 });

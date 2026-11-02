@@ -82,6 +82,20 @@ async function pickSideFace(page: Page): Promise<void> {
   );
 }
 
+/** Fit the model and pick the right side face of the demo plate. */
+async function pickRightFace(page: Page): Promise<void> {
+  const canvas = page.locator("canvas.viewport-canvas");
+  await page.getByRole("button", { name: "Fit view" }).click();
+  await page.waitForTimeout(200);
+  await page.mouse.move(800, 340);
+  await expect(canvas).toHaveAttribute("data-hover-kind", "face");
+  await page.mouse.click(800, 340);
+  await expect(page.getByTestId("body-pick")).toHaveAttribute(
+    "data-kind",
+    "face",
+  );
+}
+
 async function sketchOnPickedFace(page: Page): Promise<void> {
   await page.getByTestId("add-sketch").click();
   await expect(page.getByTestId("support-popover")).toContainText(
@@ -625,47 +639,48 @@ test("projects a side face as a closed rectangle", async ({ app: page }) => {
   expect(errors).toEqual([]);
 });
 
-test("dragging a line endpoint leaves the other endpoint alone", async ({
+test("dragging a projected edge point leaves the other endpoint fixed", async ({
   app: page,
 }) => {
   const errors = collectErrors(page);
-  await pickSideFace(page);
+  await pickRightFace(page);
   await page.getByTestId("add-sketch").click();
   await page.getByTestId("new-sketch").click();
   await expect(page.locator("[data-projection-id]")).toHaveCount(4);
 
   await page.getByTestId("tool-line").click();
-  await clickSketch(page, -29, 1);
-  await clickSketch(page, -1, -5);
+  await clickSketch(page, -19, 1);
+  await clickSketch(page, -2, -5);
   await page.keyboard.press("Enter");
   await page.getByTestId("tool-select").click();
 
-  // Grab a few pixels away from the endpoint, still on the line. A slightly-off
-  // grab must still drag the endpoint, not translate the whole line.
-  await dragSketch(page, [-3.7, -5.3], [-10, -4]);
+  const points = () =>
+    page.evaluate(() => {
+      const raw = localStorage.getItem("cad.doc");
+      if (!raw) return null;
+      const doc = JSON.parse(raw);
+      const sketch = [...doc.features]
+        .reverse()
+        .find((feature: { type: string }) => feature.type === "sketch");
+      const found = sketch?.sketch.points as
+        | { x: number; y: number }[]
+        | undefined;
+      if (!found || found.length < 2) return null;
+      const left = found.reduce((a, b) => (a.x < b.x ? a : b));
+      const right = found.reduce((a, b) => (a.x > b.x ? a : b));
+      return { left: { x: left.x, y: left.y }, right: { x: right.x, y: right.y } };
+    });
+  await expect.poll(points).not.toBeNull();
+  const before = (await points())!;
 
-  await expect
-    .poll(() =>
-      page.evaluate(() => {
-        const raw = localStorage.getItem("cad.doc");
-        if (!raw) return null;
-        const doc = JSON.parse(raw);
-        const sketch = [...doc.features]
-          .reverse()
-          .find((feature: { type: string }) => feature.type === "sketch");
-        const points = sketch?.sketch.points as
-          | { x: number; y: number }[]
-          | undefined;
-        if (!points || points.length < 2) return null;
-        const left = points.reduce((a, b) => (a.x < b.x ? a : b));
-        const right = points.reduce((a, b) => (a.x > b.x ? a : b));
-        return {
-          left: [Math.round(left.x), Math.round(left.y)],
-          right: [Math.round(right.x), Math.round(right.y)],
-        };
-      }),
-    )
-    .toEqual({ left: [-30, 1], right: [-10, -6] });
+  // Grab at the endpoint. The other endpoint is on a different projected edge
+  // and must not drift with the solver's free variables.
+  await dragSketch(page, [-2, -6], [-10, -6]);
+  await expect.poll(async () => (await points())?.right.x ?? 0).toBeCloseTo(-10, 0);
+
+  const after = (await points())!;
+  expect(after.left.x).toBeCloseTo(before.left.x, 4);
+  expect(after.left.y).toBeCloseTo(before.left.y, 4);
   expect(errors).toEqual([]);
 });
 

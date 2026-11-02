@@ -40,6 +40,9 @@ export interface ProjectedDrag {
   acceptance: number;
   /** Movement of the dragged point in mm. */
   moved: number;
+  /** Points with no constraint path to the dragged points. The solver must not
+   * drift these while cleaning up the second-order error. */
+  detached: string[];
 }
 
 /**
@@ -56,6 +59,7 @@ export function projectDrag(
   const delta = params.values.map(() => 0);
   const mobility = params.values.map(() => 1);
   const dragged: [number, number][] = [];
+  const draggedIds = new Set<string>();
   const seen = new Set<string>();
   let requested = 0;
 
@@ -78,6 +82,7 @@ export function projectDrag(
     mobility[index[0]] = 1e-9;
     mobility[index[1]] = 1e-9;
     dragged.push([index[0], index[1]]);
+    draggedIds.add(target.pointId);
     requested = Math.max(requested, Math.hypot(dx, dy));
   }
 
@@ -127,10 +132,55 @@ export function projectDrag(
     return change === 0 ? curve : { ...curve, radius: curve.radius + change };
   });
 
+  // Any point not reachable from the dragged points through a constraint row
+  // has no reason to move. SolveSpace can still drift such free parameters
+  // while converging, so the solver re-pins these ids after cleanup.
+  const pointByParam = new Map<number, string>();
+  for (const [id, slots] of params.pointIndex) {
+    pointByParam.set(slots[0], id);
+    pointByParam.set(slots[1], id);
+  }
+  const adjacency = new Map<string, Set<string>>();
+  const connect = (a: string, b: string): void => {
+    const listA = adjacency.get(a) ?? new Set<string>();
+    listA.add(b);
+    adjacency.set(a, listA);
+    const listB = adjacency.get(b) ?? new Set<string>();
+    listB.add(a);
+    adjacency.set(b, listB);
+  };
+  for (const row of rows) {
+    const ids = new Set<string>();
+    for (const param of row.keys()) {
+      const id = pointByParam.get(param);
+      if (id) ids.add(id);
+    }
+    const [first, ...rest] = [...ids];
+    if (!first) continue;
+    for (const id of rest) connect(first, id);
+  }
+  const reachable = new Set(draggedIds);
+  const queue = [...draggedIds];
+  while (queue.length > 0) {
+    const id = queue.pop()!;
+    for (const next of adjacency.get(id) ?? []) {
+      if (reachable.has(next)) continue;
+      reachable.add(next);
+      queue.push(next);
+    }
+  }
+  const detached = sketch.points
+    .filter(
+      (point) =>
+        params.pointIndex.has(point.id) && !reachable.has(point.id),
+    )
+    .map((point) => point.id);
+
   return {
     sketch: { ...sketch, points, curves },
     acceptance: requested > 1e-9 ? moved / requested : 0,
     moved,
+    detached,
   };
 }
 
@@ -282,10 +332,10 @@ function buildRows(sketch: Sketch, params: Parameters): Row[] {
         const a = byId.get(constraint.a);
         const b = byId.get(constraint.b);
         if (!a || a.type !== "line" || !b || b.type !== "line") break;
-        const a1 = sketch.points.find((point) => point.id === a.a);
-        const a2 = sketch.points.find((point) => point.id === a.b);
-        const b1 = sketch.points.find((point) => point.id === b.a);
-        const b2 = sketch.points.find((point) => point.id === b.b);
+        const a1 = pointById.get(a.a);
+        const a2 = pointById.get(a.b);
+        const b1 = pointById.get(b.a);
+        const b2 = pointById.get(b.b);
         if (!a1 || !a2 || !b1 || !b2) break;
         const dax = a2.x - a1.x;
         const day = a2.y - a1.y;
@@ -313,10 +363,10 @@ function buildRows(sketch: Sketch, params: Parameters): Row[] {
         const b = byId.get(constraint.b);
         if (!a || !b) break;
         if (a.type === "line" && b.type === "line") {
-          const a1 = sketch.points.find((point) => point.id === a.a);
-          const a2 = sketch.points.find((point) => point.id === a.b);
-          const b1 = sketch.points.find((point) => point.id === b.a);
-          const b2 = sketch.points.find((point) => point.id === b.b);
+          const a1 = pointById.get(a.a);
+          const a2 = pointById.get(a.b);
+          const b1 = pointById.get(b.a);
+          const b2 = pointById.get(b.b);
           if (!a1 || !a2 || !b1 || !b2) break;
           const dax = a2.x - a1.x;
           const day = a2.y - a1.y;
@@ -350,11 +400,11 @@ function buildRows(sketch: Sketch, params: Parameters): Row[] {
         break;
       }
       case "pointOnLine": {
-        const p = sketch.points.find((point) => point.id === constraint.point);
+        const p = pointById.get(constraint.point);
         const line = byId.get(constraint.line);
         if (!p || !line || line.type !== "line") break;
-        const a = sketch.points.find((point) => point.id === line.a);
-        const b = sketch.points.find((point) => point.id === line.b);
+        const a = pointById.get(line.a);
+        const b = pointById.get(line.b);
         if (!a || !b) break;
         const dx = b.x - a.x;
         const dy = b.y - a.y;

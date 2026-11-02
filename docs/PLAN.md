@@ -112,7 +112,7 @@ feature work then lands inside that system.
   started from the selected sketch step and begins with **no profile selected**; the
   draft only becomes a history feature after at least one profile and the parameters are
   applied. Existing extrudes are edited by selecting their step.
-- `npm run verify` (175 unit tests) and `npm run e2e` (54 tests) are green. The e2e asserts
+- `npm run verify` (176 unit tests) and `npm run e2e` (54 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
