@@ -1,4 +1,4 @@
-import type { PlaneFrame, ProfileLoop } from "../types";
+import type { PlaneFrame, ProfileLoop, Vec3 } from "../types";
 
 export type { ProfileLoop };
 
@@ -102,7 +102,14 @@ export interface FeatureBuildStatus {
 
 export type KernelRequest =
   | { type: "init" }
-  | { type: "rebuild"; gen: number; features: KernelFeature[] };
+  | { type: "rebuild"; gen: number; features: KernelFeature[] }
+  | {
+      type: "faceBoundary";
+      requestId: number;
+      cacheKey: string;
+      source: string;
+      role: string;
+    };
 
 export type KernelResponse =
   | { type: "ready"; kernel: string }
@@ -117,4 +124,13 @@ export type KernelResponse =
       gen: number;
       message: string;
       features?: FeatureBuildStatus[];
+    }
+  | {
+      type: "faceBoundary";
+      requestId: number;
+      ok: boolean;
+      normal?: Vec3;
+      centroid?: Vec3;
+      loops?: Vec3[][];
+      message?: string;
     };

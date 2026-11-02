@@ -4,6 +4,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   type Doc,
   type ExtrudeFeature,
+  type FaceProjection,
   type PlaneRef,
   type SketchFeature,
 } from "./types";
@@ -20,7 +21,12 @@ export interface CreateDocOptions {
 
 export function createSketchFeature(
   sketch: Sketch = emptySketch(),
-  options: { name?: string; id?: string; support?: PlaneRef } = {},
+  options: {
+    name?: string;
+    id?: string;
+    support?: PlaneRef;
+    projections?: FaceProjection[];
+  } = {},
 ): SketchFeature {
   return {
     id: options.id ?? newId("feat"),
@@ -28,6 +34,9 @@ export function createSketchFeature(
     name: options.name ?? "Sketch 1",
     support: options.support ?? { kind: "world", plane: "XY" },
     sketch,
+    ...(options.projections && options.projections.length > 0
+      ? { projections: options.projections }
+      : {}),
   };
 }
 

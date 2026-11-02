@@ -8,16 +8,22 @@ import {
   clearMeshCache,
   clone,
   createRef,
+  curveLength,
+  curvePointAt,
   cutWithEvolution,
   extrude,
   face,
   fuseAll,
   fuseWithEvolution,
   getBounds,
+  getCurveType,
+  getEdges,
   getFaces,
   getHashCode,
+  innerWires,
   line,
   measureVolume,
+  outerWire,
   registerKernel,
   shape,
   threePointArc,
@@ -70,6 +76,41 @@ async function handle(request: KernelRequest): Promise<void> {
 
     if (request.type === "init") {
       reply({ type: "ready", kernel: "occt-wasm" });
+      return;
+    }
+
+    if (request.type === "faceBoundary") {
+      const entry = solidCache.get(request.cacheKey);
+      if (!entry) {
+        reply({
+          type: "faceBoundary",
+          requestId: request.requestId,
+          ok: false,
+          message: "The source prefix solid is no longer cached.",
+        });
+        return;
+      }
+      const boundary = faceBoundary(
+        entry.solid,
+        entry.roles,
+        request.source,
+        request.role,
+      );
+      if (!boundary) {
+        reply({
+          type: "faceBoundary",
+          requestId: request.requestId,
+          ok: false,
+          message: "The referenced face was not found on the source body.",
+        });
+        return;
+      }
+      reply({
+        type: "faceBoundary",
+        requestId: request.requestId,
+        ok: true,
+        ...boundary,
+      });
       return;
     }
 
@@ -263,6 +304,69 @@ function buildFeatures(features: KernelFeature[]): {
 }
 
 /** Build one tool solid and return an independently owned clone. */
+/** Sample a face's outer and inner wires into world-space boundary loops. */
+function faceBoundary(
+  solid: Solid,
+  roles: RoleTable,
+  source: string,
+  role: string,
+): { normal: [number, number, number]; centroid: [number, number, number]; loops: [number, number, number][][] } | null {
+  const hashes = roles.get(source)?.get(role);
+  if (!hashes || hashes.length === 0) return null;
+  try {
+    const byHash = new Map(getFaces(solid).map((face) => [getHashCode(face), face]));
+    const face = hashes
+      .map((hash) => byHash.get(hash))
+      .find((candidate) => Boolean(candidate));
+    if (!face) return null;
+    const hint = captureHint(face as Parameters<typeof captureHint>[0]);
+    if (!hint.normal || !hint.centroid) return null;
+    const loops: [number, number, number][][] = [];
+    for (const wire of [outerWire(face), ...innerWires(face)]) {
+      const loop: [number, number, number][] = [];
+      const addPoint = (point: [number, number, number]): void => {
+        const previous = loop[loop.length - 1];
+        if (
+          previous &&
+          Math.hypot(
+            point[0] - previous[0],
+            point[1] - previous[1],
+            point[2] - previous[2],
+          ) < 1e-7
+        ) {
+          return;
+        }
+        loop.push(point);
+      };
+      for (const edge of getEdges(wire)) {
+        // Straight edges only need their start: sampling them would turn a
+        // rectangle into hundreds of collinear reference points. Curves keep a
+        // deterministic sample so dashes/constraints follow the arc.
+        if (getCurveType(edge) === "LINE") {
+          const point = curvePointAt(edge, 0);
+          addPoint([point[0], point[1], point[2]]);
+          continue;
+        }
+        const length = curveLength(edge);
+        const steps = Math.max(2, Math.min(64, Math.ceil(length / 1.5)));
+        for (let index = 0; index < steps; index++) {
+          const point = curvePointAt(edge, index / steps);
+          addPoint([point[0], point[1], point[2]]);
+        }
+      }
+      if (loop.length >= 3) loops.push(loop);
+    }
+    if (loops.length === 0) return null;
+    return {
+      normal: [hint.normal[0], hint.normal[1], hint.normal[2]],
+      centroid: [hint.centroid[0], hint.centroid[1], hint.centroid[2]],
+      loops,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function buildSolid(params: ExtrudeParams, base: Solid | null): Solid {
   if (
     params.end !== "throughAll" &&

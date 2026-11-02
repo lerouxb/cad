@@ -16,6 +16,10 @@ export interface SketchPoint {
   fixed?: boolean;
   /** Part of the sketch coordinate frame (origin/axis endpoints). */
   reference?: boolean;
+  /** Projected face/edge reference this point belongs to. */
+  projectionId?: string;
+  /** Human label for a projected reference. */
+  referenceLabel?: string;
   /**
    * A user-placed point that is not a curve endpoint or centre. It is a normal
    * solver point (draggable/constrainable/dimensionable) but survives pruning;
@@ -33,6 +37,10 @@ export interface SketchLine {
   construction?: boolean;
   /** X/Y sketch axis (fixed reference line). */
   reference?: boolean;
+  /** Projected face/edge reference this line belongs to. */
+  projectionId?: string;
+  /** Human label for a projected reference. */
+  referenceLabel?: string;
 }
 
 export interface SketchCircle {

@@ -108,11 +108,11 @@ feature work then lands inside that system.
   suppressed through-all cut. The two suppressed features keep the familiar plate and
   picking goldens while exercising same-sketch region ownership, a second sketch,
   suppression, edits and the 3D sketch overlay. A new sketch is added from the timeline's
-  `+ sketch` support popover (XY explicit; XZ/YZ and faces are M4). A new extrude is
+  `+ sketch` support popover (XY explicit; XZ/YZ and datum planes are M4). A new extrude is
   started from the selected sketch step and begins with **no profile selected**; the
   draft only becomes a history feature after at least one profile and the parameters are
   applied. Existing extrudes are edited by selecting their step.
-- `npm run verify` (169 unit tests) and `npm run e2e` (48 tests) are green. The e2e asserts
+- `npm run verify` (174 unit tests) and `npm run e2e` (49 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -122,8 +122,8 @@ Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
 95 017.7 mm³ and rebuilds in ~35 ms after warm-up.
 
 **Still temporary** (all scheduled below): auto mode defaults to the largest material
-region until you click one; trim handles lines/arcs but not circles; **datum planes and
-sketch-on-face are M4**. M3 is done: the history supports create/edit/reorder by drag/
+region until you click one; trim handles lines/arcs but not circles; **datum planes are
+M4**. M3 is done: the history supports create/edit/reorder by drag/
 suppress/delete/rollback, a local file menu/list with copy/open/download/rename/new,
 blind/symmetric/through-all extrudes, and role propagation through booleans, with the
 multi-feature rebuild covered by e2e. Free 3D sketches, splines/text/images and drawing
@@ -611,27 +611,29 @@ with face sketches.
 - [x] Deterministic face frame (origin, x-axis) + cached frame fallback
 - [x] Sketch on a planar face of a solid; the 2D sketch surface uses the face frame and
       the model overlay/extrude map through it (no 3D camera turn needed)
-- [ ] Project the supporting face's boundary into the sketch as fixed construction
-      geometry (`drawFaceOutline`); project arbitrary edges (`drawProjection`). Projected
-      geometry is dashed, labelled, fixed and never selectable as user geometry
-      (mockup 02). The mockup used `P` for project; point now owns `P`, so pick a
-      different shortcut deliberately.
-- [ ] **Live reference geometry**: a projected point/line/face outline stores the `TopoRef`
-      it came from and is re-derived on every rebuild, never persisted as sketch geometry.
-      This is our equivalent of SolveSpace's "constrain point On Face / On Line" and is
-      what lets a gusset sit in the midplane and stay welded to the inner walls.
-- [ ] Projected references participate in the solver as fixed (group-0-like) entities, so
+- [x] Project the supporting face's boundary into the sketch as fixed construction
+      geometry, and label it; projected geometry is dashed, fixed and never selectable
+      as user geometry (mockup 02). Outlines are cached on the sketch feature and
+      re-derived after every rebuild.
+- [x] **Live reference geometry**: projected point/line/face outlines store the `TopoRef`
+      they came from, are re-derived from the source feature's cached prefix solid on
+      every rebuild, and are kept as cached geometry (marked stale) if their topology
+      changes. Downstream booleans cannot move or split them.
+- [x] Projected references participate in the solver as fixed (group-0-like) entities, so
       point-on-line / point-on-point / coincident constraints work against them
 - [ ] `resolveRef` on rebuild: exact → fallback → lost-ref error with "reselect"
 - [ ] Lost-support recovery surface: name the step and lost face in plain language,
       keep the last-good body, show “cached frame” in the step detail, and offer
       reselect / open sketch / revert (mockup 06)
 - [ ] Handle flipped face normals and sketches created on the "back" of a face
-- [ ] Topological-naming regression test: change base height, boss on top face follows
+- [x] Topological-naming regression test: change base height, boss on top face follows
 - [x] UI: unsupported (curved) face → clear explanation, no broken state
 - [x] **First slice landed:** face refs + deterministic cached frame, sketch on a planar
-      face, and frame-aware extrude/overlay. Projected boundary/live references, datum
-      planes, exact `resolveRef` and lost-support recovery remain.
+      face, and frame-aware extrude/overlay.
+- [x] **Second slice landed:** live projected face-boundary references, cached
+      projections with stable identities, solver participation, and source-height
+      regression coverage. Datum planes, exact `resolveRef` and lost-support recovery
+      remain.
 
 **Done when:** sketch on an offset plane in empty space; sketch on a midplane between two
 faces; change the offset or the base plate height and every dependent sketch/feature

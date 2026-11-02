@@ -73,6 +73,23 @@ export function supportLabel(support: PlaneRef): string {
   return `Face · ${support.ref.role}`;
 }
 
+export function framesClose(
+  a: PlaneFrame,
+  b: PlaneFrame,
+  tolerance = 1e-4,
+): boolean {
+  const close = (left: Vec3, right: Vec3): boolean =>
+    Math.abs(left[0] - right[0]) <= tolerance &&
+    Math.abs(left[1] - right[1]) <= tolerance &&
+    Math.abs(left[2] - right[2]) <= tolerance;
+  return (
+    close(a.origin, b.origin) &&
+    close(a.normal, b.normal) &&
+    close(a.xAxis, b.xAxis) &&
+    close(a.yAxis, b.yAxis)
+  );
+}
+
 /**
  * Build a deterministic cached frame from a selected planar face. The x-axis is
  * world X projected into the face plane; if that is degenerate, a world axis is
@@ -80,7 +97,15 @@ export function supportLabel(support: PlaneRef): string {
  */
 export function frameFromHint(hint: TopoHint): PlaneFrame | null {
   if (!validVec3(hint.normal) || !validVec3(hint.centroid)) return null;
-  const normal = normalize(hint.normal);
+  return frameFromNormalAndOrigin(hint.normal, hint.centroid);
+}
+
+/** Deterministic right-handed frame from a plane normal and origin. */
+export function frameFromNormalAndOrigin(
+  normalInput: Vec3,
+  origin: Vec3,
+): PlaneFrame | null {
+  const normal = normalize(normalInput);
   if (!normal) return null;
   const projectedX = subtract(X, scale(normal, dot(X, normal)));
   let xAxis = normalize(projectedX);
@@ -90,7 +115,7 @@ export function frameFromHint(hint: TopoHint): PlaneFrame | null {
   const yAxis = normalize(cross(normal, xAxis));
   if (!yAxis) return null;
   return {
-    origin: [hint.centroid[0], hint.centroid[1], hint.centroid[2]],
+    origin: [origin[0], origin[1], origin[2]],
     normal,
     xAxis,
     yAxis,

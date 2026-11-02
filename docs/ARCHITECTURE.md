@@ -551,8 +551,10 @@ assigns roles to each tool with `assignRoles(tool, "extrude")`, uses
 `updateRoles` before caching the prefix. `captureHint`/`createRef` then produce JSON-safe
 `TopoRef`s for the final body's faces; `FaceGroup.ref` and `BodyPick.ref` carry them to
 the main thread. Schema v5 stores a face `TopoRef` plus its cached `PlaneFrame` on
-`SketchFeature.support`; the worker maps the local extrude solid through that frame. Exact
-`resolveRef` on rebuild and projected face-boundary references are still pending.
+`SketchFeature.support`; schema v6 adds cached face-boundary projections. The worker maps
+the local extrude solid through that frame, and resolves a projected boundary from the
+cached prefix solid that owns the face (never from a downstream boolean). Exact
+`resolveRef` on rebuild and lost-support recovery are still pending.
 
 This is the part to test hardest. Every kernel test that edits an upstream feature and
 re-runs a downstream fillet is a topological-naming regression test.
@@ -599,15 +601,22 @@ solver cannot see 3D, so we do the equivalent: **project the referenced face/edg
 sketch as fixed construction geometry**, then use the ordinary 2D point-on-line,
 point-on-point or coincident constraints against it.
 
-- A projected entity stores the `TopoRef` it came from, not the resulting 2D coordinates.
-  It is derived on every rebuild (after the body it references has been evaluated), so it
-  tracks edits and survives topological evolution.
-- Projected geometry is fixed reference geometry: it is not editable, not solver
-  unknowns, and is excluded from profile extraction. It uses the same group-0 treatment
-  as the origin in the `slvs` adapter.
-- The supporting face's boundary is projected by default; arbitrary edges/faces can be
-  picked explicitly. `brepjs` provides `drawProjection`, `drawFaceOutline` and
-  `makeProjectedEdges`.
+- A projected entity stores the `TopoRef` it came from and a cached loop list, not just
+  the resulting 2D coordinates. The live effect asks the worker for the boundary of that
+  face on the cached prefix solid that owns it, then re-materializes the fixed points and
+  lines. The source prefix matters: a downstream cut/join must not move or split a
+  reference outline.
+- Projected geometry is fixed reference geometry: it is not editable, not a solver
+  unknown, and is excluded from profile extraction. It uses the same group-0 treatment
+  as the origin in the `slvs` adapter, but its points/lines are selectable as references
+  so constraints can target them.
+- Projected point/line ids are deterministic from the projection id and loop/index. A
+  topology change keeps the last known geometry and marks the projection `stale` rather
+  than silently rewiring user constraints.
+- The supporting face's outer and inner wires are projected by default. Straight edges
+  keep their corner points; curved edges are sampled deterministically. Arbitrary
+  edges/faces can use the same protocol later (`brepjs` provides `drawProjection`,
+  `drawFaceOutline` and `makeProjectedEdges`).
 - A lost reference errors the sketch (or marks the projection stale) and keeps the last
   known projection visible, rather than silently detaching the geometry.
 - A sketch does not have to be *on* a face to reference one: the gusset demo draws in the
@@ -768,11 +777,11 @@ the honest map, so nobody assumes a layer exists because it is described above.
 
 | Layer | Status |
 | --- | --- |
-| `core/doc` | Real: `Doc` schema with sketch/extrude features, selectors, migrations, schema v5 face sketch supports (`TopoRef` + cached `PlaneFrame`) and `localStorage` autosave. |
+| `core/doc` | Real: `Doc` schema with sketch/extrude features, selectors, migrations, schema v6 face sketch supports (`TopoRef` + cached `PlaneFrame`) and face-boundary projections, and `localStorage` autosave. |
 | `core/sketch` | Real: types, `slvs` adapter, tangent-space `solveDrag`, pure drawing edits, loop extraction, geometry helpers, tests. `demo.ts` is the loadable example. |
-| `core/features` | Real: region selection + extrude params, including a face-plane frame mapped in the worker. The worker supports ordered new/join/cut; no datum planes, projected refs or fillets yet. |
+| `core/features` | Real: region selection + extrude params, including a face-plane frame mapped in the worker. The worker supports ordered new/join/cut; projected face-boundary references live in the sketch-support path. No datum planes or feature fillets yet. |
 | `core/rebuild` | Real: ordered sketch/extrude evaluation, prefix cache, per-feature diagnostics. Worker solid cache + new/join/cut are in; feature-tree creation UI is M3. |
-| `core/kernel` | Real: typed protocol, worker client, OCCT worker, feature cache, face-frame extrude transforms, hole validation, exact stats + bounds. |
+| `core/kernel` | Real: typed protocol, worker client, OCCT worker, feature cache, face-frame extrude transforms, cached-prefix face-boundary requests, hole validation, exact stats + bounds. |
 | `viewer` | Real: Z-up scene, framing, meshing, edges, face/edge raycast picking, hover/selection highlights. |
 | `sketch` UI | Real: full-stage sketch editor with a grouped text tool line, stage-foot DOF/status, contextual selection popover, adaptive/free-form grid, scale bar and fit/50/100/200 zoom. Select/drag, box-select profile regions, line/point/rectangle/circle/arc, fillet, explicit region fills (material and void, with All/Voids/Auto), contextual dimension/trim chips, inline dimension and point editors, construction toggle, snapping, auto H/V, Enter-to-finish, undo/redo. Standalone points are normal solver geometry but never profiles. |
 | Feature tree | Real: lists all `doc.features`, selects/renames/creates/edits, drag-reorders, suppresses, deletes with cascade, rolls back/forward, and shows per-feature status/diagnostics. |
@@ -780,7 +789,8 @@ the honest map, so nobody assumes a layer exists because it is described above.
 
 Known shortcuts, all scheduled: existing extrude features with an empty region list still
 resolve to the largest material region for legacy documents, while new extrude drafts
-require an explicit profile; datum planes and sketch-on-face are not implemented yet
-(M4). Unsupported geometry and kernel features are collected in PLAN M9 with current
+require an explicit profile; datum planes and lost-support recovery are not implemented
+yet (M4). Sketches on planar faces and their live projected boundaries are in.
+Unsupported geometry and kernel features are collected in PLAN M9 with current
 workarounds and the upstream SolveSpace/OCCT work each would need.
 

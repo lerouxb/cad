@@ -1,9 +1,9 @@
 import type { Sketch } from "../sketch/types";
-import type { PlaneFrame } from "../types";
+import type { PlaneFrame, Vec2 } from "../types";
 import type { TopoRef } from "../kernel/protocol";
 
 /** The document schema version. Bump this on every shape change. */
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
 
 export type WorldPlane = "XY" | "XZ" | "YZ";
 
@@ -23,7 +23,20 @@ export interface SketchFeature {
   name: string;
   support: PlaneRef;
   sketch: Sketch;
+  /** Derived face outlines, cached for rendering/solver recovery. */
+  projections?: FaceProjection[];
   suppressed?: boolean;
+}
+
+export interface FaceProjection {
+  id: string;
+  kind: "faceBoundary";
+  source: TopoRef;
+  label: string;
+  /** Projected loops in sketch-local millimetres; the last known cache. */
+  loops: Vec2[][];
+  /** True when the live face changed topologically and the cache was kept. */
+  stale?: boolean;
 }
 
 export type ExtrudeOperation = "new" | "join" | "cut";

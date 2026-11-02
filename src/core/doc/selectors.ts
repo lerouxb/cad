@@ -7,6 +7,7 @@ import {
   type Doc,
   type ExtrudeFeature,
   type ExtrudeOperation,
+  type FaceProjection,
   type Feature,
   type PlaneRef,
   type SketchFeature,
@@ -149,12 +150,14 @@ export function addSketchFeature(
     id?: string;
     sketch?: Sketch;
     support?: PlaneRef;
+    projections?: FaceProjection[];
   } = {},
 ): { doc: Doc; feature: SketchFeature } {
   const feature = createSketchFeature(options.sketch ?? emptySketch(), {
     name: options.name ?? nextFeatureName(doc, "sketch"),
     ...(options.id ? { id: options.id } : {}),
     ...(options.support ? { support: options.support } : {}),
+    ...(options.projections ? { projections: options.projections } : {}),
   });
   return {
     doc: { ...doc, features: [...doc.features, feature] },

@@ -57,9 +57,9 @@ an editable sketcher driving an exact extrude:
 - Temporary: existing extrudes with an empty region list still resolve to the largest
   material region (legacy documents); new extrude drafts require an explicit profile.
   Trim supports lines and arcs but not turning a circle into an arc; body
-  selection starts a sketch on a planar face when `+ sketch` is used (datum planes,
-  projected face-boundary references, live reference resolution and lost-support
-  recovery are still M4); the example part is
+  selection starts a sketch on a planar face when `+ sketch` is used, and the
+  supporting boundary is projected live as fixed dashed references (datum
+  planes and lost-support recovery are still M4); the example part is
   hand-authored (`core/sketch/demo.ts` + `core/doc/example.ts`, including a suppressed
   center-pin extrude from the same sketch and a suppressed mounting-holes cut); the
   timeline now lists the real feature history with select,
@@ -70,9 +70,9 @@ an editable sketcher driving an exact extrude:
   `updateRoles`. Free 3D sketches, splines/text/images and drawing exports are out of
   scope.
 
-Next: **M4** — projected face-boundary reference geometry, live reference resolution,
-datum planes and lost-support recovery (planar face sketches and cached frames are in),
-then **M6.0** (re-editable sketch
+Next: **M4** — datum planes and lost-support recovery (planar face sketches, cached
+frames, projected face boundaries and live prefix resolution are in), then **M6.0**
+(re-editable sketch
 pattern/mirror/offset, ADR-0004). Read `docs/PLAN.md`; it is the source of truth
 for done. Unsupported geometry/features (ellipses, conics, B-splines, free
 3D sketches, 3D fillets, lofts/sweeps, patterns/mirror, drafts, shelling/offsets,
@@ -393,8 +393,16 @@ docs/
   `PlaneFrame` (`frameFromHint`: world X projected into the face plane, fallback cross).
   The worker applies that frame to the local XY extrude solid (`applyMatrix`), and
   `Viewport` applies the same frame to the overlay geometry. Through-all measures the
-  body extent along the frame normal, not world Z. Projected face outlines and live
-  `resolveRef`/lost-support recovery are still pending M4 work.
+  body extent along the frame normal, not world Z.
+- **Projected face boundaries are live fixed references.** Schema v6 adds
+  `SketchFeature.projections` (the cached projected loops) and materializes them in
+  `Sketch.references` as fixed points/lines with `projectionId`/`referenceLabel`, so
+  they solve in group 0 and constraints can target them. Point/line ids are
+  deterministic from projection id + loop/index; a topology change keeps the cached
+  geometry and marks the projection `stale` instead of silently rewiring constraints.
+  The live effect requests the face from the worker's cached prefix solid by `cacheKey`,
+  `source` and `role`, so downstream booleans cannot move or split the reference
+  outline. Exact `resolveRef` and lost-support recovery are still pending M4 work.
 - **Box/lasso selection is a sketch tool, not a pan gesture.** `tool === "box"` uses
   `regionsFullyInside` (fully enclosed); `tool === "lasso"` uses
   `regionsIntersectingPolygon` (touched/crossing, including a freehand loop inside a

@@ -8,6 +8,7 @@ import {
   isSketchFeature,
   type Doc,
   type ExtrudeOperation,
+  type FaceProjection,
   type Feature,
   type PlaneRef,
   type WorldPlane,
@@ -29,8 +30,15 @@ export function migrateDoc(raw: unknown): Doc | null {
   // v1 → v2 adds the optional `standalone` point flag;
   // v2 → v3 adds extrude `end` (defaults to blind) and `suppressed` (defaults off);
   // v3 → v4 adds optional dimension label placement (`along`/`distance`);
-  // v4 → v5 adds face sketch supports (TopoRef + cached frame).
-  if (version === 1 || version === 2 || version === 3 || version === 4) {
+  // v4 → v5 adds face sketch supports (TopoRef + cached frame);
+  // v5 → v6 adds cached face-boundary projections on sketch features.
+  if (
+    version === 1 ||
+    version === 2 ||
+    version === 3 ||
+    version === 4 ||
+    version === 5
+  ) {
     return validateDoc(raw);
   }
   if (version === 0 || (version === undefined && "sketch" in raw)) {
@@ -98,12 +106,15 @@ function validateFeature(raw: unknown): Feature | null {
     if (!sketch) return null;
     const support = validateSupport(raw.support);
     if (!support) return null;
+    const projections = validateProjections(raw.projections);
+    if (projections === null) return null;
     return {
       id,
       type: "sketch",
       name,
       support,
       sketch,
+      ...(projections.length > 0 ? { projections } : {}),
       ...(raw.suppressed === true ? { suppressed: true } : {}),
     };
   }
@@ -130,6 +141,44 @@ function validateFeature(raw: unknown): Feature | null {
   }
 
   return null;
+}
+
+function validateProjections(raw: unknown): FaceProjection[] | null {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) return null;
+  const projections: FaceProjection[] = [];
+  for (const item of raw) {
+    if (!isRecord(item) || typeof item.id !== "string") return null;
+    if (item.kind !== "faceBoundary") return null;
+    const source = validateTopoRef(item.source);
+    if (!source) return null;
+    if (typeof item.label !== "string") return null;
+    if (
+      !Array.isArray(item.loops) ||
+      !item.loops.every(
+        (loop) => Array.isArray(loop) && loop.every(isVec2),
+      )
+    ) {
+      return null;
+    }
+    projections.push({
+      id: item.id,
+      kind: "faceBoundary",
+      source,
+      label: item.label,
+      loops: item.loops as [number, number][][],
+      ...(item.stale === true ? { stale: true } : {}),
+    });
+  }
+  return projections;
+}
+
+function isVec2(value: unknown): value is [number, number] {
+  return (
+    Array.isArray(value) &&
+    value.length === 2 &&
+    value.every((part) => typeof part === "number" && Number.isFinite(part))
+  );
 }
 
 function validateSupport(raw: unknown): PlaneRef | null {

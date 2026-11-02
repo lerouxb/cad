@@ -1321,16 +1321,25 @@ export function SketchCanvas({
         const b = points[axis.b];
         if (!a || !b) return null;
         const isSelected = selected.has(axis.id);
+        const projected = Boolean(axis.projectionId);
         return (
           <line
             key={axis.id}
             data-reference-id={axis.id}
+            data-projection-id={axis.projectionId}
             x1={a[0]}
             y1={a[1]}
             x2={b[0]}
             y2={b[1]}
-            stroke={isSelected ? selectColor : palette.axis}
+            stroke={
+              isSelected
+                ? selectColor
+                : projected
+                  ? palette.dimension
+                  : palette.axis
+            }
             strokeWidth={isSelected ? 1.6 : 1}
+            strokeDasharray={projected ? "4 3" : undefined}
             vectorEffect="non-scaling-stroke"
           />
         );
@@ -1489,6 +1498,37 @@ export function SketchCanvas({
               }}
             />
           ) : null}
+          {sketch.references?.points
+            .filter(
+              (point) =>
+                Boolean(point.projectionId) &&
+                point.id !== sketch.references?.origin.id,
+            )
+            .map((point) => {
+              const position = points[point.id];
+              if (!position) return null;
+              return (
+                <circle
+                  key={point.id}
+                  cx={position[0]}
+                  cy={position[1]}
+                  r={hitRadius}
+                  fill="transparent"
+                  style={{ cursor: tool === "select" ? "pointer" : "crosshair" }}
+                  data-reference-id={point.id}
+                  data-projection-point-id={point.projectionId}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                    event.preventDefault();
+                    if (tool === "dimension") {
+                      pickDimensionPoint(event, point.id);
+                    } else {
+                      onSelect(point.id, additiveSelection(event));
+                    }
+                  }}
+                />
+              );
+            })}
           {sketch.curves.map((curve) => {
             if (curve.type === "line") {
               const a = points[curve.a];

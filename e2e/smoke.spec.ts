@@ -54,6 +54,55 @@ async function enterSketch(page: Page): Promise<void> {
   await expect(page.getByTestId("tool-select")).toBeVisible();
 }
 
+/** Fit the model and pick the top face of the demo plate. */
+async function pickTopFace(page: Page): Promise<void> {
+  const canvas = page.locator("canvas.viewport-canvas");
+  await page.getByRole("button", { name: "Fit view" }).click();
+  await page.waitForTimeout(200);
+  await page.mouse.move(700, 330);
+  await expect(canvas).toHaveAttribute("data-hover-kind", "face");
+  await page.mouse.click(700, 330);
+  await expect(page.getByTestId("body-pick")).toHaveAttribute(
+    "data-kind",
+    "face",
+  );
+}
+
+/** Create the demo face sketch and its 5 mm boss on the picked top face. */
+async function sketchBossOnPickedFace(page: Page): Promise<void> {
+  await page.getByTestId("add-sketch").click();
+  await expect(page.getByTestId("support-popover")).toContainText(
+    "selected face",
+  );
+  await expect(page.getByTestId("new-sketch")).toBeEnabled();
+  await page.getByTestId("new-sketch").click();
+
+  await expect(page.getByTestId("timeline-detail")).toContainText("Face ·");
+  await expect(page.getByTestId("tool-select")).toBeVisible();
+  // Horizontal SVG lines have a zero-height box, so `toBeVisible` is a false
+  // negative here; the projected reference is present and dashed.
+  await expect(page.locator("[data-projection-id]").first()).toBeAttached();
+  await expect(page.locator("[data-projection-id]").first()).toHaveAttribute(
+    "stroke-dasharray",
+    "4 3",
+  );
+  await expect(page.locator("[data-projection-point-id]").first()).toBeAttached();
+
+  // The sketch is plane-local at the face centroid; the projected outline is
+  // fixed reference geometry. Draw a 5 mm circle inside the central hole.
+  await page.getByTestId("tool-circle").click();
+  await clickSketch(page, 0, 0);
+  await clickSketch(page, 5, 0);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("finish-sketch").click();
+
+  await page.getByTestId("new-extrude").click();
+  await clickSketch(page, 0, 0);
+  await expect(page.getByTestId("extrude-apply")).toBeEnabled();
+  await page.getByTestId("extrude-height").fill("5");
+  await page.getByTestId("extrude-apply").click();
+}
+
 /** Create a sketch through the explicit support popover. */
 async function createSketch(page: Page): Promise<void> {
   await page.getByTestId("add-sketch").click();
@@ -404,36 +453,19 @@ test("creates a sketch on a planar face and extrudes from it", async ({
   app: page,
 }) => {
   const errors = collectErrors(page);
-  await page.getByRole("button", { name: "Fit view" }).click();
-  await page.waitForTimeout(200);
-  await page.mouse.move(700, 330);
-  await expect(page.locator("canvas.viewport-canvas")).toHaveAttribute(
-    "data-hover-kind",
-    "face",
-  );
-  await page.mouse.click(700, 330);
-  await expect(page.getByTestId("body-pick")).toHaveAttribute(
-    "data-kind",
-    "face",
-  );
+  await pickTopFace(page);
 
   await page.getByTestId("add-sketch").click();
   await expect(page.getByTestId("support-popover")).toContainText(
-    "selected face",
-  );
-  await expect(page.getByTestId("support-popover")).toContainText(
     "planar face",
   );
-  await expect(page.getByTestId("new-sketch")).toBeEnabled();
   await page.getByTestId("new-sketch").click();
-
   await expect(page.getByTestId("timeline-detail")).toContainText("Face ·");
-  await expect(page.getByTestId("tool-select")).toBeVisible();
+  await expect(page.locator("[data-projection-id]").first()).toBeAttached();
 
-  // The sketch is plane-local at the face centroid; draw a 10 mm circle.
   await page.getByTestId("tool-circle").click();
   await clickSketch(page, 0, 0);
-  await clickSketch(page, 10, 0);
+  await clickSketch(page, 5, 0);
   await page.keyboard.press("Escape");
   await page.getByTestId("finish-sketch").click();
 
@@ -444,13 +476,48 @@ test("creates a sketch on a planar face and extrudes from it", async ({
   await page.getByTestId("extrude-apply").click();
 
   const expected =
-    60 * 40 * 12 - Math.PI * 8 * 8 * 12 + Math.PI * 10 * 10 * 5;
+    60 * 40 * 12 - Math.PI * 8 * 8 * 12 + Math.PI * 5 * 5 * 5;
   await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
   await expect.poll(() => meshBounds(page)).toBe("0,0,0,60,40,17");
   await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
     "data-status",
     "ok",
   );
+  expect(errors).toEqual([]);
+});
+
+test("keeps a face sketch attached when its source body changes", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await pickTopFace(page);
+  await sketchBossOnPickedFace(page);
+
+  const boss = Math.PI * 5 * 5 * 5;
+  const plate12 = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(plate12 + boss, -1);
+  await expect.poll(() => meshBounds(page)).toBe("0,0,0,60,40,17");
+
+  // Make the source plate taller. The boss sketch has no own placement
+  // dimensions: its frame comes from the live top face, so the boss must move
+  // from z = 12 to z = 30 and keep its projected reference attached.
+  await page.getByTestId("timeline-extrude").click();
+  await page.getByTestId("edit-feature").click();
+  await page.getByTestId("extrude-height").fill("30");
+  const plate30 = 60 * 40 * 30 - Math.PI * 8 * 8 * 30;
+  await expect.poll(() => volume(page)).toBeCloseTo(plate30 + boss, -1);
+  await expect.poll(() => meshBounds(page)).toBe("0,0,0,60,40,35");
+  await page.getByTestId("feature-popover-apply").click();
+  await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
+    "data-status",
+    "ok",
+  );
+
+  // Re-open the face sketch: its projected dashed references survived the
+  // source change and are still fixed geometry in the new plane.
+  await page.locator('[data-feature-type="sketch"]').last().click();
+  await expect(page.getByTestId("timeline-detail")).toContainText("Face ·");
+  await expect(page.locator("[data-projection-id]").first()).toBeAttached();
   expect(errors).toEqual([]);
 });
 
@@ -1699,7 +1766,7 @@ test("autosaves the document and reopens it", async ({ app: page }) => {
     const raw = localStorage.getItem("cad.doc");
     return raw ? JSON.parse(raw) : null;
   });
-  expect(stored?.schemaVersion).toBe(5);
+  expect(stored?.schemaVersion).toBe(6);
 
   // A new document in the same context reads the saved part, migrates it, and
   // rebuilds the same solid.

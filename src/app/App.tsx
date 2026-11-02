@@ -9,10 +9,18 @@ import { copyDocument, createBlankDocument } from "../core/doc/create";
 import { createExampleDocument } from "../core/doc/example";
 import {
   frameFromHint,
+  frameFromNormalAndOrigin,
+  framesClose,
   isDefaultSupport,
   supportFrame,
   supportLabel,
 } from "../core/doc/support";
+import {
+  applyProjectionGeometry,
+  newProjectionId,
+  projectPointToPlane,
+  sameProjectedLoops,
+} from "../core/sketch/projection";
 import {
   deleteLocalFile,
   deserializeDoc,
@@ -113,7 +121,7 @@ import {
 } from "../core/sketch/solver";
 import { trimCurveAt } from "../core/sketch/trim";
 import { findSketchPoint, type Sketch } from "../core/sketch/types";
-import type { ProfileLoop, Vec2 } from "../core/types";
+import type { PlaneFrame, ProfileLoop, Vec2, Vec3 } from "../core/types";
 import {
   SketchCanvas,
   type SketchTool,
@@ -289,6 +297,7 @@ export function App() {
   const [kernelState, setKernelState] = useState<LoadState>("loading");
   const [kernelError, setKernelError] = useState<string | null>(null);
   const [workerStatuses, setWorkerStatuses] = useState<FeatureBuildStatus[]>([]);
+  const [kernelVersion, setKernelVersion] = useState(0);
   const [bodyPick, setBodyPick] = useState<BodyPick | null>(null);
   const [rollbackIndex, setRollbackIndex] = useState<number | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -319,6 +328,10 @@ export function App() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const clientRef = useRef<KernelClient | null>(null);
   const viewportRef = useRef<Viewport | null>(null);
+  const faceBoundaryCache = useRef(
+    new Map<string, { frame: PlaneFrame; loops: Vec3[][] }>(),
+  );
+  const faceBoundaryPending = useRef(new Set<string>());
   const [rebuildCache] = useState(() => new RebuildCache());
 
   const geometry = useMemo(() => sketchGeometry(sketch), [sketch]);
@@ -967,13 +980,17 @@ export function App() {
       setHistoryNotice("This face has no stable reference; choose a world plane.");
       return;
     }
-    const frame = faceRef ? frameFromHint(faceRef.hint) : null;
-    if (faceRef && !frame) {
+    const hintFrame = faceRef ? frameFromHint(faceRef.hint) : null;
+    if (faceRef && !hintFrame) {
       setHistoryNotice("Only planar faces can support a sketch.");
       return;
     }
+    const frame = hintFrame;
     const support =
       faceRef && frame ? ({ kind: "face", ref: faceRef, frame } as const) : undefined;
+    // The projected boundary arrives from the kernel's exact face wire via the
+    // live-reference effect below; do not materialize a mesh approximation here
+    // or its first exact update would look like a topology change.
     const { doc: nextDoc, feature } = addSketchFeature(
       current.doc,
       support ? { support } : {},
@@ -1192,6 +1209,7 @@ export function App() {
         setKernelState("ready");
         setKernelError(null);
         setWorkerStatuses(features);
+        setKernelVersion((version) => version + 1);
         viewport.setMesh(nextMesh);
       },
       onError: (message, features) => {
@@ -1221,6 +1239,142 @@ export function App() {
     );
     return () => window.clearTimeout(timer);
   }, [solidFeatures]);
+
+  // Re-project face-supported sketches from the body prefix that owns the face.
+  // The worker resolves the prefix solid by cacheKey, so downstream booleans
+  // cannot move or split the reference outline.
+  useEffect(() => {
+    const client = clientRef.current;
+    if (!client || !rebuild) return;
+    const current = getState();
+    for (const feature of current.doc.features) {
+      if (!isSketchFeature(feature) || feature.support.kind !== "face") continue;
+      const sourceSupport = feature.support;
+      const sourceResult = rebuild.features.find(
+        (result) => result.featureId === sourceSupport.ref.source,
+      );
+      if (!sourceResult?.cacheKey) continue;
+      const key = `${sourceResult.cacheKey}|${sourceSupport.ref.role}`;
+      if (
+        faceBoundaryCache.current.has(key) ||
+        faceBoundaryPending.current.has(key)
+      ) {
+        continue;
+      }
+      faceBoundaryPending.current.add(key);
+      client
+        .requestFaceBoundary(
+          sourceResult.cacheKey,
+          sourceSupport.ref.source,
+          sourceSupport.ref.role,
+        )
+        .then((result) => {
+          faceBoundaryPending.current.delete(key);
+          const frame = frameFromNormalAndOrigin(
+            result.normal,
+            result.centroid,
+          );
+          if (!frame) return;
+          faceBoundaryCache.current.set(key, { frame, loops: result.loops });
+          const latest = getState();
+          const target = findFeature(latest.doc, feature.id);
+          if (!target || !isSketchFeature(target) || target.support.kind !== "face") {
+            return;
+          }
+          const faceSupport = target.support;
+          if (
+            faceSupport.ref.source !== sourceSupport.ref.source ||
+            faceSupport.ref.role !== sourceSupport.ref.role
+          ) {
+            return;
+          }
+          const loops = result.loops.map((loop) =>
+            loop.map((point) => projectPointToPlane(point, frame)),
+          );
+          const projection = target.projections?.find(
+            (candidate) => candidate.kind === "faceBoundary",
+          );
+          const supportChanged = !framesClose(faceSupport.frame, frame);
+          let sketch = target.sketch;
+          let nextProjection = projection;
+          let projections = target.projections;
+          if (projection) {
+            if (!sameProjectedLoops(projection.loops, loops)) {
+              const next = applyProjectionGeometry(
+                sketch,
+                projection.id,
+                projection.label,
+                loops,
+                true,
+              );
+              if (next) {
+                sketch = next;
+                nextProjection = { ...projection, loops, stale: undefined };
+              } else {
+                nextProjection = { ...projection, stale: true };
+              }
+            }
+          } else if (loops.length > 0) {
+            const id = newProjectionId();
+            const next = applyProjectionGeometry(
+              sketch,
+              id,
+              "Projected face",
+              loops,
+            );
+            if (next) {
+              sketch = next;
+              nextProjection = {
+                id,
+                kind: "faceBoundary",
+                source: faceSupport.ref,
+                label: "Projected face",
+                loops,
+              };
+            }
+          }
+          if (!nextProjection) return;
+          if (!supportChanged && nextProjection === projection) return;
+          projections = [
+            nextProjection,
+            ...(projections ?? []).filter(
+              (candidate) => candidate.id !== nextProjection!.id,
+            ),
+          ];
+          const nextDoc = {
+            ...latest.doc,
+            features: latest.doc.features.map((candidate) =>
+              candidate.id === target.id
+                ? {
+                    ...target,
+                    support: { ...faceSupport, frame },
+                    sketch,
+                    projections,
+                  }
+                : candidate,
+            ),
+          };
+          // Re-solve so constraints against the moved references (point-on-line,
+          // coincident, ...) are satisfied immediately rather than after the
+          // next drag. This is a derived update: it must not add an undo step.
+          const outcome = isSolverReady() ? solveSketch(sketch) : null;
+          replace({
+            doc: outcome?.ok
+              ? updateSketchFeature(
+                  nextDoc,
+                  target.id,
+                  applySolution(sketch, outcome),
+                )
+              : nextDoc,
+            solved: outcome,
+            solvedFor: target.id,
+          });
+        })
+        .catch(() => {
+          faceBoundaryPending.current.delete(key);
+        });
+    }
+  }, [rebuild, kernelVersion, getState, replace]);
 
   useEffect(() => {
     viewportRef.current?.setActive(mode === "model");
@@ -3051,8 +3205,12 @@ function describeSelection(
       result.push({
         id,
         kind: "reference",
-        label: referenceLine.id === "axis-x" ? "X axis" : "Y axis",
-        detail: "Fixed reference axis",
+        label:
+          referenceLine.referenceLabel ??
+          (referenceLine.id === "axis-x" ? "X axis" : "Y axis"),
+        detail: referenceLine.projectionId
+          ? "Projected reference · fixed"
+          : "Fixed reference axis",
       });
       continue;
     }
@@ -3061,8 +3219,12 @@ function describeSelection(
       result.push({
         id,
         kind: "reference",
-        label: referencePoint.id === "origin" ? "Origin" : "Reference point",
-        detail: `${formatLength(referencePoint.x)}, ${formatLength(referencePoint.y)} mm · fixed`,
+        label:
+          referencePoint.referenceLabel ??
+          (referencePoint.id === "origin" ? "Origin" : "Reference point"),
+        detail: `${formatLength(referencePoint.x)}, ${formatLength(referencePoint.y)} mm · fixed${
+          referencePoint.projectionId ? " · projected" : ""
+        }`,
       });
       continue;
     }

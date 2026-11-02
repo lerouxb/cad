@@ -5,6 +5,7 @@ import type {
   KernelRequest,
   KernelResponse,
 } from "./protocol";
+import type { Vec3 } from "../types";
 
 export interface KernelClientHandlers {
   onReady?: () => void;
@@ -31,6 +32,18 @@ export class KernelClient {
   private pending: KernelFeature[] | null = null;
   private latestGen = 0;
   private sentAt = 0;
+  private boundaryRequests = new Map<
+    number,
+    {
+      resolve: (value: {
+        normal: Vec3;
+        centroid: Vec3;
+        loops: Vec3[][];
+      }) => void;
+      reject: (error: Error) => void;
+    }
+  >();
+  private nextBoundaryId = 1;
 
   constructor(handlers: KernelClientHandlers = {}) {
     this.handlers = handlers;
@@ -51,6 +64,23 @@ export class KernelClient {
     this.pending = [...features];
     this.latestGen += 1;
     this.pump();
+  }
+
+  /**
+   * Resolve the boundary of a face on a cached prefix solid. Used to keep
+   * projected sketch references attached to the body that produced the face,
+   * rather than to downstream geometry.
+   */
+  requestFaceBoundary(
+    cacheKey: string,
+    source: string,
+    role: string,
+  ): Promise<{ normal: Vec3; centroid: Vec3; loops: Vec3[][] }> {
+    const requestId = this.nextBoundaryId++;
+    return new Promise((resolve, reject) => {
+      this.boundaryRequests.set(requestId, { resolve, reject });
+      this.post({ type: "faceBoundary", requestId, cacheKey, source, role });
+    });
   }
 
   dispose(): void {
@@ -90,6 +120,23 @@ export class KernelClient {
         this.handlers.onError?.(message.message, message.features);
         this.pump();
         break;
+      case "faceBoundary": {
+        const pending = this.boundaryRequests.get(message.requestId);
+        if (!pending) break;
+        this.boundaryRequests.delete(message.requestId);
+        if (message.ok && message.normal && message.centroid && message.loops) {
+          pending.resolve({
+            normal: message.normal,
+            centroid: message.centroid,
+            loops: message.loops,
+          });
+        } else {
+          pending.reject(
+            new Error(message.message ?? "The face boundary could not be resolved."),
+          );
+        }
+        break;
+      }
     }
   }
 
