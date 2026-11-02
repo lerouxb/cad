@@ -916,8 +916,11 @@
 }
 
 /* the + button: a separate, inset mark that grows out from the middle on hover
-   (and stays out after the active step, since touch cannot hover) */
+   (and stays out after the active step, since touch cannot hover). It is
+   positioned so it paints above the divider, and opaque so the line does not
+   show through it. */
 .bd-timeline .insert-gap::after {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
