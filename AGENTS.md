@@ -61,9 +61,9 @@ an editable sketcher driving an exact extrude:
   supporting boundary is projected live as fixed dashed references. Offset and
   midplane datum features are in, with a support picker, 3D preview and ray-picking;
   face-backed datums follow source body edits, lost face support is visible with
-  reselect/revert, and face sketches can flip sides while keeping that side stable.
-  Exact `resolveRef` fallback and support-list hover preview are still M4. The example
-  part is
+  reselect/revert, face sketches can flip sides while keeping that side stable, and the
+  support picker previews the chosen plane on a dimmed body. M4's core flow is in; only
+  support-list detail copy and through-3-point planes remain. The example part is
   hand-authored (`core/sketch/demo.ts` + `core/doc/example.ts`, including a suppressed
   center-pin extrude from the same sketch and a suppressed mounting-holes cut); the
   timeline now lists the real feature history with select,
@@ -74,9 +74,9 @@ an editable sketcher driving an exact extrude:
   `updateRoles`. Free 3D sketches, splines/text/images and drawing exports are out of
   scope.
 
-Next: **M4** — exact `resolveRef` fallback and support-list hover preview (planar faces,
-cached frames, projections, datum features, datum picking, live face-base resolution,
-lost support and flipped normals are in), then **M6.0** (re-editable sketch
+Next: **M5** (or M4's remaining support-list detail copy first): fillet/chamfer/shell,
+Offset Faces, selection filters, section analysis and export; through-3-point planes wait
+for M6 datum axes/points. Then **M6.0** (re-editable sketch
 pattern/mirror/offset, ADR-0004). Read `docs/PLAN.md`; it is the source of truth
 for done. Unsupported geometry/features (ellipses, conics, B-splines, free
 3D sketches, 3D fillets, lofts/sweeps, patterns/mirror, drafts, shelling/offsets,
@@ -423,7 +423,8 @@ docs/
   `BodyPick.kind = "datum"` (with the feature id) and selected from the same support
   popover. Face-backed datum frames are refreshed from the source prefix solid and
   propagated through the datum chain by `refreshDatumFrames`; this is derived state, no
-  undo step.
+  undo step. The worker resolves stored `TopoRef`s with `resolveRef` (exact roles first,
+  then geometric hint fallback) against the source prefix, never the final body.
 - **Lost face support is derived input, not document state.** The live effects put
   `faceRefKey(ref)` into `RebuildInputs.lostFaceRefs` when the source feature is missing/
   skipped or the worker says the face was not found. `rebuildDocument` folds those keys

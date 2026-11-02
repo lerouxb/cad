@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
 import { createDocument } from "../src/core/doc/create";
+import { createExampleDocument } from "../src/core/doc/example";
+import { addSketchFeature } from "../src/core/doc/selectors";
 import type { ExtrudeFeature, SketchFeature } from "../src/core/doc/types";
 import { addCircle, addPolyline, emptySketch } from "../src/core/sketch/create";
 
@@ -534,12 +536,17 @@ test("creates a sketch on the XZ world plane and joins an extrude", async ({
   const errors = collectErrors(page);
   await page.getByTestId("add-sketch").click();
   await expect(page.getByTestId("support-popover")).toBeVisible();
+  const viewport = page.locator("canvas.viewport-canvas");
+  await expect(viewport).toHaveAttribute("data-support-preview", "on");
+  await expect(viewport).toHaveAttribute("data-body-dimmed", "on");
   await page.getByTestId("support-xz").click();
   await expect(page.getByTestId("support-popover")).toContainText(
     "world plane · XZ",
   );
   await page.getByTestId("new-sketch").click();
   await expect(page.getByTestId("timeline-detail")).toContainText("XZ");
+  await expect(viewport).toHaveAttribute("data-support-preview", "off");
+  await expect(viewport).toHaveAttribute("data-body-dimmed", "off");
 
   // Local X/Y on XZ are world X/Z; extrude along local +Z maps to world -Y.
   await page.getByTestId("tool-circle").click();
@@ -817,6 +824,64 @@ test("shows and clears a lost face support", async ({ app: page }) => {
     "lost · cached frame",
   );
   expect(errors).toEqual([]);
+});
+
+test("resolves a stale face role by geometric fallback", async ({ browser }) => {
+  const doc = createExampleDocument();
+  const extrude = doc.features.find(
+    (feature): feature is ExtrudeFeature => feature.type === "extrude",
+  );
+  if (!extrude) throw new Error("Example has no extrude");
+  const withFace = addSketchFeature(doc, {
+    name: "Recovered face sketch",
+    support: {
+      kind: "face",
+      ref: {
+        source: extrude.id,
+        kind: "face",
+        role: "extrude:missing-role",
+        hint: {
+          entityType: "face",
+          surfaceType: "PLANE",
+          normal: [0, 0, 1],
+          centroid: [30, 20, 12],
+          area: 2400 - Math.PI * 8 * 8,
+        },
+      },
+      frame: {
+        origin: [30, 20, 12],
+        normal: [0, 0, 1],
+        xAxis: [1, 0, 0],
+        yAxis: [0, 1, 0],
+      },
+    },
+  });
+
+  const context = await browser.newContext({
+    baseURL: "http://127.0.0.1:4173",
+    viewport: { width: 1280, height: 720 },
+  });
+  const page = await context.newPage();
+  await page.addInitScript((json) => {
+    localStorage.setItem("cad.doc", json);
+  }, JSON.stringify(withFace.doc));
+  await page.goto("/");
+  await expect(page.getByTestId("solver-status")).toContainText("ready", {
+    timeout: 60_000,
+  });
+  await expect(page.getByTestId("kernel-status")).toContainText("ready", {
+    timeout: 60_000,
+  });
+  await page.locator('[data-feature-type="sketch"]').last().click();
+  await expect(page.locator("[data-projection-id]").first()).toBeAttached();
+  await expect(page.getByTestId("timeline-detail")).not.toContainText(
+    "lost · cached frame",
+  );
+  await expect(page.getByTestId("timeline")).toHaveAttribute(
+    "data-lost-supports",
+    "0",
+  );
+  await context.close();
 });
 
 test("snaps a drawn line to a projected face boundary", async ({

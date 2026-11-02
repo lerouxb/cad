@@ -25,6 +25,7 @@ import {
   measureVolume,
   outerWire,
   registerKernel,
+  resolveRef,
   shape,
   threePointArc,
   toBufferGeometryData,
@@ -90,18 +91,19 @@ async function handle(request: KernelRequest): Promise<void> {
         });
         return;
       }
-      const boundary = faceBoundary(
-        entry.solid,
-        entry.roles,
-        request.source,
-        request.role,
-      );
-      if (!boundary) {
+      const boundary = faceBoundary(entry.solid, entry.roles, request.ref);
+      if (!boundary || "broken" in boundary) {
+        const reason = boundary?.broken ?? "not-found";
         reply({
           type: "faceBoundary",
           requestId: request.requestId,
           ok: false,
-          message: "The referenced face was not found on the source body.",
+          message:
+            reason === "deleted"
+              ? "The referenced face was deleted from the source body."
+              : reason === "ambiguous"
+                ? "The referenced face is ambiguous on the source body."
+                : "The referenced face was not found on the source body.",
         });
         return;
       }
@@ -308,17 +310,33 @@ function buildFeatures(features: KernelFeature[]): {
 function faceBoundary(
   solid: Solid,
   roles: RoleTable,
-  source: string,
-  role: string,
-): { normal: [number, number, number]; centroid: [number, number, number]; loops: [number, number, number][][] } | null {
-  const hashes = roles.get(source)?.get(role);
-  if (!hashes || hashes.length === 0) return null;
+  ref: TopoRef,
+):
+  | {
+      normal: [number, number, number];
+      centroid: [number, number, number];
+      loops: [number, number, number][][];
+      confidence: "exact" | "geometric-fallback";
+    }
+  | { broken: "deleted" | "ambiguous" | "not-found" }
+  | null {
   try {
-    const byHash = new Map(getFaces(solid).map((face) => [getHashCode(face), face]));
-    const face = hashes
-      .map((hash) => byHash.get(hash))
-      .find((candidate) => Boolean(candidate));
-    if (!face) return null;
+    const resolved = resolveRef(
+      {
+        origin: ref.source,
+        role: ref.role,
+        hint: {
+          entityType: "face",
+          ...(ref.hint.normal ? { normal: ref.hint.normal } : {}),
+          ...(ref.hint.centroid ? { centroid: ref.hint.centroid } : {}),
+          ...(ref.hint.area !== undefined ? { area: ref.hint.area } : {}),
+        },
+      },
+      roles,
+      solid,
+    );
+    if (!("face" in resolved)) return { broken: resolved.reason };
+    const face = resolved.face;
     const hint = captureHint(face as Parameters<typeof captureHint>[0]);
     if (!hint.normal || !hint.centroid) return null;
     const loops: [number, number, number][][] = [];
@@ -418,6 +436,7 @@ function faceBoundary(
       normal: [hint.normal[0], hint.normal[1], hint.normal[2]],
       centroid: [hint.centroid[0], hint.centroid[1], hint.centroid[2]],
       loops,
+      confidence: resolved.confidence,
     };
   } catch {
     return null;

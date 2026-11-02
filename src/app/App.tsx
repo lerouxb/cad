@@ -23,6 +23,7 @@ import {
   stabilizeFrame,
   supportFrame,
   supportLabel,
+  worldPlaneFrame,
 } from "../core/doc/support";
 import {
   applyProjectionGeometry,
@@ -1528,11 +1529,7 @@ export function App() {
       if (faceBoundaryPending.current.has(key)) continue;
       faceBoundaryPending.current.add(key);
       client
-        .requestFaceBoundary(
-          sourceResult.cacheKey,
-          sourceSupport.ref.source,
-          sourceSupport.ref.role,
-        )
+        .requestFaceBoundary(sourceResult.cacheKey, sourceSupport.ref)
         .then((result) => {
           faceBoundaryPending.current.delete(key);
           markFaceRefLost(lostKey, false);
@@ -1644,7 +1641,7 @@ export function App() {
           faceBoundaryPending.current.delete(key);
           if (
             error instanceof Error &&
-            error.message.includes("face was not found")
+            !error.message.includes("no longer cached")
           ) {
             markFaceRefLost(lostKey, true);
           }
@@ -1704,7 +1701,7 @@ export function App() {
       if (faceBoundaryPending.current.has(key)) continue;
       faceBoundaryPending.current.add(key);
       client
-        .requestFaceBoundary(source.cacheKey, ref.source, ref.role)
+        .requestFaceBoundary(source.cacheKey, ref)
         .then((result) => {
           faceBoundaryPending.current.delete(key);
           markFaceRefLost(lostKey, false);
@@ -1717,7 +1714,7 @@ export function App() {
           faceBoundaryPending.current.delete(key);
           if (
             error instanceof Error &&
-            error.message.includes("face was not found")
+            !error.message.includes("no longer cached")
           ) {
             markFaceRefLost(lostKey, true);
           }
@@ -1736,6 +1733,7 @@ export function App() {
   useEffect(() => {
     viewportRef.current?.setDatumPlanes(datumPlaneOverlays);
   }, [datumPlaneOverlays]);
+
 
   useEffect(() => {
     applyTheme(themeSettings);
@@ -2534,6 +2532,36 @@ export function App() {
     }
     return options;
   }, [doc, supportFace, supportFaceFrame, resolvedDatumFrame]);
+  const supportPreviewFrame = useMemo<PlaneFrame | null>(() => {
+    if (!supportOpen) return null;
+    if (supportFace && supportFaceFrame) {
+      return supportFaceFlipped
+        ? flipFrame(supportFaceFrame)
+        : supportFaceFrame;
+    }
+    if (supportDatumId) {
+      const feature = findFeature(doc, supportDatumId);
+      if (feature?.type === "datum") return resolvedDatumFrame(feature);
+    }
+    return worldPlaneFrame(supportPlane);
+  }, [
+    supportOpen,
+    supportFace,
+    supportFaceFrame,
+    supportFaceFlipped,
+    supportDatumId,
+    doc,
+    resolvedDatumFrame,
+    supportPlane,
+  ]);
+
+  useEffect(() => {
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    viewport.setSupportPreview(supportPreviewFrame);
+    viewport.setDimmed(supportOpen);
+  }, [supportPreviewFrame, supportOpen]);
+
   const datumDraftOptions = useMemo(() => {
     const draftIndex = datumDraft?.id
       ? doc.features.findIndex((feature) => feature.id === datumDraft.id)

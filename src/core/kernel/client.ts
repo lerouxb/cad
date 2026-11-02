@@ -5,6 +5,7 @@ import type {
   KernelRequest,
   KernelResponse,
 } from "./protocol";
+import type { TopoRef } from "./protocol";
 import type { Vec3 } from "../types";
 
 export interface KernelClientHandlers {
@@ -39,6 +40,7 @@ export class KernelClient {
         normal: Vec3;
         centroid: Vec3;
         loops: Vec3[][];
+        confidence: "exact" | "geometric-fallback";
       }) => void;
       reject: (error: Error) => void;
     }
@@ -73,13 +75,17 @@ export class KernelClient {
    */
   requestFaceBoundary(
     cacheKey: string,
-    source: string,
-    role: string,
-  ): Promise<{ normal: Vec3; centroid: Vec3; loops: Vec3[][] }> {
+    ref: TopoRef,
+  ): Promise<{
+    normal: Vec3;
+    centroid: Vec3;
+    loops: Vec3[][];
+    confidence: "exact" | "geometric-fallback";
+  }> {
     const requestId = this.nextBoundaryId++;
     return new Promise((resolve, reject) => {
       this.boundaryRequests.set(requestId, { resolve, reject });
-      this.post({ type: "faceBoundary", requestId, cacheKey, source, role });
+      this.post({ type: "faceBoundary", requestId, cacheKey, ref });
     });
   }
 
@@ -129,6 +135,7 @@ export class KernelClient {
             normal: message.normal,
             centroid: message.centroid,
             loops: message.loops,
+            confidence: message.confidence ?? "exact",
           });
         } else {
           pending.reject(

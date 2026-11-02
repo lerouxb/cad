@@ -113,7 +113,7 @@ feature work then lands inside that system.
   started from the selected sketch step and begins with **no profile selected**; the
   draft only becomes a history feature after at least one profile and the parameters are
   applied. Existing extrudes are edited by selecting their step.
-- `npm run verify` (186 unit tests) and `npm run e2e` (60 tests) are green. The e2e asserts
+- `npm run verify` (186 unit tests) and `npm run e2e` (61 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -123,8 +123,8 @@ Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
 95 017.7 mm³ and rebuilds in ~35 ms after warm-up.
 
 **Still temporary** (all scheduled below): auto mode defaults to the largest material
-region until you click one; trim handles lines/arcs but not circles; exact `resolveRef`
-fallback and support-list hover preview are the remaining M4 pieces. M3 is done: the history supports
+region until you click one; trim handles lines/arcs but not circles; support-list detail
+copy and through-3-point planes are the remaining M4/M6 support pieces. M3 is done: the history supports
 create/edit/reorder by drag/suppress/delete/rollback, a local file menu/list with
 copy/open/download/rename/new, blind/symmetric/through-all extrudes, and role propagation
 through booleans, with the multi-feature rebuild covered by e2e. Free 3D sketches,
@@ -643,9 +643,10 @@ with face sketches.
 - [x] Render planes in 3D (translucent quad + axes), pick them to start a sketch, and hide
       inactive ones while sketching. The model view is hidden in the sketch stage, so
       inactive planes are not shown while sketching.
-- [ ] Sketch-support picker: one typographic list for world planes / planar faces / datum
-      planes. World/face/datum choices are in; hover preview and lost-reference errors are
-      still pending.
+- [x] Sketch-support picker: one typographic list for world planes / planar faces / datum
+      planes. World/face/datum choices are in, selecting one previews its plane on a dimmed
+      body, and lost references are visible with recovery. Per-row hover flash can still be
+      refined.
 - [ ] Support-list details: face name + area, curved “unsupported” explanation, datum
       “between faces”, and a pending “untitled” history row while choosing (mockup 04)
 - [ ] Through-3-points and angled planes after datum points/axes land (M6), unless needed
@@ -669,7 +670,9 @@ with face sketches.
       point-on-line / point-on-point / coincident constraints work against them. Points
       and edges are snap targets; snapping a vertex to a projected edge adds a
       point-on-line constraint so the drawn geometry stays attached.
-- [ ] `resolveRef` on rebuild: exact → fallback → lost-ref error with "reselect"
+- [x] `resolveRef` on rebuild: exact → geometric fallback → lost-ref error with
+      "reselect". The worker resolves the stored `TopoRef` against the source prefix body;
+      the E2E covers a stale role resolved geometrically and a lost face surfacing.
 - [x] **Lost-support recovery surface (first slice):** failed face refs are tracked as
       derived `RebuildInputs.lostFaceRefs`, the step shows `lost · cached frame`, and the
       detail offers reselect (pick a face first) / open sketch / revert. Datum bases open
@@ -703,6 +706,10 @@ with face sketches.
 - [x] **Flip/normal slice landed:** live face frames stabilize against the side the sketch
       was created on, and `flip side` lets a face sketch start on the opposite side of the
       face. A base-height edit keeps the flipped frame stable.
+- [x] **Resolve/preview slice landed:** `resolveRef` exact + geometric fallback on the
+      source prefix, and the support picker previews the chosen plane while dimming the
+      body. M4's core flow is in; support-list detail copy and through-3-point planes
+      remain.
 
 **Done when:** sketch on an offset plane in empty space; sketch on a midplane between two
 faces; change the offset or the base plate height and every dependent sketch/feature

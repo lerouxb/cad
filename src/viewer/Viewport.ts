@@ -69,6 +69,9 @@ export class Viewport {
   private datums = new THREE.Group();
   private datumPlanes: ReadonlyArray<DatumPlaneOverlay> = [];
   private readonly datumByFeature = new Map<string, DatumPlaneOverlay>();
+  private supportPreviewGroup = new THREE.Group();
+  private supportPreviewFrame: PlaneFrame | null = null;
+  private dimmed = false;
   private sketchOverlay: SketchOverlayData | null = null;
   private readonly sketchLineMaterials = new Set<LineMaterial>();
   private environment = new THREE.Group();
@@ -127,6 +130,7 @@ export class Viewport {
     this.scene.add(this.body);
     this.scene.add(this.sketch);
     this.scene.add(this.datums);
+    this.scene.add(this.supportPreviewGroup);
     this.scene.add(this.environment);
     this.scene.add(this.hoverGroup);
     this.scene.add(this.selectionGroup);
@@ -153,6 +157,7 @@ export class Viewport {
     this.applyBodyTheme();
     this.rebuildSketchOverlay();
     this.setDatumPlanes(this.datumPlanes);
+    this.setSupportPreview(this.supportPreviewFrame);
     this.dirty = true;
   }
 
@@ -238,6 +243,65 @@ export class Viewport {
     fill.dispose();
     line.dispose();
     this.rebuildSelectionOverlays();
+    this.dirty = true;
+  }
+
+  /** Dim the body while a support choice is being previewed. */
+  setDimmed(dimmed: boolean): void {
+    if (this.dimmed === dimmed) return;
+    this.dimmed = dimmed;
+    this.canvas.dataset.bodyDimmed = dimmed ? "on" : "off";
+    this.applyBodyTheme();
+    this.dirty = true;
+  }
+
+  /** Preview the plane a new sketch will use, without touching datum planes. */
+  setSupportPreview(frame: PlaneFrame | null): void {
+    if (this.disposed) return;
+    this.supportPreviewFrame = frame;
+    this.canvas.dataset.supportPreview = frame ? "on" : "off";
+    this.clearGroup(this.supportPreviewGroup);
+    if (!frame) {
+      this.dirty = true;
+      return;
+    }
+    const matrix = new THREE.Matrix4()
+      .makeBasis(
+        new THREE.Vector3(...frame.xAxis),
+        new THREE.Vector3(...frame.yAxis),
+        new THREE.Vector3(...frame.normal),
+      )
+      .setPosition(new THREE.Vector3(...frame.origin));
+    const size = 84;
+    const plane = new THREE.PlaneGeometry(size, size);
+    const border = new THREE.EdgesGeometry(plane);
+    plane.applyMatrix4(matrix);
+    border.applyMatrix4(matrix);
+    const fill = new THREE.Mesh(
+      plane,
+      new THREE.MeshBasicMaterial({
+        color: this.highlightColor,
+        transparent: true,
+        opacity: 0.16,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      }),
+    );
+    fill.renderOrder = 3;
+    fill.raycast = () => {};
+    const outline = new THREE.LineSegments(
+      border,
+      new THREE.LineBasicMaterial({
+        color: this.highlightColor,
+        transparent: true,
+        opacity: 0.75,
+        depthWrite: false,
+      }),
+    );
+    outline.renderOrder = 4;
+    outline.raycast = () => {};
+    this.supportPreviewGroup.add(fill);
+    this.supportPreviewGroup.add(outline);
     this.dirty = true;
   }
 
@@ -632,12 +696,17 @@ export class Viewport {
         const material = child.material;
         if (material instanceof THREE.MeshStandardMaterial) {
           material.color.setHex(this.bodyColor());
+          material.transparent = this.dimmed;
+          material.opacity = this.dimmed ? 0.32 : 1;
+          material.depthWrite = !this.dimmed;
           material.needsUpdate = true;
         }
       } else if (child instanceof THREE.LineSegments) {
         const material = child.material;
         if (material instanceof THREE.LineBasicMaterial) {
           material.color.setHex(this.edgeColor());
+          material.transparent = this.dimmed;
+          material.opacity = this.dimmed ? 0.4 : 1;
           material.needsUpdate = true;
         }
       }

@@ -555,8 +555,9 @@ the main thread. Schema v5 stores a face `TopoRef` plus its cached `PlaneFrame` 
 `SketchFeature.support`; schema v6 adds cached face-boundary projections and schema v7
 adds datum-plane features/supports. The worker maps the local extrude solid through that
 frame, and resolves a projected boundary from the cached prefix solid that owns the face
-(never from a downstream boolean). Exact `resolveRef` on rebuild and lost-support
-recovery are still pending.
+(never from a downstream boolean). The worker resolves stored `TopoRef`s with
+`resolveRef`: exact role hashes first, then a geometric hint fallback, then a visible
+lost-support error.
 
 This is the part to test hardest. Every kernel test that edits an upstream feature and
 re-runs a downstream fillet is a topological-naming regression test.
@@ -796,10 +797,11 @@ the honest map, so nobody assumes a layer exists because it is described above.
 
 Known shortcuts, all scheduled: existing extrude features with an empty region list still
 resolve to the largest material region for legacy documents, while new extrude drafts
-require an explicit profile; flipped normals and exact `resolveRef` fallback are not
-implemented yet (M4). Sketches on planar faces, live projected boundaries, offset/midplane
-datum features, datum picking, live face-base datum resolution and lost-support recovery
-are in. Unsupported geometry and kernel features are
+require an explicit profile; support-list detail copy and through-3-point planes are not
+implemented yet (M4/M6). Sketches on planar faces, live projected boundaries, offset/
+midplane datum features, datum picking, live face-base datum resolution, lost-support
+recovery, flipped normals, `resolveRef` exact/geometric fallback and support preview are
+in. Unsupported geometry and kernel features are
 collected in PLAN M9 with current
 workarounds and the upstream SolveSpace/OCCT work each would need.
 

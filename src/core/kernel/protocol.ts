@@ -107,8 +107,7 @@ export type KernelRequest =
       type: "faceBoundary";
       requestId: number;
       cacheKey: string;
-      source: string;
-      role: string;
+      ref: TopoRef;
     };
 
 export type KernelResponse =
@@ -132,5 +131,6 @@ export type KernelResponse =
       normal?: Vec3;
       centroid?: Vec3;
       loops?: Vec3[][];
+      confidence?: "exact" | "geometric-fallback";
       message?: string;
     };
