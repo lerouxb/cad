@@ -3456,6 +3456,10 @@ export function App() {
                       : feature.suppressed
                         ? " is-suppressed"
                         : "";
+              const hiddenClass =
+                isDatumPlaneFeature(feature) && feature.hidden
+                  ? " is-hidden"
+                  : "";
               const testId =
                 feature.id === primarySketchId
                   ? "timeline-sketch"
@@ -3465,7 +3469,7 @@ export function App() {
               return (
                 <div
                   key={feature.id}
-                  className={`timeline-item${feature.id === activeFeature?.id ? " is-active" : ""}${statusClass}${draggingFeatureId === feature.id ? " is-dragging" : ""}`}
+                  className={`timeline-item${feature.id === activeFeature?.id ? " is-active" : ""}${statusClass}${hiddenClass}${draggingFeatureId === feature.id ? " is-dragging" : ""}`}
                   role="button"
                   tabIndex={0}
                   aria-pressed={feature.id === activeFeature?.id}
@@ -3502,6 +3506,11 @@ export function App() {
                   data-feature-id={feature.id}
                   data-feature-type={feature.type}
                   data-status={status}
+                  data-hidden={
+                    isDatumPlaneFeature(feature) && feature.hidden
+                      ? "true"
+                      : undefined
+                  }
                   title={
                     paused
                       ? "Paused by rollback"

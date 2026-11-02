@@ -898,6 +898,8 @@ test("hides a datum plane without suppressing it", async ({ app: page }) => {
   await expect(canvas).toHaveAttribute("data-datum-planes", "0");
   await expect(datum).toContainText("hidden");
   await expect(datum).toHaveAttribute("data-status", "ok");
+  await expect(datum).toHaveClass(/is-hidden/);
+  await expect(datum).toHaveAttribute("data-hidden", "true");
 
   // It is still a usable support while hidden.
   await page.getByTestId("add-sketch").click();
@@ -908,6 +910,7 @@ test("hides a datum plane without suppressing it", async ({ app: page }) => {
   await page.getByTestId("toggle-datum-visibility").click();
   await expect(canvas).toHaveAttribute("data-datum-planes", "1");
   await expect(datum).not.toContainText("hidden");
+  await expect(datum).not.toHaveClass(/is-hidden/);
   expect(errors).toEqual([]);
 });
 

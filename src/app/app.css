@@ -2708,6 +2708,16 @@ body {
   opacity: 0.55;
 }
 
+/* Hidden datum planes stay live but recede from the model and the timeline. */
+.timeline-item.is-hidden {
+  opacity: 0.38;
+  color: var(--dim);
+}
+
+.timeline-item.is-hidden.is-active {
+  opacity: 0.72;
+}
+
 .timeline-item.is-dragging {
   opacity: 0.3;
 }
