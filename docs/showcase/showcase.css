@@ -941,11 +941,11 @@
 }
 
 /* align the dot to the text's x-height. Flex centring puts it on the line-box
-   centre; the x-height centre is a hair lower, so nudge it down by that much
-   (measured: 0.34px at the chip's 8.5px font) */
+   centre; the x-height centre is a hair higher, so lift it by that much.
+   Value dialled in by eye in DevTools (-0.15em at the chip's 8.5px font) */
 .body-dot {
   position: relative;
-  top: 0.04em;
+  top: -0.15em;
   width: 7px;
   height: 7px;
   border: 1px solid var(--ink);
