@@ -804,7 +804,10 @@ test("shows and clears a lost face support", async ({ app: page }) => {
     "data-lost-supports",
     "1",
   );
-  await page.locator('[data-feature-type="sketch"]').last().click();
+  await page
+    .locator('[data-feature-type="sketch"]')
+    .filter({ hasText: "Sketch 3" })
+    .click();
   await expect(page.getByTestId("timeline-detail")).toContainText(
     "lost · cached frame",
   );
@@ -819,7 +822,10 @@ test("shows and clears a lost face support", async ({ app: page }) => {
   await expect
     .poll(() => page.getByTestId("rebuild-status").getAttribute("data-status"))
     .toBe("ok");
-  await page.locator('[data-feature-type="sketch"]').last().click();
+  await page
+    .locator('[data-feature-type="sketch"]')
+    .filter({ hasText: "Sketch 3" })
+    .click();
   await expect(page.getByTestId("timeline-detail")).not.toContainText(
     "lost · cached frame",
   );
@@ -872,7 +878,10 @@ test("resolves a stale face role by geometric fallback", async ({ browser }) => 
   await expect(page.getByTestId("kernel-status")).toContainText("ready", {
     timeout: 60_000,
   });
-  await page.locator('[data-feature-type="sketch"]').last().click();
+  await page
+    .locator('[data-feature-type="sketch"]')
+    .filter({ hasText: "Recovered face sketch" })
+    .click();
   await expect(page.locator("[data-projection-id]").first()).toBeAttached();
   await expect(page.getByTestId("timeline-detail")).not.toContainText(
     "lost · cached frame",
@@ -905,6 +914,35 @@ test("previews a datum plane while creating it", async ({ app: page }) => {
   await expect(canvas).toHaveAttribute("data-datum-planes", "1");
   await expect(canvas).toHaveAttribute("data-support-preview", "off");
   await expect(canvas).toHaveAttribute("data-body-dimmed", "off");
+  expect(errors).toEqual([]);
+});
+
+test("new steps insert after the selected step without its overlay", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  const canvas = page.locator("canvas.viewport-canvas");
+  await page.getByTestId("timeline-extrude").click();
+  await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
+
+  await page.getByTestId("add-plane").click();
+  await expect(canvas).toHaveAttribute("data-sketch-overlay", "off");
+  await expect(canvas).toHaveAttribute("data-support-preview", "on");
+  await page.getByTestId("datum-apply").click();
+
+  const rows = page.locator("[data-feature-id]");
+  await expect(rows.nth(1)).toContainText("Extrude 1");
+  await expect(rows.nth(2)).toHaveAttribute("data-feature-type", "datum");
+  await expect(canvas).toHaveAttribute("data-sketch-overlay", "off");
+
+  // A sketch chosen while Extrude 1 is selected inserts before that new datum.
+  await page.getByTestId("timeline-extrude").click();
+  await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
+  await page.getByTestId("add-sketch").click();
+  await expect(canvas).toHaveAttribute("data-sketch-overlay", "off");
+  await page.getByTestId("new-sketch").click();
+  await expect(rows.nth(2)).toHaveAttribute("data-feature-type", "sketch");
+  await expect(rows.nth(3)).toHaveAttribute("data-feature-type", "datum");
   expect(errors).toEqual([]);
 });
 
@@ -961,7 +999,10 @@ test("snaps a drawn line to a projected face boundary", async ({
         const doc = JSON.parse(raw);
         const sketch = [...doc.features]
           .reverse()
-          .find((feature: { type: string }) => feature.type === "sketch");
+          .find(
+            (feature: { type: string; support?: { kind: string } }) =>
+              feature.type === "sketch" && feature.support?.kind === "face",
+          );
         const point = sketch?.sketch.points.find(
           (candidate: { x: number }) => candidate.x > 29.9,
         );
@@ -979,7 +1020,10 @@ test("snaps a drawn line to a projected face boundary", async ({
     const doc = JSON.parse(localStorage.getItem("cad.doc")!);
     const sketch = [...doc.features]
       .reverse()
-      .find((feature: { type: string }) => feature.type === "sketch");
+      .find(
+            (feature: { type: string; support?: { kind: string } }) =>
+              feature.type === "sketch" && feature.support?.kind === "face",
+          );
     return sketch.sketch.points.find(
       (candidate: { x: number }) => candidate.x > 29.9,
     ) as { x: number; y: number };
@@ -1008,7 +1052,10 @@ test("projects a side face as a closed rectangle", async ({ app: page }) => {
         const doc = JSON.parse(raw);
         const sketch = [...doc.features]
           .reverse()
-          .find((feature: { type: string }) => feature.type === "sketch");
+          .find(
+            (feature: { type: string; support?: { kind: string } }) =>
+              feature.type === "sketch" && feature.support?.kind === "face",
+          );
         return sketch?.projections?.[0]?.loops?.[0]?.length ?? null;
       }),
     )
@@ -1018,7 +1065,10 @@ test("projects a side face as a closed rectangle", async ({ app: page }) => {
     const doc = JSON.parse(localStorage.getItem("cad.doc")!);
     const sketch = [...doc.features]
       .reverse()
-      .find((feature: { type: string }) => feature.type === "sketch");
+      .find(
+            (feature: { type: string; support?: { kind: string } }) =>
+              feature.type === "sketch" && feature.support?.kind === "face",
+          );
     return (sketch.projections[0].loops[0] as [number, number][])
       .map(([x, y]) => `${Math.round(x)},${Math.round(y)}`)
       .sort();
@@ -1049,7 +1099,10 @@ test("dragging a projected edge point leaves the other endpoint fixed", async ({
       const doc = JSON.parse(raw);
       const sketch = [...doc.features]
         .reverse()
-        .find((feature: { type: string }) => feature.type === "sketch");
+        .find(
+            (feature: { type: string; support?: { kind: string } }) =>
+              feature.type === "sketch" && feature.support?.kind === "face",
+          );
       const found = sketch?.sketch.points as
         | { x: number; y: number }[]
         | undefined;
@@ -1101,7 +1154,10 @@ test("keeps a face sketch attached when its source body changes", async ({
 
   // Re-open the face sketch: its projected dashed references survived the
   // source change and are still fixed geometry in the new plane.
-  await page.locator('[data-feature-type="sketch"]').last().click();
+  await page
+    .locator('[data-feature-type="sketch"]')
+    .filter({ hasText: "Sketch 3" })
+    .click();
   await expect(page.getByTestId("timeline-detail")).toContainText("Face ·");
   await expect(page.locator("[data-projection-id]").first()).toBeAttached();
   expect(errors).toEqual([]);
@@ -2447,8 +2503,10 @@ test("creates a new sketch and a joining extrude", async ({ app: page }) => {
   await createSketch(page);
   await expect(page.locator("[data-feature-id]")).toHaveCount(6);
   await expect(
-    page.locator('[data-feature-type="sketch"]').last(),
-  ).toContainText("Sketch 3");
+    page
+      .locator('[data-feature-type="sketch"]')
+      .filter({ hasText: "Sketch 3" }),
+  ).toHaveCount(1);
   await expect(page.getByTestId("tool-select")).toBeVisible();
 
   await page.getByTestId("tool-rect").click();

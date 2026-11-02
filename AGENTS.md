@@ -370,9 +370,11 @@ docs/
 - **Creation is contextual, never a header default.** `+ sketch` at the end of the
   timeline opens `SupportPopover`; it shows the support explicitly (world XY/XZ/YZ,
   planar faces and existing datum planes) and the primary is `new-sketch`.
-  `+ plane` opens the datum-plane draft popover. `new-extrude` lives on the selected
-  sketch step. There is no header New Sketch/New Extrude button and no implicit XY or
-  first-consumer fallback.
+  `+ plane` opens the datum-plane draft popover. New sketches/planes insert after the
+  selected history step, not at the end; the previous step's sketch overlay is suppressed
+  while the draft/support picker is open. `new-extrude` lives on the selected sketch step.
+  There is no header New Sketch/New Extrude button and no implicit XY or first-consumer
+  fallback.
 - **A sketch step never owns region editing.** `activeExtrudeFor` returns null for a
   sketch. Select an extrude step to edit its existing regions, or start an extrude draft
   from the sketch step. Without an active extrude or draft, region fills are read-only

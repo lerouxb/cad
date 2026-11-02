@@ -363,6 +363,7 @@ export function App() {
   const [supportPlane, setSupportPlane] = useState<WorldPlane>("XY");
   const [supportDatumId, setSupportDatumId] = useState<string | null>(null);
   const [supportFaceFlipped, setSupportFaceFlipped] = useState(false);
+  const [creationAnchorId, setCreationAnchorId] = useState<string | null>(null);
   const [editorBaseline, setEditorBaseline] = useState<EditorBaseline | null>(
     null,
   );
@@ -449,7 +450,13 @@ export function App() {
     [activeExtrude, extrudeDraft, activeRegionIds],
   );
   const modelSketchOverlay = useMemo<SketchOverlayData | null>(() => {
-    if (mode !== "model" || !activeSketchFeature || activeSketchFeature.suppressed) {
+    if (
+      mode !== "model" ||
+      supportOpen ||
+      datumDraft !== null ||
+      !activeSketchFeature ||
+      activeSketchFeature.suppressed
+    ) {
       return null;
     }
     const points = geometry.points;
@@ -581,6 +588,8 @@ export function App() {
     activeRegions,
     geometry,
     activeSketchBuild,
+    supportOpen,
+    datumDraft,
   ]);
   const activeVoidCount = useMemo(
     () => activeRegions.filter((region) => region.kind === "void").length,
@@ -1108,6 +1117,7 @@ export function App() {
   const openDatumDraft = (): void => {
     dismissEditor();
     setExtrudeDraft(null);
+    setCreationAnchorId(activeFeatureId);
     setDatumDraft({
       id: null,
       kind: "offset",
@@ -1159,17 +1169,24 @@ export function App() {
       commit({ doc: next, solved: current.solved, solvedFor: current.solvedFor });
       setActiveFeatureId(datumDraft.id);
     } else {
-      const { doc, feature } = addDatumPlaneFeature(current.doc, definition, frame);
+      const { doc, feature } = addDatumPlaneFeature(
+        current.doc,
+        definition,
+        frame,
+        { afterFeatureId: creationAnchorId },
+      );
       commit({ doc, solved: current.solved, solvedFor: current.solvedFor });
       setActiveFeatureId(feature.id);
     }
     setDatumDraft(null);
+    setCreationAnchorId(null);
     setHistoryNotice(null);
     setSelection([]);
   };
 
   const cancelDatumDraft = (): void => {
     setDatumDraft(null);
+    setCreationAnchorId(null);
     setHistoryNotice(null);
   };
 
@@ -1268,6 +1285,7 @@ export function App() {
     // or its first exact update would look like a topology change.
     const { doc: nextDoc, feature } = addSketchFeature(current.doc, {
       support,
+      afterFeatureId: creationAnchorId,
     });
     const outcome = isSolverReady() ? solveSketch(feature.sketch) : null;
     commit({ doc: nextDoc, solved: outcome, solvedFor: feature.id });
@@ -1276,6 +1294,7 @@ export function App() {
     setSupportOpen(false);
     setSupportDatumId(null);
     setSupportFaceFlipped(false);
+    setCreationAnchorId(null);
     setHistoryNotice(null);
     setMode("sketch");
     setRollbackIndex(null);
@@ -3287,7 +3306,10 @@ export function App() {
             <SupportPopover
               position={popoverPosition}
               onMove={setPopoverPosition}
-              onCancel={() => setSupportOpen(false)}
+              onCancel={() => {
+                setSupportOpen(false);
+                setCreationAnchorId(null);
+              }}
               onApply={() => {
                 handleNewSketch();
                 setSupportOpen(false);
@@ -3596,6 +3618,7 @@ export function App() {
                   bodyPick?.kind === "datum" ? bodyPick.datumId ?? null : null,
                 );
                 setSupportFaceFlipped(false);
+                setCreationAnchorId(activeFeatureId);
                 setSupportOpen(true);
                 setFileMenuOpen(false);
               }}

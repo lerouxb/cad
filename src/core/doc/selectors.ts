@@ -163,7 +163,38 @@ export function nextFeatureName(doc: Doc, type: Feature["type"]): string {
 }
 
 /**
- * Append a new sketch on XY. M4 will let the caller choose a support.
+ * Insert a feature after the selected history step, but never before any
+ * feature it references. Returns the new feature so the caller can activate it.
+ */
+function insertFeature(
+  doc: Doc,
+  feature: Feature,
+  afterFeatureId: string | null | undefined,
+  dependencyIds: readonly string[],
+): Doc {
+  const features = [...doc.features];
+  const anchor = afterFeatureId
+    ? features.findIndex((candidate) => candidate.id === afterFeatureId)
+    : -1;
+  let index = anchor >= 0 ? anchor + 1 : features.length;
+  for (const dependencyId of dependencyIds) {
+    const dependency = features.findIndex(
+      (candidate) => candidate.id === dependencyId,
+    );
+    if (dependency >= 0) index = Math.max(index, dependency + 1);
+  }
+  features.splice(Math.max(0, Math.min(features.length, index)), 0, feature);
+  return { ...doc, features };
+}
+
+function planeRefDependencies(ref: PlaneRef): string[] {
+  if (ref.kind === "face") return [ref.ref.source];
+  if (ref.kind === "datum") return [ref.featureId];
+  return [];
+}
+
+/**
+ * Insert a new sketch after the selected step (or append if none).
  * Returns the new feature so the caller can activate it.
  */
 export function addSketchFeature(
@@ -174,6 +205,7 @@ export function addSketchFeature(
     sketch?: Sketch;
     support?: PlaneRef;
     projections?: FaceProjection[];
+    afterFeatureId?: string | null;
   } = {},
 ): { doc: Doc; feature: SketchFeature } {
   const feature = createSketchFeature(options.sketch ?? emptySketch(), {
@@ -183,7 +215,12 @@ export function addSketchFeature(
     ...(options.projections ? { projections: options.projections } : {}),
   });
   return {
-    doc: { ...doc, features: [...doc.features, feature] },
+    doc: insertFeature(
+      doc,
+      feature,
+      options.afterFeatureId,
+      options.support ? planeRefDependencies(options.support) : [],
+    ),
     feature,
   };
 }
@@ -192,14 +229,25 @@ export function addDatumPlaneFeature(
   doc: Doc,
   definition: DatumPlaneDefinition,
   frame: PlaneFrame,
-  options: { name?: string; id?: string } = {},
+  options: {
+    name?: string;
+    id?: string;
+    afterFeatureId?: string | null;
+  } = {},
 ): { doc: Doc; feature: DatumPlaneFeature } {
   const feature = createDatumPlaneFeature(definition, frame, {
     name: options.name ?? nextFeatureName(doc, "datum"),
     ...(options.id ? { id: options.id } : {}),
   });
+  const dependencies =
+    definition.kind === "offset"
+      ? planeRefDependencies(definition.base)
+      : [
+          ...planeRefDependencies(definition.a),
+          ...planeRefDependencies(definition.b),
+        ];
   return {
-    doc: { ...doc, features: [...doc.features, feature] },
+    doc: insertFeature(doc, feature, options.afterFeatureId, dependencies),
     feature,
   };
 }

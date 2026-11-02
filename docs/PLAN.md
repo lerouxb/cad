@@ -113,7 +113,7 @@ feature work then lands inside that system.
   started from the selected sketch step and begins with **no profile selected**; the
   draft only becomes a history feature after at least one profile and the parameters are
   applied. Existing extrudes are edited by selecting their step.
-- `npm run verify` (187 unit tests) and `npm run e2e` (63 tests) are green. The e2e asserts
+- `npm run verify` (187 unit tests) and `npm run e2e` (64 tests) are green. The e2e asserts
   exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
   reference-frame constraints, exact point coordinates, draws, selects/deletes, and
   undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
@@ -580,7 +580,9 @@ and evolution-based role propagation through booleans are in.
       operation, end; the detail line stays a summary
 - [x] Feature creation is contextual: `+ sketch` in the timeline opens an explicit
       support popover; `extrude` on a selected sketch starts a draft with no profile
-      selected and only creates the feature after profiles and parameters are applied
+      selected and only creates the feature after profiles and parameters are applied.
+      New sketches/planes insert after the selected step and clear that step's special
+      overlay while the draft/support picker is open.
 - [x] A polygon crossing the example plate/hole keeps every region selectable and the
       hole as a void profile (unit + e2e regression)
 - [x] A sketch can feed several extrudes with independent region selections; when the
