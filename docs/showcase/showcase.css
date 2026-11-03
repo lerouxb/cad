@@ -1319,6 +1319,7 @@
   margin: 0 -3px;
   padding: 1px 3px;
   border: 0;
+  appearance: none;
   background: none;
   color: var(--ink-3);
   font-family: var(--font-mono);

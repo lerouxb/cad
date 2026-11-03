@@ -821,6 +821,7 @@ body.is-embed .app {
   margin: 0 -4px;
   padding: 1px 4px;
   border: 0;
+  appearance: none;
   background: none;
   color: var(--ink-3);
   font-family: var(--font-mono);
