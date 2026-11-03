@@ -124,6 +124,11 @@ changed.
   in a group, it lands **inside that group** (drag it out later if you don't want
   it there).
 - **Escape or a click outside closes the menu.**
+- **There is a gap before the first step too**, so a step can be inserted at the
+  very start.
+- **The empty ends clear the cursor.** The tail before the first step and the tail
+  after the last one are click targets that clear the selection: the stage then
+  renders the full document with no active step, mirroring the app's empty tail.
 - **Tooltips:** the gap says `Insert a step here`; the group controls say
   `Collapse group` / `Expand group`.
 
@@ -187,20 +192,38 @@ The mockup's numbers, for translation into app tokens — not law:
 | Step head `NN · KIND`, position numbering | designed |
 | Bottom status line (status note / lost error) | designed |
 
-## Open questions
+## Decided
 
-- **Join that cannot join.** A new extrude defaults to `join` and should fall back
-  to `new body` when the result cannot be joined (no body, or disjoint). Is a
-  silent fallback right, or should it ask?
-- **Lost-body recovery.** When a merge steals a downstream step's body, should the
-  recovery offer to **follow the merge** (retarget to the surviving body), or is
-  `reselect` enough?
+- **No silent fallbacks.** When an operation cannot do what it was set to do — a
+  `join` with nothing to join, a reference that lost its body — say so. Do not
+  quietly change the operation or retarget the reference. There may be rare
+  exceptions, but none have been found; assume "surface it" until one is.
+- **A join that cannot join** therefore does **not** fall back to `new body`. The
+  step reports it and the user decides.
+- **Lost-body recovery offers follow-the-merge.** When a merge steals a downstream
+  step's body, `reselect` alone is a dead end — the body it wanted is gone. Offer
+  to retarget the reference to the surviving body, with `reselect` as the escape
+  hatch.
+- **Insert at the very start** is supported (a gap before the first step).
+- **The empty ends clear the cursor** (see [Insert](#insert)).
+
+## Still open
+
+- **Body visibility, per body, without a second list.** Visibility is only
+  per-step today; it needs to be per *body*. But the single timeline stays — no
+  separate bodies panel. The current idea is to fold visibility into the output
+  **chip** (the thing you show/hide is the thing the step added), so the chip
+  carries visibility as well as identity. Needs a design pass.
+- **Selection filters and tool options.** The selection popover only exists once
+  something is selected, so filters (edges / faces / bodies) and Select Other need
+  a home *before* that. The idea: a **tool options row** under the tool line
+  (`select` / `box` / `lasso`) holding the options for the current mode — and the
+  same row holds the create variants (centre-point vs two-point circle, and so
+  on). Needs a design pass.
 - **Collapsed group peek.** Is a mark + name + count enough, or does it need a
   peek (a body count, a mini stack of the bodies it made)?
 - **Active step inside a group.** With a bottom-line active marker *and* a group
   bracket above, the step shows two horizontal rules close together. Keep, or
   lighten the bracket?
-- **Divider inset.** The divider is full height while the `+` is inset. If the
-  `+` were ever made full height, they would collide with the active marker.
-- **Insert-at-the-very-start.** There is no gap before the first step today, so a
-  step cannot be inserted before it. Needed?
+- **Divider inset.** The divider is full height while the `+` is inset. If the `+`
+  were ever made full height, they would collide with the active marker.

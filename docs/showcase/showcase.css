@@ -942,6 +942,19 @@
   width: 14px;
 }
 
+/* the empty tail at each end of the track: a click target that clears the
+   cursor, the way the app's empty tail does */
+.bd-timeline .insert-tail {
+  flex: none;
+  align-self: stretch;
+  width: 64px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
 /* the gaps supply the spacing now, so the steps sit flush against them */
 .bd-timeline .step,
 .bd-timeline .step-group {

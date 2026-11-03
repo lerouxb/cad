@@ -142,13 +142,28 @@ already ahead in several places, which is worth not regressing:
 
 ## Open design questions
 
-- **Combine / Split Body:** are tool bodies a *selection* in the feature dialog, or a
-  separate "bodies" list on the document? How do the result bodies keep stable identity
-  (`TopoRef`) across a split?
-- **Section Analysis:** is it a view-only overlay (never in history), and how does it
-  relate to the visibility toggles above?
-- **Move / Copy:** does it materialise (a one-shot transform) or persist as an operation
-  like M6.0? For sketch geometry it should almost certainly persist; for bodies it is
-  closer to a feature.
-- **Sketch-create variants:** do the extra rectangle/circle/arc variants share one tool
-  with a mode, or get their own tool-line entries? Fusion uses press-and-hold flyouts.
+**Resolved since the first pass (2026-11-03):**
+
+- **Body appearance** is **document data**, attached to the body-creating feature.
+  It round-trips in `.cad`, and a re-skin is an undoable edit. No mockup needed —
+  the decision is enough (the `08-body.html` study already shows the shape).
+- **Move / Copy bodies** is a **persistent operation**, not a materialised
+  transform. It stays re-editable and downstream steps follow it, like the sketch
+  layout operations (ADR-0004). Design work is small: it reuses the
+  `transform.html` popover and reads as a normal history step — a *move*
+  references its body (`→`), a *copy* produces a new body chip (`+`).
+- **Combine / Split Body:** tool bodies are a **selection in the feature popover**,
+  not a second document list, so the timeline stays the only structure. A split
+  mints **new body ids with a role + geometry `TopoRef`** so downstream references
+  can recover.
+
+**Still open:**
+
+- **Section Analysis:** is it a view-only overlay (never in history), and how does
+  it relate to the visibility toggles? The visibility direction is now "per body,
+  folded into the output chip, no second list" — see
+  [`TIMELINE.md`](TIMELINE.md).
+- **Sketch-create variants:** do the extra rectangle/circle/arc variants share one
+  tool with a mode, or get their own tool-line entries? Fusion uses press-and-hold
+  flyouts. The current idea is a **tool options row** under the tool line — see
+  [`TIMELINE.md`](TIMELINE.md).

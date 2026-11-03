@@ -203,6 +203,21 @@ a status bar with a viewport behind it.
 - If it does not fit any of those, that is a signal to add a rule here, not to
   add a row to the bottom bar.
 
+## No silent fallbacks
+
+When an operation cannot do what it was set to do, **say so**. Do not quietly
+change the operation or retarget the reference:
+
+- a `join` with nothing to join does not become a `new body` — the step reports it
+  and the user decides;
+- a reference whose body was merged away is not silently pointed at the survivor —
+  the recovery *offers* to follow the merge and leaves `reselect` as the escape.
+
+The rule generalises: an unexpected change to the document (a different operation,
+a different target, a different count) is a decision the user made, not one the
+app should make for them. Surface it. There may be rare exceptions; none have been
+found, so assume "surface it" until one is.
+
 ## Implementing this in the app
 
 Point the app session at this list:

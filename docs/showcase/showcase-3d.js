@@ -529,6 +529,7 @@
     editing: null,
     drag: null,
     insertMenu: false,
+    insertStart: false,
     custom: [],
     nextNum: 8
   };
@@ -570,15 +571,22 @@
         }
       ]
     });
-    // insert directly after the selected step, inside its group if it has one
-    var g = bdGroupOf(bd.active);
-    var pos = bd.order.indexOf(bd.active);
-    if (g) {
-      var ai = g.ids.indexOf(bd.active);
-      g.ids.splice(ai + 1, 0, n);
+    // insert directly after the selected step, inside its group if it has one —
+    // or at the very start when the leading gap was used
+    var pos;
+    if (bd.insertStart) {
+      pos = -1;
+    } else {
+      var g = bdGroupOf(bd.active);
+      pos = bd.order.indexOf(bd.active);
+      if (g) {
+        var ai = g.ids.indexOf(bd.active);
+        g.ids.splice(ai + 1, 0, n);
+      }
     }
     bd.order.splice(pos + 1, 0, n);
     bd.active = n;
+    bd.insertStart = false;
     bd.insertMenu = false;
   }
 
@@ -758,7 +766,8 @@
   }
 
   function bdRenderStage(iso, layer) {
-    var at = bdPos(bd.active);
+    // with no active step, render the whole document
+    var at = bd.active == null ? bd.order.length : bdPos(bd.active);
     var html = "";
     if (at <= 1) {
       html += profileQuad(iso, BD_R1, 0, "bo-profile");
@@ -856,7 +865,7 @@
     var disp = bdPos(n);
     var cls = "step";
     if (n === bd.active) cls += " is-active";
-    if (disp > bdPos(bd.active)) cls += " is-paused";
+    if (bd.active != null && disp > bdPos(bd.active)) cls += " is-paused";
     if (lost) cls += " is-error";
     var chips = s.out.map(bdChip).join("");
     return (
@@ -920,16 +929,26 @@
   // the steps never move; the one after the active step is always shown, which
   // keeps it usable on touch. Clicking it selects the step before it.
   function bdGapButton(after) {
-    var near = after === bd.active;
+    var start = after == null;
+    var near = !start && after === bd.active;
     return (
       '<button class="insert-gap' + (near ? " is-near" : "") +
-      '" type="button" data-gap="' + after +
+      '" type="button" data-gap="' + (start ? "" : after) +
       '" title="Insert a step here" aria-label="Insert a step here"></button>'
     );
   }
 
+  // the empty tail at each end: clicking it clears the cursor, so the stage
+  // renders the full document with no active step
+  function bdTail() {
+    return (
+      '<button class="insert-tail" type="button" data-clear="1" ' +
+      'title="Clear the selection" aria-label="Clear the selection"></button>'
+    );
+  }
+
   function bdRenderTimeline(stepsEl, detailEl) {
-    var html = "";
+    var html = bdTail() + bdGapButton(null);
     var i = 0;
     while (i < bd.order.length) {
       var n = bd.order[i];
@@ -945,12 +964,15 @@
       html += bdGapButton(n);
       i++;
     }
+    html += bdTail();
     stepsEl.innerHTML = html;
 
-    var cur = bdStep(bd.active);
-    var curLost = cur.out.some(function (o) {
-      return o.lost;
-    });
+    var cur = bd.active == null ? null : bdStep(bd.active);
+    var curLost =
+      cur &&
+      cur.out.some(function (o) {
+        return o.lost;
+      });
     detailEl.innerHTML = curLost
       ? '<span class="detail-item"><span class="detail-key">lost</span>' +
         '<span class="detail-value">body \u201clid\u201d no longer exists</span></span>' +
@@ -967,7 +989,9 @@
     }
     menuEl.hidden = false;
     menuEl.innerHTML =
-      '<div class="grid-menu-head">insert after step ' + bdPad(bdPos(bd.active)) + "</div>" +
+      '<div class="grid-menu-head">' +
+      (bd.insertStart ? "insert at the start" : "insert after step " + bdPad(bdPos(bd.active))) +
+      "</div>" +
       INSERT_TYPES.map(function (t) {
         return (
           '<button class="grid-option" type="button" data-insert-kind="' +
@@ -975,7 +999,9 @@
           '</span><span class="grid-option-note">' + t.note + "</span></button>"
         );
       }).join("");
-    var gap = stepsEl.querySelector('[data-gap="' + bd.active + '"]');
+    var gap = stepsEl.querySelector(
+      bd.insertStart ? '[data-gap=""]' : '[data-gap="' + bd.active + '"]'
+    );
     if (gap) {
       var gr = gap.getBoundingClientRect();
       var tr = timelineEl.getBoundingClientRect();
@@ -1062,10 +1088,12 @@
       bdRenderTimeline(stepsEl, detailEl);
       bdRenderMenu(menuEl, timelineEl, stepsEl);
       bdRenderPanel(panel);
-      var count = bd.connected || bdPos(bd.active) >= 8 ? 1 : 2;
+      var count = bd.connected || bd.active == null || bdPos(bd.active) >= 8 ? 1 : 2;
       foot.innerHTML =
-        "<b>" + count + (count === 1 ? " body" : " bodies") + "</b> \u00b7 step " +
-        bdPos(bd.active) + " of " + bd.order.length +
+        "<b>" + count + (count === 1 ? " body" : " bodies") + "</b> \u00b7 " +
+        (bd.active == null
+          ? "full history \u00b7 " + bd.order.length + " steps"
+          : "step " + bdPos(bd.active) + " of " + bd.order.length) +
         (bd.connected ? " \u00b7 what-if: profiles connected" : "");
       if (whatif) {
         whatif.textContent = bd.connected
@@ -1172,10 +1200,23 @@
     stepsEl.addEventListener("click", function (e) {
       if (e.target.closest("[data-rename]")) return;
       if (bd.dragMoved) return;
+      var clear = e.target.closest("[data-clear]");
+      if (clear) {
+        // the empty ends clear the cursor: full document, no active step
+        bd.active = null;
+        bd.selected = null;
+        bd.insertMenu = false;
+        bd.insertStart = false;
+        render();
+        return;
+      }
       var gap = e.target.closest("[data-gap]");
       if (gap) {
-        // select the step before the button, then open the insert menu
-        bd.active = Number(gap.getAttribute("data-gap"));
+        // select the step before the button (or the very start), then open the
+        // insert menu
+        var raw = gap.getAttribute("data-gap");
+        bd.insertStart = raw === "";
+        if (!bd.insertStart) bd.active = Number(raw);
         bd.selected = null;
         bd.insertMenu = true;
         render();
