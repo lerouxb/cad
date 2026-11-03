@@ -951,7 +951,6 @@
   transition: width 0.12s ease;
 }
 
-.bd-timeline .insert-gap.is-near::after,
 .bd-timeline .insert-gap:hover::after {
   width: 14px;
 }
@@ -1042,17 +1041,39 @@
 }
 
 .body-chip-hide {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 17px;
   margin: 0;
-  padding: 1px 5px;
+  padding: 1px 0;
   border: 0;
   border-left: 1px solid var(--rule);
   appearance: none;
   background: none;
   color: var(--ink-3);
-  font-family: var(--font-mono);
-  font-size: var(--type-micro);
-  letter-spacing: var(--tracking-value);
   cursor: pointer;
+}
+
+/* the glyph is a small eye: an outline with a pupil */
+.body-chip-hide::before {
+  width: 9px;
+  height: 6px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  background: radial-gradient(circle, currentColor 1.1px, transparent 1.3px);
+  content: "";
+}
+
+/* hidden: the eye is struck through */
+.body-chip-hide[aria-pressed="true"]::after {
+  position: absolute;
+  width: 13px;
+  height: 1px;
+  background: currentColor;
+  content: "";
+  transform: rotate(-40deg);
 }
 
 .body-chip-hide:hover {

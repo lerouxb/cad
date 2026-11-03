@@ -113,8 +113,6 @@ changed.
   - the **`+`** is a separate, inset mark (6px top and bottom) that **grows out
     from the middle** on hover. It paints **above** the divider and is **opaque**,
     so the line never shows through it.
-- **The one after the active step is always shown**, because a touch device cannot
-  hover.
 - **Clicking a gap selects the step before it**, then opens the insert menu — so a
   click on a far-away gap re-anchors first.
 - **The menu lists everything you can insert** — `sketch` and `plane`. **Extrude
@@ -207,10 +205,15 @@ The mockup's numbers, for translation into app tokens — not law:
 - **Insert at the very start** is supported (a gap before the first step).
 - **The empty ends clear the cursor** (see [Insert](#insert)).
 - **Visibility is a split button on the chip.** The left part of a chip selects
-  the thing; the right part is a `hide` / `show` toggle. It works for a body, a
-  sketch or a plane alike, and it is the **only** visibility control — there is no
-  hide-the-step. No hover (undiscoverable, no touch) and no popover (too many
-  clicks to hide several). See [`bodies.html`](bodies.html).
+  the thing; the right part is a small **eye** glyph (outline = shown, struck
+  through = hidden) with a tooltip. It works for a body, a sketch or a plane
+  alike, and it is the **only** visibility control — there is no hide-the-step.
+  No hover (undiscoverable, no touch) and no popover (too many clicks to hide
+  several). See [`bodies.html`](bodies.html).
+- **Insert is hover-only.** Every gap column is invisible until hovered. The
+  "always show the one after the active step" affordance was dropped; a touch
+  device will get a different treatment (probably an always-visible variant that
+  is designed to look right when *all* the gaps show at once), not this one.
 
 ## Still open
 

@@ -872,8 +872,9 @@
       '<span class="body-name">' + name + "</span></button>" +
       '<button class="body-chip-hide" type="button" data-hide="' + o.id +
       '" aria-pressed="' + (hidden ? "true" : "false") +
-      '" title="' + (hidden ? "Show" : "Hide") + " " + o.kind + '">' +
-      (hidden ? "show" : "hide") + "</button></span>"
+      '" title="' + (hidden ? "Show" : "Hide") + " " + o.kind +
+      '" aria-label="' + (hidden ? "Show" : "Hide") + " " + o.kind +
+      '"></button></span>'
     );
   }
 
@@ -949,10 +950,8 @@
   // keeps it usable on touch. Clicking it selects the step before it.
   function bdGapButton(after) {
     var start = after == null;
-    var near = !start && after === bd.active;
     return (
-      '<button class="insert-gap' + (near ? " is-near" : "") +
-      '" type="button" data-gap="' + (start ? "" : after) +
+      '<button class="insert-gap" type="button" data-gap="' + (start ? "" : after) +
       '" title="Insert a step here" aria-label="Insert a step here"></button>'
     );
   }
