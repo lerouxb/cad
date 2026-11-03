@@ -214,16 +214,18 @@ The mockup's numbers, for translation into app tokens — not law:
   "always show the one after the active step" affordance was dropped; a touch
   device will get a different treatment (probably an always-visible variant that
   is designed to look right when *all* the gaps show at once), not this one.
+- **Selection filters are one row that follows the tool.** The selection popover
+  only exists once something is selected, so filters and Select Other need a home
+  *before* that: a **tool options row** under the tool line holding the current
+  tool's options. **One filter at a time** (no multi-select checkboxes), the
+  **create variants share the row** (centre-point vs two-point circle, and so on),
+  and the **select tools come to the model view too** with their own filters
+  (`edges` / `faces` / `bodies`). The row follows the *tool*, not the mode. See
+  [`select.html`](select.html) — still a sketch-mode study; the model-mode variant
+  is not built yet.
 
 ## Still open
 
-- **Selection filters and tool options.** The selection popover only exists once
-  something is selected, so filters (edges / faces / bodies) and Select Other need
-  a home *before* that. Designed as a **tool options row** under the tool line
-  (`select` / `box` / `lasso`) holding the current tool's options — and the same
-  row holds the create variants (centre-point vs two-point circle, and so on).
-  See [`select.html`](select.html). Still open: single filter vs several, and
-  where the row lives in **model** mode, where the tool line is hidden.
 - **Collapsed group peek.** Is a mark + name + count enough, or does it need a
   peek (a body count, a mini stack of the bodies it made)?
 - **Active step inside a group.** With a bottom-line active marker *and* a group
