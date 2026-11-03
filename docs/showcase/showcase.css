@@ -208,6 +208,20 @@
   opacity: 0.8;
 }
 
+.sc-legend .swatch.is-dim {
+  border-top: 2px solid var(--ink-3);
+  opacity: 0.3;
+}
+
+/* a filter dims the kinds it excludes */
+.sketch-line.is-filtered,
+.sketch-point.is-filtered,
+.dim-line.is-filtered,
+.dim-ext.is-filtered,
+.dim-text.is-filtered {
+  opacity: 0.25;
+}
+
 /* --------------------------------------------------------------------------
    tool popup
    -------------------------------------------------------------------------- */
@@ -1255,4 +1269,170 @@
 .body-chip.is-lost {
   color: var(--ink-3);
   text-decoration: line-through;
+}
+
+/* --------------------------------------------------------------------------
+   tool options row — the options for the current tool, sitting under the tool
+   line. It exists only when the tool has options, so line/point take no space.
+   Selection filters and the create variants are the same row.
+   -------------------------------------------------------------------------- */
+
+.tool-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  margin-top: 9px;
+  pointer-events: auto;
+}
+
+/* the options row needs more room than the tool line alone */
+.stage-head.is-wide {
+  max-width: 74%;
+}
+
+/* a small vertical rule between tool groups */
+.tool-separator {
+  align-self: center;
+  width: 1px;
+  height: 11px;
+  background: var(--rule-strong);
+}
+
+.tool-options[hidden] {
+  display: none;
+}
+
+.tool-options .tool-kicker {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-label);
+  letter-spacing: var(--tracking-label);
+  line-height: var(--leading-label);
+  text-transform: uppercase;
+}
+
+.tool-option {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  margin: 0 -3px;
+  padding: 1px 3px;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-control);
+  letter-spacing: var(--tracking-value);
+  text-transform: lowercase;
+  cursor: pointer;
+}
+
+.tool-option:hover {
+  color: var(--ink);
+}
+
+.tool-option.is-on {
+  color: var(--marker-ink);
+  background: var(--marker);
+}
+
+.tool-options .tool-note {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-micro);
+}
+
+/* the "select other" chip that appears at the cursor when picks overlap. It is
+   an indicator only — clicking the geometry cycles the pick, so the chip never
+   has to be chased. */
+.sel-other {
+  position: absolute;
+  z-index: 12;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 3px 8px 4px;
+  border: 1px solid var(--rule-strong);
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.sel-other[hidden] {
+  display: none;
+}
+
+.sel-other .sel-other-count {
+  color: var(--ink-3);
+}
+
+.sel-other .sel-other-kind {
+  color: var(--ink-3);
+  font-size: var(--type-label);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+/* overlays: prehighlight (hover), the selection wash, and the create preview */
+.sel-hover-line {
+  fill: none;
+  stroke: var(--marker);
+  stroke-width: 5;
+  opacity: 0.7;
+}
+
+.sel-hover-ring {
+  fill: none;
+  stroke: var(--marker);
+  stroke-width: 6;
+  opacity: 0.7;
+}
+
+.sel-hover-point {
+  fill: var(--marker);
+  stroke: var(--ink);
+  stroke-width: 1.2;
+}
+
+.sel-wash-line {
+  fill: none;
+  stroke: var(--marker-wash);
+  stroke-width: 12;
+}
+
+.sel-wash-fill {
+  fill: var(--marker-wash);
+  stroke: none;
+}
+
+.sel-preview {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1.6;
+  stroke-dasharray: 5 4;
+}
+
+.sel-preview-fill {
+  fill: var(--ink-3);
+  opacity: 0.12;
+  stroke: none;
+}
+
+.sel-preview-handle {
+  fill: var(--bg);
+  stroke: var(--ink-3);
+  stroke-width: 1.4;
+}
+
+.sel-preview-guide {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
 }

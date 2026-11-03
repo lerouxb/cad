@@ -1,6 +1,6 @@
 # Tool showcase
 
-Interactive design targets for tools that do not exist yet, split into eight pages.
+Interactive design targets for tools that do not exist yet, split into nine pages.
 
 This folder and [`../mockups/`](../mockups/) are the two halves of one design
 system:
@@ -21,6 +21,7 @@ bodies, groups and insertion — has its own contract in
 | **Sketch layout** | [`index.html`](index.html) | rectangular / circular pattern, mirror, offset, **move/copy** | **M6.0** (ADR-0004) |
 | **Sketch selection** | [`sketch-edit.html`](sketch-edit.html) | selection popover (constraints), inline dimension editor | app consistency (see INTERACTION.md) |
 | **Sketch create** | [`sketch-create.html`](sketch-create.html) | rectangle / circle / arc variants, polygon | M6.0-era sketch polish |
+| **Selection filters** | [`select.html`](select.html) | a contextual **tool options row**: selection filters, create variants, select other | M5 selection UX |
 | **Body ops** | [`body-ops.html`](body-ops.html) | **combine** (join/cut/intersect, keep tools), **split body** | M6 |
 | **Bodies** | [`bodies.html`](bodies.html) | several bodies in one timeline, inline with the step that made them | M3/M6 (document model) |
 | **Body transforms** | [`transform.html`](transform.html) | **move / copy**, **align** | M6 |
@@ -146,6 +147,7 @@ changes.
 index.html           sketch layout: pattern / mirror / offset / move-copy
 sketch-edit.html     sketch selection: constraint popover + inline dimension editor
 sketch-create.html   sketch create variants: rectangle / circle / arc / polygon
+select.html          selection filters as a tool options row
 body-ops.html        combine + split body
 bodies.html          multiple bodies inline in one timeline
 transform.html       move / copy + align
@@ -156,6 +158,7 @@ showcase-ui.js       shared draggable popovers + the footer action grammar
 showcase.js          sketch model, preview geometry and interaction
 showcase-create.js   the create-tool atlas
 showcase-edit.js     the selection popover + inline editor
+showcase-select.js   the tool options row (filters, create variants, select other)
 showcase-3d.js       isometric helpers + body ops + transforms + extrude + section
 INTERACTION.md       the interaction contract (popover, actions, foot)
 TIMELINE.md          the timeline contract (steps, bodies, groups, insert)

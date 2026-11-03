@@ -216,10 +216,11 @@ The mockup's numbers, for translation into app tokens — not law:
   carries visibility as well as identity. Needs a design pass.
 - **Selection filters and tool options.** The selection popover only exists once
   something is selected, so filters (edges / faces / bodies) and Select Other need
-  a home *before* that. The idea: a **tool options row** under the tool line
-  (`select` / `box` / `lasso`) holding the options for the current mode — and the
-  same row holds the create variants (centre-point vs two-point circle, and so
-  on). Needs a design pass.
+  a home *before* that. Designed as a **tool options row** under the tool line
+  (`select` / `box` / `lasso`) holding the current tool's options — and the same
+  row holds the create variants (centre-point vs two-point circle, and so on).
+  See [`select.html`](select.html). Still open: single filter vs several, and
+  where the row lives in **model** mode, where the tool line is hidden.
 - **Collapsed group peek.** Is a mark + name + count enough, or does it need a
   peek (a body count, a mini stack of the bodies it made)?
 - **Active step inside a group.** With a bottom-line active marker *and* a group

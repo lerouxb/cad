@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — selection filters</title>
+    <link rel="stylesheet" href="../mockups/mockup.css" />
+    <link rel="stylesheet" href="showcase.css" />
+    <script src="../mockups/theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="../mockups/index.html">
+        cad <span class="tag">tool showcase</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Showcase">
+        <a href="index.html">sketch layout</a>
+        <a href="sketch-edit.html">sketch edit</a>
+        <a href="sketch-create.html">sketch create</a>
+        <a class="is-active" href="select.html">select</a>
+        <a href="body-ops.html">body ops</a>
+        <a href="bodies.html">bodies</a>
+        <a href="transform.html">transform</a>
+        <a href="extrude.html">extrude</a>
+        <a href="inspect.html">inspect</a>
+        <a href="BACKLOG.md">backlog</a>
+      </nav>
+      <div class="mockbar-right">
+        <a class="mockbar-btn" href="../mockups/index.html">studies</a>
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" title="File menu">
+            <span class="doc-name">selection</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-center">
+          <span>sketch</span>
+          <span class="mode" id="sel-mode">select</span>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage has-grid" id="stage">
+          <div class="stage-head is-wide">
+            <div class="tool-line" role="toolbar" aria-label="Sketch tools">
+              <span class="stage-kicker">tools</span>
+              <button class="tool is-active" type="button" data-tool="select">select <kbd>v</kbd></button>
+              <button class="tool" type="button" data-tool="box">box <kbd>b</kbd></button>
+              <button class="tool" type="button" data-tool="lasso">lasso <kbd>g</kbd></button>
+              <span class="tool-separator"></span>
+              <button class="tool" type="button" data-tool="line">line <kbd>l</kbd></button>
+              <button class="tool" type="button" data-tool="point">point <kbd>p</kbd></button>
+              <button class="tool" type="button" data-tool="rect">rect <kbd>r</kbd></button>
+              <button class="tool" type="button" data-tool="circle">circle <kbd>c</kbd></button>
+              <button class="tool" type="button" data-tool="arc">arc <kbd>a</kbd></button>
+            </div>
+            <div class="tool-options" id="tool-options" role="toolbar" aria-label="Tool options"></div>
+          </div>
+
+          <div class="sketch-viewport" id="viewport">
+            <svg
+              class="stage-svg sketch-svg"
+              id="svg"
+              viewBox="0 0 1200 700"
+              preserveAspectRatio="xMidYMid meet"
+              role="img"
+              aria-label="A sketch with a filter row under the tool line. The filter limits what the cursor can pick, and a select-other chip appears where picks overlap."
+            >
+              <g id="sel-geom"></g>
+              <g id="sel-preview"></g>
+              <g id="sel-hover"></g>
+              <g id="sel-wash"></g>
+            </svg>
+            <div class="sel-other" id="sel-other" hidden></div>
+            <div class="tool-panel" id="sel-panel" role="dialog" aria-label="Selection"></div>
+          </div>
+
+          <div class="stage-foot">
+            <div class="stage-foot-left">
+              <span id="sel-foot"></span>
+            </div>
+            <div class="stage-foot-right">
+              <span class="sc-legend">
+                <span class="key"><span class="swatch is-selected"></span>hover</span>
+                <span class="key"><span class="swatch is-dim"></span>filtered out</span>
+              </span>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · selection filters</div>
+          <h2>A tool options row</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        Selection filters had nowhere to live: the selection popover only appears
+        <em>after</em> you have selected something, and a filter is what you set
+        <em>before</em>. The fix is one row under the tool line that holds the
+        options for the current tool — and that row turns out to fit the create
+        variants too.
+      </p>
+      <h3>What this study tests</h3>
+      <ul>
+        <li><b>One options row, contextual.</b> It sits directly under the tool line and shows only the options the current tool has. <b>line</b> and <b>point</b> have none, so the row collapses and takes no space — the tool line does not move.</li>
+        <li><b>Selection filters.</b> For <b>select</b> / <b>box</b> / <b>lasso</b> the row holds the filter: <b>all</b>, <b>points</b>, <b>curves</b>, <b>dimensions</b>. With a filter on, the cursor can only pick that kind — hovering a line under <b>points</b> does nothing.</li>
+        <li><b>The same row holds the create variants.</b> <b>rect</b> → 2-point / centre; <b>circle</b> → centre / 2-point / 3-point; <b>arc</b> → centre / 3-point / tangent. A dashed preview shows what each variant draws.</li>
+        <li><b>Select other.</b> Where picks overlap — the shared corner is two lines and a point — a small chip at the cursor cycles through them, so an overlap is a choice, not a lottery.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Single filter or several? Fusion's filter is a set of checkboxes (edges <em>and</em> faces). This study shows a single choice for clarity.</li>
+        <li>In <b>model</b> mode the tool line is hidden, so where does the filter row live? The same row under a minimal <b>select</b> tool, or pinned to the stage corner?</li>
+        <li>Do the create variants belong in this row, or is a row that changes meaning by tool confusing?</li>
+      </ul>
+      <div class="mini-note">
+        The model-mode filters would be <span class="mono">edges</span> /
+        <span class="mono">faces</span> / <span class="mono">bodies</span>; the
+        sketch filters shown here are the same row with a different set.
+      </div>
+    </aside>
+
+    <script src="../mockups/mockups.js"></script>
+    <script src="showcase-ui.js"></script>
+    <script src="showcase-select.js"></script>
+  </body>
+</html>
