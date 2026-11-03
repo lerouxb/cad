@@ -118,10 +118,14 @@
         <li><b>Split body</b> cuts one body into two with an <b>existing</b> splitting tool — a datum plane, a planar face, or another body — and <b>keep both</b> controls whether the far half survives.</li>
         <li><b>The position lives on the plane, not the split.</b> Choosing Plane 1 shows its exact offset (40.0 mm), editable as a number. If you want an arbitrary position, you create a datum plane there and split with it — the split never owns a free-form position.</li>
       </ul>
+      <h3>Decided</h3>
+      <ul>
+        <li><b>Target and tool are a selection in the feature popover</b>, not a second document list — the timeline stays the only structure.</li>
+        <li><b>A split mints new body ids</b> carrying a role + geometry <span class="mono">TopoRef</span>, so downstream references can recover (see <a href="BACKLOG.md">BACKLOG.md</a>).</li>
+        <li><b>A lost splitting plane or face follows the face-support precedent</b>: surfaced as an error with reselect / revert, never a silent fallback.</li>
+      </ul>
       <h3>Open questions</h3>
       <ul>
-        <li>Are target/tool a selection in the dialog, or a bodies list on the document? How do the result bodies keep stable identity across a split?</li>
-        <li>What happens when the splitting plane or face is deleted or its reference is lost — does the split error visibly, or fall back?</li>
         <li>Does intersect need a distinct icon/colour so it is not mistaken for cut?</li>
         <li>Should the tool body stay ghosted after apply when it is consumed?</li>
       </ul>

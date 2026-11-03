@@ -126,12 +126,19 @@ changes.
    line is the edit handle, and the timeline detail is the permanent list. Each
    fact (name, parameters, actions) has exactly one home.
 
+## Decided
+
+- These are **sketch objects**, owned by the sketch step — the timeline lists them
+  in that step's detail, not as steps of their own. A body-level
+  pattern/mirror/offset would be a **history step**; that is a separate, later
+  thing. (M6.0 / ADR-0004.)
+- A **stale reference** in a sketch object is surfaced, not silently re-run.
+  Provisional — revisit once there is a real case to look at.
+- When a pattern/mirror lands as a **feature** (M6) rather than a sketch edit,
+  the same popup grammar should still apply to solids and faces.
+
 ## Open questions
 
-- Are these **sketch objects** (shown here) or **history steps**? This study
-  recommends sketch objects owned by the sketch step; M6.0 should decide.
-- Should editing the source geometry re-run the object automatically, and how is
-  a stale or lost reference surfaced?
 - Circular pattern axis: is it always a sketch point (axis normal to the plane),
   or can it be a projected edge / axis? The study only offers a point today.
 - Offset corner style (miter/round) and "flip side" are shown; a full offset also
@@ -139,8 +146,6 @@ changes.
 - Should the popup be draggable and remember its position, like Fusion's?
 - What is the keyboard story? Fusion uses `R`/`P`/`M`/`O`; the app already gives
   `P` to the point tool, so the shortcuts in the tool line are placeholders.
-- When a pattern/mirror lands as a **feature** (M6) rather than a sketch edit,
-  the same popup grammar should still apply to solids and faces.
 
 ## Files
 

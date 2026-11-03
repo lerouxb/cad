@@ -108,7 +108,7 @@ Conclusions:
 | Feature | Note |
 | --- | --- |
 | **Visibility toggles** — show/hide sketches, bodies, constraints, construction, dimensions; isolate; opacity | Real gap, but a coherent surface of its own. Do not bolt it on. |
-| **Sketch operation rows nested in the timeline** | M6.0 says "can come later"; design with the timeline, not before |
+| **Sketch operation rows nested in the timeline** | Resolved: pattern / mirror / offset are **sketch objects**, not timeline steps — the sketch step's detail lists them. Nothing to nest. See [`TIMELINE.md`](TIMELINE.md). |
 
 ## Covered — no new work needed
 

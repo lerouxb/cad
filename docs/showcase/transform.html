@@ -115,9 +115,12 @@
         <li><b>Move / copy</b> translates and rotates the block, with a <b>create copy</b> toggle: on, the original stays and a tinted copy appears; off, the original becomes a ghost and the result takes its place.</li>
         <li><b>Align</b> snaps the block to the reference plate per axis — none / left / centre / right, and for Z below / centre / on top. A guide line shows where the block travels.</li>
       </ul>
+      <h3>Decided</h3>
+      <ul>
+        <li><b>A body move / copy is a persistent feature</b>, re-editable like every other step. (Sketch move / copy stays a sketch object — see <a href="index.html">index.html</a>.)</li>
+      </ul>
       <h3>Open questions</h3>
       <ul>
-        <li>Does a body <b>move</b> persist as a feature (so it can be re-edited), or is it a one-shot transform like the sketch move/copy? This study leans toward a persistent operation, matching M6.0.</li>
         <li>Should move/copy be draggable in the viewport (Fusion's free move), or is the exact numeric box enough for v1?</li>
         <li>Align needs a reference: a body, a face, or a datum plane? This study only uses a body's bounds.</li>
         <li>How does align pick the moving body when several are selected?</li>

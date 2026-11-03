@@ -196,8 +196,11 @@ The mockup's numbers, for translation into app tokens — not law:
   `join` with nothing to join, a reference that lost its body — say so. Do not
   quietly change the operation or retarget the reference. There may be rare
   exceptions, but none have been found; assume "surface it" until one is.
-- **A join that cannot join** therefore does **not** fall back to `new body`. The
-  step reports it and the user decides.
+- **A join that cannot join does not silently change the operation.** When a join
+  is impossible (nothing to join, or a disjoint result) the operation control
+  selects `new body` and the draft/preview says so — Fusion does the same. Because
+  the draft states the operation explicitly, this is not a hidden fallback. An
+  applied feature still reports a *lost reference* rather than retargeting.
 - **Lost-body recovery offers follow-the-merge.** When a merge steals a downstream
   step's body, `reselect` alone is a dead end — the body it wanted is gone. Offer
   to retarget the reference to the surviving body, with `reselect` as the escape
@@ -231,6 +234,21 @@ The mockup's numbers, for translation into app tokens — not law:
 - **Divider vs `+` inset is settled by the current design.** The divider is a
   permanent full-height line; the `+` is a separate mark inset 6px top and bottom
   so it never collides with the active marker. Nothing to change.
+- **Pattern / mirror / offset are sketch objects, not steps.** They are owned by
+  the sketch step and listed in its detail, the way a constraint persists. A
+  body-level pattern / mirror / offset would be a history step — a separate, later
+  thing. See [`index.html`](index.html) and [`README.md`](README.md).
+- **A body move / copy is a re-editable feature**, like every other step. (Sketch
+  move / copy stays a sketch object.) See [`transform.html`](transform.html).
+- **Body identity across a split or combine** follows the backlog decision: a
+  split mints **new body ids** carrying a role + geometry `TopoRef`, so downstream
+  references can recover. See [`BACKLOG.md`](BACKLOG.md).
+- **Only the body-creating step owns appearance.** It lives in that chip's
+  popover; a later join or cut does not edit it.
+- **A lost splitting plane or face follows the face-support precedent** —
+  surfaced with reselect / revert, never a silent fallback.
+- **A stale reference in a sketch object is surfaced**, not silently re-run.
+  Provisional; revisit with a real case.
 
 ## Still open
 

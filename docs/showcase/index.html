@@ -152,10 +152,13 @@
         <li>Is a persistent object obvious enough to re-find later — badge, selection line, and timeline list together?</li>
         <li>Is the popup next to the geometry better than a docked inspector?</li>
       </ul>
+      <h3>Decided</h3>
+      <ul>
+        <li><b>These are sketch objects, not history steps.</b> A pattern, mirror or offset is an object owned by the sketch step — the timeline lists it in that step's detail, the way a constraint persists. (A body-level pattern / mirror / offset would be its own history step; that is a separate, later thing.)</li>
+        <li><b>A stale reference is surfaced, not silently re-run.</b> <em>Provisional</em> — revisit once there is a real case to look at.</li>
+      </ul>
       <h3>Open questions</h3>
       <ul>
-        <li>Are these <b>sketch objects</b> (shown here) or <b>history steps</b>? The timeline currently lists them inside the sketch step rather than as steps of their own.</li>
-        <li>Should editing the source geometry re-run the object, and how is a stale reference surfaced?</li>
         <li>Is a circular pattern always about a sketch point, or also a projected edge or axis?</li>
         <li>How should an offset handle open chains and self-intersections?</li>
       </ul>
