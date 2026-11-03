@@ -530,6 +530,7 @@
     drag: null,
     insertMenu: false,
     insertStart: false,
+    hidden: {},
     custom: [],
     nextNum: 8
   };
@@ -770,32 +771,41 @@
     var at = bd.active == null ? bd.order.length : bdPos(bd.active);
     var html = "";
     if (at <= 1) {
-      html += profileQuad(iso, BD_R1, 0, "bo-profile");
-      if (!bd.connected) html += profileQuad(iso, BD_R2, 0, "bo-profile");
+      if (!bd.hidden["s1"]) {
+        html += profileQuad(iso, BD_R1, 0, "bo-profile");
+        if (!bd.connected) html += profileQuad(iso, BD_R2, 0, "bo-profile");
+      }
       layer.innerHTML = html;
       return;
     }
     var merged = bd.connected || at >= 8;
     var hasHole = at >= 7;
     var hole = { x: BD_HOLE.x, y: BD_HOLE.y, r: BD_HOLE.r };
-    var selBody = bd.selected && bd.selected.id === "body";
-    var selLid = bd.selected && bd.selected.id === "lid";
+    // hidden chips drop their geometry, so hiding is the one visibility control
+    var hideBody = !!bd.hidden["body"];
+    var hideLid = !!bd.hidden["lid"];
+    var selBody = bd.selected && bd.selected.id === "body" && !hideBody;
+    var selLid = bd.selected && bd.selected.id === "lid" && !hideLid;
 
     // 1. the bodies (the lid's top face is drawn with the hole cut out)
     if (merged) {
-      if (hasHole) {
-        html += boreWall(iso, hole.x, hole.y, hole.r, BD_RM.z1, BD_RM.z0);
-        html += drawBoxHole(iso, BD_RM, hole);
-      } else {
-        html += drawBox(iso, BD_RM, null, false);
+      if (!hideBody) {
+        if (hasHole) {
+          html += boreWall(iso, hole.x, hole.y, hole.r, BD_RM.z1, BD_RM.z0);
+          html += drawBoxHole(iso, BD_RM, hole);
+        } else {
+          html += drawBox(iso, BD_RM, null, false);
+        }
       }
     } else {
-      html += drawBox(iso, BD_R1, null, false);
-      if (hasHole) {
-        html += boreWall(iso, hole.x, hole.y, hole.r, BD_R2.z1, BD_R2.z0);
-        html += drawBoxHole(iso, BD_R2, hole);
-      } else {
-        html += drawBox(iso, BD_R2, null, false);
+      if (!hideBody) html += drawBox(iso, BD_R1, null, false);
+      if (!hideLid) {
+        if (hasHole) {
+          html += boreWall(iso, hole.x, hole.y, hole.r, BD_R2.z1, BD_R2.z0);
+          html += drawBoxHole(iso, BD_R2, hole);
+        } else {
+          html += drawBox(iso, BD_R2, null, false);
+        }
       }
     }
 
@@ -808,7 +818,7 @@
     }
 
     // 3. the boss, on top
-    if (at >= 5) {
+    if (at >= 5 && !hideBody) {
       html += cylinderSolid(
         iso, BD_BOSS.x, BD_BOSS.y, BD_BOSS.r, BD_BOSS.z0, BD_BOSS.z1,
         "bo-face-x", "bo-face-top"
@@ -850,11 +860,20 @@
         '<span class="body-name">' + name + "</span></span>"
       );
     }
+    // a chip is a split button: the left part selects the thing, the right
+    // part hides or shows it. Works the same for a body, a sketch or a plane.
+    var hidden = !!bd.hidden[o.id];
+    if (hidden) cls += " is-hidden";
     return (
+      '<span class="body-chip-group">' +
       '<button class="' + cls + '" type="button" data-out="' + o.id +
       '" data-kind="' + o.kind + '">' +
       '<span class="body-op">' + o.op + "</span>" + dot +
-      '<span class="body-name">' + name + "</span></button>"
+      '<span class="body-name">' + name + "</span></button>" +
+      '<button class="body-chip-hide" type="button" data-hide="' + o.id +
+      '" aria-pressed="' + (hidden ? "true" : "false") +
+      '" title="' + (hidden ? "Show" : "Hide") + " " + o.kind + '">' +
+      (hidden ? "show" : "hide") + "</button></span>"
     );
   }
 
@@ -1088,7 +1107,13 @@
       bdRenderTimeline(stepsEl, detailEl);
       bdRenderMenu(menuEl, timelineEl, stepsEl);
       bdRenderPanel(panel);
-      var count = bd.connected || bd.active == null || bdPos(bd.active) >= 8 ? 1 : 2;
+      var mergedNow = bd.connected || bd.active == null || bdPos(bd.active) >= 8;
+      var total = mergedNow ? 1 : 2;
+      // when the bodies are merged, "lid" is consumed, so only "body" counts
+      var hiddenNow =
+        (bd.hidden["body"] ? 1 : 0) +
+        (mergedNow ? 0 : bd.hidden["lid"] ? 1 : 0);
+      var count = Math.max(0, total - hiddenNow);
       foot.innerHTML =
         "<b>" + count + (count === 1 ? " body" : " bodies") + "</b> \u00b7 " +
         (bd.active == null
@@ -1234,6 +1259,15 @@
         bd.groups = bd.groups.filter(function (x) {
           return x.id !== ungroup.getAttribute("data-ungroup");
         });
+        render();
+        return;
+      }
+      var hide = e.target.closest("[data-hide]");
+      if (hide) {
+        var hid = hide.getAttribute("data-hide");
+        if (bd.hidden[hid]) delete bd.hidden[hid];
+        else bd.hidden[hid] = true;
+        if (bd.selected && bd.selected.id === hid) bd.selected = null;
         render();
         return;
       }

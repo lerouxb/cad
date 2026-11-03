@@ -1033,6 +1033,43 @@
   opacity: 0.7;
 }
 
+/* a chip is a split button: the left part selects the thing, the right part
+   hides or shows it. The same split works for a body, a sketch or a plane, so
+   this is the one visibility control — there is no hide-the-step. */
+.body-chip-group {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.body-chip-hide {
+  margin: 0;
+  padding: 1px 5px;
+  border: 0;
+  border-left: 1px solid var(--rule);
+  appearance: none;
+  background: none;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+  cursor: pointer;
+}
+
+.body-chip-hide:hover {
+  color: var(--ink);
+  background: var(--marker-soft);
+}
+
+.body-chip.is-hidden {
+  opacity: 0.4;
+}
+
+.body-chip.is-hidden .body-name {
+  text-decoration: line-through;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
 /* centre the dot on the text's x-height. vertical-align: middle aligns the
    box midpoint to the baseline plus half the x-height, so this is correct for
    whatever monospace the viewer has — no tuned pixel offset */

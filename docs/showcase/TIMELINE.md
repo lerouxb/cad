@@ -206,14 +206,14 @@ The mockup's numbers, for translation into app tokens — not law:
   hatch.
 - **Insert at the very start** is supported (a gap before the first step).
 - **The empty ends clear the cursor** (see [Insert](#insert)).
+- **Visibility is a split button on the chip.** The left part of a chip selects
+  the thing; the right part is a `hide` / `show` toggle. It works for a body, a
+  sketch or a plane alike, and it is the **only** visibility control — there is no
+  hide-the-step. No hover (undiscoverable, no touch) and no popover (too many
+  clicks to hide several). See [`bodies.html`](bodies.html).
 
 ## Still open
 
-- **Body visibility, per body, without a second list.** Visibility is only
-  per-step today; it needs to be per *body*. But the single timeline stays — no
-  separate bodies panel. The current idea is to fold visibility into the output
-  **chip** (the thing you show/hide is the thing the step added), so the chip
-  carries visibility as well as identity. Needs a design pass.
 - **Selection filters and tool options.** The selection popover only exists once
   something is selected, so filters (edges / faces / bodies) and Select Other need
   a home *before* that. Designed as a **tool options row** under the tool line
