@@ -221,15 +221,18 @@ The mockup's numbers, for translation into app tokens — not law:
   **create variants share the row** (centre-point vs two-point circle, and so on),
   and the **select tools come to the model view too** with their own filters
   (`edges` / `faces` / `bodies`). The row follows the *tool*, not the mode. See
-  [`select.html`](select.html) — still a sketch-mode study; the model-mode variant
-  is not built yet.
+  [`select.html`](select.html) for the sketch row and
+  [`select-model.html`](select-model.html) for the model one.
+- **A collapsed group needs only mark + name + count.** No peek (a body count, a
+  mini stack). It is your own project, so the name is enough context.
+- **The active-step-inside-a-group double rule stays.** The bottom-line marker
+  under the step and the group bracket above it are two close horizontal rules,
+  and that is fine.
+- **Divider vs `+` inset is settled by the current design.** The divider is a
+  permanent full-height line; the `+` is a separate mark inset 6px top and bottom
+  so it never collides with the active marker. Nothing to change.
 
 ## Still open
 
-- **Collapsed group peek.** Is a mark + name + count enough, or does it need a
-  peek (a body count, a mini stack of the bodies it made)?
-- **Active step inside a group.** With a bottom-line active marker *and* a group
-  bracket above, the step shows two horizontal rules close together. Keep, or
-  lighten the bracket?
-- **Divider inset.** The divider is full height while the `+` is inset. If the `+`
-  were ever made full height, they would collide with the active marker.
+Nothing right now — every question raised by the bodies/timeline study is decided
+above. New ones go here.

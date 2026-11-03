@@ -1495,3 +1495,72 @@
   stroke-width: 1;
   stroke-dasharray: 3 3;
 }
+
+/* --------------------------------------------------------------------------
+   model-mode selection scene
+   -------------------------------------------------------------------------- */
+
+.ms-face {
+  fill: var(--model-face-1);
+  stroke: none;
+}
+
+.ms-shade-2 {
+  fill: var(--model-face-2);
+}
+
+.ms-shade-3 {
+  fill: var(--model-face-3);
+}
+
+/* the edge lines are decoration; the wide transparent stroke above each one is
+   the pick target, so an edge wins over the face behind it */
+.ms-edge {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 1.2;
+  pointer-events: none;
+}
+
+.ms-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 10;
+  pointer-events: stroke;
+}
+
+/* the filter decides what is pickable */
+.ms-svg[data-filter="faces"] .ms-edge-hit,
+.ms-svg[data-filter="bodies"] .ms-edge-hit {
+  pointer-events: none;
+}
+
+.ms-svg[data-filter="edges"] .ms-face {
+  pointer-events: none;
+}
+
+.ms-hover-edge {
+  fill: none;
+  stroke: var(--marker);
+  stroke-width: 5;
+  pointer-events: none;
+}
+
+.ms-hover-face {
+  fill: var(--marker-wash);
+  stroke: none;
+  pointer-events: none;
+}
+
+.ms-sel-edge {
+  fill: none;
+  stroke: var(--marker);
+  stroke-width: 6;
+  pointer-events: none;
+}
+
+.ms-sel-face {
+  fill: var(--marker-fill);
+  stroke: none;
+  pointer-events: none;
+}

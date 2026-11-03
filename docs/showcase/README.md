@@ -1,6 +1,6 @@
 # Tool showcase
 
-Interactive design targets for tools that do not exist yet, split into nine pages.
+Interactive design targets for tools that do not exist yet, split into ten pages.
 
 This folder and [`../mockups/`](../mockups/) are the two halves of one design
 system:
@@ -8,8 +8,8 @@ system:
 - the **[studies](../mockups/index.html)** fix the surfaces — timeline, sketch,
   model, support, export, errors, files, body;
 - the **showcase** (here) makes the interactions work — pattern, mirror, offset,
-  move/copy, combine, split, transforms, extrude, inspect, and the sketch
-  selection inputs.
+  move/copy, combine, split, transforms, extrude, inspect, and the selection
+  inputs (sketch and model).
 
 The [study index](../mockups/index.html) lists both, and the shared interaction
 rules are in [`INTERACTION.md`](INTERACTION.md). The timeline surface — steps,
@@ -22,6 +22,7 @@ bodies, groups and insertion — has its own contract in
 | **Sketch selection** | [`sketch-edit.html`](sketch-edit.html) | selection popover (constraints), inline dimension editor | app consistency (see INTERACTION.md) |
 | **Sketch create** | [`sketch-create.html`](sketch-create.html) | rectangle / circle / arc variants, polygon | M6.0-era sketch polish |
 | **Selection filters** | [`select.html`](select.html) | a contextual **tool options row**: selection filters, create variants, select other | M5 selection UX |
+| **Model selection** | [`select-model.html`](select-model.html) | the same row on the model: **edges** / **faces** / **bodies** filters, one at a time | M5 selection UX |
 | **Body ops** | [`body-ops.html`](body-ops.html) | **combine** (join/cut/intersect, keep tools), **split body** | M6 |
 | **Bodies** | [`bodies.html`](bodies.html) | several bodies in one timeline, inline with the step that made them | M3/M6 (document model) |
 | **Body transforms** | [`transform.html`](transform.html) | **move / copy**, **align** | M6 |
@@ -148,6 +149,7 @@ index.html           sketch layout: pattern / mirror / offset / move-copy
 sketch-edit.html     sketch selection: constraint popover + inline dimension editor
 sketch-create.html   sketch create variants: rectangle / circle / arc / polygon
 select.html          selection filters as a tool options row
+select-model.html    model selection: edge / face / body filters
 body-ops.html        combine + split body
 bodies.html          multiple bodies inline in one timeline
 transform.html       move / copy + align
@@ -159,6 +161,7 @@ showcase.js          sketch model, preview geometry and interaction
 showcase-create.js   the create-tool atlas
 showcase-edit.js     the selection popover + inline editor
 showcase-select.js   the tool options row (filters, create variants, select other)
+showcase-select-model.js  the model-mode selection scene
 showcase-3d.js       isometric helpers + body ops + transforms + extrude + section
 INTERACTION.md       the interaction contract (popover, actions, foot)
 TIMELINE.md          the timeline contract (steps, bodies, groups, insert)
