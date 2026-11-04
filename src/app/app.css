@@ -2560,7 +2560,7 @@ body {
   gap: 5px 15px;
   padding: 8px 22px 6px;
   border-bottom: 0;
-  overflow-x: auto;
+  user-select: none;
 }
 
 .tool-button {
@@ -2621,6 +2621,7 @@ body {
   padding: 0;
   border: 0;
   overflow: visible;
+  user-select: none;
 }
 
 .sketch-stage > .tool-options {
