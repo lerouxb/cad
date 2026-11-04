@@ -156,9 +156,11 @@ reference implementation (`docs/mockups/02-sketch.html`, and the shared builder
   the kind when the dimension is placed, so it never changes meaning.
 - **The value is a field only while it is yours to set.** While **driving**, the
   value is an editable `<input>`. While **reference**, the value belongs to the
-  geometry: it becomes a readout — parentheses, dim italic ink, a `measured` tag,
-  no caret and no field. A dimmed input still says "you could edit this"; a
-  readout says "this is an observation". (See [`dimension.html`](dimension.html).)
+  geometry: it becomes a readout — parentheses, dim italic ink, no caret and no
+  field. It occupies the **same fixed footprint** as the field, so switching kinds
+  never moves or resizes the editor. A dimmed input still says "you could edit
+  this"; a readout says "this is an observation".
+  (See [`dimension.html`](dimension.html).)
 - **Commit:** `Enter`. **Cancel:** `Escape`, or a tap/click outside. There are
   **no `apply` / `cancel` buttons** — the value is already the thing you are
   looking at, and on touch the keyboard's return is the commit. Because the label

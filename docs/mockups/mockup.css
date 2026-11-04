@@ -2304,19 +2304,12 @@ body.is-embed .app {
 }
 
 .dim-editor .dim-readout {
-  min-width: 52px;
+  width: 52px;
   color: var(--ink-3);
   font-size: var(--type-prose);
   font-style: italic;
   text-align: right;
-}
-
-.dim-editor .dim-measured {
-  color: var(--ink-3);
-  font-family: var(--font-mono);
-  font-size: var(--type-micro);
-  letter-spacing: var(--tracking-control);
-  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .dim-editor input {

@@ -103,16 +103,13 @@
   }
 
   // The value control for one kind: an editable field while driving, a readout
-  // while reference. Exposed so a study can swap it without rebuilding the
-  // editor (which would steal focus mid-interaction).
+  // while reference. Both occupy the same fixed footprint, so switching kinds
+  // never moves or resizes the editor. Exposed so a study can swap it without
+  // rebuilding the editor (which would steal focus mid-interaction).
   function dimField(kind, value, unit) {
     var u = unit ? '<span class="dim-unit">' + unit + "</span>" : "";
     if (kind === "reference") {
-      return (
-        '<span class="dim-readout">(' + value + ")</span>" +
-        u +
-        '<span class="dim-measured">measured</span>'
-      );
+      return '<span class="dim-readout">(' + value + ")</span>" + u;
     }
     return '<input type="text" value="' + value + '" aria-label="Dimension value">' + u;
   }

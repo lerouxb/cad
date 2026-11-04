@@ -144,8 +144,8 @@
     var mid = px([(d.a[0] + d.b[0]) / 2, d.y]);
     var q = viewToCss(mid[0], mid[1]);
     editorEl.hidden = false;
-    editorEl.style.width = "224px";
-    editorEl.style.left = q[0] - 112 + "px";
+    editorEl.style.left = q[0] + "px";
+    editorEl.style.transform = "translateX(-50%)";
     editorEl.style.top = q[1] - 34 + "px";
     editorEl.innerHTML = ShowcaseUI.inlineEditor({
       value: state.editor.value,
