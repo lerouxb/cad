@@ -683,6 +683,11 @@ export class Viewport {
       (x / rect.width) * 2 - 1,
       -(y / rect.height) * 2 + 1,
     );
+    // The controls move the camera between render frames, so its world matrix
+    // can be stale here. Raycasting with a stale matrix makes the same screen
+    // point resolve to different edges (at a corner) depending on frame
+    // timing: hover and click disagree, and picking looks random.
+    this.camera.updateMatrixWorld();
     this.raycaster.setFromCamera(ndc, this.camera);
 
     const distance = this.camera.position.distanceTo(this.controls.target);
@@ -695,27 +700,50 @@ export class Viewport {
     this.raycaster.params.Line.threshold = threshold;
 
     const faceHit = this.raycaster.intersectObject(this.solid, false)[0] ?? null;
-    const edgeHit = this.raycaster.intersectObject(this.edges, false)[0] ?? null;
     const datumHit =
       this.raycaster.intersectObjects(this.datums.children, false)[0] ?? null;
+    // Several edges can be inside the ray's line threshold at a corner. Pick
+    // the one visually nearest the cursor, with the stable ref key as the
+    // tie-break, so the same pixel always resolves to the same edge instead of
+    // depending on ray-distance ordering (hover and click must agree).
+    const edgeHits = this.raycaster
+      .intersectObject(this.edges, false)
+      .filter((hit) => !faceHit || hit.distance <= faceHit.distance + threshold)
+      .map((hit) => {
+        const group = edgeGroupForVertex(
+          this.mesh!,
+          hit.index ?? 0,
+          this.edgeUnit,
+        );
+        if (!group) return null;
+        const pick = edgePick(group);
+        return {
+          pick,
+          screen: this.screenDistanceTo(hit.point, x, y, rect),
+          key: pick.edgeRef ? edgeRefKey(pick.edgeRef) : pick.id,
+        };
+      })
+      .filter(
+        (
+          candidate,
+        ): candidate is {
+          pick: BodyPick;
+          screen: number;
+          key: string;
+        } => candidate !== null,
+      )
+      .sort((a, b) =>
+        Math.abs(a.screen - b.screen) < 0.5
+          ? a.key.localeCompare(b.key)
+          : a.screen - b.screen,
+      );
+    const edgePickValue = edgeHits[0]?.pick ?? null;
 
     const facePickValue =
       faceHit && typeof faceHit.faceIndex === "number"
         ? (() => {
             const group = faceGroupForTriangle(this.mesh!, faceHit.faceIndex);
             return group ? facePick(group) : null;
-          })()
-        : null;
-    const edgePickValue =
-      edgeHit &&
-      (!faceHit || edgeHit.distance <= faceHit.distance + threshold)
-        ? (() => {
-            const group = edgeGroupForVertex(
-              this.mesh!,
-              edgeHit.index ?? 0,
-              this.edgeUnit,
-            );
-            return group ? edgePick(group) : null;
           })()
         : null;
     const datumPickValue =
@@ -739,8 +767,24 @@ export class Viewport {
     const candidates = hits.filter(
       (pick, index) => hits.findIndex((other) => other.id === pick.id) === index,
     );
-    const blocked = candidates.length === 0 && Boolean(faceHit || edgeHit || datumHit);
+    const blocked =
+      candidates.length === 0 &&
+      Boolean(faceHit || edgeHits.length > 0 || datumHit);
     return { candidates, x, y, blocked };
+  }
+
+  /** Cursor distance in CSS pixels from a world point on the canvas. */
+  private screenDistanceTo(
+    point: THREE.Vector3,
+    x: number,
+    y: number,
+    rect: DOMRect,
+  ): number {
+    const projected = point.clone().project(this.camera);
+    return Math.hypot(
+      (projected.x * 0.5 + 0.5) * rect.width - x,
+      (-projected.y * 0.5 + 0.5) * rect.height - y,
+    );
   }
 
   private setHover(pick: BodyPick | null): void {
@@ -753,6 +797,10 @@ export class Viewport {
     this.canvas.dataset.hoverEdgeLength =
       pick?.kind === "edge" && pick.edgeRef?.hint.length !== undefined
         ? String(pick.edgeRef.hint.length)
+        : "";
+    this.canvas.dataset.hoverEdgeRef =
+      pick?.kind === "edge" && pick.edgeRef
+        ? JSON.stringify(pick.edgeRef)
         : "";
     this.dirty = true;
   }
@@ -1177,6 +1225,7 @@ export class Viewport {
     this.canvas.dataset.hoverKind = "";
     this.canvas.dataset.hoverId = "";
     this.canvas.dataset.hoverEdgeLength = "";
+    this.canvas.dataset.hoverEdgeRef = "";
     this.clearGroup(this.hoverGroup);
     this.clearGroup(this.selectionGroup);
     this.clearGroup(this.edgeSelectionGroup);

@@ -1279,9 +1279,21 @@ export function App() {
         cancelBlendEditor();
         return;
       }
+      // A Shift-click on empty space is additive too: it must not throw away
+      // the edges collected so far (the blend form would lose its inputs).
+      if (additive && edgeSelection.length > 0) return;
       setBodyPick(null);
       setEdgeSelection([]);
       viewportRef.current?.setEdgeSelection([]);
+      return;
+    }
+    // Mixed selections are not a thing yet. An additive face/datum hit keeps
+    // the edge set instead of silently replacing it with a single pick.
+    if (
+      additive &&
+      edgeSelection.length > 0 &&
+      !(pick.kind === "edge" && pick.edgeRef)
+    ) {
       return;
     }
     if (pick.kind === "edge" && pick.edgeRef) {
@@ -3101,6 +3113,10 @@ export function App() {
     setTool("select");
     setZoomPreset("fit");
     setFitToken((token) => token + 1);
+    setBodyPick(null);
+    setEdgeSelection([]);
+    setSelectOther(null);
+    viewportRef.current?.clearPick();
   };
 
   const openDocument = (next: Doc): void => {

@@ -32,6 +32,8 @@ interface StagePopoverProps {
   destructive?: PopoverAction;
   className?: string;
   dataCount?: number;
+  /** Extra data attributes for tests that read authoritative UI state. */
+  dataAttributes?: Record<string, string | number>;
 }
 
 /**
@@ -54,6 +56,7 @@ export function StagePopover({
   destructive,
   className,
   dataCount,
+  dataAttributes,
 }: StagePopoverProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number } | null>(null);
@@ -100,6 +103,7 @@ export function StagePopover({
       aria-label={`${title} · ${kicker}`}
       data-testid={testId}
       data-count={dataCount}
+      {...dataAttributes}
     >
       <div
         className="stage-popover-head"

@@ -38,6 +38,9 @@ export function BodySelectionPopover({
       title={`${count} edge${count === 1 ? "" : "s"}`}
       testId="body-selection-popover"
       dataCount={count}
+      // The selected refs are the authoritative multi-edge state; tests read
+      // this instead of inferring selection from hover or pick badges.
+      dataAttributes={{ "data-edge-refs": JSON.stringify(edges) }}
       position={position}
       onMove={onMove}
       hint="Shift adds or removes an edge"
