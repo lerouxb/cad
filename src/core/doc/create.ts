@@ -7,6 +7,7 @@ import {
   type DatumPlaneDefinition,
   type DatumPlaneFeature,
   type Doc,
+  type ChamferFeature,
   type ExtrudeFeature,
   type FaceProjection,
   type FilletFeature,
@@ -88,6 +89,20 @@ export function createFilletFeature(
     name: options.name ?? "Fillet 1",
     edges: [...edges],
     radius,
+  };
+}
+
+export function createChamferFeature(
+  edges: readonly EdgeRef[],
+  distance: number,
+  options: { name?: string; id?: string } = {},
+): ChamferFeature {
+  return {
+    id: options.id ?? newId("feat"),
+    type: "chamfer",
+    name: options.name ?? "Chamfer 1",
+    edges: [...edges],
+    distance,
   };
 }
 

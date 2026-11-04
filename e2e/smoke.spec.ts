@@ -1638,6 +1638,74 @@ test("the example's suppressed fillet resolves on the plate", async ({
   expect(errors).toEqual([]);
 });
 
+test("the example's suppressed chamfer resolves on the plate", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  const step = page
+    .locator('[data-feature-type="chamfer"]')
+    .filter({ hasText: "Beveled plate" });
+  await expect(step).toHaveCount(1);
+  await step.click();
+  await expect(step).toHaveAttribute("data-status", "skipped");
+  await page.getByTestId("feature-suppress").click();
+  await expect(step).toHaveAttribute("data-status", "ok");
+  await expect(step.locator(".tree-meta")).toContainText("4 mm · 4 edges");
+
+  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const removed = 4 * ((4 * 4) / 2) * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(plate - removed, -1);
+  await expect(page.getByTestId("mesh-stats")).toHaveAttribute("data-faces", "11");
+  expect(errors).toEqual([]);
+});
+
+test("creates a chamfer from selected edges with a live preview", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await page.getByRole("button", { name: "Fit view" }).click();
+  await page.waitForTimeout(250);
+
+  // The plate's 60 mm top/bottom edges are the long ones; the scan adds the
+  // visible ones and leaves the 40 mm and 12 mm edges alone.
+  const selected = new Set<string>();
+  await addVisibleEdgesByLength(page, 60, selected);
+  expect(selected.size).toBeGreaterThan(0);
+  await expect(page.getByTestId("body-selection-popover")).toHaveAttribute(
+    "data-count",
+    String(selected.size),
+  );
+
+  await page.getByTestId("start-chamfer").click();
+  await expect(page.getByTestId("chamfer-feature-popover")).toBeVisible();
+  await expect(page.getByTestId("chamfer-feature-edges")).toContainText(
+    `${selected.size} edge`,
+  );
+
+  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const removedAt = (distance: number): number =>
+    selected.size * ((distance * distance) / 2) * 60;
+  await page.getByTestId("chamfer-feature-distance").fill("2");
+  await expect.poll(() => volume(page)).toBeCloseTo(plate - removedAt(2), -1);
+  await page.getByTestId("chamfer-feature-distance").fill("3");
+  await expect.poll(() => volume(page)).toBeCloseTo(plate - removedAt(3), -1);
+  await page.getByTestId("chamfer-feature-apply").click();
+
+  const step = page
+    .locator('[data-feature-type="chamfer"]')
+    .filter({ hasNotText: "Beveled plate" });
+  await expect(step).toHaveCount(1);
+  await expect(step).toHaveAttribute("data-status", "ok");
+  await expect(step.locator(".tree-meta")).toContainText(
+    `3 mm · ${selected.size} edge`,
+  );
+  await expect(page.getByTestId("mesh-stats")).toHaveAttribute(
+    "data-faces",
+    String(7 + selected.size),
+  );
+  expect(errors).toEqual([]);
+});
+
 test("picks faces and edges in the model view", async ({ app: page }) => {
   const canvas = page.locator("canvas.viewport-canvas");
   await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
@@ -1779,7 +1847,7 @@ test("selects a hole as its own extrusion profile", async ({ app: page }) => {
   await page.getByTestId("extrude-apply").click();
   // Join fills the existing Ø16 hole, so the plate becomes solid.
   await expect.poll(() => volume(page)).toBeCloseTo(60 * 40 * 12, -1);
-  await expect(page.locator("[data-feature-id]")).toHaveCount(8);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(9);
   await expect(
     page.locator('[data-feature-type="extrude"]').last(),
   ).toContainText("Extrude 4");
@@ -1837,7 +1905,7 @@ test("a polygon crossing the example keeps every profile selectable", async ({
   await expect
     .poll(() => volume(page))
     .toBeCloseTo(before + Math.PI * 8 * 8 * 12, -1);
-  await expect(page.locator("[data-feature-id]")).toHaveCount(8);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(9);
   await expect(
     page.locator('[data-feature-type="extrude"]').last(),
   ).toContainText("Extrude 4");
@@ -1943,7 +2011,7 @@ test("the global clear resets the whole file to an empty document", async ({
   app: page,
 }) => {
   const errors = collectErrors(page);
-  await expect(page.locator("[data-feature-id]")).toHaveCount(7);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(8);
 
   await page.getByTestId("clear-document").click();
   await expect(page.locator("[data-feature-id]")).toHaveCount(0);
@@ -3254,7 +3322,7 @@ test("autosaves the document and reopens it", async ({ app: page }) => {
     const raw = localStorage.getItem("cad.doc");
     return raw ? JSON.parse(raw) : null;
   });
-  expect(stored?.schemaVersion).toBe(9);
+  expect(stored?.schemaVersion).toBe(10);
 
   // A new document in the same context reads the saved part, migrates it, and
   // rebuilds the same solid.
@@ -3327,7 +3395,7 @@ test("creates a new sketch and a joining extrude", async ({ app: page }) => {
   await expect.poll(() => volume(page)).toBeCloseTo(40 * 20 * 12, -1);
 
   await createSketch(page);
-  await expect(page.locator("[data-feature-id]")).toHaveCount(8);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(9);
   await expect(
     page
       .locator('[data-feature-type="sketch"]')
@@ -3346,7 +3414,7 @@ test("creates a new sketch and a joining extrude", async ({ app: page }) => {
   await clickSketch(page, 60, 10);
   await expect(page.getByTestId("extrude-apply")).toBeEnabled();
   await page.getByTestId("extrude-apply").click();
-  await expect(page.locator("[data-feature-id]")).toHaveCount(9);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(10);
   await expect(
     page.locator('[data-feature-type="extrude"]').last(),
   ).toContainText("Extrude 4");
@@ -3438,7 +3506,7 @@ test("edits, suppresses and deletes an extrude", async ({ app: page }) => {
     "skipped",
   );
   await page.getByTestId("undo").click();
-  await expect(page.locator("[data-feature-id]")).toHaveCount(7);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(8);
   await expect.poll(() => volume(page)).toBeCloseTo(plate30, -1);
 });
 
@@ -3474,10 +3542,10 @@ test("cancel restores the previous extrude and discards a draft", async ({
   await page.getByTestId("timeline-sketch").click();
   await page.getByTestId("new-extrude").click();
   await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
-  await expect(page.locator("[data-feature-id]")).toHaveCount(7);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(8);
   await page.getByTestId("extrude-cancel").click();
   await expect(page.getByTestId("extrude-draft-popover")).toHaveCount(0);
-  await expect(page.locator("[data-feature-id]")).toHaveCount(7);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(8);
   await expect(page.getByTestId("tool-select")).toBeVisible();
   await page.getByTestId("timeline-extrude").click();
   await expect.poll(() => volume(page)).toBeCloseTo(plate12, -1);

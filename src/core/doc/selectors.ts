@@ -3,19 +3,24 @@ import type { EdgeRef } from "../kernel/protocol";
 import { emptySketch } from "../sketch/create";
 import type { Sketch } from "../sketch/types";
 import {
+  createChamferFeature,
   createDatumPlaneFeature,
   createExtrudeFeature,
   createFilletFeature,
   createSketchFeature,
 } from "./create";
 import {
+  isChamferFeature,
   isDatumPlaneFeature,
+  isEdgeBlendFeature,
   isExtrudeFeature,
   isFilletFeature,
   isSketchFeature,
+  type ChamferFeature,
   type DatumPlaneDefinition,
   type DatumPlaneFeature,
   type Doc,
+  type EdgeBlendFeature,
   type ExtrudeFeature,
   type ExtrudeOperation,
   type FaceProjection,
@@ -43,6 +48,14 @@ export function datumPlaneFeatures(doc: Doc): DatumPlaneFeature[] {
 
 export function filletFeatures(doc: Doc): FilletFeature[] {
   return doc.features.filter(isFilletFeature);
+}
+
+export function chamferFeatures(doc: Doc): ChamferFeature[] {
+  return doc.features.filter(isChamferFeature);
+}
+
+export function edgeBlendFeatures(doc: Doc): EdgeBlendFeature[] {
+  return doc.features.filter(isEdgeBlendFeature);
 }
 
 export function primarySketchFeature(doc: Doc): SketchFeature | null {
@@ -138,6 +151,27 @@ export function updateFilletFeature(
   );
 }
 
+export function updateChamferFeature(
+  doc: Doc,
+  featureId: string,
+  update: (feature: ChamferFeature) => ChamferFeature,
+): Doc {
+  return updateFeature(doc, featureId, (feature) =>
+    isChamferFeature(feature) ? update(feature) : feature,
+  );
+}
+
+/** Update either edge blend, preserving its concrete type. */
+export function updateEdgeBlendFeature(
+  doc: Doc,
+  featureId: string,
+  update: (feature: EdgeBlendFeature) => EdgeBlendFeature,
+): Doc {
+  return updateFeature(doc, featureId, (feature) =>
+    isEdgeBlendFeature(feature) ? update(feature) : feature,
+  );
+}
+
 export function updatePrimarySketch(doc: Doc, sketch: Sketch): Doc {
   const id = primarySketchFeature(doc)?.id;
   if (!id) {
@@ -181,7 +215,9 @@ export function nextFeatureName(doc: Doc, type: Feature["type"]): string {
         ? "Plane"
         : type === "fillet"
           ? "Fillet"
-          : "Extrude";
+          : type === "chamfer"
+            ? "Chamfer"
+            : "Extrude";
   const count = doc.features.filter((feature) => feature.type === type).length;
   return `${prefix} ${count + 1}`;
 }
@@ -358,6 +394,34 @@ export function addFilletFeature(
   };
 }
 
+/** Insert a constant-distance chamfer after the selected step. */
+export function addChamferFeature(
+  doc: Doc,
+  edges: readonly EdgeRef[],
+  distance: number,
+  options: {
+    name?: string;
+    id?: string;
+    afterFeatureId?: string | null;
+    atStart?: boolean;
+  } = {},
+): { doc: Doc; feature: ChamferFeature } {
+  const feature = createChamferFeature(edges, distance, {
+    name: options.name ?? nextFeatureName(doc, "chamfer"),
+    ...(options.id ? { id: options.id } : {}),
+  });
+  return {
+    doc: insertFeature(
+      doc,
+      feature,
+      options.afterFeatureId,
+      edgeSourceIds(edges),
+      options.atStart,
+    ),
+    feature,
+  };
+}
+
 /** Suppress or unsuppress a feature; downstream dependants will skip visibly. */
 export function setDatumPlaneHidden(
   doc: Doc,
@@ -437,7 +501,7 @@ export function deleteFeature(
           removed.has(feature.support.featureId)) ||
         (isDatumPlaneFeature(feature) &&
           datumBaseFeatureIds(feature.definition).some((id) => removed.has(id))) ||
-        (isFilletFeature(feature) &&
+        (isEdgeBlendFeature(feature) &&
           feature.edges.some((edge) =>
             edge.faces.some((face) => removed.has(face.source)),
           ));
@@ -489,7 +553,7 @@ function hasValidOrder(features: readonly Feature[]): boolean {
     if (isSketchFeature(feature) && feature.support.kind === "datum") {
       return before(feature.support.featureId, feature.id);
     }
-    if (isFilletFeature(feature)) {
+    if (isEdgeBlendFeature(feature)) {
       return feature.edges.every((edge) =>
         edge.faces.every(
           (face) => !index.has(face.source) || before(face.source, feature.id),

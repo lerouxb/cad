@@ -3,6 +3,7 @@ import { addCircle, emptySketch } from "../sketch/create";
 import { createExampleModel } from "../sketch/demo";
 import { regionsFromSketch } from "../sketch/loops";
 import {
+  createChamferFeature,
   createDatumPlaneFeature,
   createDocument,
   createExtrudeFeature,
@@ -25,8 +26,9 @@ export const EXAMPLE_DOC_ID = "doc-example";
  * Using Sketch 1 twice is deliberate: it exercises independent region
  * selections on a shared sketch. The mounting sketch lives on the top face and
  * its cut is suppressed so the base plate, picking coordinates and volume
- * goldens stay stable; unsuppress "Mounting holes cut" to drill it. The pin and
- * the four-edge "Rounded plate" fillet are suppressed for the same reason.
+ * goldens stay stable; unsuppress "Mounting holes cut" to drill it. The pin, the
+ * four-edge "Rounded plate" fillet and the alternative "Beveled plate" chamfer
+ * are suppressed for the same reason.
  */
 export function createExampleDocument(): Doc {
   const model = createExampleModel();
@@ -156,17 +158,18 @@ export function createExampleDocument(): Doc {
     faces: [a, b],
     hint: { entityType: "edge", length: 12, midpoint: [x, y, 6] },
   });
+  const plateEdges = [
+    verticalEdge(left, front, 0, 0),
+    verticalEdge(right, front, 60, 0),
+    verticalEdge(right, back, 60, 40),
+    verticalEdge(left, back, 0, 40),
+  ];
   const roundedPlate = {
-    ...createFilletFeature(
-      [
-        verticalEdge(left, front, 0, 0),
-        verticalEdge(right, front, 60, 0),
-        verticalEdge(right, back, 60, 40),
-        verticalEdge(left, back, 0, 40),
-      ],
-      4,
-      { name: "Rounded plate" },
-    ),
+    ...createFilletFeature(plateEdges, 4, { name: "Rounded plate" }),
+    suppressed: true,
+  };
+  const beveledPlate = {
+    ...createChamferFeature(plateEdges, 4, { name: "Beveled plate" }),
     suppressed: true,
   };
 
@@ -180,6 +183,7 @@ export function createExampleDocument(): Doc {
       holesSketch,
       holesCut,
       roundedPlate,
+      beveledPlate,
     ],
   };
 }

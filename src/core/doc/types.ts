@@ -3,7 +3,7 @@ import type { PlaneFrame, Vec2 } from "../types";
 import type { EdgeRef, TopoRef } from "../kernel/protocol";
 
 /** The document schema version. Bump this on every shape change. */
-export const CURRENT_SCHEMA_VERSION = 9;
+export const CURRENT_SCHEMA_VERSION = 10;
 
 export type WorldPlane = "XY" | "XZ" | "YZ";
 
@@ -96,11 +96,22 @@ export interface FilletFeature {
   suppressed?: boolean;
 }
 
+/** A constant-distance chamfer on edges of the current body. */
+export interface ChamferFeature {
+  id: string;
+  type: "chamfer";
+  name: string;
+  edges: EdgeRef[];
+  distance: number;
+  suppressed?: boolean;
+}
+
 export type Feature =
   | SketchFeature
   | ExtrudeFeature
   | DatumPlaneFeature
-  | FilletFeature;
+  | FilletFeature
+  | ChamferFeature;
 
 /**
  * The whole persisted part. Plain JSON only: no kernel handles, no solver
@@ -129,4 +140,17 @@ export function isDatumPlaneFeature(
 
 export function isFilletFeature(feature: Feature): feature is FilletFeature {
   return feature.type === "fillet";
+}
+
+export function isChamferFeature(feature: Feature): feature is ChamferFeature {
+  return feature.type === "chamfer";
+}
+
+/** A fillet or chamfer: both consume the current body along selected edges. */
+export type EdgeBlendFeature = FilletFeature | ChamferFeature;
+
+export function isEdgeBlendFeature(
+  feature: Feature,
+): feature is EdgeBlendFeature {
+  return feature.type === "fillet" || feature.type === "chamfer";
 }

@@ -138,7 +138,21 @@ export interface KernelFilletFeature extends KernelFeatureBase {
   radius: number;
 }
 
-export type KernelFeature = KernelExtrudeFeature | KernelFilletFeature;
+/** A constant-distance chamfer on selected edges of the current body. */
+export interface KernelChamferFeature extends KernelFeatureBase {
+  kind: "chamfer";
+  edges: EdgeRef[];
+  distance: number;
+}
+
+export type KernelEdgeBlendFeature =
+  | KernelFilletFeature
+  | KernelChamferFeature;
+
+export type KernelFeature =
+  | KernelExtrudeFeature
+  | KernelFilletFeature
+  | KernelChamferFeature;
 
 export interface FeatureBuildStatus {
   featureId: string;

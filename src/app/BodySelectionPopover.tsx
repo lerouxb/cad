@@ -4,6 +4,7 @@ import { StagePopover, type PopoverPosition } from "./StagePopover";
 interface BodySelectionPopoverProps {
   edges: readonly EdgeRef[];
   onFillet: () => void;
+  onChamfer: () => void;
   onClear: () => void;
   position: PopoverPosition;
   onMove: (position: PopoverPosition) => void;
@@ -25,6 +26,7 @@ function edgeDetail(edge: EdgeRef): string {
 export function BodySelectionPopover({
   edges,
   onFillet,
+  onChamfer,
   onClear,
   position,
   onMove,
@@ -41,6 +43,11 @@ export function BodySelectionPopover({
       hint="Shift adds or removes an edge"
       summary={`${count} edge${count === 1 ? "" : "s"}`}
       cancel={{ label: "clear", onClick: onClear, testId: "clear-body-selection" }}
+      secondary={{
+        label: "chamfer",
+        onClick: onChamfer,
+        testId: "start-chamfer",
+      }}
       primary={{ label: "fillet", onClick: onFillet, testId: "start-fillet" }}
     >
       <div className="selection-list">

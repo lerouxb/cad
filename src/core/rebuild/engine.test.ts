@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createDocument } from "../doc/create";
 import {
+  addChamferFeature,
   addDatumPlaneFeature,
   addFilletFeature,
   addSketchFeature,
@@ -527,6 +528,32 @@ describe("ordered rebuild", () => {
     expect(suppressedResult.features[2]?.diagnostics[0]?.code).toBe(
       "nothing-to-fillet",
     );
+  });
+
+  it("evaluates and extracts a chamfer in order", () => {
+    const doc = exampleDoc();
+    const added = addChamferFeature(doc, [edgeRef("extrude")], 1.5);
+    const result = rebuildDocument(added.doc, {}, countingDeps().deps);
+
+    expect(result.status).toBe("ok");
+    expect(result.features.map((feature) => feature.type)).toEqual([
+      "sketch",
+      "extrude",
+      "chamfer",
+    ]);
+    expect(result.features[2]?.output?.kind).toBe("chamfer");
+    const kernel = extractKernelFeatures(result);
+    expect(kernel.map((feature) => feature.kind)).toEqual(["extrude", "chamfer"]);
+    expect(
+      kernel[1]?.kind === "chamfer" ? kernel[1].distance : null,
+    ).toBe(1.5);
+
+    const bad = rebuildDocument(
+      addChamferFeature(doc, [edgeRef("extrude")], 0).doc,
+      {},
+      countingDeps().deps,
+    );
+    expect(bad.features[2]?.diagnostics[0]?.code).toBe("invalid-distance");
   });
 });
 

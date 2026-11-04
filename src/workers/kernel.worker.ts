@@ -5,6 +5,7 @@ import {
   assignRoles,
   applyMatrix,
   captureHint,
+  chamferWithEvolution,
   circle,
   classifyPointOnFace,
   clearMeshCache,
@@ -60,8 +61,8 @@ import type {
   EdgeRef,
   ExtrudeParams,
   FeatureBuildStatus,
+  KernelEdgeBlendFeature,
   KernelFeature,
-  KernelFilletFeature,
   KernelRequest,
   ProfileRegion,
   KernelResponse,
@@ -191,19 +192,19 @@ function buildFeatures(features: KernelFeature[]): {
       continue;
     }
 
-    if (feature.kind === "fillet") {
+    if (feature.kind === "fillet" || feature.kind === "chamfer") {
       if (!base) {
         cacheInvalid = true;
         statuses.push({
           featureId: feature.featureId,
           status: "error",
           cached: false,
-          message: "Nothing exists to fillet.",
+          message: `Nothing exists to ${feature.kind}.`,
         });
         continue;
       }
       try {
-        const result = buildFilletFeature(feature, base, baseRoles);
+        const result = buildEdgeBlendFeature(feature, base, baseRoles);
         base = result.solid;
         baseRoles = result.roles;
         baseKey = feature.cacheKey;
@@ -729,16 +730,19 @@ function faceBoundary(
   }
 }
 
-function buildFilletFeature(
-  feature: KernelFilletFeature,
+function buildEdgeBlendFeature(
+  feature: KernelEdgeBlendFeature,
   base: Solid,
   baseRoles: RoleTable,
 ): { solid: Solid; roles: RoleTable } {
-  if (!Number.isFinite(feature.radius) || feature.radius <= 0) {
-    throw new Error("Fillet radius must be greater than zero.");
+  const size = feature.kind === "fillet" ? feature.radius : feature.distance;
+  if (!Number.isFinite(size) || size <= 0) {
+    throw new Error(
+      `${feature.kind === "fillet" ? "Fillet radius" : "Chamfer distance"} must be greater than zero.`,
+    );
   }
   if (feature.edges.length === 0) {
-    throw new Error("Select at least one edge to fillet.");
+    throw new Error(`Select at least one edge to ${feature.kind}.`);
   }
 
   const resolved: ResolvedEdge[] = [];
@@ -750,24 +754,31 @@ function buildFilletFeature(
     }
 
     const result: EvolutionResult<ValidSolid> = unwrap(
-      filletWithEvolution(
-        // `Solid` is the runtime-valid result of the worker's own builders; the
-        // ValidSolid brand is compile-time only.
-        base as ValidSolid,
-        resolved.map((entry) => entry.edge),
-        feature.radius,
-      ),
+      feature.kind === "fillet"
+        ? filletWithEvolution(
+            // `Solid` is the runtime-valid result of the worker's own
+            // builders; the ValidSolid brand is compile-time only.
+            base as ValidSolid,
+            resolved.map((entry) => entry.edge),
+            size,
+          )
+        : chamferWithEvolution(
+            base as ValidSolid,
+            resolved.map((entry) => entry.edge),
+            size,
+          ),
     );
-    // OCCT reports an empty evolution for fillets, so `updateRoles` cannot
-    // carry the face roles across. Re-derive them from geometry: the adjacent
-    // faces are trimmed but keep their surface and position, and the generated
-    // rounds are the new faces between each filleted pair.
+    // OCCT reports an empty evolution for both fillets and chamfers, so
+    // `updateRoles` cannot carry the face roles across. Re-derive them from
+    // geometry: the adjacent faces are trimmed but keep their surface and
+    // position, and the generated faces are the new ones between each pair.
     const remap = remapRolesByGeometry(base, result.shape as Solid, baseRoles);
-    const roles = adoptFilletFaces(
+    const roles = adoptBlendFaces(
       result.shape as Solid,
       remap,
       resolved,
       feature.featureId,
+      feature.kind,
     );
     return { solid: result.shape as Solid, roles };
   } finally {
@@ -1017,15 +1028,16 @@ function matchFaceGeometrically(
 }
 
 /**
- * Name the faces a fillet generated: the round between each filleted pair,
- * plus anything still anonymous. They belong to the fillet step, so selecting
- * it highlights the rounds and downstream edge refs can point at them.
+ * Name the faces an edge blend generated: the round/bevel between each
+ * processed pair, plus anything still anonymous. They belong to the feature
+ * step, so selecting it highlights them and downstream refs can point at them.
  */
-function adoptFilletFaces(
+function adoptBlendFaces(
   post: Solid,
   remap: RoleRemap,
   resolved: readonly ResolvedEdge[],
   featureId: string,
+  kind: "fillet" | "chamfer",
 ): RoleTable {
   type Face3D = Parameters<typeof captureHint>[0];
   const claimed = new Set(remap.claimed);
@@ -1042,7 +1054,7 @@ function adoptFilletFaces(
       .map((face) => getHashCode(face))
       .filter((hash) => adjacentToA.has(hash) && !claimed.has(hash));
     if (generate.length === 0) return;
-    featureRoles.set(`fillet:round_${index}`, generate);
+    featureRoles.set(`${kind}:round_${index}`, generate);
     for (const hash of generate) claimed.add(hash);
   });
 
@@ -1050,7 +1062,7 @@ function adoptFilletFaces(
   for (const face of getFaces(post) as Face3D[]) {
     const hash = getHashCode(face);
     if (claimed.has(hash)) continue;
-    featureRoles.set(`fillet:face_${anonymous++}`, [hash]);
+    featureRoles.set(`${kind}:face_${anonymous++}`, [hash]);
     claimed.add(hash);
   }
 

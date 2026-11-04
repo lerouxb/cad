@@ -44,6 +44,7 @@ import {
   type LocalFileEntry,
 } from "../core/doc/persistence";
 import {
+  addChamferFeature,
   addDatumPlaneFeature,
   addExtrudeFeature,
   addFilletFeature,
@@ -61,23 +62,27 @@ import {
   setDatumPlaneHidden,
   setFeatureSuppressed,
   sketchFeatureById,
+  updateChamferFeature,
   updateDatumPlaneFeature,
+  updateEdgeBlendFeature,
   updateExtrudeFeature,
   updateFeature,
   updateFilletFeature,
   updateSketchFeature,
 } from "../core/doc/selectors";
 import {
+  isChamferFeature,
   isDatumPlaneFeature,
+  isEdgeBlendFeature,
   isExtrudeFeature,
   isFilletFeature,
   isSketchFeature,
   type DatumPlaneDefinition,
   type DatumPlaneFeature,
   type Doc,
+  type EdgeBlendFeature,
   type ExtrudeFeature,
   type Feature,
-  type FilletFeature,
   type PlaneRef,
   type SketchFeature,
   type WorldPlane,
@@ -176,7 +181,7 @@ import {
 } from "./DatumPlanePopover";
 import { SelectionPopover } from "./SelectionPopover";
 import { BodySelectionPopover } from "./BodySelectionPopover";
-import { SolidFilletPopover } from "./SolidFilletPopover";
+import { SolidBlendPopover } from "./SolidBlendPopover";
 import { FilletPopover } from "./FilletPopover";
 import type { PopoverPosition } from "./StagePopover";
 
@@ -239,7 +244,7 @@ function featureTimelineOutput(feature: Feature): TimelineOutput {
   if (isDatumPlaneFeature(feature)) {
     return { op: "+", kind: "plane", name: feature.name };
   }
-  if (isFilletFeature(feature)) {
+  if (isEdgeBlendFeature(feature)) {
     return { op: "→", kind: "body", name: "body" };
   }
   return {
@@ -283,21 +288,23 @@ interface ExtrudeDraft {
 }
 
 /**
- * The 3D fillet form. A new fillet is a UI-only draft that previews through
- * the kernel; editing an existing one commits radius/edge changes live and
- * `cancel` restores its baseline.
+ * The 3D fillet/chamfer form. A new blend is a UI-only draft that previews
+ * through the kernel; editing an existing one commits value/edge changes live
+ * and `cancel` restores its baseline.
  */
-interface FilletDraft {
+interface BlendDraft {
+  kind: "fillet" | "chamfer";
   mode: "new" | "edit";
   featureId: string | null;
   edges: EdgeRef[];
-  radius: number;
+  /** Fillet radius or chamfer distance, in millimetres. */
+  value: number;
   /** Where a new feature is inserted; null appends at the end. */
   anchorId: string | null;
 }
 
-/** Default radius: a fraction of the shortest selected edge, clamped to sane mm. */
-function defaultFilletRadius(
+/** Default size: a fraction of the shortest selected edge, clamped to sane mm. */
+function defaultBlendValue(
   mesh: BodyMesh | null,
   edges: readonly EdgeRef[],
 ): number {
@@ -431,8 +438,8 @@ export function App() {
   const [edgeSelection, setEdgeSelection] = useState<BodyPick[]>([]);
   const [bodyPopoverPosition, setBodyPopoverPosition] =
     useState<PopoverPosition>({ x: 22, y: 112 });
-  const [filletDraft, setFilletDraft] = useState<FilletDraft | null>(null);
-  const [filletBaseline, setFilletBaseline] = useState<FilletFeature | null>(
+  const [blendDraft, setBlendDraft] = useState<BlendDraft | null>(null);
+  const [blendBaseline, setBlendBaseline] = useState<EdgeBlendFeature | null>(
     null,
   );
   const [editorOpen, setEditorOpen] = useState(false);
@@ -477,8 +484,8 @@ export function App() {
   const handleBodyPickRef = useRef<
     (pick: BodyPick | null, additive: boolean) => void
   >(() => {});
-  const cancelFilletRef = useRef<() => void>(() => {});
-  const filletDraftOpenRef = useRef(false);
+  const cancelBlendRef = useRef<() => void>(() => {});
+  const blendDraftOpenRef = useRef(false);
   const faceBoundaryCache = useRef(
     new Map<string, { frame: PlaneFrame; loops: Vec3[][] }>(),
   );
@@ -816,34 +823,37 @@ export function App() {
     } else {
       features = [];
     }
-    // Preview a new fillet through the kernel without writing it to the
-    // document. The draft sits after the rendered prefix, exactly where apply
-    // will insert it.
+    // Preview a new fillet/chamfer through the kernel without writing it to
+    // the document. The draft sits after the rendered prefix, exactly where
+    // apply will insert it.
     if (
-      filletDraft?.mode === "new" &&
-      filletDraft.edges.length > 0 &&
-      filletDraft.radius > 0 &&
+      blendDraft?.mode === "new" &&
+      blendDraft.edges.length > 0 &&
+      blendDraft.value > 0 &&
       features.length > 0
     ) {
+      const draft = blendDraft;
+      const common = {
+        featureId: `${draft.kind}-draft`,
+        cacheKey: `${draft.kind}-draft-${stableHash(
+          canonicalJson({
+            kind: draft.kind,
+            edges: draft.edges,
+            value: draft.value,
+            upstream: features.map((feature) => feature.cacheKey),
+          }),
+        )}`,
+        edges: draft.edges,
+      };
       features = [
         ...features,
-        {
-          kind: "fillet",
-          featureId: "fillet-draft",
-          cacheKey: `fillet-draft-${stableHash(
-            canonicalJson({
-              edges: filletDraft.edges,
-              radius: filletDraft.radius,
-              upstream: features.map((feature) => feature.cacheKey),
-            }),
-          )}`,
-          edges: filletDraft.edges,
-          radius: filletDraft.radius,
-        },
+        draft.kind === "fillet"
+          ? { kind: "fillet", ...common, radius: draft.value }
+          : { kind: "chamfer", ...common, distance: draft.value },
       ];
     }
     return features;
-  }, [rebuild, fallbackParams, activeExtrude, filletDraft]);
+  }, [rebuild, fallbackParams, activeExtrude, blendDraft]);
   const rebuildDiagnostics = useMemo(
     () =>
       rebuild?.features
@@ -1085,20 +1095,21 @@ export function App() {
     setEditorOpen(false);
     setEditorBaseline(null);
     setExtrudeDraft(null);
-    setFilletDraft(null);
-    setFilletBaseline(null);
+    setBlendDraft(null);
+    setBlendBaseline(null);
   };
 
-  const openFilletEditor = (feature: FilletFeature): void => {
+  const openBlendEditor = (feature: EdgeBlendFeature): void => {
     dismissEditor();
     setDatumDraft(null);
     setSupportOpen(false);
-    setFilletBaseline(feature);
-    setFilletDraft({
+    setBlendBaseline(feature);
+    setBlendDraft({
+      kind: feature.type === "fillet" ? "fillet" : "chamfer",
       mode: "edit",
       featureId: feature.id,
       edges: [...feature.edges],
-      radius: feature.radius,
+      value: feature.type === "fillet" ? feature.radius : feature.distance,
       anchorId: null,
     });
     const picks = feature.edges.map(edgeBodyPick);
@@ -1109,13 +1120,17 @@ export function App() {
     setBodyPick(null);
   };
 
-  /** Footer cancel / background click restores a fillet as it was opened. */
-  const cancelFilletEditor = (): void => {
-    const baseline = filletBaseline;
+  /** Footer cancel / background click restores an edge blend as opened. */
+  const cancelBlendEditor = (): void => {
+    const baseline = blendBaseline;
     dismissEditor();
     if (baseline) {
       const current = getState();
-      const next = updateFilletFeature(current.doc, baseline.id, () => baseline);
+      const next = updateEdgeBlendFeature(
+        current.doc,
+        baseline.id,
+        () => baseline,
+      );
       if (next !== current.doc) {
         commit({
           doc: next,
@@ -1131,19 +1146,20 @@ export function App() {
     setSelection([]);
   };
 
-  /** Start a UI-only fillet draft from the selected edges. */
-  const beginFilletDraft = (): void => {
+  /** Start a UI-only fillet/chamfer draft from the selected edges. */
+  const beginBlendDraft = (kind: "fillet" | "chamfer"): void => {
     const edges = selectedEdgeRefs;
     if (edges.length === 0) return;
     dismissEditor();
     setDatumDraft(null);
     setSupportOpen(false);
     setHistoryNotice(null);
-    setFilletDraft({
+    setBlendDraft({
+      kind,
       mode: "new",
       featureId: null,
       edges: [...edges],
-      radius: defaultFilletRadius(mesh, edges),
+      value: defaultBlendValue(mesh, edges),
       anchorId: activeFeatureId,
     });
     setMode("model");
@@ -1151,36 +1167,42 @@ export function App() {
     setBodyPick(null);
   };
 
-  const updateFilletRadius = (radius: number): void => {
-    if (!filletDraft || !Number.isFinite(radius) || radius <= 0) return;
-    setFilletDraft({ ...filletDraft, radius });
-    if (filletDraft.mode === "edit" && filletDraft.featureId) {
+  const updateBlendValue = (value: number): void => {
+    if (!blendDraft || !Number.isFinite(value) || value <= 0) return;
+    setBlendDraft({ ...blendDraft, value });
+    if (blendDraft.mode === "edit" && blendDraft.featureId) {
       const current = getState();
-      const next = updateFilletFeature(
-        current.doc,
-        filletDraft.featureId,
-        (feature) => ({ ...feature, radius }),
-      );
+      const id = blendDraft.featureId;
+      const next =
+        blendDraft.kind === "fillet"
+          ? updateFilletFeature(current.doc, id, (feature) => ({
+              ...feature,
+              radius: value,
+            }))
+          : updateChamferFeature(current.doc, id, (feature) => ({
+              ...feature,
+              distance: value,
+            }));
       if (next !== current.doc) {
         commit(
           { doc: next, solved: current.solved, solvedFor: current.solvedFor },
-          "fillet-radius",
+          `${blendDraft.kind}-size`,
         );
       }
     }
   };
 
-  const updateFilletEdges = (edges: EdgeRef[]): void => {
-    if (!filletDraft) return;
-    setFilletDraft({ ...filletDraft, edges });
+  const updateBlendEdges = (edges: EdgeRef[]): void => {
+    if (!blendDraft) return;
+    setBlendDraft({ ...blendDraft, edges });
     const picks = edges.map(edgeBodyPick);
     setEdgeSelection(picks);
     viewportRef.current?.setEdgeSelection(picks);
-    if (filletDraft.mode === "edit" && filletDraft.featureId) {
+    if (blendDraft.mode === "edit" && blendDraft.featureId) {
       const current = getState();
-      const next = updateFilletFeature(
+      const next = updateEdgeBlendFeature(
         current.doc,
-        filletDraft.featureId,
+        blendDraft.featureId,
         (feature) => ({ ...feature, edges }),
       );
       if (next !== current.doc) {
@@ -1201,8 +1223,8 @@ export function App() {
       pick?.kind === "datum" ? pick.datumId ?? null : null,
     );
     if (!pick) {
-      if (filletDraft) {
-        cancelFilletEditor();
+      if (blendDraft) {
+        cancelBlendEditor();
         return;
       }
       setBodyPick(null);
@@ -1214,7 +1236,7 @@ export function App() {
       const ref = pick.edgeRef;
       const known = (source: string): boolean =>
         source !== "fillet-draft" &&
-        source !== filletDraft?.featureId &&
+        source !== blendDraft?.featureId &&
         doc.features.some((feature) => feature.id === source);
       // The stage may be previewing the draft fillet itself. Edges on those
       // generated rounds (or on the feature being edited) cannot be inputs.
@@ -1225,7 +1247,7 @@ export function App() {
         (item) =>
           item.edgeRef !== undefined && edgeRefKey(item.edgeRef) === key,
       );
-      const toggle = additive || filletDraft !== null;
+      const toggle = additive || blendDraft !== null;
       let next: BodyPick[];
       if (toggle && selected) {
         next = edgeSelection.filter(
@@ -1239,11 +1261,11 @@ export function App() {
       }
       // While the fillet form is open it is the readout; the small pick badge
       // would overlap it and repeat the same selection.
-      setBodyPick(!filletDraft && next.length > 0 ? pick : null);
+      setBodyPick(!blendDraft && next.length > 0 ? pick : null);
       setEdgeSelection(next);
       viewportRef.current?.setEdgeSelection(next);
-      if (filletDraft) {
-        updateFilletEdges(
+      if (blendDraft) {
+        updateBlendEdges(
           next
             .map((item) => item.edgeRef)
             .filter((edge): edge is EdgeRef => edge !== undefined),
@@ -1260,18 +1282,23 @@ export function App() {
   // them pointed at the current handlers without re-registering listeners.
   useEffect(() => {
     handleBodyPickRef.current = handleBodyPick;
-    cancelFilletRef.current = cancelFilletEditor;
-    filletDraftOpenRef.current = filletDraft !== null;
+    cancelBlendRef.current = cancelBlendEditor;
+    blendDraftOpenRef.current = blendDraft !== null;
   });
 
-  const applyFilletDraft = (): void => {
-    const draft = filletDraft;
-    if (!draft || draft.edges.length === 0 || !(draft.radius > 0)) return;
+  const applyBlendDraft = (): void => {
+    const draft = blendDraft;
+    if (!draft || draft.edges.length === 0 || !(draft.value > 0)) return;
     const current = getState();
     if (draft.mode === "new") {
-      const result = addFilletFeature(current.doc, draft.edges, draft.radius, {
-        afterFeatureId: draft.anchorId,
-      });
+      const result =
+        draft.kind === "fillet"
+          ? addFilletFeature(current.doc, draft.edges, draft.value, {
+              afterFeatureId: draft.anchorId,
+            })
+          : addChamferFeature(current.doc, draft.edges, draft.value, {
+              afterFeatureId: draft.anchorId,
+            });
       commit({
         doc: result.doc,
         solved: current.solved,
@@ -1463,8 +1490,8 @@ export function App() {
     // "edit" command.
     if (feature.type === "extrude") {
       openExtrudeEditor(feature, "model");
-    } else if (isFilletFeature(feature)) {
-      openFilletEditor(feature);
+    } else if (isEdgeBlendFeature(feature)) {
+      openBlendEditor(feature);
     } else {
       openDatumEditor(feature);
     }
@@ -2333,10 +2360,11 @@ export function App() {
     ) {
       return null;
     }
-    // The draft is a synthetic feature that owns its rounds while it previews.
-    if (filletDraft?.mode === "new") return "fillet-draft";
+    // The draft is a synthetic feature that owns its generated faces while it
+    // previews.
+    if (blendDraft?.mode === "new") return `${blendDraft.kind}-draft`;
     return activeFeature &&
-      (isExtrudeFeature(activeFeature) || isFilletFeature(activeFeature)) &&
+      (isExtrudeFeature(activeFeature) || isEdgeBlendFeature(activeFeature)) &&
       !activeFeature.suppressed
       ? activeFeature.id
       : null;
@@ -2345,7 +2373,7 @@ export function App() {
     supportOpen,
     datumDraft,
     extrudeDraft,
-    filletDraft,
+    blendDraft,
     activeFeature,
   ]);
 
@@ -2482,8 +2510,8 @@ export function App() {
         return;
       }
       if (event.key === "Escape") {
-        if (filletDraftOpenRef.current) {
-          cancelFilletRef.current();
+        if (blendDraftOpenRef.current) {
+          cancelBlendRef.current();
           return;
         }
         setPendingConstraint(null);
@@ -3579,9 +3607,9 @@ export function App() {
             // While a fillet editor is open the canvas is the pick surface:
             // an edge click must not cancel it, and an empty click is handled
             // by the viewport's null pick. Other editors still cancel here.
-            if (target.closest(".viewport-canvas") && filletDraft) return;
-            if (filletDraft) {
-              cancelFilletEditor();
+            if (target.closest(".viewport-canvas") && blendDraft) return;
+            if (blendDraft) {
+              cancelBlendEditor();
               return;
             }
             if (extrudeDraft) {
@@ -4165,22 +4193,23 @@ export function App() {
             />
           ) : null}
 
-          {filletDraft ? (
-            <SolidFilletPopover
-              radius={filletDraft.radius}
-              edges={filletDraft.edges}
-              isDraft={filletDraft.mode === "new"}
+          {blendDraft ? (
+            <SolidBlendPopover
+              kind={blendDraft.kind}
+              value={blendDraft.value}
+              edges={blendDraft.edges}
+              isDraft={blendDraft.mode === "new"}
               position={popoverPosition}
               onMove={setPopoverPosition}
-              onRadius={updateFilletRadius}
-              onRadiusEnd={endMerge}
+              onValue={updateBlendValue}
+              onValueEnd={endMerge}
               onRemoveEdge={(index) =>
-                updateFilletEdges(
-                  filletDraft.edges.filter((_, at) => at !== index),
+                updateBlendEdges(
+                  blendDraft.edges.filter((_, at) => at !== index),
                 )
               }
-              onApply={applyFilletDraft}
-              onCancel={cancelFilletEditor}
+              onApply={applyBlendDraft}
+              onCancel={cancelBlendEditor}
             />
           ) : edgeSelection.length > 0 && mode === "model" ? (
             <BodySelectionPopover
@@ -4192,7 +4221,8 @@ export function App() {
                 setBodyPick(null);
                 viewportRef.current?.clearPick();
               }}
-              onFillet={beginFilletDraft}
+              onFillet={() => beginBlendDraft("fillet")}
+              onChamfer={() => beginBlendDraft("chamfer")}
             />
           ) : null}
 
@@ -4253,20 +4283,24 @@ export function App() {
                   ? "plane"
                   : isFilletFeature(feature)
                     ? "fillet"
-                    : "extrude";
+                    : isChamferFeature(feature)
+                      ? "chamfer"
+                      : "extrude";
               const meta = isSketchFeature(feature)
                 ? `${supportLabel(feature.support)} · ${feature.sketch.curves.length} curves`
                 : isDatumPlaneFeature(feature)
                   ? datumDefinitionLabel(feature.definition)
                   : isFilletFeature(feature)
                     ? `R ${feature.radius} mm · ${feature.edges.length} edge${feature.edges.length === 1 ? "" : "s"}`
-                    : `${
-                        feature.end === "throughAll"
-                          ? "through all"
-                          : `${feature.height} mm`
-                      } · ${feature.operation} · ${
-                        feature.symmetric ? "symmetric" : "one side"
-                      }`;
+                    : isChamferFeature(feature)
+                      ? `${feature.distance} mm · ${feature.edges.length} edge${feature.edges.length === 1 ? "" : "s"}`
+                      : `${
+                          feature.end === "throughAll"
+                            ? "through all"
+                            : `${feature.height} mm`
+                        } · ${feature.operation} · ${
+                          feature.symmetric ? "symmetric" : "one side"
+                        }`;
               // State (paused, suppressed, hidden, skipped) is conveyed by
               // dimming/underline only. Extra meta text would appear and
               // disappear as the cursor and visibility change, making the

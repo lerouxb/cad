@@ -489,22 +489,22 @@ the worker builds a single body with a prefix-solid cache, booleans and fillets.
 main thread: features in order
   ├─ evaluate sketch: solve -> regions
   ├─ evaluate extrude: source sketch -> selected regions -> ExtrudeParams
-  ├─ evaluate fillet: radius + stable EdgeRefs -> KernelFilletFeature
+  ├─ evaluate fillet/chamfer: size + stable EdgeRefs -> KernelFillet|ChamferFeature
   ├─ cache output keyed by hash(feature, upstream key)
   └─ record { featureId, status, output, diagnostics }
        ↓ successful solid features only, in history order
-worker: KernelFeature[]  (extrude | fillet, discriminated)
+worker: KernelFeature[]  (extrude | fillet | chamfer, discriminated)
   ├─ prefix cache: cacheKey -> Solid (operations already applied through this feature)
   ├─ cache hit: reuse the solid and its face origins
   ├─ cache miss extrude: build tool -> fuse/cut -> cache the result
-  ├─ cache miss fillet: resolve EdgeRefs on the prefix -> filletWithEvolution
+  ├─ cache miss blend: resolve EdgeRefs on the prefix -> fillet/chamferWithEvolution
   │                      -> re-derive roles geometrically -> cache the result
   └─ mesh the last good base -> BodyMesh + per-feature statuses
 ```
 
-A failed fillet is skipped exactly like a failed boolean: later features use the last good
-base and the step carries the error. App previews a **new** fillet by appending a synthetic
-`fillet-draft` feature to this list; it is never written to `Doc` until apply.
+A failed fillet/chamfer is skipped exactly like a failed boolean: later features use the last good
+base and the step carries the error. App previews a **new** fillet/chamfer by appending a synthetic
+`fillet-draft` / `chamfer-draft` feature to this list; it is never written to `Doc` until apply.
 
 The worker cache owns cloned solids. Cached solids cannot be meshed twice with the same
 mesh cache: the first request transfers the mesh ArrayBuffers, detaching them, so call
@@ -577,7 +577,7 @@ still get a role, a stable `TopoRef`, and feature attribution. `captureHint`/`cr
 the main thread. Schema v5 stores a face `TopoRef` plus its cached `PlaneFrame` on
 `SketchFeature.support`; schema v6 adds cached face-boundary projections, schema v7 adds
 datum-plane features/supports, schema v8 adds datum-plane visibility (`hidden`), and
-schema v9 adds constant-radius fillets. The
+schema v9 adds constant-radius fillets, and schema v10 adds constant-distance chamfers. The
 worker maps the local extrude solid through that frame, and resolves a projected boundary
 from the cached prefix solid that owns the face (never from a downstream boolean). The
 worker resolves stored `TopoRef`s with
@@ -847,10 +847,10 @@ the honest map, so nobody assumes a layer exists because it is described above.
 
 | Layer | Status |
 | --- | --- |
-| `core/doc` | Real: `Doc` schema with sketch/extrude/datum/fillet features, selectors, migrations, schema v9 face/datum sketch supports (`TopoRef`/feature id + cached `PlaneFrame`), datum visibility, face-boundary projections, fillet `EdgeRef`s, and `localStorage` autosave. |
+| `core/doc` | Real: `Doc` schema with sketch/extrude/datum/fillet/chamfer features, selectors, migrations, schema v9 face/datum sketch supports (`TopoRef`/feature id + cached `PlaneFrame`), datum visibility, face-boundary projections, fillet/chamfer `EdgeRef`s, and `localStorage` autosave. |
 | `core/sketch` | Real: types, `slvs` adapter, tangent-space `solveDrag`, pure drawing edits, loop extraction, geometry helpers, tests. `demo.ts` is the loadable example. |
-| `core/features` | Real: region selection + extrude params, including face/datum-plane frames mapped in the worker. The worker supports ordered new/join/cut and constant-radius fillets; projected face-boundary references live in the sketch-support path. |
-| `core/rebuild` | Real: ordered sketch/datum/extrude/fillet evaluation, prefix cache, per-feature diagnostics. Worker solid cache + new/join/cut/fillet are in. |
+| `core/features` | Real: region selection + extrude params, including face/datum-plane frames mapped in the worker. The worker supports ordered new/join/cut, constant-radius fillets and constant-distance chamfers; projected face-boundary references live in the sketch-support path. |
+| `core/rebuild` | Real: ordered sketch/datum/extrude/fillet evaluation, prefix cache, per-feature diagnostics. Worker solid cache + new/join/cut/fillet/chamfer are in. |
 | `core/kernel` | Real: typed protocol, worker client, OCCT worker, feature cache, face-frame extrude transforms, cached-prefix face-boundary requests, stable face/edge refs, hole validation, exact stats + bounds. |
 | `viewer` | Real: Z-up scene, framing, meshing, edges, face/edge raycast picking, multi-edge selection, hover/selection highlights. |
 | `sketch` UI | Real: full-stage sketch editor with a grouped text tool line, stage-foot DOF/status, contextual selection popover, adaptive/free-form grid, scale bar and fit/50/100/200 zoom. Select/drag, box-select profile regions, line/point/rectangle/circle/arc, fillet, explicit region fills (material and void, with All/Voids/Auto), contextual dimension/trim chips, inline dimension and point editors, construction toggle, snapping, auto H/V, Enter-to-finish, undo/redo. Standalone points are normal solver geometry but never profiles. |

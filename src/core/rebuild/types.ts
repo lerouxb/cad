@@ -55,11 +55,18 @@ export interface FilletRebuildOutput {
   radius: number;
 }
 
+export interface ChamferRebuildOutput {
+  kind: "chamfer";
+  edges: EdgeRef[];
+  distance: number;
+}
+
 export type FeatureOutput =
   | SketchRebuildOutput
   | ExtrudeRebuildOutput
   | DatumRebuildOutput
-  | FilletRebuildOutput;
+  | FilletRebuildOutput
+  | ChamferRebuildOutput;
 
 export interface FeatureResult {
   featureId: string;
@@ -167,6 +174,12 @@ export function isFilletResult(
   result: FeatureResult | undefined,
 ): result is FeatureResult & { output: FilletRebuildOutput } {
   return result?.output?.kind === "fillet";
+}
+
+export function isChamferResult(
+  result: FeatureResult | undefined,
+): result is FeatureResult & { output: ChamferRebuildOutput } {
+  return result?.output?.kind === "chamfer";
 }
 
 export type { Doc };

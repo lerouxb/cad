@@ -26,6 +26,8 @@ interface StagePopoverProps {
   hint?: string;
   summary: string;
   primary?: PopoverAction;
+  /** A second footer action, before cancel (e.g. fillet + chamfer). */
+  secondary?: PopoverAction;
   cancel?: PopoverAction;
   destructive?: PopoverAction;
   className?: string;
@@ -47,6 +49,7 @@ export function StagePopover({
   hint,
   summary,
   primary,
+  secondary,
   cancel,
   destructive,
   className,
@@ -130,6 +133,17 @@ export function StagePopover({
               data-testid={destructive.testId}
             >
               {destructive.label}
+            </button>
+          ) : null}
+          {secondary ? (
+            <button
+              className="text-action is-quiet"
+              type="button"
+              onClick={secondary.onClick}
+              disabled={secondary.disabled}
+              data-testid={secondary.testId}
+            >
+              {secondary.label}
             </button>
           ) : null}
           {cancel ? (

@@ -20,7 +20,8 @@ engine matters more than feature count.
 
 **M2 is complete, including region/void selection, paper/ink UI, split/trim, and 3D
 face/edge picking. M3's document store and ordered rebuild are in progress. M4's datum
-work is in and M5's constant-radius 3D fillet now lands as a real history step.** The app
+work is in and M5's constant-radius 3D fillet and constant-distance chamfer now land
+as real history steps.** The app
 is an editable sketcher driving an exact solid:
 
 - Real: `slvs` adapter, tangent-space constrained dragging of points, whole lines, circles
@@ -40,15 +41,16 @@ is an editable sketcher driving an exact solid:
   tangent, symmetric, midpoint, coincident, fix) with construction geometry, a selectable
   fixed origin + X/Y axis reference frame, exact X/Y editing for a selected point,
   undo/redo, DOF/diagnostics, worker protocol, three.js viewport, exact volume/face counts,
-  unit + e2e tests. The part is a plain-JSON `Doc` with sketch/extrude/datum/fillet
-  features, schemaVersion + migrations, autosave to `localStorage`, and undoable feature
-  parameters (extrude height and regions, datum definition, fillet radius and edges).
-  The main-thread rebuild walks the feature list in order with a prefix cache and
-  per-feature diagnostics. The worker receives the successful solid features, caches
-  prefix solids by cache key, applies new/join/cut booleans, and applies constant-radius
-  fillets, with per-feature build statuses. Multi-edge model selection opens the
-  body-selection popover; `fillet` starts a UI-only draft that previews through the
-  kernel, then applies as a history step.
+  unit + e2e tests. The part is a plain-JSON `Doc` with
+  sketch/extrude/datum/fillet/chamfer features, schemaVersion + migrations, autosave to
+  `localStorage`, and undoable feature parameters (extrude height and regions, datum
+  definition, fillet radius / chamfer distance and edges). The main-thread rebuild walks
+  the feature list in order with a prefix cache and per-feature diagnostics. The worker
+  receives the successful solid features, caches prefix solids by cache key, applies
+  new/join/cut booleans and constant-size fillets/chamfers, with per-feature build
+  statuses. Multi-edge model selection opens the body-selection popover; `fillet` and
+  `chamfer` start UI-only drafts that preview through the kernel, then apply as history
+  steps.
 - UI: one main stage. The bottom timeline switches between the full-stage sketch editor
   and the 3D model. The shell follows the studies: a document header (filename,
   appearance), one stage status line (solver/kernel health, DOF, body stats, view
@@ -70,9 +72,9 @@ is an editable sketcher driving an exact solid:
   preview their candidate frame live. M4's core flow is in; only support-list detail copy
   and through-3-point planes remain. The example part is
   hand-authored (`core/sketch/demo.ts` + `core/doc/example.ts`, including a suppressed
-  center-pin extrude from the same sketch, a suppressed mounting-holes cut, and a
-  suppressed four-edge "Rounded plate" fillet so the base body, picking coordinates and
-  volume goldens stay stable); the
+  center-pin extrude from the same sketch, a suppressed mounting-holes cut, a suppressed
+  four-edge "Rounded plate" fillet and an alternative suppressed "Beveled plate" chamfer
+  so the base body, picking coordinates and volume goldens stay stable); the
   timeline now lists the real feature history with select,
   inline rename, create, edit, drag-reorder, suppress, delete-cascade, a
   selection-driven history cursor and per-feature status/diagnostics. `.cad` download/open/rename/new, blind/symmetric/
@@ -81,8 +83,8 @@ is an editable sketcher driving an exact solid:
   `updateRoles`. Free 3D sketches, splines/text/images and drawing exports are out of
   scope.
 
-Next: **M5** (or M4's remaining support-list detail copy first): chamfer, shell/Offset
-Faces, selection filters and the tool options row, section analysis and export;
+Next: **M5** (or M4's remaining support-list detail copy first): shell/Offset Faces,
+selection filters and the tool options row, section analysis and export;
 through-3-point planes wait for M6 datum axes/points. Then **M6.0** (re-editable sketch
 pattern/mirror/offset, ADR-0004). Read `docs/PLAN.md`; it is the source of truth
 for done. Unsupported geometry/features (ellipses, conics, B-splines, free
@@ -303,19 +305,20 @@ docs/
   the engine so the auto/largest material fallback cannot drift.
 - **The worker builds an ordered single body.** `KernelFeature` is a discriminated union
   of extrude and fillet, each carrying its cacheKey. The worker caches the prefix solid
-  per cacheKey, applies new/join/cut or a constant-radius fillet, and returns
+  per cacheKey, applies new/join/cut or a constant-size fillet/chamfer, and returns
   `FeatureBuildStatus[]`. A failed feature is skipped and later features use the last good
   base; a failed first feature returns an error with statuses. The first feature may be
-  new or join; cut needs a base; new after a base is an error; a fillet needs a base.
+  new or join; cut needs a base; new after a base is an error; an edge blend needs a base.
   Any worker feature error clears the prefix cache after the last-good mesh is produced,
   so a later successful retry cannot reuse downstream solids built past a skipped feature.
-- **Fillets name their rounds and re-derive face roles.** `filletWithEvolution` returns an
-  **empty evolution on OCCT**, so `updateRoles` cannot carry roles across it. After each
-  fillet the worker reattaches every old role to the trimmed result face by surface type +
-  normal + sampled containment, then names the generated rounds under the fillet feature
-  (`fillet:round:<index>`) by finding the new face adjacent to both pre-fillet faces. That
-  is what makes the step highlight, downstream `EdgeRef`s and face picks work. Do not
-  trust `evolution.generated` for fillet/chamfer faces.
+- **Fillets/chamfers name their generated faces and re-derive roles.**
+  `filletWithEvolution`/`chamferWithEvolution` return an **empty evolution on OCCT**, so
+  `updateRoles` cannot carry roles across. After each blend the worker reattaches every
+  old role to the trimmed result face by surface type + normal + sampled containment,
+  then names the generated faces under the feature (`fillet:round:<i>`,
+  `chamfer:round:<i>`) by finding the new face adjacent to both pre-blend faces. That is
+  what makes the step highlight, downstream `EdgeRef`s and face picks work. Do not trust
+  `evolution.generated` for fillet/chamfer faces.
 - **An `EdgeRef` is a face pair, not an edge hash.** `{ faces: [TopoRef, TopoRef], hint }`
   resolves by resolving both faces (role first, geometric fallback) and taking
   `sharedEdges`; the length/midpoint hint breaks a tie. Edge picks carry it from the

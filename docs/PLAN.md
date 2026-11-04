@@ -101,7 +101,7 @@ feature work then lands inside that system.
   profiles, extrude features resolve their source and regions, and every feature gets a
   status/diagnostics record. A height edit reuses the sketch result; a sketch edit
   invalidates the extrude. The worker receives the ordered solid-feature list, caches
-  prefix solids by feature cache key, applies new/join/cut booleans and fillets, and
+  prefix solids by feature cache key, applies new/join/cut booleans and fillet/chamfer blends, and
   returns per-feature build statuses.
 - The example part can be loaded, cleared, edited, or replaced by drawing. It is the
   dimensioned plate, a suppressed “Center pin” extrude from the **same Sketch 1** (the
@@ -109,7 +109,7 @@ feature work then lands inside that system.
   suppressed through-all cut, plus a suppressed four-edge “Rounded plate” fillet. The
   suppressed features keep the familiar plate and picking goldens while exercising
   same-sketch region ownership, a second sketch, suppression, edits, the 3D sketch
-  overlay and the M5 fillet step. A new sketch is added from the timeline's
+  overlay and the M5 fillet/chamfer steps. A new sketch is added from the timeline's
   `+ sketch` support popover (world XY/XZ/YZ, planar faces and datum planes) and
   `+ plane` geometry. A new extrude is
   started from the selected sketch step and begins with **no profile selected**; the
@@ -790,7 +790,10 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       (OCCT reports an empty evolution) and names the rounds `fillet:round:<i>` so the
       step highlight and downstream refs work. Lost edges / impossible radii are
       visible step errors; the unchanged body stays visible.
-- [ ] Chamfer
+- [x] Chamfer (constant distance) on selected edges, sharing the fillet's `EdgeRef`,
+      multi-edge selection, preview, live edit, failure handling and role re-derivation.
+      Schema v10 adds `ChamferFeature`; the example ships a suppressed `Beveled plate`
+      alternative on the same four edges.
 - [ ] Shell (open faces) — maybe defer
 - [ ] **Offset Faces** — move selected faces by a distance; tolerance/fit and wall
       adjustments. The design audit shows 11 uses (third most-used modelling feature),

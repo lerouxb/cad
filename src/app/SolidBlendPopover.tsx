@@ -1,75 +1,84 @@
 import { edgeRefKey, type EdgeRef } from "../core/kernel/protocol";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
 
-interface SolidFilletPopoverProps {
-  radius: number;
+interface SolidBlendPopoverProps {
+  kind: "fillet" | "chamfer";
+  value: number;
   edges: readonly EdgeRef[];
   isDraft: boolean;
   position: PopoverPosition;
   onMove: (position: PopoverPosition) => void;
-  onRadius: (radius: number) => void;
-  onRadiusEnd: () => void;
+  onValue: (value: number) => void;
+  onValueEnd: () => void;
   onRemoveEdge: (index: number) => void;
   onApply: () => void;
   onCancel: () => void;
 }
 
 /**
- * The 3D fillet form. Same chrome as every other feature popover: drag the
- * header, one footer summary, quiet cancel and a primary apply. Radius edits
- * rebuild live; applying commits.
+ * The 3D fillet/chamfer form. Same chrome as every other feature popover: drag
+ * the header, one footer summary, quiet cancel and a primary apply. Value
+ * edits rebuild live; applying commits.
  */
-export function SolidFilletPopover({
-  radius,
+export function SolidBlendPopover({
+  kind,
+  value,
   edges,
   isDraft,
   position,
   onMove,
-  onRadius,
-  onRadiusEnd,
+  onValue,
+  onValueEnd,
   onRemoveEdge,
   onApply,
   onCancel,
-}: SolidFilletPopoverProps) {
+}: SolidBlendPopoverProps) {
   const edgeCount = edges.length;
   const edgeSummary = `${edgeCount} edge${edgeCount === 1 ? "" : "s"}`;
+  const isFillet = kind === "fillet";
+  const prefix = isFillet ? "fillet-feature" : "chamfer-feature";
+  const valueLabel = isFillet ? "radius" : "distance";
+  const title = isFillet ? "Fillet" : "Chamfer";
+  const summary = isFillet
+    ? `R ${value} mm · ${edgeSummary}`
+    : `${value} mm · ${edgeSummary}`;
   return (
     <StagePopover
-      kicker={isDraft ? "new feature" : "fillet feature"}
-      title="Fillet"
-      testId="fillet-feature-popover"
+      kicker={isDraft ? "new feature" : `${kind} feature`}
+      title={title}
+      testId={`${prefix}-popover`}
       position={position}
       onMove={onMove}
       hint="click edges in the model to add or remove them"
-      summary={`R ${radius} mm · ${edgeSummary}`}
+      summary={summary}
       cancel={{
         label: "cancel",
         onClick: onCancel,
-        testId: "fillet-feature-cancel",
+        testId: `${prefix}-cancel`,
       }}
       primary={{
-        label: isDraft ? "fillet" : "apply",
+        label: isDraft ? kind : "apply",
         onClick: onApply,
-        testId: "fillet-feature-apply",
-        disabled: edgeCount === 0 || !(radius > 0),
+        testId: `${prefix}-apply`,
+        disabled: edgeCount === 0 || !(value > 0),
       }}
     >
       <label className="feature-row">
-        <span className="detail-key">radius</span>
+        <span className="detail-key">{valueLabel}</span>
         <span className="feature-control">
           <input
             className="detail-input feature-number"
             type="number"
             min="0.1"
             step="0.1"
-            value={radius}
+            value={value}
             onChange={(event) => {
-              const value = Number(event.target.value);
-              if (Number.isFinite(value) && value > 0) onRadius(value);
+              const next = Number(event.target.value);
+              if (Number.isFinite(next) && next > 0) onValue(next);
             }}
-            onBlur={onRadiusEnd}
-            aria-label="Fillet radius in millimetres"
-            data-testid="fillet-feature-radius"
+            onBlur={onValueEnd}
+            aria-label={`${title} ${valueLabel} in millimetres`}
+            data-testid={`${prefix}-${valueLabel}`}
           />
           <span className="detail-value">mm</span>
         </span>
@@ -77,7 +86,7 @@ export function SolidFilletPopover({
 
       <div className="feature-row">
         <span className="detail-key">edges</span>
-        <span className="detail-value" data-testid="fillet-feature-edges">
+        <span className="detail-value" data-testid={`${prefix}-edges`}>
           {edgeSummary}
         </span>
       </div>
@@ -95,7 +104,7 @@ export function SolidFilletPopover({
               className="text-action is-quiet"
               type="button"
               onClick={() => onRemoveEdge(index)}
-              data-testid={`fillet-remove-edge-${index}`}
+              data-testid={`${kind}-remove-edge-${index}`}
             >
               remove
             </button>

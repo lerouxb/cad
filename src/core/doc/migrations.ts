@@ -36,7 +36,8 @@ export function migrateDoc(raw: unknown): Doc | null {
   // v5 → v6 adds cached face-boundary projections on sketch features;
   // v6 → v7 adds datum-plane features and datum sketch supports;
   // v7 → v8 adds the datum-plane `hidden` presentation flag;
-  // v8 → v9 adds fillet features (older documents simply have none).
+  // v8 → v9 adds fillet features;
+  // v9 → v10 adds chamfer features (older documents simply have none).
   if (
     version === 1 ||
     version === 2 ||
@@ -45,7 +46,8 @@ export function migrateDoc(raw: unknown): Doc | null {
     version === 5 ||
     version === 6 ||
     version === 7 ||
-    version === 8
+    version === 8 ||
+    version === 9
   ) {
     return validateDoc(raw);
   }
@@ -130,7 +132,7 @@ export function validateDoc(raw: unknown): Doc | null {
         return null;
       }
     }
-    if (feature.type === "fillet") {
+    if (feature.type === "fillet" || feature.type === "chamfer") {
       // An edge's face roles come from earlier features. A missing source is
       // a lost reference the worker reports; an out-of-order source is a
       // malformed history and must not open.
@@ -212,24 +214,23 @@ function validateFeature(raw: unknown): Feature | null {
     };
   }
 
-  if (raw.type === "fillet") {
-    if (typeof raw.radius !== "number" || !Number.isFinite(raw.radius)) {
-      return null;
-    }
-    if (!Array.isArray(raw.edges)) return null;
-    const edges: EdgeRef[] = [];
-    for (const candidate of raw.edges) {
-      const edge = validateEdgeRef(candidate);
-      if (!edge) return null;
-      edges.push(edge);
+  if (raw.type === "fillet" || raw.type === "chamfer") {
+    const sizeKey = raw.type === "fillet" ? "radius" : "distance";
+    const size = raw[sizeKey];
+    if (typeof size !== "number" || !Number.isFinite(size)) return null;
+    const edges = validateEdgeRefs(raw.edges);
+    if (!edges) return null;
+    const suppressed = raw.suppressed === true ? { suppressed: true } : {};
+    if (raw.type === "fillet") {
+      return { id, type: "fillet", name, edges, radius: size, ...suppressed };
     }
     return {
       id,
-      type: "fillet",
+      type: "chamfer",
       name,
       edges,
-      radius: raw.radius,
-      ...(raw.suppressed === true ? { suppressed: true } : {}),
+      distance: size,
+      ...suppressed,
     };
   }
 
@@ -380,6 +381,17 @@ function validateTopoRef(raw: unknown): TopoRef | null {
         : {}),
     },
   };
+}
+
+function validateEdgeRefs(raw: unknown): EdgeRef[] | null {
+  if (!Array.isArray(raw)) return null;
+  const edges: EdgeRef[] = [];
+  for (const candidate of raw) {
+    const edge = validateEdgeRef(candidate);
+    if (!edge) return null;
+    edges.push(edge);
+  }
+  return edges;
 }
 
 function validateEdgeRef(raw: unknown): EdgeRef | null {

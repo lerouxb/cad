@@ -1,11 +1,14 @@
 import {
+  isChamferFeature,
   isDatumPlaneFeature,
   isExtrudeFeature,
   isFilletFeature,
   isSketchFeature,
+  type ChamferFeature,
   type DatumPlaneFeature,
   type Doc,
   type ExtrudeFeature,
+  type EdgeBlendFeature,
   type Feature,
   type FilletFeature,
   type PlaneRef,
@@ -27,6 +30,7 @@ import { solveSketch } from "../sketch/solver";
 import { canonicalJson, stableHash } from "./hash";
 import {
   RebuildCache,
+  type ChamferRebuildOutput,
   type ExtrudeRebuildOutput,
   type FeatureResult,
   type FilletRebuildOutput,
@@ -171,6 +175,9 @@ function evaluateFeature(
     }
     if (isFilletFeature(feature)) {
       return evaluateFillet(feature, base, byId);
+    }
+    if (isChamferFeature(feature)) {
+      return evaluateChamfer(feature, base, byId);
     }
     return {
       ...base,
@@ -511,7 +518,26 @@ function evaluateFillet(
   base: Omit<FeatureResult, "status" | "output" | "diagnostics">,
   byId: Map<string, FeatureResult>,
 ): FeatureResult {
-  if (!Number.isFinite(feature.radius) || feature.radius <= 0) {
+  return evaluateEdgeBlend(feature, "fillet", feature.radius, base, byId);
+}
+
+function evaluateChamfer(
+  feature: ChamferFeature,
+  base: Omit<FeatureResult, "status" | "output" | "diagnostics">,
+  byId: Map<string, FeatureResult>,
+): FeatureResult {
+  return evaluateEdgeBlend(feature, "chamfer", feature.distance, base, byId);
+}
+
+function evaluateEdgeBlend(
+  feature: EdgeBlendFeature,
+  kind: "fillet" | "chamfer",
+  size: number,
+  base: Omit<FeatureResult, "status" | "output" | "diagnostics">,
+  byId: Map<string, FeatureResult>,
+): FeatureResult {
+  const label = kind === "fillet" ? "Fillet radius" : "Chamfer distance";
+  if (!Number.isFinite(size) || size <= 0) {
     return {
       ...base,
       status: "error",
@@ -519,8 +545,8 @@ function evaluateFillet(
       diagnostics: [
         {
           severity: "error",
-          code: "invalid-radius",
-          message: "Fillet radius must be greater than zero.",
+          code: kind === "fillet" ? "invalid-radius" : "invalid-distance",
+          message: `${label} must be greater than zero.`,
         },
       ],
     };
@@ -534,18 +560,20 @@ function evaluateFillet(
         {
           severity: "error",
           code: "no-edges",
-          message: "Select at least one edge to fillet.",
+          message: `Select at least one edge to ${kind}.`,
         },
       ],
     };
   }
 
-  // A fillet consumes the current body. There is no separate document
+  // An edge blend consumes the current body. There is no separate document
   // dependency for the body, so check the evaluated prefix instead.
   const hasBody = [...byId.values()].some(
     (result) =>
       result.status === "ok" &&
-      (result.output?.kind === "extrude" || result.output?.kind === "fillet"),
+      (result.output?.kind === "extrude" ||
+        result.output?.kind === "fillet" ||
+        result.output?.kind === "chamfer"),
   );
   if (!hasBody) {
     return {
@@ -555,8 +583,8 @@ function evaluateFillet(
       diagnostics: [
         {
           severity: "error",
-          code: "nothing-to-fillet",
-          message: "Nothing exists to fillet.",
+          code: `nothing-to-${kind}`,
+          message: `Nothing exists to ${kind}.`,
         },
       ],
     };
@@ -598,7 +626,8 @@ function evaluateFillet(
     }
     if (
       source.output?.kind !== "extrude" &&
-      source.output?.kind !== "fillet"
+      source.output?.kind !== "fillet" &&
+      source.output?.kind !== "chamfer"
     ) {
       return {
         ...base,
@@ -615,11 +644,10 @@ function evaluateFillet(
     }
   }
 
-  const output: FilletRebuildOutput = {
-    kind: "fillet",
-    edges: feature.edges,
-    radius: feature.radius,
-  };
+  const output: FilletRebuildOutput | ChamferRebuildOutput =
+    kind === "fillet"
+      ? { kind: "fillet", edges: feature.edges, radius: size }
+      : { kind: "chamfer", edges: feature.edges, distance: size };
   return { ...base, status: "ok", output, diagnostics: [] };
 }
 
@@ -650,6 +678,17 @@ export function extractKernelFeatures(result: RebuildResult): KernelFeature[] {
           cacheKey: feature.cacheKey,
           edges: feature.output.edges,
           radius: feature.output.radius,
+        },
+      ];
+    }
+    if (feature.output.kind === "chamfer") {
+      return [
+        {
+          kind: "chamfer",
+          featureId: feature.featureId,
+          cacheKey: feature.cacheKey,
+          edges: feature.output.edges,
+          distance: feature.output.distance,
         },
       ];
     }
