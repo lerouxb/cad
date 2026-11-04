@@ -2324,6 +2324,44 @@ test("creates, edits and deletes parametric dimensions", async ({ app: page }) =
   expect(errors).toEqual([]);
 });
 
+test("commits a dimension kind change on blur and locks reference values", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+
+  const width = page
+    .locator("[data-dimension-id]")
+    .filter({ hasText: /^60$/ })
+    .first();
+  await expect(width).toBeVisible();
+  await width.dblclick();
+  await expect(page.getByTestId("dimension-kind")).toHaveText("driving");
+  await page.getByTestId("dimension-kind").click();
+  await expect(page.getByTestId("dimension-kind")).toHaveText("reference");
+
+  // There is no apply button: clicking outside commits the kind.
+  await page.mouse.click(200, 200);
+  const reference = page
+    .locator("[data-dimension-id]")
+    .filter({ hasText: "(60)" });
+  await expect(reference).toHaveCount(1);
+  await expect(page.getByTestId("dof")).toContainText("1 DOF");
+
+  // A reference value is a measurement, not an editable field.
+  await reference.dblclick();
+  await expect(page.getByTestId("dimension-kind")).toHaveText("reference");
+  await expect(page.getByTestId("dimension-input")).not.toBeEditable();
+  await page.getByTestId("dimension-kind").click();
+  await page.mouse.click(200, 200);
+  await expect(
+    page.locator("[data-dimension-id]").filter({ hasText: /^60$/ }),
+  ).toHaveCount(1);
+  await expect(page.getByTestId("dof")).toContainText("Fully constrained");
+
+  expect(errors).toEqual([]);
+});
+
 test("applies constraints and construction from the floating bar", async ({ app: page }) => {
   const errors = collectErrors(page);
   await enterSketch(page);

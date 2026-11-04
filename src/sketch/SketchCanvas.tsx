@@ -181,7 +181,9 @@ export function SketchCanvas({
   onFinishSketch,
 }: SketchCanvasProps) {
   const [svgRef, size] = useElementSize<SVGSVGElement>();
-  const [viewBox, setViewBox] = useState<ViewBox>(() => fitView(sketch, radii));
+  const [viewBox, setViewBox] = useState<ViewBox>(() =>
+    originCenteredView(sketch, radii),
+  );
   const viewBoxRef = useRef(viewBox);
   const dragRef = useRef<string | null>(null);
   const lineDragRef = useRef<{
@@ -249,6 +251,8 @@ export function SketchCanvas({
   } | null>(null);
   const lastFitToken = useRef(fitToken);
   const lastZoomSeq = useRef(0);
+  /** Avoid committing twice when Enter/delete unmounts the editor. */
+  const dimensionCommittedRef = useRef(false);
 
   const scale = Math.min(size.width / viewBox.w, size.height / viewBox.h) || 1;
   const fitted = useMemo(() => fitView(sketch, radii), [sketch, radii]);
@@ -266,8 +270,14 @@ export function SketchCanvas({
   const color = palette[tone];
   const selectColor = palette.selected;
   const snapTolerance = 11 * px;
+  // The initial origin-centred view is wider than the geometry fit. Keep the
+  // grid/snap step tied to the fitted sketch scale so opening a sketch does not
+  // silently coarsen the grid; zooming in still refines it.
+  const fitScale =
+    Math.min(size.width / fitted.w, size.height / fitted.h) || 1;
+  const gridScale = Math.max(scale, fitScale);
   const effectiveGridStep =
-    gridStep === "auto" ? niceGridStep(scale) : gridStep;
+    gridStep === "auto" ? niceGridStep(gridScale) : gridStep;
 
   useEffect(() => {
     viewBoxRef.current = viewBox;
@@ -588,6 +598,7 @@ export function SketchCanvas({
       y = screen.y - rect.top;
     }
     const measured = formatEditable(asRadius ? value / 2 : value);
+    dimensionCommittedRef.current = false;
     setEditor({
       id,
       value: measured,
@@ -600,10 +611,12 @@ export function SketchCanvas({
   };
 
   const commitEditor = () => {
-    if (!editor) return;
+    if (!editor || dimensionCommittedRef.current) return;
+    dimensionCommittedRef.current = true;
     const value = Number(editor.value);
     // A reference dimension measures geometry; only driving dimensions commit
-    // the typed value. The kind itself always commits.
+    // the typed value. The kind always commits, including on blur — there is no
+    // apply button, so losing focus is the commit gesture.
     if (!editor.reference && Number.isFinite(value) && value > 0) {
       onChangeDimension(editor.id, editor.asRadius ? value * 2 : value, true);
     } else if (editor.reference) {
@@ -617,9 +630,23 @@ export function SketchCanvas({
   ): void => {
     const next = event.relatedTarget as Node | null;
     if (!next || !event.currentTarget.contains(next)) {
-      setEditor(null);
+      commitEditor();
     }
   };
+
+  // The canvas calls preventDefault on its own pointerdown, which can keep
+  // focus in the dimension input. Commit on an outside pointerdown as well, so
+  // clicking out works even when focus never leaves the editor.
+  useEffect(() => {
+    if (!editor) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target as Element | null;
+      if (target?.closest(".dim-editor")) return;
+      commitEditor();
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [editor, commitEditor]);
 
   const circleLike = (
     id: string,
@@ -1402,9 +1429,16 @@ export function SketchCanvas({
     }
   };
 
+  // The SVG keeps a square sketch-space viewBox and letterboxes it into a wide
+  // stage. Draw the grid over the whole visible stage, not just the square, so
+  // the margins are not blank.
+  const gridBox = useMemo(
+    () => withCanvasAspect(viewBox, size.width, size.height),
+    [viewBox, size.width, size.height],
+  );
   const grid = useMemo(
-    () => makeGrid(viewBox, effectiveGridStep, scale),
-    [viewBox, effectiveGridStep, scale],
+    () => makeGrid(gridBox, effectiveGridStep, scale),
+    [gridBox, effectiveGridStep, scale],
   );
   const circles = sketch.curves.filter(
     (curve): curve is SketchCircle => curve.type === "circle",
@@ -2278,6 +2312,7 @@ export function SketchCanvas({
             data-testid="dimension-input"
             value={editor.value}
             readOnly={editor.reference}
+            aria-readonly={editor.reference}
             inputMode="decimal"
             aria-label="Dimension value"
             onChange={(event) => setEditor({ ...editor, value: event.target.value })}
@@ -2287,6 +2322,7 @@ export function SketchCanvas({
                 commitEditor();
               } else if (event.key === "Escape") {
                 event.preventDefault();
+                dimensionCommittedRef.current = true;
                 setEditor(null);
               }
             }}
@@ -2304,6 +2340,7 @@ export function SketchCanvas({
               })
             }
             aria-pressed={!editor.reference}
+            title={editor.reference ? "Make driving" : "Make reference"}
             data-testid="dimension-kind"
           >
             {editor.reference ? "reference" : "driving"}
@@ -2313,6 +2350,7 @@ export function SketchCanvas({
             type="button"
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => {
+              dimensionCommittedRef.current = true;
               onDeleteDimension(editor.id);
               setEditor(null);
             }}
@@ -2849,12 +2887,12 @@ function makeGrid(box: ViewBox, step: number, scale: number) {
   const y0 = Math.floor(box.y / step) * step;
   const y1 = box.y + box.h;
 
-  for (let x = x0, i = 0; x <= x1 && i < 400; x += step, i++) {
+  for (let x = x0, i = 0; x <= x1 && i < 1000; x += step, i++) {
     const major = Math.round(x / step) % MAJOR_EVERY === 0;
     if (!minorVisible && !major) continue;
     lines.push({ key: `x${x}`, x1: x, y1: box.y, x2: x, y2: y1, major });
   }
-  for (let y = y0, i = 0; y <= y1 && i < 400; y += step, i++) {
+  for (let y = y0, i = 0; y <= y1 && i < 1000; y += step, i++) {
     const major = Math.round(y / step) % MAJOR_EVERY === 0;
     if (!minorVisible && !major) continue;
     lines.push({ key: `y${y}`, x1: box.x, y1: y, x2: x1, y2: y, major });
@@ -2862,11 +2900,21 @@ function makeGrid(box: ViewBox, step: number, scale: number) {
   return lines;
 }
 
-function fitView(sketch: Sketch, radii: Record<string, number>): ViewBox {
-  if (sketch.points.length === 0) {
-    return { x: -50, y: -50, w: 100, h: 100 };
-  }
+interface SketchExtent {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+  origin: Vec2 | null;
+}
 
+function sketchExtent(
+  sketch: Sketch,
+  radii: Record<string, number>,
+): SketchExtent | null {
+  // An empty sketch gets the fixed 100 mm default view, not a tiny box around
+  // the reference origin: that box would zoom the grid in and change snapping.
+  if (sketch.points.length === 0 && sketch.curves.length === 0) return null;
   const xs = sketch.points.map((point) => point.x);
   const ys = sketch.points.map((point) => point.y);
   const origin = sketch.references?.origin;
@@ -2890,20 +2938,80 @@ function fitView(sketch: Sketch, radii: Record<string, number>): ViewBox {
       ys.push(center.y - radius, center.y + radius);
     }
   }
-
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys);
-  const maxY = Math.max(...ys);
-  const span = Math.max(maxX - minX, maxY - minY, 20);
-  const pad = span * 0.45 + 10;
-
+  if (xs.length === 0 || ys.length === 0) return null;
   return {
-    x: minX - pad,
-    y: minY - pad,
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minY: Math.min(...ys),
+    maxY: Math.max(...ys),
+    origin: origin ? [origin.x, origin.y] : null,
+  };
+}
+
+function fitView(sketch: Sketch, radii: Record<string, number>): ViewBox {
+  const extent = sketchExtent(sketch, radii);
+  if (!extent) return { x: -50, y: -50, w: 100, h: 100 };
+  const span = Math.max(extent.maxX - extent.minX, extent.maxY - extent.minY, 20);
+  const pad = span * 0.45 + 10;
+  return {
+    x: extent.minX - pad,
+    y: extent.minY - pad,
     w: span + pad * 2,
     h: span + pad * 2,
   };
+}
+
+/**
+ * The first view of a sketch centres the plane origin, not the geometry's
+ * bounding box. The view is still large enough to contain every point, curve
+ * and dimension anchor, so the whole sketch stays visible. Explicit Fit/zoom
+ * changes replace this with a normal geometry fit.
+ */
+function originCenteredView(
+  sketch: Sketch,
+  radii: Record<string, number>,
+): ViewBox {
+  const extent = sketchExtent(sketch, radii);
+  if (!extent || !extent.origin) return fitView(sketch, radii);
+  const [ox, oy] = extent.origin;
+  const spanX = Math.max(
+    Math.abs(extent.minX - ox),
+    Math.abs(extent.maxX - ox),
+    10,
+  );
+  const spanY = Math.max(
+    Math.abs(extent.minY - oy),
+    Math.abs(extent.maxY - oy),
+    10,
+  );
+  const span = Math.max(spanX, spanY);
+  const half = span * 1.2 + 10;
+  return { x: ox - half, y: oy - half, w: half * 2, h: half * 2 };
+}
+
+/** Expand a viewBox to the stage aspect so the grid covers the letterbox. */
+function withCanvasAspect(
+  box: ViewBox,
+  width: number,
+  height: number,
+): ViewBox {
+  if (!width || !height) return box;
+  const aspect = width / height;
+  const boxAspect = box.w / box.h;
+  if (
+    !Number.isFinite(aspect) ||
+    !Number.isFinite(boxAspect) ||
+    boxAspect <= 0 ||
+    aspect <= 0
+  ) {
+    return box;
+  }
+  if (boxAspect < aspect) {
+    const w = box.h * aspect;
+    return { ...box, x: box.x - (w - box.w) / 2, w };
+  }
+  const h = box.w / aspect;
+  return { ...box, y: box.y - (h - box.h) / 2, h };
 }
 
 function normalizeRect(a: Vec2, b: Vec2) {

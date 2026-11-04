@@ -3453,6 +3453,12 @@ body {
   text-align: right;
 }
 
+.dim-editor input[readonly] {
+  background: transparent;
+  color: var(--ink-3);
+  cursor: default;
+}
+
 .dim-unit {
   color: var(--ink-3);
   font-size: var(--type-label);

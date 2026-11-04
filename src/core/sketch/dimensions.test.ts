@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { addCircle, addRectangle, emptySketch } from "./create";
-import { addDimension, removeConstraint, setDimensionPlacement } from "./dimensions";
+import {
+  addDimension,
+  removeConstraint,
+  setDimensionDriving,
+  setDimensionPlacement,
+} from "./dimensions";
 
 describe("dimensions", () => {
   const rectangle = addRectangle(emptySketch(), [0, 0], [60, 40]);
@@ -79,6 +84,26 @@ describe("dimensions", () => {
     expect(sketch.constraints.find((constraint) => constraint.type === "distance")).toMatchObject({
       driving: false,
     });
+  });
+
+  it("toggles a dimension that omits the driving flag", () => {
+    // Hand-authored/example dimensions are driving by omission, not by an
+    // explicit `driving: true`. Toggling must still write the flag.
+    const plain = {
+      ...rectangle,
+      constraints: [
+        ...rectangle.constraints,
+        { id: "dim-plain", type: "distance" as const, a, b, value: 60 },
+      ],
+    };
+    const reference = setDimensionDriving(plain, "dim-plain", false);
+    expect(
+      reference.constraints.find((constraint) => constraint.id === "dim-plain"),
+    ).toMatchObject({ driving: false });
+    const driving = setDimensionDriving(reference, "dim-plain", true);
+    expect(
+      driving.constraints.find((constraint) => constraint.id === "dim-plain"),
+    ).toMatchObject({ driving: true });
   });
 
   it("reuses the diameter constraint created with a circle", () => {

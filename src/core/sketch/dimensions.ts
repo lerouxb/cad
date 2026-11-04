@@ -209,16 +209,26 @@ export function setDimensionDriving(
   id: string,
   driving: boolean,
 ): Sketch {
-  return {
-    ...sketch,
-    constraints: sketch.constraints.map((constraint) => {
-      if (constraint.id !== id) return constraint;
-      if (!("driving" in constraint)) return constraint;
-      return constraint.driving === driving
-        ? constraint
-        : { ...constraint, driving };
-    }),
-  };
+  let changed = false;
+  const constraints = sketch.constraints.map((constraint) => {
+    if (constraint.id !== id) return constraint;
+    // Dimensions omit `driving` when driving; only reference sets it to false.
+    // Do not use `"driving" in constraint` here: that treats every ordinary
+    // dimension as non-toggleable and silently drops the kind change.
+    if (
+      constraint.type !== "distance" &&
+      constraint.type !== "pointLineDistance" &&
+      constraint.type !== "diameter" &&
+      constraint.type !== "angle"
+    ) {
+      return constraint;
+    }
+    const currentlyDriving = constraint.driving !== false;
+    if (currentlyDriving === driving) return constraint;
+    changed = true;
+    return { ...constraint, driving };
+  });
+  return changed ? { ...sketch, constraints } : sketch;
 }
 
 /** Move a dimension's label without changing its measurement. */

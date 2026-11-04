@@ -3594,25 +3594,6 @@ export function App() {
           >
             clear
           </button>
-          {mode === "sketch" ? (
-            <>
-              <span className="doc-sep" aria-hidden="true" />
-              <button
-                className="text-action is-primary"
-                type="button"
-                onClick={finishActiveMode}
-                title={
-                  activeFeature?.type === "extrude"
-                    ? "Done selecting this extrude's profiles"
-                    : "Finish the sketch"
-                }
-                data-testid="finish-sketch"
-              >
-                {activeFeature?.type === "extrude" ? "done" : "finish sketch"}{" "}
-                <span className="key">↵</span>
-              </button>
-            </>
-          ) : null}
         </div>
 
         <div className="doc-right">
@@ -3881,6 +3862,21 @@ export function App() {
                   data-testid="clear-sketch"
                 >
                   clear sketch
+                </button>
+                <span className="tool-separator" />
+                <button
+                  className="text-action is-primary"
+                  type="button"
+                  onClick={finishActiveMode}
+                  title={
+                    activeFeature?.type === "extrude"
+                      ? "Done selecting this extrude's profiles"
+                      : "Finish the sketch"
+                  }
+                  data-testid="finish-sketch"
+                >
+                  {activeFeature?.type === "extrude" ? "done" : "finish sketch"}{" "}
+                  <span className="key">↵</span>
                 </button>
               </div>
 
