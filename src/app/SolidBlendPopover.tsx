@@ -1,9 +1,12 @@
 import { edgeRefKey, type EdgeRef } from "../core/kernel/protocol";
+import { MeasureField } from "./MeasureField";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
 
 interface SolidBlendPopoverProps {
   kind: "fillet" | "chamfer";
   value: number;
+  /** Adaptive quick-adjust ceiling from the selected edges and body. */
+  max: number;
   edges: readonly EdgeRef[];
   isDraft: boolean;
   position: PopoverPosition;
@@ -23,6 +26,7 @@ interface SolidBlendPopoverProps {
 export function SolidBlendPopover({
   kind,
   value,
+  max,
   edges,
   isDraft,
   position,
@@ -63,26 +67,17 @@ export function SolidBlendPopover({
         disabled: edgeCount === 0 || !(value > 0),
       }}
     >
-      <label className="feature-row">
-        <span className="detail-key">{valueLabel}</span>
-        <span className="feature-control">
-          <input
-            className="detail-input feature-number"
-            type="number"
-            min="0.1"
-            step="0.1"
-            value={value}
-            onChange={(event) => {
-              const next = Number(event.target.value);
-              if (Number.isFinite(next) && next > 0) onValue(next);
-            }}
-            onBlur={onValueEnd}
-            aria-label={`${title} ${valueLabel} in millimetres`}
-            data-testid={`${prefix}-${valueLabel}`}
-          />
-          <span className="detail-value">mm</span>
-        </span>
-      </label>
+      <MeasureField
+        label={valueLabel}
+        value={value}
+        min={0.1}
+        max={max}
+        onChange={onValue}
+        onEnd={onValueEnd}
+        testId={`${prefix}-${valueLabel}`}
+        sliderTestId={`${prefix}-${valueLabel}-slider`}
+        ariaLabel={`${title} ${valueLabel} in millimetres`}
+      />
 
       <div className="feature-row">
         <span className="detail-key">edges</span>

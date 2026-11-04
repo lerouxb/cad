@@ -1,4 +1,5 @@
 import type { PlaneRef } from "../core/doc/types";
+import { MeasureField } from "./MeasureField";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
 
 export interface DatumPlaneDraft {
@@ -131,24 +132,16 @@ export function DatumPlanePopover({
       </label>
 
       {draft.kind === "offset" ? (
-        <div className="feature-row">
-          <span className="detail-key">distance</span>
-          <span className="feature-control">
-            <input
-              className="detail-input feature-number"
-              type="number"
-              step="0.1"
-              value={draft.distance}
-              onChange={(event) => {
-                const value = Number(event.target.value);
-                if (Number.isFinite(value)) onDistance(value);
-              }}
-              aria-label="Datum plane offset in millimetres"
-              data-testid="datum-distance"
-            />
-            <span className="detail-value">mm</span>
-          </span>
-        </div>
+        <MeasureField
+          label="distance"
+          value={draft.distance}
+          min={-100}
+          max={100}
+          onChange={onDistance}
+          testId="datum-distance"
+          sliderTestId="datum-distance-slider"
+          ariaLabel="Datum plane offset in millimetres"
+        />
       ) : (
         <label className="feature-row">
           <span className="detail-key">second</span>

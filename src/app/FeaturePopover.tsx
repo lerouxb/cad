@@ -1,4 +1,5 @@
 import type { ExtrudeFeature, SketchFeature } from "../core/doc/types";
+import { MeasureField } from "./MeasureField";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
 
 interface FeaturePopoverProps {
@@ -106,41 +107,19 @@ export function FeaturePopover({
         </label>
       ) : null}
 
-      <div className="feature-row">
-        <span className="detail-key">distance</span>
-        <span className="feature-control">
-          <input
-            className="slider feature-slider"
-            type="range"
-            min={1}
-            max={100}
-            step={1}
-            value={Math.min(feature.height, 100)}
-            onChange={(event) => onHeight(Number(event.target.value))}
-            onPointerUp={onHeightEnd}
-            onKeyUp={onHeightEnd}
-            disabled={feature.end === "throughAll"}
-            data-testid="height-slider"
-            aria-label="Extrude height"
-          />
-          <input
-            className="detail-input feature-number"
-            type="number"
-            min="0.1"
-            step="0.1"
-            value={feature.height}
-            onChange={(event) => {
-              const value = Number(event.target.value);
-              if (Number.isFinite(value) && value > 0) onHeight(value);
-            }}
-            onBlur={onHeightEnd}
-            disabled={feature.end === "throughAll"}
-            aria-label="Extrude height in millimetres"
-            data-testid="extrude-height"
-          />
-          <span className="detail-value">mm</span>
-        </span>
-      </div>
+      <MeasureField
+        label="distance"
+        value={feature.height}
+        min={0.1}
+        max={100}
+        disabled={feature.end === "throughAll"}
+        onChange={onHeight}
+        onEnd={onHeightEnd}
+        testId="extrude-height"
+        sliderTestId="height-slider"
+        ariaLabel="Extrude height in millimetres"
+        sliderAriaLabel="Extrude height"
+      />
 
       <div className="feature-row">
         <span className="detail-key">direction</span>

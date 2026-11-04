@@ -408,6 +408,13 @@ docs/
   1/2/5 × 10ⁿ step so minor cells stay roughly 16–40 px; the stage-foot input overrides
   it with any mm value and `auto` restores it. Snap is independent of grid visibility.
   Do not reintroduce a fixed 10 mm grid.
+- **Every feature length uses the same control.** `MeasureField` is a range slider plus
+  an exact number field and unit: extrude distance, fillet radius, chamfer distance,
+  datum offset and the sketch corner fillet all use it. Do not add a bare number for a
+  new length. Blends use an adaptive quick-adjust ceiling (half the shortest selected
+  edge/body dimension); the sketch fillet uses 45% of the shorter adjacent line. The
+  number field may exceed the slider range (e.g. to surface a failure), so the rail is a
+  shortcut, never a hard limit.
 - **Feature forms live in the draggable popover, not the timeline.** `FeaturePopover`
   holds the extrude sketch picker, height, direction, operation, end and the
   `select profiles` hand-off. **Selecting a step is how you edit it**: a sketch opens the

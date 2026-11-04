@@ -1223,7 +1223,7 @@ body {
 
 .body-pick {
   position: absolute;
-  top: 80px;
+  top: 98px;
   left: 14px;
   display: inline-flex;
   align-items: center;
@@ -2139,6 +2139,9 @@ body {
 }
 
 .detail-empty {
+  /* Keep the autosave/status note on the right even when no step is selected;
+     otherwise the empty label strands it on the left. */
+  margin-right: auto;
   color: var(--ink-3);
   font-family: var(--font-mono);
   font-size: var(--type-micro);
@@ -2546,14 +2549,17 @@ body {
   padding: 0;
 }
 
+/* Tool line and options row follow the studies: a baseline-aligned mono strip,
+   no full-width bar or border, and the highlighter marks the active tool and
+   the active option. */
 .tool-line {
   display: flex;
   flex: none;
-  align-items: center;
-  gap: 16px;
-  height: 34px;
-  padding: 0 22px;
-  border-bottom: 1px solid var(--rule);
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 5px 15px;
+  padding: 8px 22px 6px;
+  border-bottom: 0;
   overflow-x: auto;
 }
 
@@ -2563,28 +2569,29 @@ body {
   gap: 4px;
   width: auto;
   height: auto;
-  padding: 2px 0;
+  margin: 0 -4px;
+  padding: 1px 4px;
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: var(--ink-2);
+  color: var(--ink-3);
   font-family: var(--font-mono);
   font-size: var(--type-control);
-  letter-spacing: var(--tracking-control);
+  letter-spacing: var(--tracking-value);
   line-height: var(--leading-control);
-  text-transform: uppercase;
+  text-transform: lowercase;
 }
 
 .tool-button:hover {
-  background: transparent;
+  background: var(--marker-soft);
   color: var(--ink);
 }
 
 .tool-button.is-active {
   border: 0;
-  background: var(--marker-wash);
-  box-shadow: 0 0 0 3px var(--marker-wash);
-  color: var(--ink);
+  background: var(--marker);
+  box-shadow: none;
+  color: var(--marker-ink);
 }
 
 .tool-key {
@@ -2592,26 +2599,32 @@ body {
   font-family: var(--font-mono);
   font-size: var(--type-micro);
   font-style: normal;
+  letter-spacing: var(--tracking-prose);
 }
 
 .tool-separator {
   flex: none;
+  align-self: center;
   width: 1px;
-  height: 12px;
-  background: var(--rule);
+  height: 11px;
+  background: var(--rule-strong);
 }
 
 /* The contextual options row: filter (and later create variants), one at a
-   time. It only exists for tools that have options. */
+   time. It exists only for tools that have options, so it takes no space. */
 .tool-options {
   display: flex;
   flex: none;
-  align-items: center;
-  gap: 12px;
-  height: 30px;
-  padding: 0 22px;
-  border-bottom: 1px solid var(--rule);
-  overflow-x: auto;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 14px;
+  padding: 0;
+  border: 0;
+  overflow: visible;
+}
+
+.sketch-stage > .tool-options {
+  padding: 0 22px 10px;
 }
 
 .tool-kicker {
@@ -2625,32 +2638,39 @@ body {
 }
 
 .tool-option {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
   flex: none;
-  padding: 3px 0;
+  margin: 0 -3px;
+  padding: 1px 3px;
   border: 0;
   border-radius: 0;
-  background: transparent;
+  background: none;
   color: var(--ink-3);
   font-family: var(--font-mono);
   font-size: var(--type-control);
-  letter-spacing: var(--tracking-control);
+  letter-spacing: var(--tracking-value);
   line-height: var(--leading-control);
+  text-transform: lowercase;
 }
 
 .tool-option:hover {
-  background: transparent;
+  background: none;
   color: var(--ink);
 }
 
 .tool-option.is-on {
-  box-shadow: inset 0 -2px 0 var(--ink);
-  color: var(--ink);
+  background: var(--marker);
+  box-shadow: none;
+  color: var(--marker-ink);
 }
 
 .tool-note {
-  margin-left: auto;
-  color: var(--dim);
-  font-size: var(--type-value);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-micro);
   white-space: nowrap;
 }
 
@@ -2658,12 +2678,13 @@ body {
    float over the canvas so picking coordinates and framing stay put. */
 .model-tools {
   position: absolute;
-  top: 10px;
-  left: 14px;
-  right: 14px;
+  top: 22px;
+  left: 26px;
   z-index: 6;
   display: flex;
+  max-width: 74%;
   flex-direction: column;
+  align-items: flex-start;
   pointer-events: none;
 }
 
@@ -2671,51 +2692,41 @@ body {
   pointer-events: auto;
 }
 
-.model-tool-line {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--rule);
-  border-bottom: 0;
-  border-radius: 8px 8px 0 0;
-  background: var(--overlay);
-  backdrop-filter: blur(6px);
+.model-tools .tool-line {
+  padding: 0;
 }
 
 .model-tools .tool-options {
-  gap: 10px;
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--rule);
-  border-top: 0;
-  border-radius: 0 0 8px 8px;
-  background: var(--overlay);
-  backdrop-filter: blur(6px);
+  padding: 0;
+  margin-top: 9px;
 }
 
-/* Select Other: the overlapping hits at the cursor, cycled by clicking. */
+/* Select Other: an indicator at the cursor. Clicking the geometry cycles the
+   overlapping pick, so the chip never has to be chased. */
 .select-other {
   position: absolute;
-  z-index: 8;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 9px;
-  border: 1px solid var(--rule);
-  border-radius: 8px;
-  background: var(--overlay);
-  backdrop-filter: blur(6px);
-  color: var(--ink-2);
+  z-index: 12;
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 3px 8px 4px;
+  border: 1px solid var(--rule-strong);
+  background: var(--bg);
+  color: var(--ink);
   font-family: var(--font-mono);
-  font-size: var(--type-value);
-  box-shadow: var(--shadow-popover, 0 8px 24px rgba(0, 0, 0, 0.18));
-  cursor: pointer;
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.select-other-count,
+.select-other-kind {
+  color: var(--ink-3);
 }
 
 .select-other-kind {
-  color: var(--ink);
+  font-size: var(--type-label);
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
 }

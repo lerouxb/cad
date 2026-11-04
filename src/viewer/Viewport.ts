@@ -3,6 +3,8 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { Line2 } from "three/addons/lines/Line2.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
+import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import type { BodyMesh } from "../core/kernel/protocol";
 import { edgeRefKey } from "../core/kernel/protocol";
 import type { PlaneFrame } from "../core/types";
@@ -97,6 +99,8 @@ export class Viewport {
   private dimmed = false;
   private sketchOverlay: SketchOverlayData | null = null;
   private readonly sketchLineMaterials = new Set<LineMaterial>();
+  /** Screen-space hover/selection edge materials, rebuilt with the pick. */
+  private readonly overlayLineMaterials = new Set<LineMaterial>();
   private environment = new THREE.Group();
   private hoverGroup = new THREE.Group();
   private selectionGroup = new THREE.Group();
@@ -594,14 +598,30 @@ export class Viewport {
       return;
     }
     const { candidates, ...info } = this.pickCandidatesAt(event);
+    const sameOverlap =
+      !event.shiftKey &&
+      candidates.length > 1 &&
+      candidates.length === this.pickCandidates.length &&
+      candidates.every(
+        (candidate, index) =>
+          candidate.id === this.pickCandidates[index]?.id,
+      ) &&
+      Math.abs(info.x - this.pickCursor.x) <= 6 &&
+      Math.abs(info.y - this.pickCursor.y) <= 6;
     this.pickCandidates = [...candidates];
-    this.pickCandidateIndex = 0;
     this.pickCursor = { x: info.x, y: info.y };
-    this.selectPick(candidates[0] ?? null, event.shiftKey, {
-      ...info,
-      candidates,
-      index: 0,
-    });
+    this.pickCandidateIndex = sameOverlap
+      ? (this.pickCandidateIndex + 1) % candidates.length
+      : 0;
+    this.selectPick(
+      candidates[this.pickCandidateIndex] ?? null,
+      event.shiftKey,
+      {
+        ...info,
+        candidates,
+        index: this.pickCandidateIndex,
+      },
+    );
   };
 
   private onPointerCancel = (): void => {
@@ -853,16 +873,24 @@ export class Viewport {
     const positions = edgePositionsForGroup(this.mesh, edge, this.edgeUnit);
     if (positions.length < 6) return;
 
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
-    const material = new THREE.LineBasicMaterial({
+    // WebGL ignores LineBasicMaterial.linewidth. Use Line2's screen-space
+    // quads so hover and selection match the studies' 5 px / 6 px strokes.
+    const geometry = new LineSegmentsGeometry();
+    geometry.setPositions(Array.from(positions));
+    const material = new LineMaterial({
       color: this.highlightColor,
+      linewidth: selected ? 6 : 5,
       transparent: true,
-      opacity: selected ? 1 : 0.6,
+      opacity: 1,
       depthTest: false,
       depthWrite: false,
+      resolution: new THREE.Vector2(
+        Math.max(1, this.canvas.clientWidth),
+        Math.max(1, this.canvas.clientHeight),
+      ),
     });
-    const overlay = new THREE.LineSegments(geometry, material);
+    this.overlayLineMaterials.add(material);
+    const overlay = new LineSegments2(geometry, material);
     overlay.renderOrder = selected ? 6 : 5;
     overlay.raycast = () => {};
     group.add(overlay);
@@ -876,6 +904,9 @@ export class Viewport {
         if (Array.isArray(child.material)) {
           child.material.forEach((material) => material.dispose());
         } else {
+          if (child.material instanceof LineMaterial) {
+            this.overlayLineMaterials.delete(child.material);
+          }
           child.material.dispose();
         }
       }
@@ -1177,6 +1208,9 @@ export class Viewport {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     for (const material of this.sketchLineMaterials) {
+      material.resolution.set(width, height);
+    }
+    for (const material of this.overlayLineMaterials) {
       material.resolution.set(width, height);
     }
     this.dirty = true;

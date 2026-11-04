@@ -446,7 +446,7 @@ export function App() {
     useState<SketchSelectionFilter>("all");
   const [selectOther, setSelectOther] = useState<PickInfo | null>(null);
   const [bodyPopoverPosition, setBodyPopoverPosition] =
-    useState<PopoverPosition>({ x: 22, y: 112 });
+    useState<PopoverPosition>({ x: 22, y: 138 });
   const [blendDraft, setBlendDraft] = useState<BlendDraft | null>(null);
   const [blendBaseline, setBlendBaseline] = useState<EdgeBlendFeature | null>(
     null,
@@ -468,7 +468,7 @@ export function App() {
   );
   const [popoverPosition, setPopoverPosition] = useState<PopoverPosition>({
     x: 22,
-    y: 108,
+    y: 138,
   });
   const [draggingFeatureId, setDraggingFeatureId] = useState<string | null>(
     null,
@@ -812,6 +812,25 @@ export function App() {
         .filter((ref): ref is EdgeRef => ref !== undefined),
     [edgeSelection],
   );
+  // The quick-adjust ceiling for a fillet/chamfer: a blend larger than half
+  // the shortest selected edge or body dimension stops being plausible. The
+  // number field still accepts a larger value for an explicit failure test.
+  const blendValueMax = useMemo(() => {
+    const lengths = (blendDraft?.edges ?? [])
+      .map((edge) => edge.hint.length)
+      .filter((length): length is number => (length ?? 0) > 1e-6);
+    const bounds = mesh?.stats.bounds;
+    const minBody = bounds
+      ? Math.min(
+          bounds[3] - bounds[0],
+          bounds[4] - bounds[1],
+          bounds[5] - bounds[2],
+        )
+      : 12;
+    const shortest = lengths.length > 0 ? Math.min(...lengths) : minBody;
+    const ceiling = Math.min(shortest, minBody) * 0.5;
+    return Math.max(1, Math.round(ceiling * 10) / 10);
+  }, [blendDraft, mesh]);
   const solidFeatures = useMemo<KernelFeature[]>(() => {
     let features: KernelFeature[];
     if (rebuild) {
@@ -1011,6 +1030,16 @@ export function App() {
     const shared = [a.a, a.b].find((id) => id === b.a || id === b.b);
     return shared ? { a, b } : null;
   }, [sketch, selectedSet]);
+  const filletRadiusMax = useMemo(() => {
+    if (!filletSelection) return 10;
+    const lengths = [filletSelection.a, filletSelection.b].map((line) => {
+      const a = geometry.points[line.a];
+      const b = geometry.points[line.b];
+      return a && b ? Math.hypot(b[0] - a[0], b[1] - a[1]) : 10;
+    });
+    const ceiling = Math.min(...lengths) * 0.45;
+    return Math.max(1, Math.round(ceiling * 10) / 10);
+  }, [filletSelection, geometry.points]);
 
   const resolveCurrent = () => {
     const current = getState();
@@ -3673,7 +3702,7 @@ export function App() {
             <canvas ref={canvasRef} className="viewport-canvas" />
 
             <div className="model-tools">
-              <div className="model-tool-line" role="toolbar" aria-label="Model tools">
+              <div className="tool-line" role="toolbar" aria-label="Model tools">
                 <span className="tool-kicker">tools</span>
                 <ToolButton
                   label="select"
@@ -3704,14 +3733,13 @@ export function App() {
             {selectOther &&
             selectOther.candidates.length > 1 &&
             !blendDraft ? (
-              <button
+              <div
                 className="select-other"
-                type="button"
+                role="status"
                 style={{
                   left: selectOther.x + 14,
                   top: selectOther.y + 16,
                 }}
-                onClick={() => viewportRef.current?.cyclePick()}
                 data-testid="select-other"
               >
                 <span className="select-other-kind">
@@ -3720,8 +3748,8 @@ export function App() {
                 <span className="select-other-count">
                   {selectOther.index + 1} of {selectOther.candidates.length}
                 </span>
-                <span>click to cycle</span>
-              </button>
+                <span>click geometry to cycle</span>
+              </div>
             ) : null}
 
             {bodyPick ? (
@@ -3786,6 +3814,7 @@ export function App() {
           <div className={`sketch-layer${mode === "sketch" ? "" : " is-hidden"}`}>
             <div className="sketch-stage">
               <div className="tool-line" role="toolbar" aria-label="Sketch tools">
+                <span className="tool-kicker">tools</span>
                 <ToolButton
                   label="select"
                   shortcut="v"
@@ -3932,6 +3961,7 @@ export function App() {
               filletOpen && filletSelection ? (
                 <FilletPopover
                   radius={filletRadius}
+                  maxRadius={filletRadiusMax}
                   onRadius={setFilletRadius}
                   onApply={applyFillet}
                   onCancel={cancelFillet}
@@ -4309,6 +4339,7 @@ export function App() {
             <SolidBlendPopover
               kind={blendDraft.kind}
               value={blendDraft.value}
+              max={blendValueMax}
               edges={blendDraft.edges}
               isDraft={blendDraft.mode === "new"}
               position={popoverPosition}

@@ -688,6 +688,13 @@ test("clicking the empty timeline tail clears the selected step", async ({
   await expect(page.getByTestId("timeline-detail")).toContainText(
     "No step selected",
   );
+  // The autosave/status note stays on the right even with no selected step.
+  const detailBox = await page.getByTestId("timeline-detail").boundingBox();
+  const statusBox = await page.getByTestId("rebuild-status").boundingBox();
+  expect(detailBox && statusBox).toBeTruthy();
+  if (detailBox && statusBox) {
+    expect(statusBox.x).toBeGreaterThan(detailBox.x + detailBox.width / 2);
+  }
   await expect(canvas).toHaveAttribute("data-feature-highlight", "");
   await expect(canvas).toHaveAttribute("data-sketch-overlay", "off");
 
@@ -887,6 +894,7 @@ test("creates an offset datum plane and sketches on it", async ({
   const errors = collectErrors(page);
   await openInsert(page, "plane");
   await expect(page.getByTestId("datum-draft-popover")).toBeVisible();
+  await expect(page.getByTestId("datum-distance-slider")).toBeVisible();
   await page.getByTestId("datum-distance").fill("10");
   await page.getByTestId("datum-apply").click();
 
@@ -1566,6 +1574,7 @@ test("fillets four vertical edges and survives an upstream edit", async ({
   await page.getByTestId("start-fillet").click();
   await expect(page.getByTestId("fillet-feature-popover")).toBeVisible();
   await expect(page.getByTestId("fillet-feature-edges")).toContainText("4 edges");
+  await expect(page.getByTestId("fillet-feature-radius-slider")).toBeVisible();
   await page.getByTestId("fillet-feature-radius").fill("2");
   await page.getByTestId("fillet-feature-apply").click();
 
@@ -1681,6 +1690,7 @@ test("creates a chamfer from selected edges with a live preview", async ({
   await expect(page.getByTestId("chamfer-feature-edges")).toContainText(
     `${selected.size} edge`,
   );
+  await expect(page.getByTestId("chamfer-feature-distance-slider")).toBeVisible();
 
   const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
   const removedAt = (distance: number): number =>
@@ -1771,7 +1781,8 @@ test("the model filter row limits picks and Select Other cycles", async ({
   const other = page.getByTestId("select-other");
   await expect(other).toBeVisible();
   await expect(other).toContainText("1 of 2");
-  await other.click();
+  // The chip is an indicator: clicking the same geometry cycles the pick.
+  await page.mouse.click(edgeFacePoint!.x, edgeFacePoint!.y);
   await expect(pick).toHaveAttribute("data-kind", "face");
   await expect(other).toContainText("2 of 2");
 
@@ -2451,6 +2462,7 @@ test("rounds a rectangle corner with a parametric fillet", async ({ app: page })
 
   await page.getByTestId("open-fillet").click();
 
+  await expect(page.getByTestId("fillet-radius-slider")).toBeVisible();
   await page.getByTestId("fillet-radius").fill("10");
   await page.getByTestId("constraint-fillet").click();
 
