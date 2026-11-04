@@ -269,7 +269,17 @@ export function SketchCanvas({
   const regionsSelectableNow =
     regionsSelectable && selectionFilter === "all";
   const color = palette[tone];
-  const selectColor = palette.selected;
+  // Selection and hover use the highlighter, like the model view and the
+  // studies: a wide marker wash for selected geometry, a 5 px marker stroke
+  // for the entity under the cursor.
+  const hoveredCurveId =
+    tool === "select" && (hover?.kind === "line" || hover?.kind === "axis")
+      ? (hover.referenceLineId ?? null)
+      : null;
+  const hoveredPointId =
+    tool === "select" && hover?.kind === "point"
+      ? (hover.existingPointId ?? null)
+      : null;
   const snapTolerance = 11 * px;
   // The initial origin-centred view is wider than the geometry fit. Keep the
   // grid/snap step tied to the fitted sketch scale so opening a sketch does not
@@ -1550,28 +1560,51 @@ export function SketchCanvas({
         const b = points[axis.b];
         if (!a || !b) return null;
         const isSelected = selected.has(axis.id);
+        const isHovered = hoveredCurveId === axis.id;
         const projected = Boolean(axis.projectionId);
         return (
-          <line
-            key={axis.id}
-            data-reference-id={axis.id}
-            data-projection-id={axis.projectionId}
-            x1={a[0]}
-            y1={a[1]}
-            x2={b[0]}
-            y2={b[1]}
-            stroke={
-              isSelected
-                ? selectColor
-                : projected
-                  ? palette.dimension
-                  : palette.axis
-            }
-            strokeWidth={isSelected ? 1.6 : 1}
-            strokeDasharray={projected ? "2 3" : undefined}
-            strokeLinecap={projected ? "round" : undefined}
-            vectorEffect="non-scaling-stroke"
-          />
+          <g key={axis.id}>
+            {isHovered ? (
+              <line
+                x1={a[0]}
+                y1={a[1]}
+                x2={b[0]}
+                y2={b[1]}
+                stroke={palette.marker}
+                strokeWidth={5}
+                strokeOpacity={0.7}
+                strokeLinecap="round"
+                pointerEvents="none"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            {isSelected ? (
+              <line
+                x1={a[0]}
+                y1={a[1]}
+                x2={b[0]}
+                y2={b[1]}
+                stroke={palette.markerSoft}
+                strokeWidth={12}
+                strokeLinecap="round"
+                pointerEvents="none"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            <line
+              data-reference-id={axis.id}
+              data-projection-id={axis.projectionId}
+              x1={a[0]}
+              y1={a[1]}
+              x2={b[0]}
+              y2={b[1]}
+              stroke={projected ? palette.dimension : palette.axis}
+              strokeWidth={1}
+              strokeDasharray={projected ? "2 3" : undefined}
+              strokeLinecap={projected ? "round" : undefined}
+              vectorEffect="non-scaling-stroke"
+            />
+          </g>
         );
       })}
 
@@ -1645,18 +1678,46 @@ export function SketchCanvas({
         const center = points[circle.center];
         if (!center) return null;
         const isSelected = selected.has(circle.id);
+        const isHovered = hoveredCurveId === circle.id;
+        const radius = radii[circle.id] ?? circle.radius;
         return (
-          <circle
-            key={circle.id}
-            data-geometry-id={circle.id}
-            cx={center[0]}
-            cy={center[1]}
-            r={radii[circle.id] ?? circle.radius}
-            fill="none"
-            stroke={isSelected ? selectColor : color}
-            strokeWidth={isSelected ? 2.4 : 1.4}
-            vectorEffect="non-scaling-stroke"
-          />
+          <g key={circle.id}>
+            {isHovered ? (
+              <circle
+                cx={center[0]}
+                cy={center[1]}
+                r={radius}
+                fill="none"
+                stroke={palette.marker}
+                strokeWidth={5}
+                strokeOpacity={0.7}
+                pointerEvents="none"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            {isSelected ? (
+              <circle
+                cx={center[0]}
+                cy={center[1]}
+                r={radius}
+                fill="none"
+                stroke={palette.markerSoft}
+                strokeWidth={12}
+                pointerEvents="none"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            <circle
+              data-geometry-id={circle.id}
+              cx={center[0]}
+              cy={center[1]}
+              r={radius}
+              fill="none"
+              stroke={color}
+              strokeWidth={1.4}
+              vectorEffect="non-scaling-stroke"
+            />
+          </g>
         );
       })}
 
@@ -1666,20 +1727,49 @@ export function SketchCanvas({
         const b = points[curve.b];
         if (!a || !b) return null;
         const isSelected = selected.has(curve.id);
+        const isHovered = hoveredCurveId === curve.id;
         return (
-          <line
-            key={curve.id}
-            data-geometry-id={curve.id}
-            x1={a[0]}
-            y1={a[1]}
-            x2={b[0]}
-            y2={b[1]}
-            stroke={isSelected ? selectColor : curve.construction ? palette.construction : color}
-            strokeWidth={isSelected ? 2.6 : 1.6}
-            strokeDasharray={curve.construction ? "5 4" : undefined}
-            strokeLinecap="round"
-            vectorEffect="non-scaling-stroke"
-          />
+          <g key={curve.id}>
+            {isHovered ? (
+              <line
+                x1={a[0]}
+                y1={a[1]}
+                x2={b[0]}
+                y2={b[1]}
+                stroke={palette.marker}
+                strokeWidth={5}
+                strokeOpacity={0.7}
+                strokeLinecap="round"
+                pointerEvents="none"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            {isSelected ? (
+              <line
+                x1={a[0]}
+                y1={a[1]}
+                x2={b[0]}
+                y2={b[1]}
+                stroke={palette.markerSoft}
+                strokeWidth={12}
+                strokeLinecap="round"
+                pointerEvents="none"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            <line
+              data-geometry-id={curve.id}
+              x1={a[0]}
+              y1={a[1]}
+              x2={b[0]}
+              y2={b[1]}
+              stroke={curve.construction ? palette.construction : color}
+              strokeWidth={1.6}
+              strokeDasharray={curve.construction ? "5 4" : undefined}
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          </g>
         );
       })}
 
@@ -1688,18 +1778,43 @@ export function SketchCanvas({
         const d = arcPathData(curve, points);
         if (!d) return null;
         const isSelected = selected.has(curve.id);
+        const isHovered = hoveredCurveId === curve.id;
         return (
-          <path
-            key={curve.id}
-            data-geometry-id={curve.id}
-            d={d}
-            fill="none"
-            stroke={isSelected ? selectColor : curve.construction ? palette.construction : color}
-            strokeWidth={isSelected ? 2.6 : 1.6}
-            strokeDasharray={curve.construction ? "5 4" : undefined}
-            strokeLinecap="round"
-            vectorEffect="non-scaling-stroke"
-          />
+          <g key={curve.id}>
+            {isHovered ? (
+              <path
+                d={d}
+                fill="none"
+                stroke={palette.marker}
+                strokeWidth={5}
+                strokeOpacity={0.7}
+                strokeLinecap="round"
+                pointerEvents="none"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            {isSelected ? (
+              <path
+                d={d}
+                fill="none"
+                stroke={palette.markerSoft}
+                strokeWidth={12}
+                strokeLinecap="round"
+                pointerEvents="none"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            <path
+              data-geometry-id={curve.id}
+              d={d}
+              fill="none"
+              stroke={curve.construction ? palette.construction : color}
+              strokeWidth={1.6}
+              strokeDasharray={curve.construction ? "5 4" : undefined}
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          </g>
         );
       })}
 
@@ -2068,7 +2183,7 @@ export function SketchCanvas({
             y1={0}
             x2={5 * px}
             y2={0}
-            stroke={originSelected ? selectColor : palette.dim}
+            stroke={originSelected ? palette.marker : palette.dim}
             strokeWidth={1.2}
             vectorEffect="non-scaling-stroke"
           />
@@ -2077,7 +2192,7 @@ export function SketchCanvas({
             y1={-5 * px}
             x2={0}
             y2={5 * px}
-            stroke={originSelected ? selectColor : palette.dim}
+            stroke={originSelected ? palette.marker : palette.dim}
             strokeWidth={1.2}
             vectorEffect="non-scaling-stroke"
           />
@@ -2086,7 +2201,7 @@ export function SketchCanvas({
             cy={0}
             r={2.2 * px}
             fill={palette.halo}
-            stroke={originSelected ? selectColor : palette.dim}
+            stroke={originSelected ? palette.marker : palette.dim}
           />
       </g>
 
@@ -2096,6 +2211,7 @@ export function SketchCanvas({
         if (!position) return null;
         const active = dragging === point.id;
         const isSelected = selected.has(point.id);
+        const isHovered = hoveredPointId === point.id;
         return (
           <g key={point.id}>
             {(tool === "select" || tool === "dimension") && pointsSelectable ? (
@@ -2118,15 +2234,15 @@ export function SketchCanvas({
               cy={position[1]}
               r={active ? pointRadius * 1.35 : pointRadius}
               fill={
-                isSelected
-                  ? selectColor
+                isSelected || isHovered
+                  ? palette.marker
                   : point.standalone
                     ? palette.halo
                     : active
                       ? color
                       : palette.pointFill
               }
-              stroke={isSelected ? selectColor : color}
+              stroke={isSelected || isHovered ? palette.markerInk : color}
               strokeWidth={1.6}
               vectorEffect="non-scaling-stroke"
               pointerEvents="none"
