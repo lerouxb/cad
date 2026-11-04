@@ -30,7 +30,7 @@ describe("sketch geometry", () => {
     const { sketch } = createDemoModel();
     const geometry = sketchGeometry(sketch);
 
-    expect(geometry.points.p1).toEqual([60, 0]);
+    expect(geometry.points.p1).toEqual([30, -20]);
     expect(geometry.radii.hole).toBe(8);
   });
 
@@ -41,7 +41,7 @@ describe("sketch geometry", () => {
       radii: { hole: 12 },
     });
 
-    expect(sketch.points.find((p) => p.id === "p1")?.x).toBe(60);
+    expect(sketch.points.find((p) => p.id === "p1")?.x).toBe(30);
     expect(next.points.find((p) => p.id === "p1")?.x).toBe(80);
     expect(next.curves.find((c) => c.id === "hole")).toMatchObject({ radius: 12 });
   });

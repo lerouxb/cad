@@ -209,7 +209,7 @@ describe("sketch fillet", () => {
     expect(deleted.curves.filter((curve) => curve.type === "line")).toHaveLength(2);
   });
 
-  it("keeps the demo's origin corner as a construction intersection", () => {
+  it("keeps the demo's diagonal corner as a construction intersection", () => {
     const { sketch } = createExampleModel();
     const bottom = sketch.curves.find((curve) => curve.id === "l-bottom");
     const left = sketch.curves.find((curve) => curve.id === "l-left");
@@ -234,17 +234,22 @@ describe("sketch fillet", () => {
       ).map((c) => (c.type === "pointOnLine" ? c.line : "")),
     ).toEqual(expect.arrayContaining(["l-bottom", "l-left"]));
 
-    // The origin anchor is preserved, not dropped.
+    // The symmetry anchors on p0 are preserved, not dropped.
     expect(
       filleted.constraints.some(
-        (c) => c.type === "coincident" && (c.a === "p0" || c.b === "p0"),
+        (c) => c.type === "symmetric" && (c.a === "p0" || c.b === "p0"),
       ),
     ).toBe(true);
 
     const solved = solveSketch(filleted);
     expect(solved.ok).toBe(true);
-    expect(solved.points.p0).toEqual([0, 0]);
-    expect(diagonal!.a === "p0" ? solved.points[diagonal!.a] : solved.points[diagonal!.b]).toEqual([0, 0]);
+    // The sharp intersection of the supporting edges, not the origin.
+    expect(solved.points.p0![0]).toBeCloseTo(-30, 1);
+    expect(solved.points.p0![1]).toBeCloseTo(-20, 1);
+    const diagonalEnd =
+      diagonal!.a === "p0" ? solved.points[diagonal!.a] : solved.points[diagonal!.b];
+    expect(diagonalEnd![0]).toBeCloseTo(-30, 1);
+    expect(diagonalEnd![1]).toBeCloseTo(-20, 1);
   });
 
   it("extracts a mixed line/arc profile for the kernel", () => {

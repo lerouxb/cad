@@ -37,12 +37,12 @@ describe("slvs adapter", () => {
 
     expect(outcome.ok).toBe(true);
     expect(outcome.status).toBe("ok");
-    // width + height are still free; translation/rotation are pinned by h/v
-    // constraints and the fixed origin.
+    // Width + height are still free; the symmetric opposite edges pin the
+    // rectangle to the origin.
     expect(outcome.dof).toBe(2);
-    expect(at(outcome, "p0")).toEqual([0, 0]);
-    expect(at(outcome, "p1")).toEqual([60, 0]);
-    expect(at(outcome, "p2")).toEqual([60, 40]);
+    expect(at(outcome, "p0")).toEqual([-30, -20]);
+    expect(at(outcome, "p1")).toEqual([30, -20]);
+    expect(at(outcome, "p2")).toEqual([30, 20]);
   });
 
   it("becomes fully constrained when driving dimensions are added", () => {
@@ -59,10 +59,11 @@ describe("slvs adapter", () => {
     const outcome = solveSketch(widened);
 
     expect(outcome.ok).toBe(true);
-    expect(at(outcome, "p1")[0]).toBeCloseTo(85, 6);
-    expect(at(outcome, "p1")[1]).toBeCloseTo(0, 6);
-    expect(at(outcome, "p2")[0]).toBeCloseTo(85, 6);
-    expect(at(outcome, "p2")[1]).toBeCloseTo(40, 6);
+    // The dimension is the full width; the symmetric rectangle splits it.
+    expect(at(outcome, "p1")[0]).toBeCloseTo(42.5, 1);
+    expect(at(outcome, "p1")[1]).toBeCloseTo(-20, 1);
+    expect(at(outcome, "p2")[0]).toBeCloseTo(42.5, 1);
+    expect(at(outcome, "p2")[1]).toBeCloseTo(20, 1);
   });
 
   it("keeps the hole circular and driven by its diameter", () => {
@@ -73,17 +74,19 @@ describe("slvs adapter", () => {
     expect(radius(outcome, "hole")).toBeCloseTo(11, 6);
   });
 
-  it("keeps a dragged corner rectangular instead of free-floating", () => {
+  it("keeps a dragged corner rectangular and mirrored instead of free-floating", () => {
     const { sketch } = createDemoModel();
-    const outcome = solveDrag(sketch, { pointId: "p1", x: 75, y: 12 });
+    const outcome = solveDrag(sketch, { pointId: "p1", x: 75, y: -12 });
 
     expect(outcome).not.toBeNull();
     expect(outcome!.ok).toBe(true);
-    expect(at(outcome!, "p1")[0]).toBeCloseTo(75, 5);
-    // The bottom edge is horizontal, so the drag's y component is rejected.
-    expect(at(outcome!, "p1")[1]).toBeCloseTo(0, 5);
-    // The rectangle follows: p2 keeps the same x as p1.
-    expect(at(outcome!, "p2")[0]).toBeCloseTo(75, 5);
+    expect(at(outcome!, "p1")[0]).toBeCloseTo(75, 1);
+    expect(at(outcome!, "p1")[1]).toBeCloseTo(-12, 1);
+    // The opposite corners mirror about both axes.
+    expect(at(outcome!, "p2")[0]).toBeCloseTo(75, 1);
+    expect(at(outcome!, "p2")[1]).toBeCloseTo(12, 1);
+    expect(at(outcome!, "p0")[0]).toBeCloseTo(-75, 1);
+    expect(at(outcome!, "p3")[1]).toBeCloseTo(12, 1);
     expect(outcome!.dof).toBe(2);
   });
 

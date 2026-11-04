@@ -47,14 +47,14 @@ export function createExampleDocument(): Doc {
     entityType: "face" as const,
     surfaceType: "PLANE",
     normal: [0, 0, 1] as [number, number, number],
-    centroid: [30, 20, 12] as [number, number, number],
+    centroid: [0, 0, 12] as [number, number, number],
     area: 60 * 40 - Math.PI * 8 * 8,
   };
   const bottomHint = {
     entityType: "face" as const,
     surfaceType: "PLANE",
     normal: [0, 0, -1] as [number, number, number],
-    centroid: [30, 20, 0] as [number, number, number],
+    centroid: [0, 0, 0] as [number, number, number],
     area: 60 * 40 - Math.PI * 8 * 8,
   };
   const topFace: TopoRef = {
@@ -101,8 +101,8 @@ export function createExampleDocument(): Doc {
     suppressed: true,
   };
 
-  // The top face frame is centred at (30, 20, 12); the holes are world
-  // (12, 20) and (48, 20).
+  // The top face frame is centred on the origin; the holes are world
+  // (-18, 0) and (18, 0).
   const mounting = addCircle(
     addCircle(emptySketch(), { point: [-18, 0] }, 3),
     { point: [18, 0] },
@@ -144,10 +144,10 @@ export function createExampleDocument(): Doc {
       area,
     },
   });
-  const left = sideFace("extrude:side:left", [-1, 0, 0], [0, 20, 6], 40 * 12);
-  const right = sideFace("extrude:side:right", [1, 0, 0], [60, 20, 6], 40 * 12);
-  const front = sideFace("extrude:side:front", [0, -1, 0], [30, 0, 6], 60 * 12);
-  const back = sideFace("extrude:side:back", [0, 1, 0], [30, 40, 6], 60 * 12);
+  const left = sideFace("extrude:side:left", [-1, 0, 0], [-30, 0, 6], 40 * 12);
+  const right = sideFace("extrude:side:right", [1, 0, 0], [30, 0, 6], 40 * 12);
+  const front = sideFace("extrude:side:front", [0, -1, 0], [0, -20, 6], 60 * 12);
+  const back = sideFace("extrude:side:back", [0, 1, 0], [0, 20, 6], 60 * 12);
   const verticalEdge = (
     a: TopoRef,
     b: TopoRef,
@@ -159,10 +159,10 @@ export function createExampleDocument(): Doc {
     hint: { entityType: "edge", length: 12, midpoint: [x, y, 6] },
   });
   const plateEdges = [
-    verticalEdge(left, front, 0, 0),
-    verticalEdge(right, front, 60, 0),
-    verticalEdge(right, back, 60, 40),
-    verticalEdge(left, back, 0, 40),
+    verticalEdge(left, front, -30, -20),
+    verticalEdge(right, front, 30, -20),
+    verticalEdge(right, back, 30, 20),
+    verticalEdge(left, back, -30, 20),
   ];
   const roundedPlate = {
     ...createFilletFeature(plateEdges, 4, { name: "Rounded plate" }),

@@ -18,8 +18,8 @@ describe("deleteEntities", () => {
         (constraint) => constraint.type === "horizontal" && constraint.line === "l-bottom",
       ),
     ).toBe(false);
-    // The other edges keep their own constraints.
-    expect(next.constraints.some((constraint) => constraint.id === "v-right")).toBe(true);
+    // The other edges keep their symmetry constraints.
+    expect(next.constraints.some((constraint) => constraint.id === "sym-left")).toBe(true);
   });
 
   it("deletes a point and every curve incident to it", () => {
@@ -33,8 +33,8 @@ describe("deleteEntities", () => {
     expect(next.points.map((point) => point.id)).toEqual(
       expect.arrayContaining(["p0", "p2", "p3"]),
     );
-    expect(next.constraints.some((constraint) => constraint.id === "h-bottom")).toBe(false);
-    expect(next.constraints.some((constraint) => constraint.id === "v-right")).toBe(false);
+    expect(next.constraints.some((constraint) => constraint.id === "sym-bottom")).toBe(false);
+    expect(next.constraints.some((constraint) => constraint.id === "sym-left")).toBe(true);
   });
 
   it("deletes a circle with its diameter constraint and its orphaned centre", () => {

@@ -44,10 +44,10 @@ describe("sketch regions", () => {
     const crossed = addPolyline(
       demo,
       [
-        { point: [-10, 20] },
-        { point: [32, 47] },
-        { point: [69, 27.5] },
-        { point: [46, -7] },
+        { point: [-40, 0] },
+        { point: [2, 27] },
+        { point: [39, 7.5] },
+        { point: [16, -27] },
       ],
       true,
     );
