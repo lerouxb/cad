@@ -107,7 +107,9 @@ is**) — but not the same box:
    dimension's driving/reference lives in the same control, not a second surface.
    Commit with **Enter**; cancel with **Escape** or by tapping outside. There are
    **no apply/cancel buttons**: the value is already the thing you are looking at,
-   and on touch the keyboard's return is the commit.
+   and on touch the keyboard's return is the commit. A change the editor cannot
+   apply (a dimension that cannot be released) is **never silently dropped** — see
+   [No silent fallbacks](#no-silent-fallbacks).
 3. **Selection popover** — the actions for the *current selection*: the
    constraints that apply, `construction`, `fix`, `delete`. It is a palette of
    immediate actions, not a form, so it has **no commit pair** — each chip acts
@@ -133,21 +135,35 @@ reference implementation (`docs/mockups/02-sketch.html`, and the shared builder
 `ShowcaseUI.inlineEditor` in `docs/showcase/showcase-ui.js`):
 
 ```html
-<div class="dim-editor is-selected">
-  <input type="text" value="55.0" aria-label="Dimension value">
-  <span class="dim-unit">mm</span>
-  <button class="dim-kind is-active" type="button">driving</button>
+<div class="dim-editor is-selected" data-kind="driving">
+  <span class="dim-field">
+    <input type="text" value="55.0" aria-label="Dimension value">
+    <span class="dim-unit">mm</span>
+  </span>
+  <span class="seg dim-kind" role="group" aria-label="Dimension kind">
+    <button type="button" data-kind-option="driving" class="is-selected">driving</button>
+    <button type="button" data-kind-option="reference">reference</button>
+  </span>
 </div>
 ```
 
 - **Placement:** it replaces the annotation's label, at the same spot. The value
   must never be rendered twice. (In the static mockup the same markup sits in a
   `foreignObject` with the extra class `is-inline`.)
-- **Contents:** the value, its unit, and the value's own option — for a dimension,
-  `driving` / `reference`, toggled in place. No second surface for the option.
+- **Contents:** the value, its unit, and the value's own option. The option is a
+  **segmented control** — `driving` / `reference`, both visible, the current one
+  filled — not a single toggle whose label you have to read. The same control sets
+  the kind when the dimension is placed, so it never changes meaning.
+- **The value is a field only while it is yours to set.** While **driving**, the
+  value is an editable `<input>`. While **reference**, the value belongs to the
+  geometry: it becomes a readout — parentheses, dim italic ink, a `measured` tag,
+  no caret and no field. A dimmed input still says "you could edit this"; a
+  readout says "this is an observation". (See [`dimension.html`](dimension.html).)
 - **Commit:** `Enter`. **Cancel:** `Escape`, or a tap/click outside. There are
   **no `apply` / `cancel` buttons** — the value is already the thing you are
-  looking at, and on touch the keyboard's return is the commit.
+  looking at, and on touch the keyboard's return is the commit. Because the label
+  visibly changes on commit (and the DOF readout moves), the commit is evident
+  even without a button.
 - **Selected state:** the editor is opaque (it hides the annotation line behind
   it) with a marker underline; the value field carries the highlighter tint.
 - **The same applies to a point's X/Y**: two fields, one control, at the point —
@@ -211,7 +227,11 @@ change the operation or retarget the reference:
 - a `join` with nothing to join does not become a `new body` — the step reports it
   and the user decides;
 - a reference whose body was merged away is not silently pointed at the survivor —
-  the recovery *offers* to follow the merge and leaves `reselect` as the escape.
+  the recovery *offers* to follow the merge and leaves `reselect` as the escape;
+- a dimension whose kind cannot be changed (a legacy constraint with no `driving`
+  flag) is **not** silently left driving — the editor either applies the change or
+  says it could not. A user action that quietly does nothing is the worst case of
+  all: it looks like it worked.
 
 The rule generalises: an unexpected change to the document (a different operation,
 a different target, a different count) is a decision the user made, not one the

@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — dimension kind</title>
+    <link rel="stylesheet" href="../mockups/mockup.css" />
+    <link rel="stylesheet" href="showcase.css" />
+    <script src="../mockups/theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="../mockups/index.html">
+        cad <span class="tag">tool showcase</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Showcase">
+        <a href="index.html">sketch layout</a>
+        <a href="sketch-edit.html">sketch edit</a>
+        <a class="is-active" href="dimension.html">dimension</a>
+        <a href="sketch-create.html">sketch create</a>
+        <a href="select.html">select</a>
+        <a href="select-model.html">model select</a>
+        <a href="body-ops.html">body ops</a>
+        <a href="bodies.html">bodies</a>
+        <a href="transform.html">transform</a>
+        <a href="extrude.html">extrude</a>
+        <a href="inspect.html">inspect</a>
+        <a href="BACKLOG.md">backlog</a>
+      </nav>
+      <div class="mockbar-right">
+        <a class="mockbar-btn" href="../mockups/index.html">studies</a>
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" title="File menu">
+            <span class="doc-name">dimension-kind</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-center">
+          <span>sketch</span>
+          <span class="mode" id="dim-mode">select</span>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage has-grid" id="stage">
+          <div class="stage-head is-wide">
+            <div class="tool-line" role="toolbar" aria-label="Sketch tools">
+              <span class="stage-kicker">tools</span>
+              <button class="tool is-active" type="button" data-tool="select">select <kbd>v</kbd></button>
+              <button class="tool" type="button" data-tool="dimension">dimension <kbd>d</kbd></button>
+            </div>
+            <div class="tool-options" id="dim-flyout" role="toolbar" aria-label="New dimension" hidden></div>
+          </div>
+
+          <div class="sketch-viewport" id="viewport">
+            <svg
+              class="stage-svg sketch-svg"
+              id="svg"
+              viewBox="0 0 1200 700"
+              preserveAspectRatio="xMidYMid meet"
+              role="img"
+              aria-label="A sketch with a width dimension. The dimension editor is open: the value is an editable field while driving and a (measured) readout while reference, with a driving / reference segmented control."
+            >
+              <g id="dim-geom"></g>
+              <g id="dim-lines"></g>
+            </svg>
+            <div class="dim-editor is-selected" id="dim-editor" hidden></div>
+          </div>
+
+          <div class="stage-foot">
+            <div class="stage-foot-left">
+              <span id="dim-foot"></span>
+            </div>
+            <div class="stage-foot-right">
+              <span class="sc-legend">
+                <span class="key"><span class="swatch is-selected"></span>driving</span>
+                <span class="key"><span class="swatch is-dim"></span>reference</span>
+              </span>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · dimension kind</div>
+          <h2>Driving or reference, at a glance</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        A dimension is two things: a <b>value</b> and a <b>kind</b>. Driving means
+        the value constrains the geometry; reference means it only measures it.
+        The editor used to make both look like a form field, and the kind was a
+        single button whose label you had to read to know what it would do.
+      </p>
+      <h3>The interaction</h3>
+      <ul>
+        <li><b>The kind is a segmented control</b> — <b>driving</b> / <b>reference</b>, both always visible, the current one filled. The same control sets the kind when you <em>place</em> a dimension, so there is one thing to learn.</li>
+        <li><b>The value is a field only while driving.</b> A reference dimension's value belongs to the geometry, so it renders as a readout — parentheses, dim italic ink, a <b>measured</b> tag. There is nothing to type into, because there is nothing to set.</li>
+        <li><b>Release and constrain.</b> Switching driving → reference releases the constraint (the label gains parentheses and the sketch gains a DOF). Switching back adopts the current measurement as the driving value.</li>
+        <li><b>Enter or click out commits; Escape reverts.</b> There is no apply button — but the label visibly changes on commit, and the DOF counter moves, so you can see it took.</li>
+      </ul>
+      <h3>Notes</h3>
+      <ul>
+        <li>A reference dimension is <b>not</b> a disabled form field. Dimming an input still says "you could edit this if you tried". A readout says "this number is an observation".</li>
+        <li>Both surfaces (place and edit) use the same <b>driving / reference</b> control, so the kind never changes meaning.</li>
+        <li>The delete stays quiet, in the footer of the editor, where it already was.</li>
+      </ul>
+      <div class="mini-note">
+        The bug this came from: switching an existing dimension to reference was
+        silently dropped, because a dimension with no <span class="mono">driving</span>
+        field could not be changed — see <a href="INTERACTION.md">INTERACTION.md</a>.
+        A change that cannot be applied must be visible, never swallowed.
+      </div>
+    </aside>
+
+    <script src="../mockups/mockups.js"></script>
+    <script src="showcase-ui.js"></script>
+    <script src="showcase-dimension.js"></script>
+  </body>
+</html>

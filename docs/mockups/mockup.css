@@ -2275,6 +2275,11 @@ body.is-embed .app {
   font-family: var(--font-mono);
 }
 
+/* an author `display: flex` beats the UA `[hidden]` rule, so hide explicitly */
+.dim-editor[hidden] {
+  display: none;
+}
+
 .dim-editor.is-inline {
   position: static;
   width: 100%;
@@ -2296,19 +2301,22 @@ body.is-embed .app {
 
 .dim-kind {
   margin-left: auto;
-  padding: 1px 6px;
-  border: 0;
-  background: none;
+}
+
+.dim-editor .dim-readout {
+  min-width: 52px;
+  color: var(--ink-3);
+  font-size: var(--type-prose);
+  font-style: italic;
+  text-align: right;
+}
+
+.dim-editor .dim-measured {
   color: var(--ink-3);
   font-family: var(--font-mono);
   font-size: var(--type-micro);
   letter-spacing: var(--tracking-control);
   text-transform: uppercase;
-}
-
-.dim-kind.is-active {
-  background: var(--marker);
-  color: var(--marker-ink);
 }
 
 .dim-editor input {
@@ -2328,6 +2336,12 @@ body.is-embed .app {
   font-size: var(--type-label);
 }
 
+.dim-editor .dim-field {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
 .dim-editor .dim-actions {
   display: flex;
   gap: 8px;
@@ -2336,6 +2350,36 @@ body.is-embed .app {
 
 .dim-editor .dim-actions .text-action {
   font-size: var(--type-micro);
+}
+
+/* segmented control: a two-state choice, both options visible */
+.seg {
+  display: inline-flex;
+  gap: 1px;
+}
+
+.seg button {
+  margin: 0;
+  padding: 2px 7px;
+  border: 0;
+  background: var(--bg-2);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-control);
+  line-height: var(--leading-control);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.seg button:hover {
+  background: var(--marker-soft);
+  color: var(--ink);
+}
+
+.seg button.is-selected {
+  background: var(--marker);
+  color: var(--marker-ink);
 }
 
 .history-note {

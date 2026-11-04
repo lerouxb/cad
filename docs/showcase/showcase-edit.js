@@ -74,9 +74,11 @@
     html += line(a, b, "dim-line");
     if (state.sel !== "dimension") {
       var mid = px([(a[0] + b[0]) / 2, y]);
+      var ref = state.dimKind === "reference";
       html +=
-        '<text class="dim-text" x="' + mid[0].toFixed(1) + '" y="' +
-        (mid[1] - 8).toFixed(1) + '" text-anchor="middle">' + DIM.text + "</text>";
+        '<text class="dim-text' + (ref ? " is-ref" : "") + '" x="' + mid[0].toFixed(1) +
+        '" y="' + (mid[1] - 8).toFixed(1) + '" text-anchor="middle">' +
+        (ref ? "(" + DIM.text + ")" : DIM.text) + "</text>";
     }
     layerDim.innerHTML = html;
   }
@@ -206,7 +208,7 @@
       (state.sel === "lines" ? "2 lines" : state.sel === "circle" ? "circle" : state.sel === "point" ? "point" : "dimension") +
       "</b> \u00b7 " +
       (state.sel === "dimension"
-        ? "edited at the dimension"
+        ? state.dimKind + " \u00b7 the editor replaces the label"
         : "selection popover, draggable");
   }
 
@@ -244,9 +246,10 @@
       }
     });
     inline.addEventListener("click", function (e) {
-      if (e.target.closest(".dim-kind")) {
-        state.dimKind = state.dimKind === "driving" ? "reference" : "driving";
-        renderInline();
+      var opt = e.target.closest("[data-kind-option]");
+      if (opt) {
+        state.dimKind = opt.getAttribute("data-kind-option");
+        render();
       }
     });
 

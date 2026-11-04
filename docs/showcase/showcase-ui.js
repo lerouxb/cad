@@ -71,28 +71,56 @@
   // The single-value inline editor. It replaces the annotation's label, carries
   // the value's own option (a dimension's driving/reference), and has NO buttons:
   // Enter commits, Escape (or a tap outside) cancels. See INTERACTION.md.
+  //
+  // The value is a form field only while the dimension drives geometry. A
+  // reference dimension's value belongs to the geometry, so it renders as a
+  // readout — parentheses, dim italic ink, a `measured` tag — never an input.
+  // The kind is a segmented control, not a toggle whose label you have to read.
   // The mockups carry the same markup, with `is-inline` added for the
   // foreignObject positioning.
   function inlineEditor(opts) {
     opts = opts || {};
     var kind = opts.kind === "reference" ? "reference" : "driving";
+    var value = opts.value == null ? "" : opts.value;
+    var seg =
+      '<span class="seg dim-kind" role="group" aria-label="Dimension kind">' +
+      '<button type="button" data-kind-option="driving"' +
+      (kind === "driving" ? ' class="is-selected"' : "") +
+      ">driving</button>" +
+      '<button type="button" data-kind-option="reference"' +
+      (kind === "reference" ? ' class="is-selected"' : "") +
+      ">reference</button></span>";
+    var del = opts.deletable
+      ? '<button class="text-action is-quiet" type="button" data-dim-delete>delete</button>'
+      : "";
     return (
-      '<div class="dim-editor is-selected">' +
-      '<input type="text" value="' +
-      (opts.value == null ? "" : opts.value) +
-      '" aria-label="Dimension value">' +
-      (opts.unit ? '<span class="dim-unit">' + opts.unit + "</span>" : "") +
-      '<button class="dim-kind' +
-      (kind === "driving" ? " is-active" : "") +
-      '" type="button">' +
-      kind +
-      "</button></div>"
+      '<div class="dim-editor is-selected" data-kind="' + kind + '">' +
+      '<span class="dim-field">' + dimField(kind, value, opts.unit) + "</span>" +
+      seg +
+      del +
+      "</div>"
     );
+  }
+
+  // The value control for one kind: an editable field while driving, a readout
+  // while reference. Exposed so a study can swap it without rebuilding the
+  // editor (which would steal focus mid-interaction).
+  function dimField(kind, value, unit) {
+    var u = unit ? '<span class="dim-unit">' + unit + "</span>" : "";
+    if (kind === "reference") {
+      return (
+        '<span class="dim-readout">(' + value + ")</span>" +
+        u +
+        '<span class="dim-measured">measured</span>'
+      );
+    }
+    return '<input type="text" value="' + value + '" aria-label="Dimension value">' + u;
   }
 
   window.ShowcaseUI = {
     makeDraggable: makeDraggable,
     footer: footer,
-    inlineEditor: inlineEditor
+    inlineEditor: inlineEditor,
+    dimField: dimField
   };
 })();

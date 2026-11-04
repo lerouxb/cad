@@ -131,11 +131,16 @@
               <path class="dim-ext" d="M430 250h-80M430 520h-80" />
               <path class="dim-line" d="M370 250v270" />
               <path class="dim-line" d="M365 250h10M365 520h10" />
-              <foreignObject x="338" y="374" width="156" height="26">
-                <div xmlns="http://www.w3.org/1999/xhtml" class="dim-editor is-inline is-selected">
-                  <input type="text" value="55.0" aria-label="Dimension value" />
-                  <span class="dim-unit">mm</span>
-                  <button class="dim-kind is-active" type="button">driving</button>
+              <foreignObject x="311" y="374" width="210" height="26">
+                <div xmlns="http://www.w3.org/1999/xhtml" class="dim-editor is-inline is-selected" data-kind="driving">
+                  <span class="dim-field">
+                    <input type="text" value="55.0" aria-label="Dimension value" />
+                    <span class="dim-unit">mm</span>
+                  </span>
+                  <span class="seg dim-kind" role="group" aria-label="Dimension kind">
+                    <button type="button" data-kind-option="driving" class="is-selected">driving</button>
+                    <button type="button" data-kind-option="reference">reference</button>
+                  </span>
                 </div>
               </foreignObject>
 

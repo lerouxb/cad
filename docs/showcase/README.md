@@ -1,6 +1,6 @@
 # Tool showcase
 
-Interactive design targets for tools that do not exist yet, split into ten pages.
+Interactive design targets for tools that do not exist yet, split into eleven pages.
 
 This folder and [`../mockups/`](../mockups/) are the two halves of one design
 system:
@@ -20,6 +20,7 @@ bodies, groups and insertion — has its own contract in
 | --- | --- | --- | --- |
 | **Sketch layout** | [`index.html`](index.html) | rectangular / circular pattern, mirror, offset, **move/copy** | **M6.0** (ADR-0004) |
 | **Sketch selection** | [`sketch-edit.html`](sketch-edit.html) | selection popover (constraints), inline dimension editor | app consistency (see INTERACTION.md) |
+| **Dimension kind** | [`dimension.html`](dimension.html) | driving vs reference: the value as a field or a readout, a segmented kind control | M5 sketch polish |
 | **Sketch create** | [`sketch-create.html`](sketch-create.html) | rectangle / circle / arc variants, polygon | M6.0-era sketch polish |
 | **Selection filters** | [`select.html`](select.html) | a contextual **tool options row**: selection filters, create variants, select other | M5 selection UX |
 | **Model selection** | [`select-model.html`](select-model.html) | the same row on the model: **edges** / **faces** / **bodies** filters, one at a time | M5 selection UX |
@@ -152,6 +153,7 @@ changes.
 ```
 index.html           sketch layout: pattern / mirror / offset / move-copy
 sketch-edit.html     sketch selection: constraint popover + inline dimension editor
+dimension.html       dimension kind: driving / reference at the dimension
 sketch-create.html   sketch create variants: rectangle / circle / arc / polygon
 select.html          selection filters as a tool options row
 select-model.html    model selection: edge / face / body filters
@@ -165,6 +167,7 @@ showcase-ui.js       shared draggable popovers + the footer action grammar
 showcase.js          sketch model, preview geometry and interaction
 showcase-create.js   the create-tool atlas
 showcase-edit.js     the selection popover + inline editor
+showcase-dimension.js  the dimension kind control (driving / reference)
 showcase-select.js   the tool options row (filters, create variants, select other)
 showcase-select-model.js  the model-mode selection scene
 showcase-3d.js       isometric helpers + body ops + transforms + extrude + section
