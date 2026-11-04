@@ -70,6 +70,8 @@ export interface SketchCanvasProps {
   /** Rectangular selection: region ids fully inside the marquee. */
   onMarqueeSelectRegions: (regionIds: string[], additive: boolean) => void;
   tool: SketchTool;
+  /** One filter at a time, from the tool options row. */
+  selectionFilter?: "all" | "points" | "curves" | "dimensions";
   dimensionMode: DimensionMode;
   /** Measure circles as a radius instead of a diameter. */
   radiusDimensions: boolean;
@@ -148,6 +150,7 @@ export function SketchCanvas({
   onSelectRegion,
   onMarqueeSelectRegions,
   tool,
+  selectionFilter = "all",
   dimensionMode,
   radiusDimensions,
   cancelToken,
@@ -250,6 +253,16 @@ export function SketchCanvas({
   const scale = Math.min(size.width / viewBox.w, size.height / viewBox.h) || 1;
   const fitted = useMemo(() => fitView(sketch, radii), [sketch, radii]);
   const px = 1 / scale;
+  const pointsSelectable =
+    selectionFilter === "all" || selectionFilter === "points";
+  const curvesSelectable =
+    selectionFilter === "all" || selectionFilter === "curves";
+  const dimensionsSelectable =
+    selectionFilter === "all" || selectionFilter === "dimensions";
+  // Region fills are profile selection, not geometry selection; a filter turns
+  // them into decoration so a click cannot start an extrude draft by accident.
+  const regionsSelectableNow =
+    regionsSelectable && selectionFilter === "all";
   const color = palette[tone];
   const selectColor = palette.selected;
   const snapTolerance = 11 * px;
@@ -1287,6 +1300,7 @@ export function SketchCanvas({
     // Drawing tools must see the gesture themselves: a click near an existing
     // edge is how you start/end a snapped line, not a selection.
     if (tool !== "select" && tool !== "dimension" && tool !== "trim") return;
+    if (!curvesSelectable) return;
     event.stopPropagation();
     event.preventDefault();
 
@@ -1535,14 +1549,16 @@ export function SketchCanvas({
             data-region-kind={region.kind}
             data-region-bounds={`${bounds.minX},${bounds.minY},${bounds.maxX},${bounds.maxY}`}
             pointerEvents={
-              tool === "select" && regionsSelectable ? "fill" : "none"
+              tool === "select" && regionsSelectableNow ? "fill" : "none"
             }
             style={{
               cursor:
-                tool === "select" && regionsSelectable ? "pointer" : "default",
+                tool === "select" && regionsSelectableNow
+                  ? "pointer"
+                  : "default",
             }}
             onPointerDown={(event) => {
-              if (tool !== "select" || !regionsSelectable) return;
+              if (tool !== "select" || !regionsSelectableNow) return;
               event.stopPropagation();
               event.preventDefault();
               onSelectRegion(region.id, additiveSelection(event));
@@ -1669,6 +1685,7 @@ export function SketchCanvas({
               style={{ cursor: tool === "select" ? "pointer" : "crosshair" }}
               data-point-id={sketch.references.origin.id}
               onPointerDown={(event) => {
+                if (!pointsSelectable) return;
                 event.stopPropagation();
                 event.preventDefault();
                 if (!sketch.references) return;
@@ -1703,6 +1720,7 @@ export function SketchCanvas({
                   data-reference-id={point.id}
                   data-projection-point-id={point.projectionId}
                   onPointerDown={(event) => {
+                    if (!pointsSelectable) return;
                     event.stopPropagation();
                     event.preventDefault();
                     if (tool === "dimension") {
@@ -1812,8 +1830,12 @@ export function SketchCanvas({
                 fontSize={fontSize}
                 palette={palette}
                 editingId={editor?.id ?? null}
-                onEdit={openDimensionEditor}
-                onDrag={(event) => startDimensionDrag(event, constraint)}
+                onEdit={dimensionsSelectable ? openDimensionEditor : undefined}
+                onDrag={
+                  dimensionsSelectable
+                    ? (event) => startDimensionDrag(event, constraint)
+                    : undefined
+                }
               />
             );
           }
@@ -1834,8 +1856,12 @@ export function SketchCanvas({
                 fontSize={fontSize}
                 palette={palette}
                 editingId={editor?.id ?? null}
-                onEdit={openDimensionEditor}
-                onDrag={(event) => startDimensionDrag(event, constraint)}
+                onEdit={dimensionsSelectable ? openDimensionEditor : undefined}
+                onDrag={
+                  dimensionsSelectable
+                    ? (event) => startDimensionDrag(event, constraint)
+                    : undefined
+                }
               />
             );
           }
@@ -1859,8 +1885,12 @@ export function SketchCanvas({
                 fontSize={fontSize}
                 palette={palette}
                 editingId={editor?.id ?? null}
-                onEdit={openDimensionEditor}
-                onDrag={(event) => startDimensionDrag(event, constraint)}
+                onEdit={dimensionsSelectable ? openDimensionEditor : undefined}
+                onDrag={
+                  dimensionsSelectable
+                    ? (event) => startDimensionDrag(event, constraint)
+                    : undefined
+                }
               />
             );
           }
@@ -1881,8 +1911,12 @@ export function SketchCanvas({
                 px={px}
                 fontSize={fontSize}
                 editingId={editor?.id ?? null}
-                onEdit={openDimensionEditor}
-                onDrag={(event) => startDimensionDrag(event, constraint)}
+                onEdit={dimensionsSelectable ? openDimensionEditor : undefined}
+                onDrag={
+                  dimensionsSelectable
+                    ? (event) => startDimensionDrag(event, constraint)
+                    : undefined
+                }
               />
             );
           }
@@ -2012,7 +2046,7 @@ export function SketchCanvas({
         const isSelected = selected.has(point.id);
         return (
           <g key={point.id}>
-            {tool === "select" || tool === "dimension" ? (
+            {(tool === "select" || tool === "dimension") && pointsSelectable ? (
               <circle
                 cx={position[0]}
                 cy={position[1]}
@@ -2163,7 +2197,7 @@ export function SketchCanvas({
         />
       ) : null}
 
-      {profileSelection && tool === "select"
+      {profileSelection && tool === "select" && regionsSelectableNow
         ? regions.map((region) => {
             const d = regionPathData(region);
             if (!d) return null;

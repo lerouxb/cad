@@ -800,11 +800,16 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       so this is Keep at M5/M6 rather than Drop
 - [ ] Selection UX: edge chain selection, box select where sensible, hover prehighlight,
       selection filters, and Select Other for cycling overlapping picks.
-- [ ] **Tool options row** (design: `docs/showcase/select.html` and `select-model.html`;
+- [x] **Tool options row** (design: `docs/showcase/select.html` and `select-model.html`;
       `TIMELINE.md`): a second row under the tool line that follows the *tool*, not the
-      mode. Selection filters are one at a time (no multi-select), Select Other cycles
-      overlapping picks, model selection gets edge/face/body filters, and the sketch
-      create variants share the row. Do not bolt filters into the selection popover.
+      mode. One filter at a time (no multi-select), and the row collapses for tools with
+      no options. Sketch select gets `all / points / curves / dimensions` (hit-testing is
+      gated; region/profile hit targets only answer under `all`). Model select gets
+      `all / edges / faces`; a filtered-out hit is blocked rather than clearing the
+      selection. Select Other shows the overlapping edge/face candidates at the cursor
+      and cycles them on click. **Bodies wait for multi-body**; sketch create variants
+      (`rect`/`circle`/`arc`) are still to be added to this same row. Do not bolt filters
+      into the selection popover.
 - [ ] Section Analysis: a view-only inspect overlay (never in history), with the
       visibility questions resolved first
 - [x] Feature selection highlights the geometry that feature created (mockup 03:

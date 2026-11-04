@@ -470,6 +470,17 @@ docs/
   and the hint explains how to start. A click on a filled region with a non-empty geometry
   selection clears that selection first; with nothing selected the same click starts an
   explicit extrude draft.
+- **The tool options row is contextual and one-at-a-time.** A second row under the tool
+  line holds the current tool's options; it collapses for tools with none. Sketch select
+  filters are `all/points/curves/dimensions` and gate the hit targets in `SketchCanvas`
+  (a filter turns profile-region fills into decoration, so a click cannot start an extrude
+  draft). Model select filters are `all/edges/faces` and gate `Viewport.pickCandidatesAt`;
+  a filtered-out hit is *blocked* and keeps the selection instead of clearing it. Bodies
+  wait for multi-body. Do not put filters in the selection popover.
+- **Select Other is a cursor chip, not a cycle-on-click.** `Viewport` returns every
+  overlapping candidate (edge, datum, face) with the pick; the chip at the cursor cycles
+  them via `cyclePick()`. It is hidden while a fillet/chamfer draft is open. The chip and
+  the model tool strip are exempt from the stage-background cancel handler.
 - **Selection opens a popover, not a bottom line.** `SelectionPopover` uses the same
   `StagePopover` chrome: kicker/title, selected rows, a `.sc-chip` palette for immediate
   constraints/construction/dimension/trim/fillet, and a footer summary + quiet delete.

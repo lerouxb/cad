@@ -26,15 +26,34 @@ import {
  */
 type ViewportTheme = "day" | "night";
 
+/** What the model cursor may pick. Bodies wait for the multi-body work. */
+export type ModelPickFilter = "all" | "edges" | "faces";
+
+/** The overlapping picks under the cursor, for the Select Other chip. */
+export interface PickInfo {
+  candidates: readonly BodyPick[];
+  index: number;
+  /** Cursor position relative to the canvas, in CSS pixels. */
+  x: number;
+  y: number;
+  /** The cursor hit something, but the active filter excluded it. */
+  blocked: boolean;
+}
+
 export interface ViewportOptions {
   theme?: ViewportTheme;
   /** Highlighter colour for hover/selection overlays. */
   highlightColor?: string;
   /**
    * Ephemeral body selection callback; null means cleared. `additive` is the
-   * Shift modifier at pick time (used for multi-edge selection).
+   * Shift modifier at pick time (used for multi-edge selection). `info`
+   * carries every overlapping candidate for Select Other.
    */
-  onPick?: (pick: BodyPick | null, additive: boolean) => void;
+  onPick?: (
+    pick: BodyPick | null,
+    additive: boolean,
+    info?: PickInfo,
+  ) => void;
 }
 
 /** A sketch rendered on its plane in the model view. Plain data, no three.js. */
@@ -87,7 +106,11 @@ export class Viewport {
   private featureHighlightId: string | null = null;
   private theme: ViewportTheme;
   private highlightColor: string;
-  private readonly onPick?: (pick: BodyPick | null, additive: boolean) => void;
+  private readonly onPick?: (
+    pick: BodyPick | null,
+    additive: boolean,
+    info?: PickInfo,
+  ) => void;
   private resizeObserver: ResizeObserver;
   private disposed = false;
   private framed = false;
@@ -104,6 +127,10 @@ export class Viewport {
   private hoverPick: BodyPick | null = null;
   private selectedPick: BodyPick | null = null;
   private edgePicks: BodyPick[] = [];
+  private pickFilter: ModelPickFilter = "all";
+  private pickCandidates: BodyPick[] = [];
+  private pickCandidateIndex = 0;
+  private pickCursor = { x: 0, y: 0 };
 
   constructor(canvas: HTMLCanvasElement, options: ViewportOptions = {}) {
     this.canvas = canvas;
@@ -436,6 +463,8 @@ export class Viewport {
   clearPick(): void {
     this.selectedPick = null;
     this.edgePicks = [];
+    this.pickCandidates = [];
+    this.pickCandidateIndex = 0;
     this.clearGroup(this.selectionGroup);
     this.clearGroup(this.edgeSelectionGroup);
     this.dirty = true;
@@ -564,7 +593,15 @@ export class Viewport {
     if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) {
       return;
     }
-    this.selectPick(this.pickAt(event), event.shiftKey);
+    const { candidates, ...info } = this.pickCandidatesAt(event);
+    this.pickCandidates = [...candidates];
+    this.pickCandidateIndex = 0;
+    this.pickCursor = { x: info.x, y: info.y };
+    this.selectPick(candidates[0] ?? null, event.shiftKey, {
+      ...info,
+      candidates,
+      index: 0,
+    });
   };
 
   private onPointerCancel = (): void => {
@@ -577,14 +614,54 @@ export class Viewport {
     this.setHover(null);
   };
 
+  /** Change what the cursor may pick; the current selection is untouched. */
+  setPickFilter(filter: ModelPickFilter): void {
+    if (this.pickFilter === filter) return;
+    this.pickFilter = filter;
+    // The previous hover may be a kind the new filter excludes.
+    this.setHover(null);
+    this.dirty = true;
+  }
+
+  /** Advance the Select Other chip to the next overlapping candidate. */
+  cyclePick(): void {
+    if (this.pickCandidates.length < 2) return;
+    this.pickCandidateIndex =
+      (this.pickCandidateIndex + 1) % this.pickCandidates.length;
+    const pick = this.pickCandidates[this.pickCandidateIndex] ?? null;
+    this.selectPick(pick, false, {
+      candidates: this.pickCandidates,
+      index: this.pickCandidateIndex,
+      ...this.pickCursor,
+      blocked: false,
+    });
+  }
+
   private pickAt(event: PointerEvent): BodyPick | null {
-    if (!this.mesh || !this.solid || !this.edges) return null;
+    return this.pickCandidatesAt(event).candidates[0] ?? null;
+  }
+
+  /**
+   * Every overlapping pick at the cursor. Edges win by depth but stay in the
+   * list so Select Other can reach the face behind them; the filter removes
+   * disallowed kinds and reports the hit as blocked instead of clearing.
+   */
+  private pickCandidatesAt(event: PointerEvent): {
+    candidates: BodyPick[];
+    x: number;
+    y: number;
+    blocked: boolean;
+  } {
+    const none = { candidates: [], x: 0, y: 0, blocked: false };
+    if (!this.mesh || !this.solid || !this.edges) return none;
     const rect = this.canvas.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return null;
+    if (rect.width === 0 || rect.height === 0) return none;
+    const x = event.clientX - rect.left;
+    const y = event.clientY - rect.top;
 
     const ndc = new THREE.Vector2(
-      ((event.clientX - rect.left) / rect.width) * 2 - 1,
-      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+      (x / rect.width) * 2 - 1,
+      -(y / rect.height) * 2 + 1,
     );
     this.raycaster.setFromCamera(ndc, this.camera);
 
@@ -602,30 +679,48 @@ export class Viewport {
     const datumHit =
       this.raycaster.intersectObjects(this.datums.children, false)[0] ?? null;
 
-    // An edge on the surface is at roughly the same depth as the face. A hidden
-    // back edge is farther away, so it must not win over the front face.
-    if (edgeHit && (!faceHit || edgeHit.distance <= faceHit.distance + threshold)) {
-      const group = edgeGroupForVertex(
-        this.mesh,
-        edgeHit.index ?? 0,
-        this.edgeUnit,
-      );
-      if (group) return edgePick(group);
-    }
-
-    if (
+    const facePickValue =
+      faceHit && typeof faceHit.faceIndex === "number"
+        ? (() => {
+            const group = faceGroupForTriangle(this.mesh!, faceHit.faceIndex);
+            return group ? facePick(group) : null;
+          })()
+        : null;
+    const edgePickValue =
+      edgeHit &&
+      (!faceHit || edgeHit.distance <= faceHit.distance + threshold)
+        ? (() => {
+            const group = edgeGroupForVertex(
+              this.mesh!,
+              edgeHit.index ?? 0,
+              this.edgeUnit,
+            );
+            return group ? edgePick(group) : null;
+          })()
+        : null;
+    const datumPickValue =
       datumHit &&
-      (!faceHit || datumHit.distance <= faceHit.distance + threshold)
-    ) {
-      const featureId = datumHit.object.userData.datumId;
-      if (typeof featureId === "string") return datumPick(featureId);
-    }
+      (!faceHit || datumHit.distance <= faceHit.distance + threshold) &&
+      typeof datumHit.object.userData.datumId === "string"
+        ? datumPick(datumHit.object.userData.datumId)
+        : null;
 
-    if (faceHit && typeof faceHit.faceIndex === "number") {
-      const group = faceGroupForTriangle(this.mesh, faceHit.faceIndex);
-      if (group) return facePick(group);
+    const hits: BodyPick[] = [];
+    if (this.pickFilter === "edges") {
+      if (edgePickValue) hits.push(edgePickValue);
+    } else if (this.pickFilter === "faces") {
+      if (facePickValue) hits.push(facePickValue);
+    } else {
+      if (edgePickValue) hits.push(edgePickValue);
+      if (datumPickValue) hits.push(datumPickValue);
+      if (facePickValue) hits.push(facePickValue);
     }
-    return null;
+    // Dedupe by id without reordering the depth priority.
+    const candidates = hits.filter(
+      (pick, index) => hits.findIndex((other) => other.id === pick.id) === index,
+    );
+    const blocked = candidates.length === 0 && Boolean(faceHit || edgeHit || datumHit);
+    return { candidates, x, y, blocked };
   }
 
   private setHover(pick: BodyPick | null): void {
@@ -642,7 +737,16 @@ export class Viewport {
     this.dirty = true;
   }
 
-  private selectPick(pick: BodyPick | null, additive = false): void {
+  private selectPick(
+    pick: BodyPick | null,
+    additive = false,
+    info?: PickInfo,
+  ): void {
+    if (info?.blocked) {
+      // The filter excluded the hit; keep the current selection.
+      this.onPick?.(null, additive, info);
+      return;
+    }
     // Edges are multi-selectable; App drives their highlight set and the
     // additive policy. Faces/datum remain a single selected pick.
     if (pick?.kind !== "edge") {
@@ -651,7 +755,7 @@ export class Viewport {
       if (pick) this.addOverlay(this.selectionGroup, pick, true);
     }
     this.dirty = true;
-    this.onPick?.(pick, additive);
+    this.onPick?.(pick, additive, info);
   }
 
   private rebuildSelectionOverlays(): void {
@@ -1037,6 +1141,8 @@ export class Viewport {
     this.hoverPick = null;
     this.selectedPick = null;
     this.edgePicks = [];
+    this.pickCandidates = [];
+    this.pickCandidateIndex = 0;
     this.canvas.dataset.hoverKind = "";
     this.canvas.dataset.hoverId = "";
     this.canvas.dataset.hoverEdgeLength = "";

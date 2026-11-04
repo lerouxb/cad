@@ -477,6 +477,16 @@ symmetric). The sketch is no longer React component state.
   until selected. The file menu handles `.cad` download/open/rename/new; the local file list supports open,
   copy and a two-step delete, and the built-in example keeps a stable id so reloading
   updates one entry.
+- **The tool options row follows the tool, not the mode.** A second row under the tool
+  line holds the current tool's options and collapses when there are none. Sketch select
+  filters are `all/points/curves/dimensions`; they gate the point/curve/dimension hit
+  targets and only allow profile-region fills under `all`. Model select filters are
+  `all/edges/faces` and gate the raycast candidates, so a filtered-out hit is blocked
+  rather than treated as a background click. The row is shared by both modes; the sketch
+  create variants will join the same row. Bodies wait for multi-body. `Viewport` returns
+  every overlapping candidate (edge, datum, face) and a cursor chip cycles them, so an
+  edge/face overlap is a choice rather than a depth lottery. The chip and the model tool
+  strip are exempt from the stage-background cancel handler.
 
 ## 6. Rebuild engine
 
@@ -852,8 +862,8 @@ the honest map, so nobody assumes a layer exists because it is described above.
 | `core/features` | Real: region selection + extrude params, including face/datum-plane frames mapped in the worker. The worker supports ordered new/join/cut, constant-radius fillets and constant-distance chamfers; projected face-boundary references live in the sketch-support path. |
 | `core/rebuild` | Real: ordered sketch/datum/extrude/fillet evaluation, prefix cache, per-feature diagnostics. Worker solid cache + new/join/cut/fillet/chamfer are in. |
 | `core/kernel` | Real: typed protocol, worker client, OCCT worker, feature cache, face-frame extrude transforms, cached-prefix face-boundary requests, stable face/edge refs, hole validation, exact stats + bounds. |
-| `viewer` | Real: Z-up scene, framing, meshing, edges, face/edge raycast picking, multi-edge selection, hover/selection highlights. |
-| `sketch` UI | Real: full-stage sketch editor with a grouped text tool line, stage-foot DOF/status, contextual selection popover, adaptive/free-form grid, scale bar and fit/50/100/200 zoom. Select/drag, box-select profile regions, line/point/rectangle/circle/arc, fillet, explicit region fills (material and void, with All/Voids/Auto), contextual dimension/trim chips, inline dimension and point editors, construction toggle, snapping, auto H/V, Enter-to-finish, undo/redo. Standalone points are normal solver geometry but never profiles. |
+| `viewer` | Real: Z-up scene, framing, meshing, edges, face/edge raycast picking, multi-edge selection, model edge/face filters, Select Other candidate cycling, hover/selection highlights. |
+| `sketch` UI | Real: full-stage sketch editor with a grouped text tool line, the contextual tool-options row, stage-foot DOF/status, contextual selection popover, adaptive/free-form grid, scale bar and fit/50/100/200 zoom. Select/drag, box-select profile regions, line/point/rectangle/circle/arc, fillet, explicit region fills (material and void, with All/Voids/Auto), contextual dimension/trim chips, inline dimension and point editors, construction toggle, snapping, auto H/V, Enter-to-finish, undo/redo. Filters gate points/curves/dimensions; create variants are not in the row yet. Standalone points are normal solver geometry but never profiles. |
 | Feature tree | Real: lists all `doc.features` (sketches, datum planes, extrudes), selects/renames/creates/edits, drag-reorders, suppresses, deletes with cascade, rolls back/forward, and shows per-feature status/diagnostics. |
 | Persistence | Autosave to `localStorage` with migration-on-load, a local file index/list (open/copy/delete/download/rename/new), and `.cad` import/export. |
 

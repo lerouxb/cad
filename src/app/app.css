@@ -1223,7 +1223,7 @@ body {
 
 .body-pick {
   position: absolute;
-  top: 54px;
+  top: 80px;
   left: 14px;
   display: inline-flex;
   align-items: center;
@@ -2599,6 +2599,129 @@ body {
   width: 1px;
   height: 12px;
   background: var(--rule);
+}
+
+/* The contextual options row: filter (and later create variants), one at a
+   time. It only exists for tools that have options. */
+.tool-options {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 12px;
+  height: 30px;
+  padding: 0 22px;
+  border-bottom: 1px solid var(--rule);
+  overflow-x: auto;
+}
+
+.tool-kicker {
+  flex: none;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-label);
+  letter-spacing: var(--tracking-label);
+  line-height: var(--leading-label);
+  text-transform: uppercase;
+}
+
+.tool-option {
+  flex: none;
+  padding: 3px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-control);
+  letter-spacing: var(--tracking-control);
+  line-height: var(--leading-control);
+}
+
+.tool-option:hover {
+  background: transparent;
+  color: var(--ink);
+}
+
+.tool-option.is-on {
+  box-shadow: inset 0 -2px 0 var(--ink);
+  color: var(--ink);
+}
+
+.tool-note {
+  margin-left: auto;
+  color: var(--dim);
+  font-size: var(--type-value);
+  white-space: nowrap;
+}
+
+/* Model mode has no reflowing stage head: the select tools and their filter
+   float over the canvas so picking coordinates and framing stay put. */
+.model-tools {
+  position: absolute;
+  top: 10px;
+  left: 14px;
+  right: 14px;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+}
+
+.model-tools > * {
+  pointer-events: auto;
+}
+
+.model-tool-line {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: var(--overlay);
+  backdrop-filter: blur(6px);
+}
+
+.model-tools .tool-options {
+  gap: 10px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--rule);
+  border-top: 0;
+  border-radius: 0 0 8px 8px;
+  background: var(--overlay);
+  backdrop-filter: blur(6px);
+}
+
+/* Select Other: the overlapping hits at the cursor, cycled by clicking. */
+.select-other {
+  position: absolute;
+  z-index: 8;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--overlay);
+  backdrop-filter: blur(6px);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-value);
+  box-shadow: var(--shadow-popover, 0 8px 24px rgba(0, 0, 0, 0.18));
+  cursor: pointer;
+}
+
+.select-other-kind {
+  color: var(--ink);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.select-other-count {
+  color: var(--dim);
 }
 
 .sketch-canvas-wrap {

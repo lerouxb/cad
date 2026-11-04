@@ -170,6 +170,8 @@ import {
 import {
   Viewport,
   type BodyPick,
+  type ModelPickFilter,
+  type PickInfo,
   type SketchOverlayData,
 } from "../viewer/Viewport";
 import { FeaturePopover } from "./FeaturePopover";
@@ -302,6 +304,9 @@ interface BlendDraft {
   /** Where a new feature is inserted; null appends at the end. */
   anchorId: string | null;
 }
+
+/** What the sketch cursor may pick. One filter at a time, from the tool row. */
+type SketchSelectionFilter = "all" | "points" | "curves" | "dimensions";
 
 /** Default size: a fraction of the shortest selected edge, clamped to sane mm. */
 function defaultBlendValue(
@@ -436,6 +441,10 @@ export function App() {
   const [bodyPick, setBodyPick] = useState<BodyPick | null>(null);
   /** Ephemeral model edge multi-selection; App owns the policy. */
   const [edgeSelection, setEdgeSelection] = useState<BodyPick[]>([]);
+  const [modelFilter, setModelFilter] = useState<ModelPickFilter>("all");
+  const [sketchFilter, setSketchFilter] =
+    useState<SketchSelectionFilter>("all");
+  const [selectOther, setSelectOther] = useState<PickInfo | null>(null);
   const [bodyPopoverPosition, setBodyPopoverPosition] =
     useState<PopoverPosition>({ x: 22, y: 112 });
   const [blendDraft, setBlendDraft] = useState<BlendDraft | null>(null);
@@ -459,7 +468,7 @@ export function App() {
   );
   const [popoverPosition, setPopoverPosition] = useState<PopoverPosition>({
     x: 22,
-    y: 72,
+    y: 108,
   });
   const [draggingFeatureId, setDraggingFeatureId] = useState<string | null>(
     null,
@@ -482,7 +491,7 @@ export function App() {
   const clientRef = useRef<KernelClient | null>(null);
   const viewportRef = useRef<Viewport | null>(null);
   const handleBodyPickRef = useRef<
-    (pick: BodyPick | null, additive: boolean) => void
+    (pick: BodyPick | null, additive: boolean, info?: PickInfo) => void
   >(() => {});
   const cancelBlendRef = useRef<() => void>(() => {});
   const blendDraftOpenRef = useRef(false);
@@ -1099,6 +1108,13 @@ export function App() {
     setBlendBaseline(null);
   };
 
+  /** Filters and Select Other are ephemeral; a new/loaded document starts clean. */
+  const resetSelectionFilters = (): void => {
+    setModelFilter("all");
+    setSketchFilter("all");
+    setSelectOther(null);
+  };
+
   const openBlendEditor = (feature: EdgeBlendFeature): void => {
     dismissEditor();
     setDatumDraft(null);
@@ -1142,6 +1158,7 @@ export function App() {
     }
     setEdgeSelection([]);
     setBodyPick(null);
+    setSelectOther(null);
     viewportRef.current?.clearPick();
     setSelection([]);
   };
@@ -1218,7 +1235,13 @@ export function App() {
   const handleBodyPick = (
     pick: BodyPick | null,
     additive: boolean,
+    info?: PickInfo,
   ): void => {
+    // A filtered-out hit is not a background click: keep the selection.
+    if (info?.blocked) return;
+    setSelectOther(
+      info && info.candidates.length > 1 && !blendDraft ? info : null,
+    );
     setSupportDatumId(
       pick?.kind === "datum" ? pick.datumId ?? null : null,
     );
@@ -1311,6 +1334,7 @@ export function App() {
     dismissEditor();
     setEdgeSelection([]);
     setBodyPick(null);
+    setSelectOther(null);
     viewportRef.current?.clearPick();
     setMode("model");
     setSelection([]);
@@ -1398,6 +1422,7 @@ export function App() {
     if (bodyPick?.kind === "datum" && bodyPick.datumId === feature.id) {
       setBodyPick(null);
       setEdgeSelection([]);
+      setSelectOther(null);
       viewportRef.current?.clearPick();
     }
   };
@@ -1464,6 +1489,7 @@ export function App() {
     setTrimNotice(null);
     setBodyPick(null);
     setEdgeSelection([]);
+    setSelectOther(null);
     viewportRef.current?.clearPick();
   };
 
@@ -1479,6 +1505,7 @@ export function App() {
     setTrimNotice(null);
     setBodyPick(null);
     setEdgeSelection([]);
+    setSelectOther(null);
     viewportRef.current?.clearPick();
     if (feature.type === "sketch") {
       setTool("select");
@@ -1590,6 +1617,7 @@ export function App() {
     setSelection([]);
     setBodyPick(null);
     setEdgeSelection([]);
+    setSelectOther(null);
     viewportRef.current?.clearPick();
   };
 
@@ -1743,6 +1771,7 @@ export function App() {
     // The support pick that seeded this datum is no longer the subject.
     setBodyPick(null);
     setEdgeSelection([]);
+    setSelectOther(null);
     viewportRef.current?.clearPick();
   };
 
@@ -1786,6 +1815,7 @@ export function App() {
     commit({ doc: nextDoc, solved: current.solved, solvedFor: current.solvedFor });
     setBodyPick(null);
     setEdgeSelection([]);
+    setSelectOther(null);
     viewportRef.current?.clearPick();
     setHistoryNotice(null);
   };
@@ -1858,6 +1888,7 @@ export function App() {
     setFitToken((token) => token + 1);
     setBodyPick(null);
     setEdgeSelection([]);
+    setSelectOther(null);
     viewportRef.current?.clearPick();
   };
 
@@ -1889,6 +1920,7 @@ export function App() {
     setTrimNotice(null);
     setBodyPick(null);
     setEdgeSelection([]);
+    setSelectOther(null);
     viewportRef.current?.clearPick();
   };
 
@@ -2054,10 +2086,10 @@ export function App() {
         initialTheme.highlight,
         initialTheme.mode,
       ).color,
-      onPick: (pick, additive) => {
+      onPick: (pick, additive, info) => {
         // The viewport is created once; route picks through the current
         // handler so edge multi-select sees fresh draft/selection state.
-        handleBodyPickRef.current(pick, additive);
+        handleBodyPickRef.current(pick, additive, info);
       },
     });
     viewportRef.current = viewport;
@@ -2346,6 +2378,10 @@ export function App() {
   }, [edgeSelection]);
 
   useEffect(() => {
+    viewportRef.current?.setPickFilter(modelFilter);
+  }, [modelFilter]);
+
+  useEffect(() => {
     viewportRef.current?.setSketchOverlay(modelSketchOverlay);
   }, [modelSketchOverlay]);
 
@@ -2524,6 +2560,7 @@ export function App() {
         setCancelToken((token) => token + 1);
         setBodyPick(null);
         setEdgeSelection([]);
+        setSelectOther(null);
         viewportRef.current?.clearPick();
         return;
       }
@@ -2975,6 +3012,7 @@ export function App() {
     setLostFaceRefs(new Set());
     setDatumDraft(null);
     reset({ doc: next, solved: null, solvedFor: null });
+    resetSelectionFilters();
     setActiveFeatureId(null);
     dismissEditor();
     setSupportOpen(false);
@@ -2987,6 +3025,7 @@ export function App() {
     setSolveError(null);
     setBodyPick(null);
     setEdgeSelection([]);
+    setSelectOther(null);
     viewportRef.current?.clearPick();
     setZoomPreset("fit");
     setFitToken((token) => token + 1);
@@ -3001,6 +3040,7 @@ export function App() {
     faceBoundaryPending.current.clear();
     setLostFaceRefs(new Set());
     setDatumDraft(null);
+    resetSelectionFilters();
     const firstSketch = primarySketchFeature(fresh);
     const outcome =
       firstSketch && isSolverReady() ? solveSketch(firstSketch.sketch) : null;
@@ -3041,6 +3081,7 @@ export function App() {
     setLostFaceRefs(new Set());
     setDatumDraft(null);
     reset({ doc: next, solved: null, solvedFor: null });
+    resetSelectionFilters();
     const active = initialActiveFeatureId(next);
     setActiveFeatureId(active);
     const feature = active ? findFeature(next, active) : null;
@@ -3055,6 +3096,7 @@ export function App() {
     setFileMenuOpen(false);
     setBodyPick(null);
     setEdgeSelection([]);
+    setSelectOther(null);
     viewportRef.current?.clearPick();
     saveDoc(next);
     saveLocalFile(next);
@@ -3603,6 +3645,8 @@ export function App() {
             if (!target) return;
             if (target.closest(".stage-popover")) return;
             if (target.closest(".tool-line")) return;
+            if (target.closest(".model-tools")) return;
+            if (target.closest(".select-other")) return;
             if (target.closest(".stage-foot")) return;
             // While a fillet editor is open the canvas is the pick surface:
             // an edge click must not cancel it, and an empty click is handled
@@ -3627,6 +3671,58 @@ export function App() {
         >
           <div className={`model-layer${mode === "model" ? "" : " is-hidden"}`}>
             <canvas ref={canvasRef} className="viewport-canvas" />
+
+            <div className="model-tools">
+              <div className="model-tool-line" role="toolbar" aria-label="Model tools">
+                <span className="tool-kicker">tools</span>
+                <ToolButton
+                  label="select"
+                  shortcut="v"
+                  active
+                  onClick={() => {
+                    setBodyPick(null);
+                    setEdgeSelection([]);
+                    setSelectOther(null);
+                    viewportRef.current?.clearPick();
+                  }}
+                  testId="model-tool-select"
+                />
+              </div>
+              <ToolOptionsRow
+                kicker="filter"
+                options={["all", "edges", "faces"]}
+                value={modelFilter}
+                onChange={(value) => {
+                  setModelFilter(value as ModelPickFilter);
+                  setSelectOther(null);
+                }}
+                note={selectionFilterNote(modelFilter)}
+                testPrefix="model-filter"
+              />
+            </div>
+
+            {selectOther &&
+            selectOther.candidates.length > 1 &&
+            !blendDraft ? (
+              <button
+                className="select-other"
+                type="button"
+                style={{
+                  left: selectOther.x + 14,
+                  top: selectOther.y + 16,
+                }}
+                onClick={() => viewportRef.current?.cyclePick()}
+                data-testid="select-other"
+              >
+                <span className="select-other-kind">
+                  {selectOther.candidates[selectOther.index]?.kind ?? "pick"}
+                </span>
+                <span className="select-other-count">
+                  {selectOther.index + 1} of {selectOther.candidates.length}
+                </span>
+                <span>click to cycle</span>
+              </button>
+            ) : null}
 
             {bodyPick ? (
               <div
@@ -3759,6 +3855,19 @@ export function App() {
                 </button>
               </div>
 
+              {tool === "select" ? (
+                <ToolOptionsRow
+                  kicker="filter"
+                  options={["all", "points", "curves", "dimensions"]}
+                  value={sketchFilter}
+                  onChange={(value) =>
+                    setSketchFilter(value as SketchSelectionFilter)
+                  }
+                  note={selectionFilterNote(sketchFilter)}
+                  testPrefix="sketch-filter"
+                />
+              ) : null}
+
               <div className="sketch-canvas-wrap">
                 <SketchCanvas
                   sketch={sketch}
@@ -3778,6 +3887,9 @@ export function App() {
                   onSelectRegion={handleSelectRegion}
                   onMarqueeSelectRegions={handleMarqueeSelectRegions}
                   tool={tool}
+                  selectionFilter={
+                    tool === "select" ? sketchFilter : "all"
+                  }
                   dimensionMode="distance"
                   radiusDimensions={false}
                   cancelToken={cancelToken}
@@ -4219,6 +4331,7 @@ export function App() {
               onClear={() => {
                 setEdgeSelection([]);
                 setBodyPick(null);
+                setSelectOther(null);
                 viewportRef.current?.clearPick();
               }}
               onFillet={() => beginBlendDraft("fillet")}
@@ -4740,6 +4853,52 @@ function describeSelection(
     });
   }
   return result;
+}
+
+function selectionFilterNote(value: string): string {
+  return value === "all"
+    ? "everything can be picked"
+    : `only ${value} can be picked`;
+}
+
+/**
+ * The contextual row under the tool line. One option is on at a time; the row
+ * only exists for tools that have options (select filters today, create
+ * variants later). It is shared by sketch and model mode.
+ */
+function ToolOptionsRow({
+  kicker,
+  options,
+  value,
+  onChange,
+  note,
+  testPrefix,
+}: {
+  kicker: string;
+  options: readonly string[];
+  value: string;
+  onChange: (value: string) => void;
+  note: string;
+  testPrefix: string;
+}) {
+  return (
+    <div className="tool-options" role="toolbar" aria-label="Tool options">
+      <span className="tool-kicker">{kicker}</span>
+      {options.map((option) => (
+        <button
+          key={option}
+          className={`tool-option${option === value ? " is-on" : ""}`}
+          type="button"
+          aria-pressed={option === value}
+          onClick={() => onChange(option)}
+          data-testid={`${testPrefix}-${option}`}
+        >
+          {option}
+        </button>
+      ))}
+      <span className="tool-note">{note}</span>
+    </div>
+  );
 }
 
 function ToolButton({

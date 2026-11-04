@@ -1706,6 +1706,120 @@ test("creates a chamfer from selected edges with a live preview", async ({
   expect(errors).toEqual([]);
 });
 
+test("the model filter row limits picks and Select Other cycles", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  const canvas = page.locator("canvas.viewport-canvas");
+  const pick = page.getByTestId("body-pick");
+  await page.getByRole("button", { name: "Fit view" }).click();
+  await page.waitForTimeout(250);
+
+  await expect(page.getByTestId("model-tool-select")).toBeVisible();
+  await expect(page.getByTestId("model-filter-all")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  // A face interior is not pickable under the edges filter.
+  const facePoint = { x: 700, y: 330 };
+  await page.getByTestId("model-filter-edges").click();
+  await page.mouse.move(facePoint.x, facePoint.y);
+  await expect(canvas).toHaveAttribute("data-hover-kind", "");
+
+  let edgePoint: { x: number; y: number } | null = null;
+  for (let y = 230; y <= 500 && !edgePoint; y += 12) {
+    for (let x = 360; x <= 950 && !edgePoint; x += 12) {
+      await page.mouse.move(x, y);
+      if ((await canvas.getAttribute("data-hover-kind")) === "edge") {
+        edgePoint = { x, y };
+      }
+    }
+  }
+  expect(edgePoint).not.toBeNull();
+  await page.mouse.click(edgePoint!.x, edgePoint!.y);
+  await expect(pick).toHaveAttribute("data-kind", "edge");
+
+  // A click that hits only the filtered-out face keeps the edge selection.
+  await page.mouse.click(facePoint.x, facePoint.y);
+  await expect(pick).toHaveAttribute("data-kind", "edge");
+
+  // Under faces, a pixel a few px inside the edge resolves to the face behind
+  // it. Probe the neighbourhood: a silhouette edge may have no face outside.
+  await page.getByTestId("model-filter-faces").click();
+  let edgeFacePoint: { x: number; y: number } | null = null;
+  for (let dy = -8; dy <= 8 && !edgeFacePoint; dy += 1) {
+    for (let dx = -8; dx <= 8 && !edgeFacePoint; dx += 1) {
+      const x = edgePoint!.x + dx;
+      const y = edgePoint!.y + dy;
+      await page.mouse.move(x, y);
+      if ((await canvas.getAttribute("data-hover-kind")) === "face") {
+        edgeFacePoint = { x, y };
+      }
+    }
+  }
+  expect(edgeFacePoint).not.toBeNull();
+  await page.mouse.click(edgeFacePoint!.x, edgeFacePoint!.y);
+  await expect(pick).toHaveAttribute("data-kind", "face");
+
+  // With everything enabled, the edge wins but Select Other reaches the face.
+  await page.getByTestId("model-filter-all").click();
+  await page.mouse.move(edgeFacePoint!.x, edgeFacePoint!.y);
+  await expect(canvas).toHaveAttribute("data-hover-kind", "edge");
+  await page.mouse.click(edgeFacePoint!.x, edgeFacePoint!.y);
+  await expect(pick).toHaveAttribute("data-kind", "edge");
+  const other = page.getByTestId("select-other");
+  await expect(other).toBeVisible();
+  await expect(other).toContainText("1 of 2");
+  await other.click();
+  await expect(pick).toHaveAttribute("data-kind", "face");
+  await expect(other).toContainText("2 of 2");
+
+  await page.keyboard.press("Escape");
+  await expect(pick).toHaveCount(0);
+  await expect(other).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("the sketch filter row limits what select can pick", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await expect(page.getByTestId("sketch-filter-all")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  const selection = page.getByTestId("selection-panel");
+
+  // Curves: a line midpoint selects the line.
+  await page.getByTestId("sketch-filter-curves").click();
+  await clickSketch(page, 30, 0);
+  await expect(selection).toHaveAttribute("data-count", "1");
+  await expect(selection).toContainText("Line");
+
+  // Points: the same click is ignored, then a point selects.
+  await page.getByTestId("sketch-filter-points").click();
+  await clickSketch(page, 30, 0);
+  await expect(selection).toHaveCount(0);
+  await clickSketch(page, 60, 0);
+  await expect(selection).toHaveAttribute("data-count", "1");
+  await expect(selection).toContainText("Point");
+
+  // Dimensions: the label is editable; other filters leave it inert.
+  await page.getByTestId("sketch-filter-dimensions").click();
+  await page.locator("[data-dimension-id]").first().dblclick();
+  await expect(page.getByTestId("dimension-input")).toBeVisible();
+  await page.keyboard.press("Escape");
+
+  // The row is contextual: a tool without options collapses it.
+  await page.getByTestId("tool-line").click();
+  await expect(page.getByTestId("sketch-filter-all")).toHaveCount(0);
+  await page.getByTestId("tool-select").click();
+  await expect(page.getByTestId("sketch-filter-all")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test("picks faces and edges in the model view", async ({ app: page }) => {
   const canvas = page.locator("canvas.viewport-canvas");
   await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
