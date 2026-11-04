@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useCallback,
   useEffect,
   useEffectEvent,
@@ -45,6 +46,7 @@ import {
 import {
   addDatumPlaneFeature,
   addExtrudeFeature,
+  addFilletFeature,
   addSketchFeature,
   datumPlaneFeatures,
   deleteFeature,
@@ -62,17 +64,20 @@ import {
   updateDatumPlaneFeature,
   updateExtrudeFeature,
   updateFeature,
+  updateFilletFeature,
   updateSketchFeature,
 } from "../core/doc/selectors";
 import {
   isDatumPlaneFeature,
   isExtrudeFeature,
+  isFilletFeature,
   isSketchFeature,
   type DatumPlaneDefinition,
   type DatumPlaneFeature,
   type Doc,
   type ExtrudeFeature,
   type Feature,
+  type FilletFeature,
   type PlaneRef,
   type SketchFeature,
   type WorldPlane,
@@ -81,9 +86,11 @@ import { extrudeParams, selectExtrudeRegions } from "../core/features/extrude";
 import { KernelClient } from "../core/kernel/client";
 import type {
   BodyMesh,
+  EdgeRef,
   FeatureBuildStatus,
   KernelFeature,
 } from "../core/kernel/protocol";
+import { edgeRefKey } from "../core/kernel/protocol";
 import { extractKernelFeatures, rebuildDocument } from "../core/rebuild/engine";
 import { canonicalJson, stableHash } from "../core/rebuild/hash";
 import {
@@ -130,10 +137,10 @@ import {
 } from "../core/sketch/geometry";
 import { formatGridStep, type GridStep } from "../core/sketch/grid";
 import { regionsFromSketch } from "../core/sketch/loops";
+import { frozenSupportPoints } from "../core/sketch/drag";
 import {
   initSolver,
   isSolverReady,
-  solveDrag,
   solveDragTargets,
   solveSketch,
   type DragTarget,
@@ -168,6 +175,8 @@ import {
   type DatumSupportOption,
 } from "./DatumPlanePopover";
 import { SelectionPopover } from "./SelectionPopover";
+import { BodySelectionPopover } from "./BodySelectionPopover";
+import { SolidFilletPopover } from "./SolidFilletPopover";
 import { FilletPopover } from "./FilletPopover";
 import type { PopoverPosition } from "./StagePopover";
 
@@ -189,41 +198,55 @@ interface TreeFeatureState {
   cached: boolean;
 }
 
+/** Timeline cards stay to the operation; full bases live in the selected-step line. */
 function datumDefinitionLabel(definition: DatumPlaneDefinition): string {
-  const refLabel = (ref: PlaneRef): string =>
-    ref.kind === "world"
-      ? ref.plane
-      : ref.kind === "face"
-        ? `Face · ${ref.ref.role}`
-        : `Datum · ${ref.label}`;
   return definition.kind === "offset"
-    ? `offset ${definition.distance} mm · from ${refLabel(definition.base)}`
-    : `midplane · ${refLabel(definition.a)} / ${refLabel(definition.b)}`;
+    ? `offset ${definition.distance} mm`
+    : "midplane";
 }
 
-/** Start on the first extrude (model view), or the first feature if none. */
+/** Start at the end of the history: selection is the render prefix. */
 function initialActiveFeatureId(doc: Doc): string | null {
-  return (doc.features.find(isExtrudeFeature) ?? doc.features[0])?.id ?? null;
+  return doc.features[doc.features.length - 1]?.id ?? null;
 }
 
-/** Resolve the selected feature, falling back to the base extrude/first feature. */
+/** Resolve the selected step; null means "no step selected, show the end". */
 function resolveActiveFeature(doc: Doc, featureId: string | null): Feature | null {
-  return (
-    (featureId ? findFeature(doc, featureId) : null) ??
-    doc.features.find(isExtrudeFeature) ??
-    doc.features[0] ??
-    null
-  );
+  return featureId ? findFeature(doc, featureId) ?? null : null;
 }
 
 /** A sketch feature is edited directly; an extrude edits the sketch it consumes. */
 function sketchForFeature(doc: Doc, feature: Feature | null): SketchFeature | null {
-  if (feature?.type === "sketch") return feature;
-  if (feature?.type === "extrude") {
-    return sketchFeatureById(doc, feature.sketchId) ?? primarySketchFeature(doc);
+  if (!feature) return null;
+  if (feature.type === "sketch") return feature;
+  if (feature.type === "extrude") {
+    return sketchFeatureById(doc, feature.sketchId) ?? null;
   }
-  if (feature?.type === "datum") return null;
-  return primarySketchFeature(doc);
+  return null;
+}
+
+/** What a step creates or references, shown as a chip on the step. */
+type TimelineOutput = {
+  op: "+" | "→";
+  kind: "sketch" | "plane" | "body";
+  name: string;
+};
+
+function featureTimelineOutput(feature: Feature): TimelineOutput {
+  if (isSketchFeature(feature)) {
+    return { op: "+", kind: "sketch", name: feature.name };
+  }
+  if (isDatumPlaneFeature(feature)) {
+    return { op: "+", kind: "plane", name: feature.name };
+  }
+  if (isFilletFeature(feature)) {
+    return { op: "→", kind: "body", name: "body" };
+  }
+  return {
+    op: feature.operation === "new" ? "+" : "→",
+    kind: "body",
+    name: "body",
+  };
 }
 
 /**
@@ -232,13 +255,11 @@ function sketchForFeature(doc: Doc, feature: Feature | null): SketchFeature | nu
  * first consumer; use `extrude` to start a new draft or select the extrude step.
  */
 function activeExtrudeFor(
-  doc: Doc,
+  _doc: Doc,
   feature: Feature | null,
   _sketchFeature: SketchFeature | null,
 ): ExtrudeFeature | null {
-  if (feature?.type === "extrude") return feature;
-  if (feature?.type === "sketch" || feature?.type === "datum") return null;
-  return primaryExtrudeFeature(doc);
+  return feature?.type === "extrude" ? feature : null;
 }
 
 /**
@@ -259,6 +280,45 @@ interface ExtrudeDraft {
   symmetric: boolean;
   operation: ExtrudeFeature["operation"];
   end: ExtrudeFeature["end"];
+}
+
+/**
+ * The 3D fillet form. A new fillet is a UI-only draft that previews through
+ * the kernel; editing an existing one commits radius/edge changes live and
+ * `cancel` restores its baseline.
+ */
+interface FilletDraft {
+  mode: "new" | "edit";
+  featureId: string | null;
+  edges: EdgeRef[];
+  radius: number;
+  /** Where a new feature is inserted; null appends at the end. */
+  anchorId: string | null;
+}
+
+/** Default radius: a fraction of the shortest selected edge, clamped to sane mm. */
+function defaultFilletRadius(
+  mesh: BodyMesh | null,
+  edges: readonly EdgeRef[],
+): number {
+  const lengths = edges
+    .map((edge) => edge.hint.length)
+    .filter((length): length is number => (length ?? 0) > 1e-6);
+  const bounds = mesh?.stats.bounds;
+  const minBody = bounds
+    ? Math.min(bounds[3] - bounds[0], bounds[4] - bounds[1], bounds[5] - bounds[2])
+    : 12;
+  const basedOnEdge =
+    lengths.length > 0 ? Math.min(...lengths) * 0.15 : minBody * 0.1;
+  return Math.max(0.5, Math.min(5, Math.round(basedOnEdge * 10) / 10));
+}
+
+function edgeBodyPick(edge: EdgeRef): BodyPick {
+  return {
+    kind: "edge",
+    id: `edge-${edgeRefKey(edge)}`,
+    edgeRef: edge,
+  };
 }
 
 const PENDING_CONFLICT_ID = "pending-conflict";
@@ -283,6 +343,13 @@ export function App() {
   const activeFeature = useMemo(
     () => resolveActiveFeature(doc, activeFeatureId),
     [doc, activeFeatureId],
+  );
+  const activeFeatureIndex = useMemo(
+    () =>
+      activeFeature
+        ? doc.features.findIndex((feature) => feature.id === activeFeature.id)
+        : -1,
+    [doc, activeFeature],
   );
   const activeSketchFeature = useMemo(
     () => sketchForFeature(doc, activeFeature),
@@ -325,6 +392,9 @@ export function App() {
   const [gridPixels, setGridPixels] = useState(20);
   const [snapEnabled, setSnapEnabled] = useState(true);
   const [zoomPreset, setZoomPreset] = useState("fit");
+  const handleZoomChange = useCallback((percent: number): void => {
+    setZoomPreset(String(percent));
+  }, []);
   const [zoomRequest, setZoomRequest] = useState<{
     seq: number;
     value: "fit" | number;
@@ -357,13 +427,26 @@ export function App() {
   const [workerStatuses, setWorkerStatuses] = useState<FeatureBuildStatus[]>([]);
   const [kernelVersion, setKernelVersion] = useState(0);
   const [bodyPick, setBodyPick] = useState<BodyPick | null>(null);
-  const [rollbackIndex, setRollbackIndex] = useState<number | null>(null);
+  /** Ephemeral model edge multi-selection; App owns the policy. */
+  const [edgeSelection, setEdgeSelection] = useState<BodyPick[]>([]);
+  const [bodyPopoverPosition, setBodyPopoverPosition] =
+    useState<PopoverPosition>({ x: 22, y: 112 });
+  const [filletDraft, setFilletDraft] = useState<FilletDraft | null>(null);
+  const [filletBaseline, setFilletBaseline] = useState<FilletFeature | null>(
+    null,
+  );
   const [editorOpen, setEditorOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportPlane, setSupportPlane] = useState<WorldPlane>("XY");
   const [supportDatumId, setSupportDatumId] = useState<string | null>(null);
   const [supportFaceFlipped, setSupportFaceFlipped] = useState(false);
   const [creationAnchorId, setCreationAnchorId] = useState<string | null>(null);
+  const [creationAtStart, setCreationAtStart] = useState(false);
+  const [insertMenu, setInsertMenu] = useState<{
+    anchorId: string | null;
+    atStart: boolean;
+    left: number;
+  } | null>(null);
   const [editorBaseline, setEditorBaseline] = useState<EditorBaseline | null>(
     null,
   );
@@ -388,8 +471,14 @@ export function App() {
   );
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const timelineTrackRef = useRef<HTMLDivElement>(null);
   const clientRef = useRef<KernelClient | null>(null);
   const viewportRef = useRef<Viewport | null>(null);
+  const handleBodyPickRef = useRef<
+    (pick: BodyPick | null, additive: boolean) => void
+  >(() => {});
+  const cancelFilletRef = useRef<() => void>(() => {});
+  const filletDraftOpenRef = useRef(false);
   const faceBoundaryCache = useRef(
     new Map<string, { frame: PlaneFrame; loops: Vec3[][] }>(),
   );
@@ -407,24 +496,55 @@ export function App() {
     }
     return outcomes;
   }, [activeSketchFeature, editor.solved, editor.solvedFor]);
+  // Selection is the history cursor: the stage always renders the prefix
+  // through the selected step. Downstream steps stay in the timeline, paused.
   const buildDoc = useMemo(
     () =>
-      rollbackIndex === null
-        ? doc
-        : {
-            ...doc,
-            features: doc.features.slice(0, rollbackIndex + 1),
-          },
-    [doc, rollbackIndex],
+      activeFeatureIndex >= 0 &&
+      activeFeatureIndex < doc.features.length - 1
+        ? { ...doc, features: doc.features.slice(0, activeFeatureIndex + 1) }
+        : doc,
+    [doc, activeFeatureIndex],
   );
+  // Lost support is reported per face ref. Undo, document switches and deleted
+  // features leave keys behind that no longer belong to this history; only
+  // refs that still exist may affect diagnostics and cache keys.
+  const currentFaceRefKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const feature of buildDoc.features) {
+      if (isSketchFeature(feature) && feature.support.kind === "face") {
+        keys.add(faceRefKey(feature.support.ref));
+      }
+    }
+    for (const ref of collectDatumFaceRefs(buildDoc)) {
+      keys.add(faceRefKey(ref));
+    }
+    return keys;
+  }, [buildDoc]);
+  const activeLostFaceRefs = useMemo(() => {
+    if (lostFaceRefs.size === 0) return lostFaceRefs;
+    let stale = false;
+    const next = new Set<string>();
+    for (const key of lostFaceRefs) {
+      if (currentFaceRefKeys.has(key)) next.add(key);
+      else stale = true;
+    }
+    return stale ? next : lostFaceRefs;
+  }, [lostFaceRefs, currentFaceRefKeys]);
   const rebuild = useMemo(() => {
     if (solverState !== "ready") return null;
     return rebuildDocument(buildDoc, {
       cache: rebuildCache,
       sketchOutcomes,
-      lostFaceRefs,
+      lostFaceRefs: activeLostFaceRefs,
     });
-  }, [buildDoc, solverState, sketchOutcomes, rebuildCache, lostFaceRefs]);
+  }, [
+    buildDoc,
+    solverState,
+    sketchOutcomes,
+    rebuildCache,
+    activeLostFaceRefs,
+  ]);
   const activeSketchBuild = activeSketchFeature
     ? rebuild?.sketchById.get(activeSketchFeature.id) ?? null
     : null;
@@ -591,6 +711,66 @@ export function App() {
     supportOpen,
     datumDraft,
   ]);
+  // While editing a sketch on a world or datum plane there is no supporting
+  // face to project. Show the body that exists at this step as faint projected
+  // edges, so the sketch has a spatial reference. Face sketches already get
+  // the supporting boundary through their live projection.
+  const bodyReferenceEdges = useMemo<
+    Array<[number, number, number, number]>
+  >(() => {
+    if (
+      mode !== "sketch" ||
+      activeFeature?.type !== "sketch" ||
+      !activeSketchFeature ||
+      !mesh ||
+      activeSketchFeature.support.kind === "face"
+    ) {
+      return [];
+    }
+    const frame =
+      activeSketchBuild?.frame ??
+      (isDefaultSupport(activeSketchFeature.support)
+        ? undefined
+        : supportFrame(activeSketchFeature.support));
+    const origin = frame?.origin ?? [0, 0, 0];
+    const xAxis = frame?.xAxis ?? [1, 0, 0];
+    const yAxis = frame?.yAxis ?? [0, 1, 0];
+    const positions = mesh.edgePositions;
+    const edges: Array<[number, number, number, number]> = [];
+    const project = (
+      x: number,
+      y: number,
+      z: number,
+    ): [number, number] => {
+      const dx = x - origin[0];
+      const dy = y - origin[1];
+      const dz = z - origin[2];
+      return [
+        dx * xAxis[0] + dy * xAxis[1] + dz * xAxis[2],
+        dx * yAxis[0] + dy * yAxis[1] + dz * yAxis[2],
+      ];
+    };
+    for (let index = 0; index + 5 < positions.length; index += 6) {
+      const a = project(
+        positions[index]!,
+        positions[index + 1]!,
+        positions[index + 2]!,
+      );
+      const b = project(
+        positions[index + 3]!,
+        positions[index + 4]!,
+        positions[index + 5]!,
+      );
+      edges.push([a[0], a[1], b[0], b[1]]);
+    }
+    return edges;
+  }, [
+    mode,
+    activeFeature,
+    activeSketchFeature,
+    activeSketchBuild,
+    mesh,
+  ]);
   const activeVoidCount = useMemo(
     () => activeRegions.filter((region) => region.kind === "void").length,
     [activeRegions],
@@ -609,21 +789,61 @@ export function App() {
         : null,
     [activeExtrude, activeRegions, extrudeHeight],
   );
+  const selectedEdgeRefs = useMemo(
+    () =>
+      edgeSelection
+        .map((pick) => pick.edgeRef)
+        .filter((ref): ref is EdgeRef => ref !== undefined),
+    [edgeSelection],
+  );
   const solidFeatures = useMemo<KernelFeature[]>(() => {
-    if (rebuild) return extractKernelFeatures(rebuild);
-    if (!fallbackParams || !activeExtrude) return [];
-    const operation = activeExtrude.operation;
-    return [
-      {
-        featureId: activeExtrude.id,
-        cacheKey: `fallback-${stableHash(
-          canonicalJson({ params: fallbackParams, operation }),
-        )}`,
-        params: fallbackParams,
-        operation,
-      },
-    ];
-  }, [rebuild, fallbackParams, activeExtrude]);
+    let features: KernelFeature[];
+    if (rebuild) {
+      features = extractKernelFeatures(rebuild);
+    } else if (fallbackParams && activeExtrude) {
+      const operation = activeExtrude.operation;
+      features = [
+        {
+          kind: "extrude",
+          featureId: activeExtrude.id,
+          cacheKey: `fallback-${stableHash(
+            canonicalJson({ params: fallbackParams, operation }),
+          )}`,
+          params: fallbackParams,
+          operation,
+        },
+      ];
+    } else {
+      features = [];
+    }
+    // Preview a new fillet through the kernel without writing it to the
+    // document. The draft sits after the rendered prefix, exactly where apply
+    // will insert it.
+    if (
+      filletDraft?.mode === "new" &&
+      filletDraft.edges.length > 0 &&
+      filletDraft.radius > 0 &&
+      features.length > 0
+    ) {
+      features = [
+        ...features,
+        {
+          kind: "fillet",
+          featureId: "fillet-draft",
+          cacheKey: `fillet-draft-${stableHash(
+            canonicalJson({
+              edges: filletDraft.edges,
+              radius: filletDraft.radius,
+              upstream: features.map((feature) => feature.cacheKey),
+            }),
+          )}`,
+          edges: filletDraft.edges,
+          radius: filletDraft.radius,
+        },
+      ];
+    }
+    return features;
+  }, [rebuild, fallbackParams, activeExtrude, filletDraft]);
   const rebuildDiagnostics = useMemo(
     () =>
       rebuild?.features
@@ -865,10 +1085,216 @@ export function App() {
     setEditorOpen(false);
     setEditorBaseline(null);
     setExtrudeDraft(null);
+    setFilletDraft(null);
+    setFilletBaseline(null);
   };
 
-  const openExtrudeEditor = (feature: ExtrudeFeature): void => {
-    setEditorBaseline({ feature, returnMode: mode });
+  const openFilletEditor = (feature: FilletFeature): void => {
+    dismissEditor();
+    setDatumDraft(null);
+    setSupportOpen(false);
+    setFilletBaseline(feature);
+    setFilletDraft({
+      mode: "edit",
+      featureId: feature.id,
+      edges: [...feature.edges],
+      radius: feature.radius,
+      anchorId: null,
+    });
+    const picks = feature.edges.map(edgeBodyPick);
+    setEdgeSelection(picks);
+    viewportRef.current?.setEdgeSelection(picks);
+    setMode("model");
+    setSelection([]);
+    setBodyPick(null);
+  };
+
+  /** Footer cancel / background click restores a fillet as it was opened. */
+  const cancelFilletEditor = (): void => {
+    const baseline = filletBaseline;
+    dismissEditor();
+    if (baseline) {
+      const current = getState();
+      const next = updateFilletFeature(current.doc, baseline.id, () => baseline);
+      if (next !== current.doc) {
+        commit({
+          doc: next,
+          solved: current.solved,
+          solvedFor: current.solvedFor,
+        });
+      }
+      setActiveFeatureId(baseline.id);
+    }
+    setEdgeSelection([]);
+    setBodyPick(null);
+    viewportRef.current?.clearPick();
+    setSelection([]);
+  };
+
+  /** Start a UI-only fillet draft from the selected edges. */
+  const beginFilletDraft = (): void => {
+    const edges = selectedEdgeRefs;
+    if (edges.length === 0) return;
+    dismissEditor();
+    setDatumDraft(null);
+    setSupportOpen(false);
+    setHistoryNotice(null);
+    setFilletDraft({
+      mode: "new",
+      featureId: null,
+      edges: [...edges],
+      radius: defaultFilletRadius(mesh, edges),
+      anchorId: activeFeatureId,
+    });
+    setMode("model");
+    setSelection([]);
+    setBodyPick(null);
+  };
+
+  const updateFilletRadius = (radius: number): void => {
+    if (!filletDraft || !Number.isFinite(radius) || radius <= 0) return;
+    setFilletDraft({ ...filletDraft, radius });
+    if (filletDraft.mode === "edit" && filletDraft.featureId) {
+      const current = getState();
+      const next = updateFilletFeature(
+        current.doc,
+        filletDraft.featureId,
+        (feature) => ({ ...feature, radius }),
+      );
+      if (next !== current.doc) {
+        commit(
+          { doc: next, solved: current.solved, solvedFor: current.solvedFor },
+          "fillet-radius",
+        );
+      }
+    }
+  };
+
+  const updateFilletEdges = (edges: EdgeRef[]): void => {
+    if (!filletDraft) return;
+    setFilletDraft({ ...filletDraft, edges });
+    const picks = edges.map(edgeBodyPick);
+    setEdgeSelection(picks);
+    viewportRef.current?.setEdgeSelection(picks);
+    if (filletDraft.mode === "edit" && filletDraft.featureId) {
+      const current = getState();
+      const next = updateFilletFeature(
+        current.doc,
+        filletDraft.featureId,
+        (feature) => ({ ...feature, edges }),
+      );
+      if (next !== current.doc) {
+        commit({ doc: next, solved: current.solved, solvedFor: current.solvedFor });
+      }
+    }
+  };
+
+  /**
+   * A pick from the 3D stage. Faces/datum stay single-select; edges accumulate
+   * while Shift is held or a fillet draft is open, and toggle on a repeat click.
+   */
+  const handleBodyPick = (
+    pick: BodyPick | null,
+    additive: boolean,
+  ): void => {
+    setSupportDatumId(
+      pick?.kind === "datum" ? pick.datumId ?? null : null,
+    );
+    if (!pick) {
+      if (filletDraft) {
+        cancelFilletEditor();
+        return;
+      }
+      setBodyPick(null);
+      setEdgeSelection([]);
+      viewportRef.current?.setEdgeSelection([]);
+      return;
+    }
+    if (pick.kind === "edge" && pick.edgeRef) {
+      const ref = pick.edgeRef;
+      const known = (source: string): boolean =>
+        source !== "fillet-draft" &&
+        source !== filletDraft?.featureId &&
+        doc.features.some((feature) => feature.id === source);
+      // The stage may be previewing the draft fillet itself. Edges on those
+      // generated rounds (or on the feature being edited) cannot be inputs.
+      if (!known(ref.faces[0].source) || !known(ref.faces[1].source)) return;
+
+      const key = edgeRefKey(ref);
+      const selected = edgeSelection.some(
+        (item) =>
+          item.edgeRef !== undefined && edgeRefKey(item.edgeRef) === key,
+      );
+      const toggle = additive || filletDraft !== null;
+      let next: BodyPick[];
+      if (toggle && selected) {
+        next = edgeSelection.filter(
+          (item) =>
+            item.edgeRef === undefined || edgeRefKey(item.edgeRef) !== key,
+        );
+      } else if (toggle) {
+        next = [...edgeSelection, pick];
+      } else {
+        next = [pick];
+      }
+      // While the fillet form is open it is the readout; the small pick badge
+      // would overlap it and repeat the same selection.
+      setBodyPick(!filletDraft && next.length > 0 ? pick : null);
+      setEdgeSelection(next);
+      viewportRef.current?.setEdgeSelection(next);
+      if (filletDraft) {
+        updateFilletEdges(
+          next
+            .map((item) => item.edgeRef)
+            .filter((edge): edge is EdgeRef => edge !== undefined),
+        );
+      }
+      return;
+    }
+
+    setBodyPick(pick);
+    setEdgeSelection([]);
+    viewportRef.current?.setEdgeSelection([]);
+  };
+  // The viewport and the global keyboard effect are created once; a ref keeps
+  // them pointed at the current handlers without re-registering listeners.
+  useEffect(() => {
+    handleBodyPickRef.current = handleBodyPick;
+    cancelFilletRef.current = cancelFilletEditor;
+    filletDraftOpenRef.current = filletDraft !== null;
+  });
+
+  const applyFilletDraft = (): void => {
+    const draft = filletDraft;
+    if (!draft || draft.edges.length === 0 || !(draft.radius > 0)) return;
+    const current = getState();
+    if (draft.mode === "new") {
+      const result = addFilletFeature(current.doc, draft.edges, draft.radius, {
+        afterFeatureId: draft.anchorId,
+      });
+      commit({
+        doc: result.doc,
+        solved: current.solved,
+        solvedFor: current.solvedFor,
+      });
+      setActiveFeatureId(result.feature.id);
+    } else if (draft.featureId) {
+      setActiveFeatureId(draft.featureId);
+    }
+    dismissEditor();
+    setEdgeSelection([]);
+    setBodyPick(null);
+    viewportRef.current?.clearPick();
+    setMode("model");
+    setSelection([]);
+    setHistoryNotice(null);
+  };
+
+  const openExtrudeEditor = (
+    feature: ExtrudeFeature,
+    returnMode: "model" | "sketch" = mode,
+  ): void => {
+    setEditorBaseline({ feature, returnMode });
     setEditorOpen(true);
   };
 
@@ -944,6 +1370,7 @@ export function App() {
     commit({ doc: next, solved: current.solved, solvedFor: current.solvedFor });
     if (bodyPick?.kind === "datum" && bodyPick.datumId === feature.id) {
       setBodyPick(null);
+      setEdgeSelection([]);
       viewportRef.current?.clearPick();
     }
   };
@@ -968,16 +1395,9 @@ export function App() {
       solved: current.solved,
       solvedFor: current.solvedFor,
     });
-    setRollbackIndex((index) =>
-      index === null
-        ? null
-        : Math.min(index, Math.max(0, result.doc.features.length - 1)),
-    );
     if (activeFeatureId && result.removedIds.includes(activeFeatureId)) {
       const fallback =
-        result.doc.features.find(isExtrudeFeature) ??
-        result.doc.features[0] ??
-        null;
+        result.doc.features[result.doc.features.length - 1] ?? null;
       setActiveFeatureId(fallback?.id ?? null);
     }
     if (result.removedIds.length > 1) {
@@ -1002,21 +1422,51 @@ export function App() {
     setHistoryNotice(null);
   };
 
-  const rollForward = (): void => setRollbackIndex(null);
+  /** Clear the history cursor: keep the whole document, select no step. */
+  const clearActiveFeature = (): void => {
+    clearTransientSolve();
+    dismissEditor();
+    setDatumDraft(null);
+    setSupportOpen(false);
+    setInsertMenu(null);
+    setCreationAnchorId(null);
+    setCreationAtStart(false);
+    setActiveFeatureId(null);
+    setMode("model");
+    setSelection([]);
+    setTrimNotice(null);
+    setBodyPick(null);
+    setEdgeSelection([]);
+    viewportRef.current?.clearPick();
+  };
 
   const activateFeature = (feature: Feature): void => {
     clearTransientSolve();
     dismissEditor();
+    setDatumDraft(null);
     setSupportOpen(false);
+    setCreationAtStart(false);
     setActiveFeatureId(feature.id);
     setMode(feature.type === "sketch" ? "sketch" : "model");
     setSelection([]);
     setTrimNotice(null);
     setBodyPick(null);
+    setEdgeSelection([]);
     viewportRef.current?.clearPick();
     if (feature.type === "sketch") {
       setTool("select");
       setCancelToken((token) => token + 1);
+      return;
+    }
+    // Selecting a step is how you edit it: a sketch opens its canvas, an
+    // extrude or datum opens its parameter popover. There is no separate
+    // "edit" command.
+    if (feature.type === "extrude") {
+      openExtrudeEditor(feature, "model");
+    } else if (isFilletFeature(feature)) {
+      openFilletEditor(feature);
+    } else {
+      openDatumEditor(feature);
     }
   };
 
@@ -1084,13 +1534,13 @@ export function App() {
 
   const datumPlaneOverlays = useMemo(
     () =>
-      datumPlaneFeatures(doc)
+      datumPlaneFeatures(buildDoc)
         .filter((feature) => feature.suppressed !== true && feature.hidden !== true)
         .map((feature) => ({
           featureId: feature.id,
           frame: resolvedDatumFrame(feature),
         })),
-    [doc, resolvedDatumFrame],
+    [buildDoc, resolvedDatumFrame],
   );
 
   const openDatumEditor = (feature: DatumPlaneFeature): void => {
@@ -1107,17 +1557,23 @@ export function App() {
       distance: definition.kind === "offset" ? definition.distance : 10,
     });
     dismissEditor();
+    setCreationAtStart(false);
     setActiveFeatureId(feature.id);
     setMode("model");
     setSelection([]);
     setBodyPick(null);
+    setEdgeSelection([]);
     viewportRef.current?.clearPick();
   };
 
-  const openDatumDraft = (): void => {
+  const openDatumDraft = (
+    anchorId: string | null = activeFeatureId,
+    atStart = false,
+  ): void => {
     dismissEditor();
     setExtrudeDraft(null);
-    setCreationAnchorId(activeFeatureId);
+    setCreationAnchorId(atStart ? null : anchorId);
+    setCreationAtStart(atStart);
     setDatumDraft({
       id: null,
       kind: "offset",
@@ -1130,6 +1586,80 @@ export function App() {
     setHistoryNotice(null);
     setSelection([]);
     setMode("model");
+  };
+
+  /** Move the history cursor without opening an editor; used by insert gaps. */
+  const moveCursor = (feature: Feature): void => {
+    clearTransientSolve();
+    dismissEditor();
+    setDatumDraft(null);
+    setSupportOpen(false);
+    setActiveFeatureId(feature.id);
+    setMode("model");
+    setSelection([]);
+  };
+
+  const insertMenuLeft = (target: HTMLElement): number => {
+    const timeline = target.closest(".timeline")?.getBoundingClientRect();
+    const rect = target.getBoundingClientRect();
+    const width = timeline?.width ?? 600;
+    return Math.max(
+      8,
+      Math.min(
+        rect.left + rect.width / 2 - (timeline?.left ?? 0) - 90,
+        width - 200,
+      ),
+    );
+  };
+
+  const openInsertMenu = (feature: Feature, target: HTMLElement): void => {
+    moveCursor(feature);
+    setInsertMenu({
+      anchorId: feature.id,
+      atStart: false,
+      left: insertMenuLeft(target),
+    });
+  };
+
+  const openStartInsertMenu = (target: HTMLElement): void => {
+    // The start gap has no step before it: keep the cursor where it is, but
+    // leave the sketch canvas so the support picker is visible.
+    dismissEditor();
+    setDatumDraft(null);
+    setSupportOpen(false);
+    setSelection([]);
+    setMode("model");
+    setInsertMenu({
+      anchorId: null,
+      atStart: true,
+      left: insertMenuLeft(target),
+    });
+  };
+
+  const openInsertSketch = (
+    anchorId: string | null,
+    atStart = false,
+  ): void => {
+    dismissEditor();
+    setDatumDraft(null);
+    setSupportPlane("XY");
+    setSupportDatumId(
+      bodyPick?.kind === "datum" ? bodyPick.datumId ?? null : null,
+    );
+    setSupportFaceFlipped(false);
+    setCreationAnchorId(atStart ? null : anchorId);
+    setCreationAtStart(atStart);
+    setSupportOpen(true);
+    setFileMenuOpen(false);
+    setInsertMenu(null);
+  };
+
+  const openInsertPlane = (
+    anchorId: string | null,
+    atStart = false,
+  ): void => {
+    openDatumDraft(anchorId, atStart);
+    setInsertMenu(null);
   };
 
   const commitDatumDraft = (): void => {
@@ -1173,15 +1703,20 @@ export function App() {
         current.doc,
         definition,
         frame,
-        { afterFeatureId: creationAnchorId },
+        { afterFeatureId: creationAnchorId, atStart: creationAtStart },
       );
       commit({ doc, solved: current.solved, solvedFor: current.solvedFor });
       setActiveFeatureId(feature.id);
     }
     setDatumDraft(null);
     setCreationAnchorId(null);
+    setCreationAtStart(false);
     setHistoryNotice(null);
     setSelection([]);
+    // The support pick that seeded this datum is no longer the subject.
+    setBodyPick(null);
+    setEdgeSelection([]);
+    viewportRef.current?.clearPick();
   };
 
   const cancelDatumDraft = (): void => {
@@ -1223,19 +1758,9 @@ export function App() {
     );
     commit({ doc: nextDoc, solved: current.solved, solvedFor: current.solvedFor });
     setBodyPick(null);
+    setEdgeSelection([]);
     viewportRef.current?.clearPick();
     setHistoryNotice(null);
-  };
-
-  const openFeatureEditor = (): void => {
-    if (editorOpen || !activeFeature) return;
-    if (activeFeature.type === "extrude") {
-      openExtrudeEditor(activeFeature);
-      return;
-    }
-    if (activeFeature.type === "datum") {
-      openDatumEditor(activeFeature);
-    }
   };
 
   const handleNewSketch = (): void => {
@@ -1286,6 +1811,7 @@ export function App() {
     const { doc: nextDoc, feature } = addSketchFeature(current.doc, {
       support,
       afterFeatureId: creationAnchorId,
+      atStart: creationAtStart,
     });
     const outcome = isSolverReady() ? solveSketch(feature.sketch) : null;
     commit({ doc: nextDoc, solved: outcome, solvedFor: feature.id });
@@ -1295,15 +1821,16 @@ export function App() {
     setSupportDatumId(null);
     setSupportFaceFlipped(false);
     setCreationAnchorId(null);
+    setCreationAtStart(false);
     setHistoryNotice(null);
     setMode("sketch");
-    setRollbackIndex(null);
     setSelection([]);
     setSolveError(null);
     setTool("select");
     setZoomPreset("fit");
     setFitToken((token) => token + 1);
     setBodyPick(null);
+    setEdgeSelection([]);
     viewportRef.current?.clearPick();
   };
 
@@ -1313,21 +1840,28 @@ export function App() {
     dismissEditor();
     setSupportOpen(false);
     setActiveFeatureId(source.id);
+    // Default to join when the document already has a body. A join with
+    // nothing to join would be a silent fallback; the draft says "new"
+    // instead. (The new extrude appends after the existing history, so this
+    // looks at the whole document, not just the prefix at the sketch cursor.)
+    const hasBody = current.doc.features.some(
+      (feature) => isExtrudeFeature(feature) && feature.suppressed !== true,
+    );
     setExtrudeDraft({
       sketchId: source.id,
       regions: [...regions],
       height: primaryExtrudeFeature(current.doc)?.height ?? 12,
       symmetric: false,
-      operation: current.doc.features.some(isExtrudeFeature) ? "join" : "new",
+      operation: hasBody ? "join" : "new",
       end: "blind",
     });
     // Stay in the sketch to choose profiles and edit the extrude parameters.
     setMode("sketch");
     setTool("select");
-    setRollbackIndex(null);
     setSelection([]);
     setTrimNotice(null);
     setBodyPick(null);
+    setEdgeSelection([]);
     viewportRef.current?.clearPick();
   };
 
@@ -1493,9 +2027,10 @@ export function App() {
         initialTheme.highlight,
         initialTheme.mode,
       ).color,
-      onPick: (pick) => {
-        setBodyPick(pick);
-        setSupportDatumId(pick?.kind === "datum" ? pick.datumId ?? null : null);
+      onPick: (pick, additive) => {
+        // The viewport is created once; route picks through the current
+        // handler so edge multi-select sees fresh draft/selection state.
+        handleBodyPickRef.current(pick, additive);
       },
     });
     viewportRef.current = viewport;
@@ -1545,6 +2080,114 @@ export function App() {
   useEffect(() => {
     const client = clientRef.current;
     if (!client || !rebuild) return;
+
+    const applyBoundary = (
+      featureId: string,
+      sourceSupport: Extract<PlaneRef, { kind: "face" }>,
+      rawFrame: PlaneFrame,
+      worldLoops: Vec3[][],
+    ): void => {
+      const latest = getState();
+      const target = findFeature(latest.doc, featureId);
+      if (!target || !isSketchFeature(target) || target.support.kind !== "face") {
+        return;
+      }
+      const faceSupport = target.support;
+      if (
+        faceSupport.ref.source !== sourceSupport.ref.source ||
+        faceSupport.ref.role !== sourceSupport.ref.role
+      ) {
+        return;
+      }
+      const frame = stabilizeFrame(rawFrame, faceSupport.frame);
+      const loops = worldLoops.map((loop) =>
+        loop.map((point) => projectPointToPlane(point, frame)),
+      );
+      const projection = target.projections?.find(
+        (candidate) => candidate.kind === "faceBoundary",
+      );
+      const supportChanged = !framesClose(faceSupport.frame, frame);
+      let sketch = target.sketch;
+      let nextProjection = projection;
+      let projections = target.projections;
+      if (projection) {
+        if (!sameProjectedLoops(projection.loops, loops)) {
+          const next = applyProjectionGeometry(
+            sketch,
+            projection.id,
+            projection.label,
+            loops,
+            true,
+          );
+          if (next) {
+            sketch = next;
+            nextProjection = { ...projection, loops, stale: undefined };
+          } else {
+            // The topology changed and the cached reference geometry cannot be
+            // rewired. Mark it stale once; retrying with the same cached loops
+            // would replace the document forever.
+            nextProjection = projection.stale
+              ? projection
+              : { ...projection, stale: true };
+          }
+        }
+      } else if (loops.length > 0) {
+        const id = newProjectionId();
+        const next = applyProjectionGeometry(
+          sketch,
+          id,
+          "Projected face",
+          loops,
+        );
+        if (next) {
+          sketch = next;
+          nextProjection = {
+            id,
+            kind: "faceBoundary",
+            source: faceSupport.ref,
+            label: "Projected face",
+            loops,
+          };
+        }
+      }
+      if (!nextProjection) return;
+      if (!supportChanged && nextProjection === projection) return;
+      projections = [
+        nextProjection,
+        ...(projections ?? []).filter(
+          (candidate) => candidate.id !== nextProjection!.id,
+        ),
+      ];
+      const nextDoc = {
+        ...latest.doc,
+        features: latest.doc.features.map((candidate) =>
+          candidate.id === target.id
+            ? {
+                ...target,
+                support: { ...faceSupport, frame },
+                sketch,
+                projections,
+              }
+            : candidate,
+        ),
+      };
+      // Re-solve so constraints against the moved references (point-on-line,
+      // coincident, ...) are satisfied immediately rather than after the next
+      // drag. This is a derived update: it must not add an undo step.
+      const outcome = isSolverReady() ? solveSketch(sketch) : null;
+      replace({
+        doc: outcome?.ok
+          ? updateSketchFeature(
+              nextDoc,
+              target.id,
+              applySolution(sketch, outcome),
+            )
+          : nextDoc,
+        solved: outcome,
+        solvedFor: target.id,
+      });
+    };
+
     const current = getState();
     for (const feature of current.doc.features) {
       if (!isSketchFeature(feature) || feature.support.kind !== "face") continue;
@@ -1558,8 +2201,10 @@ export function App() {
         continue;
       }
       const key = `${sourceResult.cacheKey}|${sourceSupport.ref.role}`;
-      if (faceBoundaryCache.current.has(key)) {
+      const cached = faceBoundaryCache.current.get(key);
+      if (cached) {
         queueMicrotask(() => markFaceRefLost(lostKey, false));
+        applyBoundary(feature.id, sourceSupport, cached.frame, cached.loops);
         continue;
       }
       if (faceBoundaryPending.current.has(key)) continue;
@@ -1578,100 +2223,7 @@ export function App() {
             frame: rawFrame,
             loops: result.loops,
           });
-          const latest = getState();
-          const target = findFeature(latest.doc, feature.id);
-          if (!target || !isSketchFeature(target) || target.support.kind !== "face") {
-            return;
-          }
-          const faceSupport = target.support;
-          if (
-            faceSupport.ref.source !== sourceSupport.ref.source ||
-            faceSupport.ref.role !== sourceSupport.ref.role
-          ) {
-            return;
-          }
-          const frame = stabilizeFrame(rawFrame, faceSupport.frame);
-          const loops = result.loops.map((loop) =>
-            loop.map((point) => projectPointToPlane(point, frame)),
-          );
-          const projection = target.projections?.find(
-            (candidate) => candidate.kind === "faceBoundary",
-          );
-          const supportChanged = !framesClose(faceSupport.frame, frame);
-          let sketch = target.sketch;
-          let nextProjection = projection;
-          let projections = target.projections;
-          if (projection) {
-            if (!sameProjectedLoops(projection.loops, loops)) {
-              const next = applyProjectionGeometry(
-                sketch,
-                projection.id,
-                projection.label,
-                loops,
-                true,
-              );
-              if (next) {
-                sketch = next;
-                nextProjection = { ...projection, loops, stale: undefined };
-              } else {
-                nextProjection = { ...projection, stale: true };
-              }
-            }
-          } else if (loops.length > 0) {
-            const id = newProjectionId();
-            const next = applyProjectionGeometry(
-              sketch,
-              id,
-              "Projected face",
-              loops,
-            );
-            if (next) {
-              sketch = next;
-              nextProjection = {
-                id,
-                kind: "faceBoundary",
-                source: faceSupport.ref,
-                label: "Projected face",
-                loops,
-              };
-            }
-          }
-          if (!nextProjection) return;
-          if (!supportChanged && nextProjection === projection) return;
-          projections = [
-            nextProjection,
-            ...(projections ?? []).filter(
-              (candidate) => candidate.id !== nextProjection!.id,
-            ),
-          ];
-          const nextDoc = {
-            ...latest.doc,
-            features: latest.doc.features.map((candidate) =>
-              candidate.id === target.id
-                ? {
-                    ...target,
-                    support: { ...faceSupport, frame },
-                    sketch,
-                    projections,
-                  }
-                : candidate,
-            ),
-          };
-          // Re-solve so constraints against the moved references (point-on-line,
-          // coincident, ...) are satisfied immediately rather than after the
-          // next drag. This is a derived update: it must not add an undo step.
-          const outcome = isSolverReady() ? solveSketch(sketch) : null;
-          replace({
-            doc: outcome?.ok
-              ? updateSketchFeature(
-                  nextDoc,
-                  target.id,
-                  applySolution(sketch, outcome),
-                )
-              : nextDoc,
-            solved: outcome,
-            solvedFor: target.id,
-          });
+          applyBoundary(feature.id, sourceSupport, rawFrame, result.loops);
         })
         .catch((error: unknown) => {
           faceBoundaryPending.current.delete(key);
@@ -1763,8 +2315,92 @@ export function App() {
   }, [mode]);
 
   useEffect(() => {
+    viewportRef.current?.setEdgeSelection(edgeSelection);
+  }, [edgeSelection]);
+
+  useEffect(() => {
     viewportRef.current?.setSketchOverlay(modelSketchOverlay);
   }, [modelSketchOverlay]);
+
+  // On an extrude step, the feature it created is the subject of the stage.
+  // The sketch overlay still shows the profile it consumed.
+  const featureHighlightId = useMemo(() => {
+    if (
+      mode !== "model" ||
+      supportOpen ||
+      datumDraft !== null ||
+      extrudeDraft !== null
+    ) {
+      return null;
+    }
+    // The draft is a synthetic feature that owns its rounds while it previews.
+    if (filletDraft?.mode === "new") return "fillet-draft";
+    return activeFeature &&
+      (isExtrudeFeature(activeFeature) || isFilletFeature(activeFeature)) &&
+      !activeFeature.suppressed
+      ? activeFeature.id
+      : null;
+  }, [
+    mode,
+    supportOpen,
+    datumDraft,
+    extrudeDraft,
+    filletDraft,
+    activeFeature,
+  ]);
+
+  useEffect(() => {
+    viewportRef.current?.setFeatureHighlight(featureHighlightId);
+  }, [featureHighlightId]);
+
+  // The timeline only scrolls sideways, so a vertical wheel over it scrolls the
+  // real native scroll container horizontally (shift+wheel and trackpad
+  // gestures already do this natively). No virtual scrolling: the element
+  // itself moves, and the native scrollbar stays the source of truth.
+  useEffect(() => {
+    const track = timelineTrackRef.current;
+    if (!track) return;
+    const onWheel = (event: WheelEvent): void => {
+      const max = track.scrollWidth - track.clientWidth;
+      if (max <= 0) return;
+      const raw =
+        Math.abs(event.deltaX) > Math.abs(event.deltaY)
+          ? event.deltaX
+          : event.deltaY;
+      if (raw === 0) return;
+      const delta = event.deltaMode === 1 ? raw * 16 : raw;
+      const next = Math.max(0, Math.min(max, track.scrollLeft + delta));
+      if (next === track.scrollLeft) return;
+      track.scrollLeft = next;
+      event.preventDefault();
+    };
+    track.addEventListener("wheel", onWheel, { passive: false });
+    return () => track.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // The insert menu is transient: Escape or a click outside dismisses it.
+  // The gap that opened it is exempt so its own click can toggle it.
+  useEffect(() => {
+    if (!insertMenu) return;
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target as Element | null;
+      if (target?.closest("[data-insert-menu]")) return;
+      const gapSelector = insertMenu.atStart
+        ? '[data-gap="start"]'
+        : `[data-gap="${insertMenu.anchorId}"]`;
+      if (target?.closest(gapSelector)) return;
+      setInsertMenu(null);
+    };
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === "Escape") setInsertMenu(null);
+    };
+    window.addEventListener("pointerdown", onPointerDown, true);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [insertMenu]);
 
   useEffect(() => {
     viewportRef.current?.setDatumPlanes(datumPlaneOverlays);
@@ -1846,6 +2482,10 @@ export function App() {
         return;
       }
       if (event.key === "Escape") {
+        if (filletDraftOpenRef.current) {
+          cancelFilletRef.current();
+          return;
+        }
         setPendingConstraint(null);
         setSolveError(null);
         setTool("select");
@@ -1855,6 +2495,7 @@ export function App() {
         setSelection([]);
         setCancelToken((token) => token + 1);
         setBodyPick(null);
+        setEdgeSelection([]);
         viewportRef.current?.clearPick();
         return;
       }
@@ -1926,7 +2567,9 @@ export function App() {
   const handleSetPointPosition = (pointId: string, x: number, y: number): void => {
     if (!isSolverReady()) return;
     const base = currentSketch();
-    const outcome = solveDrag(base, { pointId, x, y });
+    const outcome = solveDragTargets(base, [{ pointId, x, y }], {
+      frozen: frozenSupportPoints(base, [pointId]),
+    });
     if (!outcome) return;
     commitDoc(applySolution(base, outcome), outcome, `point:${pointId}`);
   };
@@ -1936,11 +2579,11 @@ export function App() {
     const base = currentSketch();
     const target: Vec2 =
       isDemoSketch(base) ? clampDemoDrag(base, pointId, [x, y]) : [x, y];
-    const outcome = solveDrag(base, {
-      pointId,
-      x: target[0],
-      y: target[1],
-    });
+    const outcome = solveDragTargets(
+      base,
+      [{ pointId, x: target[0], y: target[1] }],
+      { frozen: frozenSupportPoints(base, [pointId]) },
+    );
     if (!outcome) return;
     commitDoc(applySolution(base, outcome), outcome, `drag:${pointId}`);
   };
@@ -1948,7 +2591,18 @@ export function App() {
   const handleDragLine = (lineId: string, targets: DragTarget[]): void => {
     if (!isSolverReady()) return;
     const base = currentSketch();
-    const outcome = solveDragTargets(base, targets);
+    // Dragging a line moves that line; its support geometry stays put. The
+    // snapped endpoints slide along their point-on-line constraints instead of
+    // dragging the box (or whatever they were drawn against) with them.
+    const moving = targets.map((target) => target.pointId);
+    const frozen = frozenSupportPoints(base, moving);
+    const line = base.curves.find((curve) => curve.id === lineId);
+    const outcome = solveDragTargets(base, targets, {
+      frozen,
+      ...(line?.type === "line"
+        ? { preserveAngle: { a: line.a, b: line.b } }
+        : {}),
+    });
     if (!outcome) return;
     commitDoc(applySolution(base, outcome), outcome, `drag:${lineId}`);
   };
@@ -1971,6 +2625,9 @@ export function App() {
         ...(vertex.referenceLineId
           ? { referenceLineId: vertex.referenceLineId }
           : {}),
+        ...(vertex.referenceLineIds
+          ? { referenceLineIds: vertex.referenceLineIds }
+          : {}),
       };
     });
     drawAndCommit(base, addPolyline(base, valid, closed));
@@ -1978,7 +2635,12 @@ export function App() {
 
   const handlePoint = (vertex: DraftVertex): void => {
     solveAndCommit(
-      addPoint(currentSketch(), vertex.point, vertex.referenceLineId),
+      addPoint(
+        currentSketch(),
+        vertex.point,
+        vertex.referenceLineId,
+        vertex.referenceLineIds,
+      ),
     );
     setSelection([]);
   };
@@ -2263,7 +2925,8 @@ export function App() {
     commit({ doc: nextDoc, solved: outcome, solvedFor: target.id });
   };
 
-  const clearSketch = (): void => {
+  /** Sketch-scoped reset: empty this sketch, not the file. */
+  const clearActiveSketch = (): void => {
     const empty = emptySketch();
     const outcome = isSolverReady() ? solveSketch(empty) : null;
     replaceActiveSketch(empty, outcome);
@@ -2274,10 +2937,42 @@ export function App() {
     setFitToken((token) => token + 1);
   };
 
+  /** Development reset: keep the file identity, remove every history step. */
+  const clearDocument = (): void => {
+    const current = getState();
+    const next: Doc = { ...current.doc, features: [] };
+    rebuildCache.clear();
+    faceBoundaryCache.current.clear();
+    faceBoundaryPending.current.clear();
+    setLostFaceRefs(new Set());
+    setDatumDraft(null);
+    reset({ doc: next, solved: null, solvedFor: null });
+    setActiveFeatureId(null);
+    dismissEditor();
+    setSupportOpen(false);
+    setInsertMenu(null);
+    setCreationAnchorId(null);
+    setCreationAtStart(false);
+    setMode("model");
+    setTool("select");
+    setSelection([]);
+    setSolveError(null);
+    setBodyPick(null);
+    setEdgeSelection([]);
+    viewportRef.current?.clearPick();
+    setZoomPreset("fit");
+    setFitToken((token) => token + 1);
+  };
+
   const loadExample = (): void => {
     // "Load the example" is a full reset, not an edit of the current sketch:
     // created features and document names must not survive it.
     const fresh = createExampleDocument();
+    rebuildCache.clear();
+    faceBoundaryCache.current.clear();
+    faceBoundaryPending.current.clear();
+    setLostFaceRefs(new Set());
+    setDatumDraft(null);
     const firstSketch = primarySketchFeature(fresh);
     const outcome =
       firstSketch && isSolverReady() ? solveSketch(firstSketch.sketch) : null;
@@ -2297,8 +2992,9 @@ export function App() {
     if (firstSketch) setActiveFeatureId(firstSketch.id);
     dismissEditor();
     setSupportOpen(false);
+    setCreationAnchorId(null);
+    setCreationAtStart(false);
     setMode("sketch");
-    setRollbackIndex(null);
     setSolveError(null);
     setSelection([]);
     setDimensionRequest(null);
@@ -2312,19 +3008,25 @@ export function App() {
 
   const openDocument = (next: Doc): void => {
     rebuildCache.clear();
+    faceBoundaryCache.current.clear();
+    faceBoundaryPending.current.clear();
+    setLostFaceRefs(new Set());
+    setDatumDraft(null);
     reset({ doc: next, solved: null, solvedFor: null });
     const active = initialActiveFeatureId(next);
     setActiveFeatureId(active);
     const feature = active ? findFeature(next, active) : null;
     dismissEditor();
     setSupportOpen(false);
+    setCreationAnchorId(null);
+    setCreationAtStart(false);
     setMode(feature?.type === "sketch" ? "sketch" : "model");
-    setRollbackIndex(null);
     setSelection([]);
     setSolveError(null);
     setFileError(null);
     setFileMenuOpen(false);
     setBodyPick(null);
+    setEdgeSelection([]);
     viewportRef.current?.clearPick();
     saveDoc(next);
     saveLocalFile(next);
@@ -2496,14 +3198,6 @@ export function App() {
       (activeFeature && isExtrudeFeature(activeFeature)
         ? activeFeature.regions.length
         : 0);
-  const activeSketchDof = activeSketchBuild?.dof ?? shown?.dof ?? null;
-  const activeFeatureIndex = activeFeature
-    ? doc.features.findIndex((feature) => feature.id === activeFeature.id)
-    : -1;
-  const canRollBack =
-    activeFeatureIndex >= 0 &&
-    activeFeatureIndex < doc.features.length - 1 &&
-    rollbackIndex !== activeFeatureIndex;
   const sourceSketches =
     activeFeatureIndex > 0
       ? doc.features
@@ -2554,7 +3248,7 @@ export function App() {
         ref: { kind: "face", ref: supportFace, frame: supportFaceFrame },
       });
     }
-    for (const feature of datumPlaneFeatures(doc)) {
+    for (const feature of datumPlaneFeatures(buildDoc)) {
       options.push({
         key: `datum:${feature.id}`,
         label: feature.name,
@@ -2567,7 +3261,7 @@ export function App() {
       });
     }
     return options;
-  }, [doc, supportFace, supportFaceFrame, resolvedDatumFrame]);
+  }, [buildDoc, supportFace, supportFaceFrame, resolvedDatumFrame]);
   const supportPreviewActive = supportOpen || datumDraft !== null;
   const supportPreviewFrame = useMemo<PlaneFrame | null>(() => {
     if (!supportPreviewActive) return null;
@@ -2617,18 +3311,20 @@ export function App() {
   }, [supportPreviewFrame, supportPreviewActive]);
 
   const datumDraftOptions = useMemo(() => {
-    const draftIndex = datumDraft?.id
+    // A new plane is inserted at the cursor, so only earlier datums exist for
+    // it to use as a base. Editing one keeps its own position.
+    const limit = datumDraft?.id
       ? doc.features.findIndex((feature) => feature.id === datumDraft.id)
-      : doc.features.length;
+      : activeFeatureIndex + 1;
     return datumSupportOptions.filter((option) => {
       const ref = option.ref;
       if (ref.kind !== "datum") return true;
       const index = doc.features.findIndex(
         (feature) => feature.id === ref.featureId,
       );
-      return index >= 0 && index < draftIndex;
+      return index >= 0 && index < limit;
     });
-  }, [datumSupportOptions, datumDraft, doc.features]);
+  }, [datumSupportOptions, datumDraft, doc.features, activeFeatureIndex]);
 
   return (
     <div className="app">
@@ -2781,6 +3477,24 @@ export function App() {
           >
             redo
           </button>
+          <span className="doc-sep" aria-hidden="true" />
+          <button
+            className="text-action"
+            type="button"
+            onClick={loadExample}
+            data-testid="load-example"
+          >
+            example
+          </button>
+          <button
+            className="text-action"
+            type="button"
+            onClick={clearDocument}
+            title="Clear the file and remove every step"
+            data-testid="clear-document"
+          >
+            clear
+          </button>
           {mode === "sketch" ? (
             <>
               <span className="doc-sep" aria-hidden="true" />
@@ -2797,19 +3511,6 @@ export function App() {
               >
                 {activeFeature?.type === "extrude" ? "done" : "finish sketch"}{" "}
                 <span className="key">↵</span>
-              </button>
-            </>
-          ) : null}
-          {rollbackIndex !== null ? (
-            <>
-              <span className="doc-sep" aria-hidden="true" />
-              <button
-                className="text-action is-primary"
-                type="button"
-                onClick={rollForward}
-                data-testid="roll-forward"
-              >
-                roll forward →
               </button>
             </>
           ) : null}
@@ -2863,7 +3564,39 @@ export function App() {
       </header>
 
       <main className="workspace">
-        <section className="stage">
+        <section
+          className="stage"
+          onPointerDown={(event) => {
+            // A click on the model background cancels the open feature/datum
+            // editor, exactly like its footer cancel. Popovers, the sketch
+            // tools and the stage-foot view controls keep their own clicks.
+            if (mode !== "model") return;
+            const target = event.target as Element | null;
+            if (!target) return;
+            if (target.closest(".stage-popover")) return;
+            if (target.closest(".tool-line")) return;
+            if (target.closest(".stage-foot")) return;
+            // While a fillet editor is open the canvas is the pick surface:
+            // an edge click must not cancel it, and an empty click is handled
+            // by the viewport's null pick. Other editors still cancel here.
+            if (target.closest(".viewport-canvas") && filletDraft) return;
+            if (filletDraft) {
+              cancelFilletEditor();
+              return;
+            }
+            if (extrudeDraft) {
+              cancelExtrudeDraft();
+              return;
+            }
+            if (editorOpen) {
+              cancelFeatureEditor();
+              return;
+            }
+            if (datumDraft) {
+              cancelDatumDraft();
+            }
+          }}
+        >
           <div className={`model-layer${mode === "model" ? "" : " is-hidden"}`}>
             <canvas ref={canvasRef} className="viewport-canvas" />
 
@@ -2877,6 +3610,9 @@ export function App() {
                 data-ref={
                   bodyPick.ref ? JSON.stringify(bodyPick.ref) : undefined
                 }
+                data-edge-ref={
+                  bodyPick.edgeRef ? JSON.stringify(bodyPick.edgeRef) : undefined
+                }
                 data-datum-id={bodyPick.datumId}
                 role="status"
               >
@@ -2886,7 +3622,9 @@ export function App() {
                     ? "Face selected"
                     : bodyPick.kind === "datum"
                       ? "Datum plane selected"
-                      : "Edge selected"}
+                      : edgeSelection.length > 1
+                        ? `${edgeSelection.length} edges selected`
+                        : "Edge selected"}
                   {bodyPick.ref ? ` · ${bodyPick.ref.role}` : ""}
                   {bodyPick.kind === "datum" && bodyPick.datumId
                     ? ` · ${findFeature(doc, bodyPick.datumId)?.name ?? "plane"}`
@@ -2981,19 +3719,16 @@ export function App() {
                   onClick={() => changeTool("arc")}
                   testId="tool-arc"
                 />
-
                 <span className="tool-separator" />
-
-                <ToolButton
-                  label="example"
-                  onClick={loadExample}
-                  testId="load-example"
-                />
-                <ToolButton
-                  label="clear"
-                  onClick={clearSketch}
-                  testId="clear-sketch"
-                />
+                <button
+                  className="text-action is-quiet"
+                  type="button"
+                  onClick={clearActiveSketch}
+                  title="Clear this sketch's geometry"
+                  data-testid="clear-sketch"
+                >
+                  clear sketch
+                </button>
               </div>
 
               <div className="sketch-canvas-wrap">
@@ -3004,6 +3739,7 @@ export function App() {
                   tone={tone}
                   palette={palette}
                   regions={regions}
+                  bodyReference={bodyReferenceEdges}
                   selectedRegions={selectedRegions}
                   profileSelection={profileMode}
                   regionsSelectable={
@@ -3022,6 +3758,7 @@ export function App() {
                   snapEnabled={snapEnabled}
                   onGridStepResolved={setResolvedGridStep}
                   onGridScaleResolved={setGridPixels}
+                  onZoomChange={handleZoomChange}
                   zoomRequest={zoomRequest}
                   selected={selectedSet}
                   onSelect={handleSelect}
@@ -3222,7 +3959,6 @@ export function App() {
               {mode === "model" ? (
                 <>
                   <span className="stage-meta">Z-up · mm</span>
-                  <span className="stage-meta">front iso</span>
                   <button
                     className="text-action"
                     type="button"
@@ -3263,12 +3999,13 @@ export function App() {
                     aria-hidden="true"
                   >
                     <i style={{ width: `${gridPixels}px` }} />
-                    <em>{formatGridStep(resolvedGridStep)} mm</em>
                   </span>
                   <button
                     className={`text-action${gridStep === "auto" ? " is-primary" : ""}`}
                     type="button"
                     onClick={() => setGridStep("auto")}
+                    aria-pressed={gridStep === "auto"}
+                    title="Adapt the grid step to the zoom level"
                     data-testid="grid-auto"
                   >
                     auto
@@ -3290,13 +4027,15 @@ export function App() {
                       aria-label="Zoom"
                       data-testid="zoom-select"
                     >
+                      {["fit", "50", "100", "200"].includes(zoomPreset) ? null : (
+                        <option value={zoomPreset}>{zoomPreset}%</option>
+                      )}
                       <option value="fit">fit</option>
                       <option value="50">50%</option>
                       <option value="100">100%</option>
                       <option value="200">200%</option>
                     </select>
                   </label>
-                  <span className="stage-meta">front ortho</span>
                 </>
               )}
             </div>
@@ -3321,7 +4060,7 @@ export function App() {
                 setSupportPlane(plane);
                 setSupportDatumId(null);
               }}
-              datums={datumPlaneFeatures(doc).map((feature) => ({
+              datums={datumPlaneFeatures(buildDoc).map((feature) => ({
                 id: feature.id,
                 name: feature.name,
               }))}
@@ -3426,6 +4165,37 @@ export function App() {
             />
           ) : null}
 
+          {filletDraft ? (
+            <SolidFilletPopover
+              radius={filletDraft.radius}
+              edges={filletDraft.edges}
+              isDraft={filletDraft.mode === "new"}
+              position={popoverPosition}
+              onMove={setPopoverPosition}
+              onRadius={updateFilletRadius}
+              onRadiusEnd={endMerge}
+              onRemoveEdge={(index) =>
+                updateFilletEdges(
+                  filletDraft.edges.filter((_, at) => at !== index),
+                )
+              }
+              onApply={applyFilletDraft}
+              onCancel={cancelFilletEditor}
+            />
+          ) : edgeSelection.length > 0 && mode === "model" ? (
+            <BodySelectionPopover
+              edges={selectedEdgeRefs}
+              position={bodyPopoverPosition}
+              onMove={setBodyPopoverPosition}
+              onClear={() => {
+                setEdgeSelection([]);
+                setBodyPick(null);
+                viewportRef.current?.clearPick();
+              }}
+              onFillet={beginFilletDraft}
+            />
+          ) : null}
+
           {editorOpen && activeFeature?.type === "extrude" ? (
             <FeaturePopover
               feature={activeFeature}
@@ -3453,39 +4223,54 @@ export function App() {
           data-active-feature={activeFeature?.id ?? ""}
           data-active-sketch={activeSketchFeature?.id ?? ""}
           data-active-extrude={activeExtrude?.id ?? ""}
-          data-lost-supports={lostFaceRefs.size}
+          data-lost-supports={activeLostFaceRefs.size}
         >
-          <div className="timeline-track">
+          <div className="timeline-track" ref={timelineTrackRef}>
+            <button
+              className="timeline-empty"
+              type="button"
+              title="Clear step selection"
+              aria-label="Clear step selection"
+              data-testid="timeline-empty-start"
+              onClick={clearActiveFeature}
+            />
+            <button
+              className="insert-gap"
+              type="button"
+              title="Insert a step here"
+              aria-label="Insert a step here"
+              data-gap="start"
+              data-testid="insert-gap-start"
+              onClick={(event) => openStartInsertMenu(event.currentTarget)}
+            />
             {doc.features.map((feature, index) => {
               const state = featureStates.get(feature.id);
-              const paused = rollbackIndex !== null && index > rollbackIndex;
+              const paused = activeFeatureIndex >= 0 && index > activeFeatureIndex;
               const status = paused ? "paused" : (state?.status ?? "pending");
-              const extrudeOutput =
-                state?.result?.output?.kind === "extrude"
-                  ? state.result.output
-                  : null;
-              const regionCount =
-                extrudeOutput?.regionIds.length ??
-                (isExtrudeFeature(feature) ? feature.regions.length : 0);
+              const kind = isSketchFeature(feature)
+                ? "sketch"
+                : isDatumPlaneFeature(feature)
+                  ? "plane"
+                  : isFilletFeature(feature)
+                    ? "fillet"
+                    : "extrude";
               const meta = isSketchFeature(feature)
                 ? `${supportLabel(feature.support)} · ${feature.sketch.curves.length} curves`
                 : isDatumPlaneFeature(feature)
                   ? datumDefinitionLabel(feature.definition)
-                  : `${feature.height} mm · ${feature.operation} · ${regionCount} region${
-                      regionCount === 1 ? "" : "s"
-                    }`;
-              const metaSuffix =
-                status === "paused"
-                  ? " · paused"
-                  : status === "error"
-                    ? " · error"
-                    : status === "skipped"
-                      ? " · skipped"
-                      : feature.suppressed
-                        ? " · suppressed"
-                        : isDatumPlaneFeature(feature) && feature.hidden
-                          ? " · hidden"
-                          : "";
+                  : isFilletFeature(feature)
+                    ? `R ${feature.radius} mm · ${feature.edges.length} edge${feature.edges.length === 1 ? "" : "s"}`
+                    : `${
+                        feature.end === "throughAll"
+                          ? "through all"
+                          : `${feature.height} mm`
+                      } · ${feature.operation} · ${
+                        feature.symmetric ? "symmetric" : "one side"
+                      }`;
+              // State (paused, suppressed, hidden, skipped) is conveyed by
+              // dimming/underline only. Extra meta text would appear and
+              // disappear as the cursor and visibility change, making the
+              // steps jiggle; the block must keep a stable width.
               const statusClass =
                 status === "paused"
                   ? " is-paused"
@@ -3506,231 +4291,235 @@ export function App() {
                   : feature.id === primaryExtrudeId
                     ? "timeline-extrude"
                     : `feature-${feature.id}`;
+              const output = featureTimelineOutput(feature);
               return (
-                <div
-                  key={feature.id}
-                  className={`timeline-item${feature.id === activeFeature?.id ? " is-active" : ""}${statusClass}${hiddenClass}${draggingFeatureId === feature.id ? " is-dragging" : ""}`}
-                  role="button"
-                  tabIndex={0}
-                  aria-pressed={feature.id === activeFeature?.id}
-                  draggable
-                  onClick={() => activateFeature(feature)}
-                  onDoubleClick={() => beginRename(feature)}
-                  onDragStart={(event) => {
-                    event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData("text/plain", feature.id);
-                    setDraggingFeatureId(feature.id);
-                  }}
-                  onDragEnd={() => setDraggingFeatureId(null)}
-                  onDragOver={(event) => {
-                    event.preventDefault();
-                    event.dataTransfer.dropEffect = "move";
-                  }}
-                  onDrop={(event) => {
-                    event.preventDefault();
-                    const sourceId =
-                      event.dataTransfer.getData("text/plain") ||
-                      draggingFeatureId;
-                    setDraggingFeatureId(null);
-                    if (!sourceId || sourceId === feature.id) return;
-                    handleMoveFeature(sourceId, index);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.target !== event.currentTarget) return;
-                    if (event.key === "Enter" || event.key === " ") {
+                <Fragment key={feature.id}>
+                  <div
+                    className={`timeline-item${feature.id === activeFeature?.id ? " is-active" : ""}${statusClass}${hiddenClass}${draggingFeatureId === feature.id ? " is-dragging" : ""}`}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={feature.id === activeFeature?.id}
+                    onClick={() => activateFeature(feature)}
+                    onDoubleClick={() => beginRename(feature)}
+                    onDragOver={(event) => {
                       event.preventDefault();
-                      activateFeature(feature);
-                    }
-                  }}
-                  data-testid={testId}
-                  data-feature-id={feature.id}
-                  data-feature-type={feature.type}
-                  data-status={status}
-                  data-hidden={
-                    isDatumPlaneFeature(feature) && feature.hidden
-                      ? "true"
-                      : undefined
-                  }
-                  title={
-                    paused
-                      ? "Paused by rollback"
-                      : state?.messages.length
-                        ? state.messages.join("\n")
-                        : "Double-click to rename"
-                  }
-                >
-                  <span className="timeline-index">
-                    {String(index + 1).padStart(2, "0")}
-                  </span>
-                  <span className="step-type">
-                    {isSketchFeature(feature)
-                      ? "sketch"
-                      : isDatumPlaneFeature(feature)
-                        ? "plane"
-                        : "extrude"}
-                  </span>
-                  {renaming?.id === feature.id ? (
-                    <input
-                      className="timeline-rename"
-                      value={renaming.value}
-                      autoFocus
-                      data-testid="feature-rename"
-                      onChange={(event) =>
-                        setRenaming({ id: feature.id, value: event.target.value })
+                      event.dataTransfer.dropEffect = "move";
+                    }}
+                    onDrop={(event) => {
+                      event.preventDefault();
+                      const sourceId =
+                        event.dataTransfer.getData("text/plain") ||
+                        draggingFeatureId;
+                      setDraggingFeatureId(null);
+                      if (!sourceId || sourceId === feature.id) return;
+                      handleMoveFeature(sourceId, index);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.target !== event.currentTarget) return;
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        activateFeature(feature);
                       }
-                      onBlur={commitRename}
-                      onClick={(event) => event.stopPropagation()}
-                      onDoubleClick={(event) => event.stopPropagation()}
-                      onKeyDown={(event) => {
-                        event.stopPropagation();
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          commitRename();
-                        } else if (event.key === "Escape") {
-                          event.preventDefault();
-                          setRenaming(null);
-                        }
-                      }}
-                    />
-                  ) : (
-                    <span className="step-name">
-                      {status === "error" ? (
-                        <span className="step-bang" aria-hidden="true">
-                          !
-                        </span>
-                      ) : null}
-                      {feature.name}
+                    }}
+                    data-testid={testId}
+                    data-feature-id={feature.id}
+                    data-feature-type={feature.type}
+                    data-status={status}
+                    data-hidden={
+                      isDatumPlaneFeature(feature) && feature.hidden
+                        ? "true"
+                        : undefined
+                    }
+                    title={
+                      paused
+                        ? "Paused: select this step to build through it"
+                        : state?.messages.length
+                          ? state.messages.join("\n")
+                          : "Double-click to rename"
+                    }
+                  >
+                    <span className="step-head">
+                      <span className="timeline-index">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <span className="step-sep" aria-hidden="true">
+                        ·
+                      </span>
+                      <span className="step-type">{kind}</span>
                     </span>
-                  )}
-                  <span className="tree-meta">
-                    {meta}
-                    {metaSuffix}
-                  </span>
-                </div>
+                    <span
+                      className="step-grip"
+                      draggable
+                      aria-hidden="true"
+                      title="Drag to reorder"
+                      onDragStart={(event) => {
+                        event.dataTransfer.effectAllowed = "move";
+                        event.dataTransfer.setData("text/plain", feature.id);
+                        setDraggingFeatureId(feature.id);
+                      }}
+                      onDragEnd={() => setDraggingFeatureId(null)}
+                    />
+                    {renaming?.id === feature.id ? (
+                      <input
+                        className="timeline-rename"
+                        value={renaming.value}
+                        autoFocus
+                        data-testid="feature-rename"
+                        onChange={(event) =>
+                          setRenaming({
+                            id: feature.id,
+                            value: event.target.value,
+                          })
+                        }
+                        onBlur={commitRename}
+                        onClick={(event) => event.stopPropagation()}
+                        onDoubleClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => {
+                          event.stopPropagation();
+                          if (event.key === "Enter") {
+                            event.preventDefault();
+                            commitRename();
+                          } else if (event.key === "Escape") {
+                            event.preventDefault();
+                            setRenaming(null);
+                          }
+                        }}
+                      />
+                    ) : (
+                      <span className="step-name">
+                        {status === "error" ? (
+                          <span className="step-bang" aria-hidden="true">
+                            !
+                          </span>
+                        ) : null}
+                        {feature.name}
+                      </span>
+                    )}
+                    <span className="tree-meta">{meta}</span>
+                    <span className="step-bodies">
+                      <span
+                        className={`body-chip is-${output.kind}`}
+                        data-output-op={output.op}
+                        data-output-kind={output.kind}
+                        title={
+                          output.kind === "body"
+                            ? "body"
+                            : "Double-click to rename"
+                        }
+                        onDoubleClick={
+                          output.kind === "body"
+                            ? undefined
+                            : (event) => {
+                                event.stopPropagation();
+                                beginRename(feature);
+                              }
+                        }
+                      >
+                        <span className="body-op">{output.op}</span>
+                        <span
+                          className={`body-dot is-${output.kind}`}
+                          aria-hidden="true"
+                        />
+                        <span className="body-name">{output.name}</span>
+                        {isDatumPlaneFeature(feature) ? (
+                          <button
+                            className={`chip-eye${feature.hidden ? " is-hidden" : ""}`}
+                            type="button"
+                            title={
+                              feature.hidden ? "Show plane" : "Hide plane"
+                            }
+                            aria-label={
+                              feature.hidden ? "Show plane" : "Hide plane"
+                            }
+                            aria-pressed={feature.hidden === true}
+                            data-testid="toggle-datum-visibility"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              handleToggleDatumVisibility(feature);
+                            }}
+                            onDoubleClick={(event) =>
+                              event.stopPropagation()
+                            }
+                          >
+                            <span
+                              className="chip-eye-shape"
+                              aria-hidden="true"
+                            />
+                          </button>
+                        ) : null}
+                      </span>
+                    </span>
+                  </div>
+                  <button
+                    className="insert-gap"
+                    type="button"
+                    title="Insert a step here"
+                    aria-label="Insert a step here"
+                    data-gap={feature.id}
+                    data-testid="insert-gap"
+                    onClick={(event) =>
+                      openInsertMenu(feature, event.currentTarget)
+                    }
+                  />
+                </Fragment>
               );
             })}
             <button
-              className="timeline-add"
+              className="timeline-empty"
               type="button"
-              onClick={() => {
-                setSupportPlane("XY");
-                setSupportDatumId(
-                  bodyPick?.kind === "datum" ? bodyPick.datumId ?? null : null,
-                );
-                setSupportFaceFlipped(false);
-                setCreationAnchorId(activeFeatureId);
-                setSupportOpen(true);
-                setFileMenuOpen(false);
-              }}
-              data-testid="add-sketch"
-            >
-              + sketch
-            </button>
-            <button
-              className="timeline-add"
-              type="button"
-              onClick={openDatumDraft}
-              data-testid="add-plane"
-            >
-              + plane
-            </button>
+              title="Clear step selection"
+              aria-label="Clear step selection"
+              data-testid="timeline-empty"
+              onClick={clearActiveFeature}
+            />
           </div>
+
+          {insertMenu ? (
+            <div
+              className="insert-menu"
+              role="menu"
+              data-insert-menu=""
+              style={{ left: `${insertMenu.left}px` }}
+            >
+              <div className="insert-menu-head" data-testid="insert-menu-head">
+                {insertMenu.atStart
+                  ? "insert at the start"
+                  : `insert after ${String(
+                      doc.features.findIndex(
+                        (feature) => feature.id === insertMenu.anchorId,
+                      ) + 1,
+                    ).padStart(2, "0")}`}
+              </div>
+              <button
+                className="grid-option"
+                type="button"
+                role="menuitem"
+                data-testid="insert-sketch"
+                onClick={() =>
+                  openInsertSketch(insertMenu.anchorId, insertMenu.atStart)
+                }
+              >
+                <span>sketch</span>
+                <span className="grid-option-note">on a support</span>
+              </button>
+              <button
+                className="grid-option"
+                type="button"
+                role="menuitem"
+                data-testid="insert-plane"
+                onClick={() =>
+                  openInsertPlane(insertMenu.anchorId, insertMenu.atStart)
+                }
+              >
+                <span>plane</span>
+                <span className="grid-option-note">datum plane</span>
+              </button>
+            </div>
+          ) : null}
 
           <div className="timeline-detail" data-testid="timeline-detail">
             {activeFeature ? (
               <>
-                {isSketchFeature(activeFeature) ? (
-                  <>
-                    <span className="detail-item">
-                      <span className="detail-key">plane</span>
-                      <span className="detail-value">
-                        {supportLabel(activeFeature.support)}
-                      </span>
-                    </span>
-                    <span className="detail-item">
-                      <span className="detail-key">curves</span>
-                      <span className="detail-value">
-                        {activeFeature.sketch.curves.length}
-                      </span>
-                    </span>
-                    <span className="detail-item">
-                      <span className="detail-key">dof</span>
-                      <span className="detail-value">
-                        {activeSketchDof ?? "?"}
-                      </span>
-                    </span>
-                  </>
-                ) : isDatumPlaneFeature(activeFeature) ? (
-                  <>
-                    <span className="detail-item">
-                      <span className="detail-key">type</span>
-                      <span className="detail-value">
-                        {activeFeature.definition.kind}
-                      </span>
-                    </span>
-                    <span className="detail-item">
-                      <span className="detail-key">base</span>
-                      <span className="detail-value">
-                        {activeFeature.definition.kind === "offset"
-                          ? supportLabel(activeFeature.definition.base)
-                          : `${supportLabel(activeFeature.definition.a)} / ${supportLabel(activeFeature.definition.b)}`}
-                      </span>
-                    </span>
-                    {activeFeature.definition.kind === "offset" ? (
-                      <span className="detail-item">
-                        <span className="detail-key">distance</span>
-                        <span className="detail-value">
-                          {activeFeature.definition.distance} mm
-                        </span>
-                      </span>
-                    ) : null}
-                    <span className="detail-item">
-                      <span className="detail-key">origin</span>
-                      <span className="detail-value">
-                        {activeFeature.frame.origin
-                          .map((value) => formatLength(value))
-                          .join(", ")}{" "}
-                        mm
-                      </span>
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <span className="detail-item">
-                      <span className="detail-key">sketch</span>
-                      <span className="detail-value">
-                        {activeSketchFeature?.name ?? "—"}
-                      </span>
-                    </span>
-                    <span className="detail-item">
-                      <span className="detail-key">distance</span>
-                      <span className="detail-value">
-                        {activeFeature.end === "throughAll"
-                          ? "through all"
-                          : `${activeFeature.height} mm`}
-                      </span>
-                    </span>
-                    <span className="detail-item">
-                      <span className="detail-key">direction</span>
-                      <span className="detail-value">
-                        {activeFeature.symmetric ? "symmetric" : "one side"}
-                      </span>
-                    </span>
-                    <span className="detail-item">
-                      <span className="detail-key">operation</span>
-                      <span className="detail-value">
-                        {activeFeature.operation}
-                      </span>
-                    </span>
-                    <span className="detail-item">
-                      <span className="detail-key">profile</span>
-                      <span className="detail-value">
-                        {activeRegionCount} region
-                        {activeRegionCount === 1 ? "" : "s"}
-                      </span>
-                    </span>
-                  </>
-                )}
                 {activeSupportLost ? (
                   <span className="detail-item">
                     <span className="detail-key">support</span>
@@ -3758,24 +4547,6 @@ export function App() {
                       revert
                     </button>
                   ) : null}
-                  {isExtrudeFeature(activeFeature) ||
-                  isDatumPlaneFeature(activeFeature) ? (
-                    <button
-                      className="text-action"
-                      type="button"
-                      onClick={openFeatureEditor}
-                      data-testid="edit-feature"
-                    >
-                      edit
-                    </button>
-                  ) : null}
-                  <button
-                    className="text-action"
-                    type="button"
-                    onClick={() => beginRename(activeFeature)}
-                  >
-                    rename
-                  </button>
                   {isSketchFeature(activeFeature) && !extrudeDraft ? (
                     <button
                       className="text-action"
@@ -3786,16 +4557,6 @@ export function App() {
                       extrude
                     </button>
                   ) : null}
-                  {mode === "model" && isExtrudeFeature(activeFeature) ? (
-                    <button
-                      className="text-action"
-                      type="button"
-                      onClick={selectExtrudeProfiles}
-                      data-testid="extrude-profiles"
-                    >
-                      select profiles
-                    </button>
-                  ) : null}
                   {activeSketchFeature ? (
                     <button
                       className="text-action"
@@ -3803,27 +4564,6 @@ export function App() {
                       onClick={() => activateFeature(activeSketchFeature)}
                     >
                       open sketch
-                    </button>
-                  ) : null}
-                  {canRollBack ? (
-                    <button
-                      className="text-action"
-                      type="button"
-                      onClick={() => setRollbackIndex(activeFeatureIndex)}
-                      data-testid="roll-back"
-                    >
-                      roll back to here
-                    </button>
-                  ) : null}
-                  {isDatumPlaneFeature(activeFeature) ? (
-                    <button
-                      className="text-action"
-                      type="button"
-                      onClick={() => handleToggleDatumVisibility(activeFeature)}
-                      aria-pressed={activeFeature.hidden === true}
-                      data-testid="toggle-datum-visibility"
-                    >
-                      {activeFeature.hidden ? "show" : "hide"}
                     </button>
                   ) : null}
                   <button
@@ -3846,7 +4586,9 @@ export function App() {
                 </span>
               </>
             ) : (
-              <span className="detail-empty">No features</span>
+              <span className="detail-empty">
+                {doc.features.length > 0 ? "No step selected" : "No features"}
+              </span>
             )}
             {activeState?.messages.length ? (
               <span className="timeline-note is-error">
@@ -3873,9 +4615,7 @@ export function App() {
             >
               {firstRebuildError
                 ? firstRebuildError.diagnostic.message
-                : rollbackIndex !== null
-                  ? "Rolled back"
-                  : "Autosaved locally"}
+                : "Autosaved locally"}
             </span>
           </div>
         </footer>

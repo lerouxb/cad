@@ -1,5 +1,5 @@
 import type { Doc, ExtrudeOperation, Feature } from "../doc/types";
-import type { ExtrudeParams } from "../kernel/protocol";
+import type { EdgeRef, ExtrudeParams } from "../kernel/protocol";
 import type { SketchRegion } from "../sketch/loops";
 import type { SolveOutcome, SolveStatus } from "../sketch/solver";
 import type { Sketch } from "../sketch/types";
@@ -49,10 +49,17 @@ export interface ExtrudeRebuildOutput {
   end: "blind" | "throughAll";
 }
 
+export interface FilletRebuildOutput {
+  kind: "fillet";
+  edges: EdgeRef[];
+  radius: number;
+}
+
 export type FeatureOutput =
   | SketchRebuildOutput
   | ExtrudeRebuildOutput
-  | DatumRebuildOutput;
+  | DatumRebuildOutput
+  | FilletRebuildOutput;
 
 export interface FeatureResult {
   featureId: string;
@@ -154,6 +161,12 @@ export function isExtrudeResult(
   result: FeatureResult | undefined,
 ): result is FeatureResult & { output: ExtrudeRebuildOutput } {
   return result?.output?.kind === "extrude";
+}
+
+export function isFilletResult(
+  result: FeatureResult | undefined,
+): result is FeatureResult & { output: FilletRebuildOutput } {
+  return result?.output?.kind === "fillet";
 }
 
 export type { Doc };

@@ -84,7 +84,7 @@ export function applicableConstraints(
   const selection = inspect(sketch, ids);
   const actions: ConstraintAction[] = appliedConstraints(sketch, ids);
   const push = (type: ConstraintType): void => {
-    if (!hasConstraint(sketch, type, selection)) {
+    if (!hasConstraint(sketch, type, selection, ids)) {
       actions.push({ type, label: LABELS[type] });
     }
   };
@@ -155,6 +155,14 @@ export function applicableConstraints(
     selection.points.some(isFreePoint)
   ) {
     push("coincident");
+  }
+  if (
+    selection.curves.length === 3 &&
+    selection.lines.length === 3 &&
+    selection.points.length === 0 &&
+    selection.lines.filter((line) => !line.reference).length >= 2
+  ) {
+    push("symmetric");
   }
   if (
     selection.curves.length === 1 &&
@@ -250,7 +258,7 @@ export function applyConstraint(
   ids: readonly string[],
 ): Sketch {
   const selection = inspect(sketch, ids);
-  if (hasConstraint(sketch, type, selection)) return sketch;
+  if (hasConstraint(sketch, type, selection, ids)) return sketch;
   if (!isApplicable(selection, type)) return sketch;
 
   let constraint: SketchConstraint | null = null;
@@ -295,6 +303,31 @@ export function applyConstraint(
   } else if (type === "fix") {
     constraint = { id: newId("c"), type, point: selection.points[0]!.id };
   } else if (type === "symmetric") {
+    // Two edges + an axis become two point-pair symmetric constraints. The
+    // axis is the selected reference line, otherwise the last selected line.
+    const linePair = symmetricLinePair(sketch, selection, ids);
+    if (linePair) {
+      const additions = linePair.pairs
+        .filter(
+          ([a, b]) =>
+            !sketch.constraints.some(
+              (candidate) =>
+                candidate.type === "symmetric" &&
+                candidate.a === a &&
+                candidate.b === b &&
+                candidate.about === linePair.axis.id,
+            ),
+        )
+        .map(([a, b]) => ({
+          id: newId("c"),
+          type: "symmetric" as const,
+          a,
+          b,
+          about: linePair.axis.id,
+        }));
+      if (additions.length === 0) return sketch;
+      return { ...sketch, constraints: [...sketch.constraints, ...additions] };
+    }
     // Two points and the line/axis they mirror across.
     const about = selection.lines[0];
     const a = selection.points[0];
@@ -341,6 +374,74 @@ export function toggleConstruction(sketch: Sketch, ids: readonly string[]): Sket
         : curve,
     ),
   };
+}
+
+type SketchLine = Extract<SketchCurve, { type: "line" }>;
+
+/**
+ * Two edges + an axis: the axis is the selected reference line when there is
+ * one, otherwise the last selected line. Reflecting one edge's endpoints maps
+ * them onto the other edge's endpoints, which yields the two point pairs a
+ * symmetric constraint can express.
+ */
+function symmetricLinePair(
+  sketch: Sketch,
+  selection: Selection,
+  ids: readonly string[],
+): { axis: SketchLine; pairs: Array<[string, string]> } | null {
+  if (selection.lines.length !== 3) return null;
+  const reference = selection.lines.find((line) => line.reference);
+  const ordered = ids
+    .map((id) => selection.lines.find((line) => line.id === id))
+    .filter((line): line is SketchLine => Boolean(line));
+  const axis =
+    reference ?? ordered[ordered.length - 1] ?? selection.lines[selection.lines.length - 1];
+  if (!axis) return null;
+  const edges = selection.lines.filter((line) => line.id !== axis.id);
+  if (edges.length !== 2) return null;
+  const points = new Map(allPoints(sketch).map((point) => [point.id, point]));
+  const axisA = points.get(axis.a);
+  const axisB = points.get(axis.b);
+  if (!axisA || !axisB) return null;
+  const dx = axisB.x - axisA.x;
+  const dy = axisB.y - axisA.y;
+  const lengthSq = dx * dx + dy * dy;
+  if (lengthSq < 1e-12) return null;
+  const reflect = (point: SketchPoint): { x: number; y: number } => {
+    const t = ((point.x - axisA.x) * dx + (point.y - axisA.y) * dy) / lengthSq;
+    const foot = { x: axisA.x + t * dx, y: axisA.y + t * dy };
+    return { x: 2 * foot.x - point.x, y: 2 * foot.y - point.y };
+  };
+  const endpoints = (line: SketchLine): SketchPoint[] =>
+    [line.a, line.b]
+      .map((id) => points.get(id))
+      .filter((point): point is SketchPoint => Boolean(point));
+  const [left, right] = edges;
+  const leftPoints = endpoints(left!);
+  const rightPoints = endpoints(right!);
+  if (leftPoints.length !== 2 || rightPoints.length !== 2) return null;
+  const used = new Set<string>();
+  const pairs: Array<[string, string]> = [];
+  for (const rightPoint of rightPoints) {
+    const mirrored = reflect(rightPoint);
+    let best: SketchPoint | null = null;
+    let bestDistance = Infinity;
+    for (const leftPoint of leftPoints) {
+      if (used.has(leftPoint.id)) continue;
+      const distance = Math.hypot(
+        leftPoint.x - mirrored.x,
+        leftPoint.y - mirrored.y,
+      );
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = leftPoint;
+      }
+    }
+    if (!best) return null;
+    used.add(best.id);
+    pairs.push([best.id, rightPoint.id]);
+  }
+  return pairs.length === 2 ? { axis, pairs } : null;
 }
 
 function isApplicable(selection: Selection, type: ConstraintType): boolean {
@@ -412,6 +513,13 @@ function isApplicable(selection: Selection, type: ConstraintType): boolean {
         isFreePoint(selection.points[0]!)
       );
     case "symmetric":
+      if (
+        selection.curves.length === 3 &&
+        selection.lines.length === 3 &&
+        selection.points.length === 0
+      ) {
+        return selection.lines.filter((line) => !line.reference).length >= 2;
+      }
       return (
         selection.curves.length === 1 &&
         selection.lines.length === 1 &&
@@ -428,7 +536,12 @@ function isApplicable(selection: Selection, type: ConstraintType): boolean {
   }
 }
 
-function hasConstraint(sketch: Sketch, type: ConstraintType, selection: Selection): boolean {
+function hasConstraint(
+  sketch: Sketch,
+  type: ConstraintType,
+  selection: Selection,
+  ids: readonly string[] = [],
+): boolean {
   if ((type === "horizontal" || type === "vertical") && selection.lines[0]) {
     return sketch.constraints.some(
       (constraint) =>
@@ -484,6 +597,19 @@ function hasConstraint(sketch: Sketch, type: ConstraintType, selection: Selectio
     return sketch.constraints.some(
       (constraint) =>
         constraint.type === "fix" && constraint.point === selection.points[0]!.id,
+    );
+  }
+  if (type === "symmetric" && selection.lines.length === 3) {
+    const linePair = symmetricLinePair(sketch, selection, ids);
+    if (!linePair) return false;
+    return linePair.pairs.every(([a, b]) =>
+      sketch.constraints.some(
+        (constraint) =>
+          constraint.type === "symmetric" &&
+          constraint.a === a &&
+          constraint.b === b &&
+          constraint.about === linePair.axis.id,
+      ),
     );
   }
   if (type === "symmetric" && selection.points.length === 2 && selection.lines[0]) {

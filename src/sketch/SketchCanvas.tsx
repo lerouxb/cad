@@ -58,6 +58,8 @@ export interface SketchCanvasProps {
   palette: SketchPalette;
   /** All selectable solid regions, with holes. */
   regions: SketchRegion[];
+  /** Projected body edges in sketch coordinates: [x1, y1, x2, y2]. */
+  bodyReference?: ReadonlyArray<readonly [number, number, number, number]>;
   /** The regions currently used by the (single) extrude. */
   selectedRegions: ReadonlySet<string>;
   /** Profile mode gives region fills priority over points/curves. */
@@ -83,6 +85,8 @@ export interface SketchCanvasProps {
   onGridStepResolved?: (step: number) => void;
   /** Reports one grid cell in screen pixels, for the stage-foot scale bar. */
   onGridScaleResolved?: (pixels: number) => void;
+  /** Current zoom relative to the fitted view (100 = fit). */
+  onZoomChange?: (percent: number) => void;
   /** A new zoom preset request; `seq` makes repeated picks re-apply. */
   zoomRequest?: { seq: number; value: "fit" | number } | null;
   /** Ids of the selected curves/points (ephemeral UI state, not the document). */
@@ -120,8 +124,10 @@ interface ViewBox {
 interface Snap {
   point: Vec2;
   existingPointId?: string;
-  /** Projected reference line the point snapped onto. */
+  /** Existing line the point snapped onto (ordinary, axis or projected). */
   referenceLineId?: string;
+  /** Every line through the snapped point (an intersection has two). */
+  referenceLineIds?: string[];
   kind: "point" | "line" | "axis" | "grid" | "free";
 }
 
@@ -135,6 +141,7 @@ export function SketchCanvas({
   tone,
   palette,
   regions,
+  bodyReference = [],
   selectedRegions,
   profileSelection = false,
   regionsSelectable = true,
@@ -149,6 +156,7 @@ export function SketchCanvas({
   snapEnabled,
   onGridStepResolved,
   onGridScaleResolved,
+  onZoomChange,
   zoomRequest,
   selected,
   onSelect,
@@ -240,6 +248,7 @@ export function SketchCanvas({
   const lastZoomSeq = useRef(0);
 
   const scale = Math.min(size.width / viewBox.w, size.height / viewBox.h) || 1;
+  const fitted = useMemo(() => fitView(sketch, radii), [sketch, radii]);
   const px = 1 / scale;
   const color = palette[tone];
   const selectColor = palette.selected;
@@ -257,6 +266,12 @@ export function SketchCanvas({
   }, [effectiveGridStep, scale, onGridStepResolved, onGridScaleResolved]);
 
   useEffect(() => {
+    const percent =
+      viewBox.w > 1e-9 ? Math.round((fitted.w / viewBox.w) * 100) : 100;
+    onZoomChange?.(percent);
+  }, [fitted.w, viewBox.w, onZoomChange]);
+
+  useEffect(() => {
     if (lastFitToken.current === fitToken) return;
     lastFitToken.current = fitToken;
     setViewBox(fitView(sketch, radii));
@@ -267,7 +282,7 @@ export function SketchCanvas({
   useEffect(() => {
     if (!zoomRequest || zoomRequest.seq === lastZoomSeq.current) return;
     lastZoomSeq.current = zoomRequest.seq;
-    const base = fitView(sketch, radii);
+    const base = fitted;
     if (zoomRequest.value === "fit") {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setViewBox(base);
@@ -279,7 +294,7 @@ export function SketchCanvas({
     const w = base.w * factor;
     const h = base.h * factor;
     setViewBox({ x: cx - w / 2, y: cy - h / 2, w, h });
-  }, [zoomRequest, sketch, radii]);
+  }, [zoomRequest, fitted]);
 
   // Any tool change or explicit cancel abandons the current draft. This is a
   // deliberate render-time reset (the React "adjust state on prop change"
@@ -417,12 +432,63 @@ export function SketchCanvas({
       }
       if (best) return best.snap;
 
-      // Projected face edges are real snap targets. Snapping a new vertex to
-      // one also adds a point-on-line constraint (see addPolyline), so the
-      // drawn geometry stays attached when the source body changes.
+      const snapLines = [
+        ...sketch.curves,
+        ...(sketch.references?.lines ?? []),
+      ].filter((curve): curve is Extract<typeof curve, { type: "line" }> =>
+        curve.type === "line",
+      );
+
+      // A crossing is a point target: snap to the real intersection and attach
+      // the new vertex to both lines, not just the visually closer one.
+      let bestCrossing: { snap: Snap; distance: number } | null = null;
+      for (let i = 0; i < snapLines.length; i += 1) {
+        const first = snapLines[i]!;
+        const a = points[first.a];
+        const b = points[first.b];
+        if (!a || !b) continue;
+        for (let j = i + 1; j < snapLines.length; j += 1) {
+          const second = snapLines[j]!;
+          const c = points[second.a];
+          const d = points[second.b];
+          if (!c || !d) continue;
+          const crossing = lineIntersection(a, b, c, d);
+          if (!crossing) continue;
+          const onFirst = projectPointOnSegment(a, b, crossing);
+          const onSecond = projectPointOnSegment(c, d, crossing);
+          if (
+            Math.hypot(crossing[0] - onFirst[0], crossing[1] - onFirst[1]) >
+              1e-6 ||
+            Math.hypot(crossing[0] - onSecond[0], crossing[1] - onSecond[1]) >
+              1e-6
+          ) {
+            continue;
+          }
+          const distance = Math.hypot(crossing[0] - raw[0], crossing[1] - raw[1]);
+          if (
+            distance <= snapTolerance &&
+            (!bestCrossing || distance < bestCrossing.distance)
+          ) {
+            bestCrossing = {
+              snap: {
+                point: crossing,
+                kind: "point",
+                referenceLineIds: [first.id, second.id],
+                referenceLineId: first.id,
+              },
+              distance,
+            };
+          }
+        }
+      }
+      if (bestCrossing) return bestCrossing.snap;
+
+      // Every existing line is a snap target: ordinary sketch edges, the fixed
+      // X/Y axes and projected face boundaries. Snapping a new vertex to one
+      // also adds a point-on-line constraint (see addPolyline), so the drawn
+      // geometry stays attached when the line or source body changes.
       let bestLine: { snap: Snap; distance: number } | null = null;
-      for (const line of sketch.references?.lines ?? []) {
-        if (!line.projectionId) continue;
+      for (const line of snapLines) {
         const a = points[line.a];
         const b = points[line.b];
         if (!a || !b) continue;
@@ -436,6 +502,7 @@ export function SketchCanvas({
             snap: {
               point: projected,
               referenceLineId: line.id,
+              referenceLineIds: [line.id],
               kind: "line",
             },
             distance,
@@ -853,6 +920,7 @@ export function SketchCanvas({
           point: snap.point,
           existingPointId: snap.existingPointId,
           referenceLineId: snap.referenceLineId,
+          referenceLineIds: snap.referenceLineIds,
         },
       ]);
       return;
@@ -881,6 +949,7 @@ export function SketchCanvas({
         point: snap.point,
         existingPointId: snap.existingPointId,
         referenceLineId: snap.referenceLineId,
+        referenceLineIds: snap.referenceLineIds,
       },
     ]);
   };
@@ -941,6 +1010,7 @@ export function SketchCanvas({
         onCreatePoint({
           point: snap.point,
           referenceLineId: snap.referenceLineId,
+          referenceLineIds: snap.referenceLineIds,
         });
       return;
     }
@@ -958,6 +1028,7 @@ export function SketchCanvas({
           point: snap.point,
           existingPointId: snap.existingPointId,
           referenceLineId: snap.referenceLineId,
+          referenceLineIds: snap.referenceLineIds,
         });
       } else {
         const snap = snapPoint(raw);
@@ -977,6 +1048,7 @@ export function SketchCanvas({
           point: snap.point,
           existingPointId: snap.existingPointId,
           referenceLineId: snap.referenceLineId,
+          referenceLineIds: snap.referenceLineIds,
         });
         return;
       }
@@ -991,6 +1063,7 @@ export function SketchCanvas({
             point: snap.point,
             existingPointId: snap.existingPointId,
             referenceLineId: snap.referenceLineId,
+            referenceLineIds: snap.referenceLineIds,
           });
         }
         return;
@@ -1211,6 +1284,9 @@ export function SketchCanvas({
   };
 
   const onCurvePointerDown = (event: ReactPointerEvent, curve: SketchCurve) => {
+    // Drawing tools must see the gesture themselves: a click near an existing
+    // edge is how you start/end a snapped line, not a selection.
+    if (tool !== "select" && tool !== "dimension" && tool !== "trim") return;
     event.stopPropagation();
     event.preventDefault();
 
@@ -1426,7 +1502,8 @@ export function SketchCanvas({
                   : palette.axis
             }
             strokeWidth={isSelected ? 1.6 : 1}
-            strokeDasharray={projected ? "4 3" : undefined}
+            strokeDasharray={projected ? "2 3" : undefined}
+            strokeLinecap={projected ? "round" : undefined}
             vectorEffect="non-scaling-stroke"
           />
         );
@@ -1474,6 +1551,27 @@ export function SketchCanvas({
           />
         );
       })}
+
+      {bodyReference.length > 0 ? (
+        <g className="body-reference" aria-hidden="true" pointerEvents="none">
+          {bodyReference.map(([x1, y1, x2, y2], index) => (
+            <line
+              key={`body-${index}`}
+              data-body-reference=""
+              x1={x1}
+              y1={y1}
+              x2={x2}
+              y2={y2}
+              stroke={palette.reference}
+              strokeWidth={1}
+              strokeOpacity={0.55}
+              strokeDasharray="1 3"
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+        </g>
+      ) : null}
 
       {circles.map((circle) => {
         const center = points[circle.center];

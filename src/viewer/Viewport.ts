@@ -4,6 +4,7 @@ import { Line2 } from "three/addons/lines/Line2.js";
 import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import type { BodyMesh } from "../core/kernel/protocol";
+import { edgeRefKey } from "../core/kernel/protocol";
 import type { PlaneFrame } from "../core/types";
 import {
   edgeGroupForVertex,
@@ -29,8 +30,11 @@ export interface ViewportOptions {
   theme?: ViewportTheme;
   /** Highlighter colour for hover/selection overlays. */
   highlightColor?: string;
-  /** Ephemeral body selection callback; null means cleared. */
-  onPick?: (pick: BodyPick | null) => void;
+  /**
+   * Ephemeral body selection callback; null means cleared. `additive` is the
+   * Shift modifier at pick time (used for multi-edge selection).
+   */
+  onPick?: (pick: BodyPick | null, additive: boolean) => void;
 }
 
 /** A sketch rendered on its plane in the model view. Plain data, no three.js. */
@@ -77,9 +81,13 @@ export class Viewport {
   private environment = new THREE.Group();
   private hoverGroup = new THREE.Group();
   private selectionGroup = new THREE.Group();
+  private edgeSelectionGroup = new THREE.Group();
+  /** The faces one history feature introduced, highlighted on its step. */
+  private featureGroup = new THREE.Group();
+  private featureHighlightId: string | null = null;
   private theme: ViewportTheme;
   private highlightColor: string;
-  private readonly onPick?: (pick: BodyPick | null) => void;
+  private readonly onPick?: (pick: BodyPick | null, additive: boolean) => void;
   private resizeObserver: ResizeObserver;
   private disposed = false;
   private framed = false;
@@ -95,6 +103,7 @@ export class Viewport {
   private pointerStart: { x: number; y: number; pointerId: number } | null = null;
   private hoverPick: BodyPick | null = null;
   private selectedPick: BodyPick | null = null;
+  private edgePicks: BodyPick[] = [];
 
   constructor(canvas: HTMLCanvasElement, options: ViewportOptions = {}) {
     this.canvas = canvas;
@@ -134,6 +143,8 @@ export class Viewport {
     this.scene.add(this.environment);
     this.scene.add(this.hoverGroup);
     this.scene.add(this.selectionGroup);
+    this.scene.add(this.edgeSelectionGroup);
+    this.scene.add(this.featureGroup);
     this.addEnvironment();
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -179,6 +190,8 @@ export class Viewport {
     this.canvas.dataset.sketchOverlay = overlay ? "on" : "off";
     this.canvas.dataset.sketchCurves = String(overlay?.curves.length ?? 0);
     this.canvas.dataset.sketchFills = String(overlay?.fills?.length ?? 0);
+    // The drawing sits on its plane in world depth, so the body occludes it.
+    this.canvas.dataset.sketchDepth = overlay ? "depth" : "";
     this.rebuildSketchOverlay();
     this.dirty = true;
   }
@@ -361,24 +374,132 @@ export class Viewport {
     this.body.add(edges);
     this.edges = edges;
 
+    this.rebuildFeatureHighlight();
+    this.rebuildEdgeSelection();
     if (!this.framed && geometry.boundingSphere) {
       this.frameAll();
       this.framed = true;
     }
-    this.onPick?.(null);
+    // A rebuild can remove a face/edge. Drop a selection only when its stable
+    // ref is gone; an edit that merely re-hashes keeps the selection.
+    if (this.selectedPick && !this.pickExists(this.selectedPick)) {
+      this.selectedPick = null;
+      this.onPick?.(null, false);
+    }
     this.dirty = true;
+  }
+
+  /** Highlight a set of edges (model-mode multi-select). App owns the policy. */
+  setEdgeSelection(picks: readonly BodyPick[]): void {
+    this.edgePicks = picks.filter((pick) => pick.kind === "edge");
+    this.rebuildEdgeSelection();
+  }
+
+  private rebuildEdgeSelection(): void {
+    this.clearGroup(this.edgeSelectionGroup);
+    if (!this.mesh) return;
+    for (const pick of this.edgePicks) {
+      this.addOverlay(this.edgeSelectionGroup, pick, true);
+    }
+    this.dirty = true;
+  }
+
+  /** True when the pick's stable ref still exists in the current mesh. */
+  private pickExists(pick: BodyPick): boolean {
+    if (!this.mesh) return false;
+    if (pick.kind === "face") {
+      const ref = pick.ref;
+      if (!ref) return false;
+      return this.mesh.faceGroups.some(
+        (group) =>
+          group.ref?.source === ref.source && group.ref.role === ref.role,
+      );
+    }
+    if (pick.kind === "edge") {
+      const ref = pick.edgeRef;
+      if (!ref) return false;
+      const key = edgeRefKey(ref);
+      return this.mesh.edgeGroups.some(
+        (group) => group.ref !== undefined && edgeRefKey(group.ref) === key,
+      );
+    }
+    return true;
   }
 
   clearMesh(): void {
     this.clearBody();
     this.framed = false;
-    this.onPick?.(null);
+    this.onPick?.(null, false);
     this.dirty = true;
   }
 
   clearPick(): void {
     this.selectedPick = null;
+    this.edgePicks = [];
     this.clearGroup(this.selectionGroup);
+    this.clearGroup(this.edgeSelectionGroup);
+    this.dirty = true;
+  }
+
+  /** Highlight every face the given history feature introduced. */
+  setFeatureHighlight(featureId: string | null): void {
+    if (this.featureHighlightId === featureId) return;
+    this.featureHighlightId = featureId;
+    this.rebuildFeatureHighlight();
+  }
+
+  private rebuildFeatureHighlight(): void {
+    this.clearGroup(this.featureGroup);
+    const id = this.featureHighlightId;
+    if (!id || !this.mesh) {
+      this.canvas.dataset.featureHighlight = "";
+      this.canvas.dataset.featureFaces = "0";
+      this.canvas.dataset.featureTriangles = "0";
+      this.dirty = true;
+      return;
+    }
+    const mesh = this.mesh;
+    let faces = 0;
+    let triangles = 0;
+    for (const face of mesh.faceGroups) {
+      // Face roles travel with the feature that introduced them, so a join or
+      // cut highlights only the geometry it added, not the whole body.
+      if (face.ref?.source !== id || face.count <= 0) continue;
+      faces += 1;
+      triangles += face.count / 3;
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(mesh.positions, 3),
+      );
+      geometry.setAttribute(
+        "normal",
+        new THREE.BufferAttribute(mesh.normals, 3),
+      );
+      geometry.setIndex(
+        new THREE.BufferAttribute(
+          mesh.indices.slice(face.start, face.start + face.count),
+          1,
+        ),
+      );
+      const material = new THREE.MeshBasicMaterial({
+        color: this.highlightColor,
+        transparent: true,
+        opacity: 0.24,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+        side: THREE.DoubleSide,
+      });
+      const overlay = new THREE.Mesh(geometry, material);
+      overlay.renderOrder = 2;
+      overlay.raycast = () => {};
+      this.featureGroup.add(overlay);
+    }
+    this.canvas.dataset.featureHighlight = id;
+    this.canvas.dataset.featureFaces = String(faces);
+    this.canvas.dataset.featureTriangles = String(triangles);
     this.dirty = true;
   }
 
@@ -443,7 +564,7 @@ export class Viewport {
     if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) {
       return;
     }
-    this.selectPick(this.pickAt(event));
+    this.selectPick(this.pickAt(event), event.shiftKey);
   };
 
   private onPointerCancel = (): void => {
@@ -514,15 +635,23 @@ export class Viewport {
     if (pick) this.addOverlay(this.hoverGroup, pick, false);
     this.canvas.dataset.hoverKind = pick?.kind ?? "";
     this.canvas.dataset.hoverId = pick?.id ?? "";
+    this.canvas.dataset.hoverEdgeLength =
+      pick?.kind === "edge" && pick.edgeRef?.hint.length !== undefined
+        ? String(pick.edgeRef.hint.length)
+        : "";
     this.dirty = true;
   }
 
-  private selectPick(pick: BodyPick | null): void {
-    this.selectedPick = pick;
-    this.clearGroup(this.selectionGroup);
-    if (pick) this.addOverlay(this.selectionGroup, pick, true);
+  private selectPick(pick: BodyPick | null, additive = false): void {
+    // Edges are multi-selectable; App drives their highlight set and the
+    // additive policy. Faces/datum remain a single selected pick.
+    if (pick?.kind !== "edge") {
+      this.selectedPick = pick;
+      this.clearGroup(this.selectionGroup);
+      if (pick) this.addOverlay(this.selectionGroup, pick, true);
+    }
     this.dirty = true;
-    this.onPick?.(pick);
+    this.onPick?.(pick, additive);
   }
 
   private rebuildSelectionOverlays(): void {
@@ -532,6 +661,7 @@ export class Viewport {
     this.clearGroup(this.selectionGroup);
     if (hover) this.addOverlay(this.hoverGroup, hover, false);
     if (selected) this.addOverlay(this.selectionGroup, selected, true);
+    this.rebuildEdgeSelection();
     this.dirty = true;
   }
 
@@ -610,8 +740,10 @@ export class Viewport {
       return;
     }
 
-    const edge = this.mesh.edgeGroups.find(
-      (candidate) => candidate.edgeId === pick.edgeId,
+    const edge = this.mesh.edgeGroups.find((candidate) =>
+      pick.edgeRef && candidate.ref
+        ? edgeRefKey(candidate.ref) === edgeRefKey(pick.edgeRef)
+        : candidate.edgeId === pick.edgeId,
     );
     if (!edge) return;
     const positions = edgePositionsForGroup(this.mesh, edge, this.edgeUnit);
@@ -764,8 +896,15 @@ export class Viewport {
         linewidth: width,
         transparent: true,
         opacity,
-        depthTest: false,
+        // The sketch is real geometry on its plane: keep it behind the body
+        // when it is, and let a small depth bias win against the coincident
+        // face it was drawn on. Line2 renders triangle quads, so the offset
+        // works despite the name.
+        depthTest: true,
         depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
         dashed,
         dashSize: 3,
         gapSize: 2,
@@ -799,8 +938,11 @@ export class Viewport {
         color: highlighter,
         transparent: true,
         opacity: 0.18,
-        depthTest: false,
+        depthTest: true,
         depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
         side: THREE.DoubleSide,
       });
       const mesh = new THREE.Mesh(geometry, material);
@@ -840,6 +982,7 @@ export class Viewport {
       });
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
+      geometry.translate(0, 0, 0.05);
       frameGeometry(geometry);
       const material = new THREE.PointsMaterial({
         color: ink,
@@ -847,7 +990,9 @@ export class Viewport {
         sizeAttenuation: false,
         transparent: true,
         opacity: 0.95,
-        depthTest: false,
+        // GL_POINTS ignores polygon offset; the positions are nudged along the
+        // plane normal below instead.
+        depthTest: true,
         depthWrite: false,
       });
       const points = new THREE.Points(geometry, material);
@@ -891,10 +1036,17 @@ export class Viewport {
     this.edges = null;
     this.hoverPick = null;
     this.selectedPick = null;
+    this.edgePicks = [];
     this.canvas.dataset.hoverKind = "";
     this.canvas.dataset.hoverId = "";
+    this.canvas.dataset.hoverEdgeLength = "";
     this.clearGroup(this.hoverGroup);
     this.clearGroup(this.selectionGroup);
+    this.clearGroup(this.edgeSelectionGroup);
+    this.clearGroup(this.featureGroup);
+    this.canvas.dataset.featureHighlight = "";
+    this.canvas.dataset.featureFaces = "0";
+    this.canvas.dataset.featureTriangles = "0";
   }
 
   /**

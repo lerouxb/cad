@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createDocument } from "../doc/create";
 import {
   addDatumPlaneFeature,
+  addFilletFeature,
   addSketchFeature,
   setDatumPlaneHidden,
   updateDatumPlaneFeature,
@@ -18,6 +19,7 @@ import { createDemoModel } from "../sketch/demo";
 import { sketchGeometry } from "../sketch/geometry";
 import { regionsFromSketch } from "../sketch/loops";
 import type { ExtrudeFeature, SketchFeature } from "../doc/types";
+import type { EdgeRef } from "../kernel/protocol";
 import type { SolveOutcome } from "../sketch/solver";
 import type { Sketch } from "../sketch/types";
 import { extractKernelFeatures, rebuildDocument } from "./engine";
@@ -383,11 +385,15 @@ describe("ordered rebuild", () => {
     expect(result.sketchById.get("sketch-2")?.regions).toHaveLength(1);
     expect(result.sketch?.sketch.curves.length).toBeGreaterThan(0);
     const kernelFeatures = extractKernelFeatures(result);
-    expect(kernelFeatures.map((feature) => feature.operation)).toEqual([
-      "new",
-      "cut",
-    ]);
-    expect(kernelFeatures[1]?.params.regions[0]?.outer.kind).toBe("circle");
+    expect(
+      kernelFeatures.map((feature) =>
+        feature.kind === "extrude" ? feature.operation : feature.kind,
+      ),
+    ).toEqual(["new", "cut"]);
+    const second = kernelFeatures[1];
+    expect(second?.kind === "extrude" ? second.params.regions[0]?.outer.kind : null).toBe(
+      "circle",
+    );
     expect(calls).toEqual({ solve: 2, regions: 2, extrude: 2 });
   });
 
@@ -462,7 +468,88 @@ describe("ordered rebuild", () => {
     expect(result.status).toBe("error");
     expect(result.features[0]?.diagnostics[0]?.code).toBe("missing-sketch");
   });
+
+  it("evaluates a fillet after its body and extracts it in order", () => {
+    const doc = exampleDoc();
+    const added = addFilletFeature(doc, [edgeRef("extrude")], 2);
+    const result = rebuildDocument(added.doc, {}, countingDeps().deps);
+
+    expect(result.status).toBe("ok");
+    expect(result.features.map((feature) => feature.type)).toEqual([
+      "sketch",
+      "extrude",
+      "fillet",
+    ]);
+    expect(result.features[2]?.output?.kind).toBe("fillet");
+    const kernel = extractKernelFeatures(result);
+    expect(kernel.map((feature) => feature.kind)).toEqual(["extrude", "fillet"]);
+    expect(kernel[1]?.kind === "fillet" ? kernel[1].radius : null).toBe(2);
+  });
+
+  it("makes fillet failures visible instead of silently skipping them", () => {
+    const doc = exampleDoc();
+    const noBody = rebuildDocument(
+      { ...doc, features: [doc.features[0]!, ...addFilletFeature(doc, [edgeRef("extrude")], 2).doc.features.slice(2)] },
+      {},
+      countingDeps().deps,
+    );
+    expect(noBody.features[1]?.status).toBe("error");
+    expect(noBody.features[1]?.diagnostics[0]?.code).toBe("nothing-to-fillet");
+
+    const badRadius = addFilletFeature(doc, [edgeRef("extrude")], 0);
+    expect(
+      rebuildDocument(badRadius.doc, {}, countingDeps().deps).features[2]
+        ?.diagnostics[0]?.code,
+    ).toBe("invalid-radius");
+
+    const lost = addFilletFeature(doc, [edgeRef("missing")], 2);
+    expect(
+      rebuildDocument(lost.doc, {}, countingDeps().deps).features[2]
+        ?.diagnostics[0]?.code,
+    ).toBe("missing-edge-source");
+
+    const suppressed = addFilletFeature(
+      {
+        ...doc,
+        features: doc.features.map((feature) =>
+          feature.type === "extrude" ? { ...feature, suppressed: true } : feature,
+        ),
+      },
+      [edgeRef("extrude")],
+      2,
+    );
+    const suppressedResult = rebuildDocument(
+      suppressed.doc,
+      {},
+      countingDeps().deps,
+    );
+    expect(suppressedResult.features[2]?.status).toBe("error");
+    expect(suppressedResult.features[2]?.diagnostics[0]?.code).toBe(
+      "nothing-to-fillet",
+    );
+  });
 });
+
+function edgeRef(source: string): EdgeRef {
+  return {
+    kind: "edge",
+    faces: [
+      {
+        source,
+        kind: "face",
+        role: "extrude:face_1",
+        hint: { entityType: "face" },
+      },
+      {
+        source,
+        kind: "face",
+        role: "extrude:face_2",
+        hint: { entityType: "face" },
+      },
+    ],
+    hint: { entityType: "edge", length: 12, midpoint: [0, 0, 6] },
+  };
+}
 
 describe("rebuild cache keys", () => {
   it("canonicalizes object keys and hashes deterministically", () => {

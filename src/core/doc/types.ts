@@ -1,9 +1,9 @@
 import type { Sketch } from "../sketch/types";
 import type { PlaneFrame, Vec2 } from "../types";
-import type { TopoRef } from "../kernel/protocol";
+import type { EdgeRef, TopoRef } from "../kernel/protocol";
 
 /** The document schema version. Bump this on every shape change. */
-export const CURRENT_SCHEMA_VERSION = 8;
+export const CURRENT_SCHEMA_VERSION = 9;
 
 export type WorldPlane = "XY" | "XZ" | "YZ";
 
@@ -82,7 +82,25 @@ export interface ExtrudeFeature {
   suppressed?: boolean;
 }
 
-export type Feature = SketchFeature | ExtrudeFeature | DatumPlaneFeature;
+/**
+ * A constant-radius fillet on edges of the current body. The edges are stable
+ * face-pair refs, never kernel hashes; the worker resolves them against the
+ * prefix solid at rebuild time.
+ */
+export interface FilletFeature {
+  id: string;
+  type: "fillet";
+  name: string;
+  edges: EdgeRef[];
+  radius: number;
+  suppressed?: boolean;
+}
+
+export type Feature =
+  | SketchFeature
+  | ExtrudeFeature
+  | DatumPlaneFeature
+  | FilletFeature;
 
 /**
  * The whole persisted part. Plain JSON only: no kernel handles, no solver
@@ -107,4 +125,8 @@ export function isDatumPlaneFeature(
   feature: Feature,
 ): feature is DatumPlaneFeature {
   return feature.type === "datum";
+}
+
+export function isFilletFeature(feature: Feature): feature is FilletFeature {
+  return feature.type === "fillet";
 }

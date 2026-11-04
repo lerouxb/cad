@@ -1,9 +1,11 @@
 import type {
   BodyMesh,
   EdgeGroup,
+  EdgeRef,
   FaceGroup,
   TopoRef,
 } from "../core/kernel/protocol";
+import { edgeRefKey } from "../core/kernel/protocol";
 
 /** Ephemeral body selection. Never persisted in the document. */
 export interface BodyPick {
@@ -17,6 +19,8 @@ export interface BodyPick {
   datumId?: string;
   /** Stable role+hint reference created by the worker for a face. */
   ref?: TopoRef;
+  /** Stable face-pair reference created by the worker for an edge. */
+  edgeRef?: EdgeRef;
 }
 
 export type EdgeUnit = "segment" | "vertex";
@@ -100,8 +104,10 @@ export function facePick(group: FaceGroup): BodyPick {
 export function edgePick(group: EdgeGroup): BodyPick {
   return {
     kind: "edge",
-    id: `edge-${group.edgeId}`,
+    // A role key survives a rebuild; the hash-based edgeId does not.
+    id: group.ref ? `edge-${edgeRefKey(group.ref)}` : `edge-${group.edgeId}`,
     edgeId: group.edgeId,
+    ...(group.ref ? { edgeRef: group.ref } : {}),
   };
 }
 

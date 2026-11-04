@@ -19,8 +19,9 @@ engine matters more than feature count.
 ## Status
 
 **M2 is complete, including region/void selection, paper/ink UI, split/trim, and 3D
-face/edge picking. M3's document store and ordered rebuild are in progress.** The app is
-an editable sketcher driving an exact extrude:
+face/edge picking. M3's document store and ordered rebuild are in progress. M4's datum
+work is in and M5's constant-radius 3D fillet now lands as a real history step.** The app
+is an editable sketcher driving an exact solid:
 
 - Real: `slvs` adapter, tangent-space constrained dragging of points, whole lines, circles
   and arcs, line/point/rectangle/circle/three-point-arc tools and a parametric corner
@@ -39,16 +40,19 @@ an editable sketcher driving an exact extrude:
   tangent, symmetric, midpoint, coincident, fix) with construction geometry, a selectable
   fixed origin + X/Y axis reference frame, exact X/Y editing for a selected point,
   undo/redo, DOF/diagnostics, worker protocol, three.js viewport, exact volume/face counts,
-  unit + e2e tests. The part is a plain-JSON `Doc` with sketch/extrude features,
-  schemaVersion + migrations, autosave to `localStorage`, and undoable feature parameters
-  (extrude height and selected regions). The main-thread rebuild walks the feature list
-  in order with a prefix cache and per-feature diagnostics. The worker receives the
-  successful extrudes, caches prefix solids by cache key, and applies new/join/cut
-  booleans with per-feature build statuses.
+  unit + e2e tests. The part is a plain-JSON `Doc` with sketch/extrude/datum/fillet
+  features, schemaVersion + migrations, autosave to `localStorage`, and undoable feature
+  parameters (extrude height and regions, datum definition, fillet radius and edges).
+  The main-thread rebuild walks the feature list in order with a prefix cache and
+  per-feature diagnostics. The worker receives the successful solid features, caches
+  prefix solids by cache key, applies new/join/cut booleans, and applies constant-radius
+  fillets, with per-feature build statuses. Multi-edge model selection opens the
+  body-selection popover; `fillet` starts a UI-only draft that previews through the
+  kernel, then applies as a history step.
 - UI: one main stage. The bottom timeline switches between the full-stage sketch editor
   and the 3D model. The shell follows the studies: a document header (filename,
   appearance), one stage status line (solver/kernel health, DOF, body stats, view
-  controls), numbered timeline steps with a selected-step summary line, a draggable
+  controls), numbered timeline steps with output chips and an insert gap, a draggable
   feature popover for parameters, a text tool line
   in sketch mode and a contextual selection popover. No permanent sidebar. The paper/ink
   theme has day/night modes and one highlighter colour (yellow/pink/blue/green), persisted
@@ -57,8 +61,8 @@ an editable sketcher driving an exact extrude:
 - Temporary: existing extrudes with an empty region list still resolve to the largest
   material region (legacy documents); new extrude drafts require an explicit profile.
   Trim supports lines and arcs but not turning a circle into an arc; body
-  selection starts a sketch on a planar face when `+ sketch` is used, and the
-  supporting boundary is projected live as fixed dashed references. Offset and
+  selection starts a sketch on a planar face from the insert gap's `sketch` option,
+  and the supporting boundary is projected live as fixed dashed references. Offset and
   midplane datum features are in, with a support picker, 3D preview and ray-picking;
   face-backed datums follow source body edits, lost face support is visible with
   reselect/revert, face sketches can flip sides while keeping that side stable, and the
@@ -66,21 +70,23 @@ an editable sketcher driving an exact extrude:
   preview their candidate frame live. M4's core flow is in; only support-list detail copy
   and through-3-point planes remain. The example part is
   hand-authored (`core/sketch/demo.ts` + `core/doc/example.ts`, including a suppressed
-  center-pin extrude from the same sketch and a suppressed mounting-holes cut); the
+  center-pin extrude from the same sketch, a suppressed mounting-holes cut, and a
+  suppressed four-edge "Rounded plate" fillet so the base body, picking coordinates and
+  volume goldens stay stable); the
   timeline now lists the real feature history with select,
-  inline rename, create, edit, drag-reorder, suppress, delete-cascade, rollback and
-  per-feature status/diagnostics. `.cad` download/open/rename/new, blind/symmetric/
+  inline rename, create, edit, drag-reorder, suppress, delete-cascade, a
+  selection-driven history cursor and per-feature status/diagnostics. `.cad` download/open/rename/new, blind/symmetric/
   through-all extrudes, a local file list with copy/delete/open/download/rename/new, and
   JSON-safe TopoRefs on face picks are in. Role tables now survive joins/cuts via
   `updateRoles`. Free 3D sketches, splines/text/images and drawing exports are out of
   scope.
 
-Next: **M5** (or M4's remaining support-list detail copy first): fillet/chamfer/shell,
-Offset Faces, selection filters, section analysis and export; through-3-point planes wait
-for M6 datum axes/points. Then **M6.0** (re-editable sketch
+Next: **M5** (or M4's remaining support-list detail copy first): chamfer, shell/Offset
+Faces, selection filters and the tool options row, section analysis and export;
+through-3-point planes wait for M6 datum axes/points. Then **M6.0** (re-editable sketch
 pattern/mirror/offset, ADR-0004). Read `docs/PLAN.md`; it is the source of truth
 for done. Unsupported geometry/features (ellipses, conics, B-splines, free
-3D sketches, 3D fillets, lofts/sweeps, patterns/mirror, drafts, shelling/offsets,
+3D sketches, lofts/sweeps, patterns/mirror, drafts, shelling/offsets,
 expressions, threads) and the upstream SolveSpace/OCCT work are documented in **PLAN M9**.
 Scripted features (editable code behind a sketch/feature) and the command/AI layer are
 planned in **M8.5 / ADR-0005**.
@@ -217,7 +223,14 @@ docs/
   measurement silently constrains the geometry or lies about the DOF. Every new
   constraint type needs a residual/gradient there.
 - Line drags pass **both endpoints as targets** (`solveDragTargets`); the projection may
-  turn a translation into a stretch. A line/circle drag waits for a 3 px movement before
+  turn a translation into a stretch. **Support geometry stays put for both point and
+  line drags**: `frozenSupportPoints(sketch, targets)` collects the line/circle points a
+  dragged point is snapped to, follows shared points through the connected curve network,
+  and freezes them (`solveDragTargets(..., { frozen })`). A point/line snapped to a box
+  slides along the box edge instead of resizing the box; a whole-line drag additionally
+  preserves the line's current direction with a temporary angle row (unless an existing
+  constraint says otherwise). Rectangle corners with no snapped support still resize their
+  own curves as before. A line/circle drag waits for a 3 px movement before
   applying, so click and shift-click do not nudge geometry. A slightly-off grab near a
   free line endpoint still drags that endpoint (within 2.2× the point hit radius);
   otherwise it starts a whole-line translation and both points appear to move together.
@@ -247,6 +260,18 @@ docs/
   `addConstraint(C_ARC_LINE_TANGENT, …, arc, line, …, other)` — `s.tangent()` aborts the
   WASM instance when its endpoint-equality check fails. `other` is true when the shared
   endpoint is `arc.end`.
+- **Symmetric accepts two edges plus an axis.** Besides the original two points + axis,
+  selecting three lines adds two point-pair `symmetric` constraints in one action. The
+  axis is the selected reference line if there is one, otherwise the **last selected**
+  line. Pair the endpoints by reflecting one edge across the axis and taking the nearest
+  unused endpoint of the other; this is the rectangle-about-a-centreline workflow and
+  needs no new solver or drag row (each pair is the existing constraint).
+- **No silent join fallback.** A first extrude with `operation: "join"` is a worker error
+  ("Nothing exists to join."), not an implicit first body; the timeline step reports it.
+  The new-extrude draft defaults to `new` when the document has no unsuppressed extrude.
+  A disjoint join cannot be detected reliably before the multi-body/Combine work (OCCT can
+  return a touching result as a compound), so it is still a known follow-up; do not claim
+  it is surfaced yet. Lost-body follow-the-merge is a recovery offer, never automatic.
 - **Angle dimension values are degrees** in the `slvs` API. `C_SYMMETRIC_LINE` takes the
   two points in `ptA`/`ptB` and the axis line in `entityA`; the npm helper has a different
   signature from its `.d.ts`.
@@ -273,16 +298,35 @@ docs/
 - **Rebuild is ordered, cached and explicit.** `core/rebuild` walks `doc.features` in
   order. `cacheKey = hash(canonical(feature), upstreamKey)`, so a height/region edit reuses
   the solved sketch and a sketch edit invalidates the extrude. Every feature returns
-  `status` + diagnostics; App extracts the successful extrudes and sends them to the
+  `status` + diagnostics; App extracts the successful solid features and sends them to the
   worker. The cache is bounded and in-memory. `selectExtrudeRegions` is shared by App and
   the engine so the auto/largest material fallback cannot drift.
-- **The worker builds an ordered single body.** `KernelFeature[]` carries each extrude's
-  cacheKey, params and operation. The worker caches the prefix solid per cacheKey, applies
-  new/join/cut, and returns `FeatureBuildStatus[]`. A failed feature is skipped and later
-  features use the last good base; a failed first feature returns an error with statuses.
-  The first feature may be new or join; cut needs a base; new after a base is an error.
+- **The worker builds an ordered single body.** `KernelFeature` is a discriminated union
+  of extrude and fillet, each carrying its cacheKey. The worker caches the prefix solid
+  per cacheKey, applies new/join/cut or a constant-radius fillet, and returns
+  `FeatureBuildStatus[]`. A failed feature is skipped and later features use the last good
+  base; a failed first feature returns an error with statuses. The first feature may be
+  new or join; cut needs a base; new after a base is an error; a fillet needs a base.
   Any worker feature error clears the prefix cache after the last-good mesh is produced,
   so a later successful retry cannot reuse downstream solids built past a skipped feature.
+- **Fillets name their rounds and re-derive face roles.** `filletWithEvolution` returns an
+  **empty evolution on OCCT**, so `updateRoles` cannot carry roles across it. After each
+  fillet the worker reattaches every old role to the trimmed result face by surface type +
+  normal + sampled containment, then names the generated rounds under the fillet feature
+  (`fillet:round:<index>`) by finding the new face adjacent to both pre-fillet faces. That
+  is what makes the step highlight, downstream `EdgeRef`s and face picks work. Do not
+  trust `evolution.generated` for fillet/chamfer faces.
+- **An `EdgeRef` is a face pair, not an edge hash.** `{ faces: [TopoRef, TopoRef], hint }`
+  resolves by resolving both faces (role first, geometric fallback) and taking
+  `sharedEdges`; the length/midpoint hint breaks a tie. Edge picks carry it from the
+  worker's `edgeGroups`; the mesh edge `edgeId` is `getHashCode(edge)`, and the edge ref is
+  captured from the same BREP edges. Never persist an edge hash or a mesh group index.
+- **A new fillet is a UI-only preview.** App appends a synthetic `fillet-draft`
+  `KernelFeature` to the kernel list while the draft is open; cancelling drops it, applying
+  inserts a real `FilletFeature`. Edge picks whose face source is `fillet-draft` or the
+  feature being edited are rejected so the draft can never reference its own output.
+  Editing an existing fillet commits radius/edge changes live and `cancel` restores the
+  baseline, exactly like the extrude popover.
 - **Worker solids are cloned out of their disposal scope.** `buildSolid` uses
   `withScope` for wires/faces/originals and returns `clone(solid)`; the cache owns those
   clones and disposes them on eviction. Do not return a scoped handle.
@@ -291,13 +335,17 @@ docs/
   re-meshing the same cached solid without clearing the mesh cache throws "detached
   ArrayBuffer" on postMessage. This showed up as a volume that did not update after undo.
 - **Body picking is group-based and ephemeral.** `faceGroups` carry index ranges plus
-  `faceId`/`origin`; `edgeGroups` carry `edgeId` ranges. `src/viewer/picking.ts` maps a
-  triangle index to a face group and a LineSegments vertex index to an edge group.
-  `edgeGroups` may be segment- or vertex-indexed depending on the kernel build; call
-  `edgeUnitForMesh`. Edges win only when their ray hit is not behind the face, so hidden
-  back edges cannot steal a face click. Hover and selected overlays are separate groups;
-  `BodyPick` is UI state, never `Doc`, and is cleared on mesh rebuild and Escape. e2e
-  picking coordinates rely on Fit view; call it before hovering.
+  `faceId`/`origin` and a `TopoRef`; `edgeGroups` carry `edgeId` ranges plus an `EdgeRef`.
+  `src/viewer/picking.ts` maps a triangle index to a face group and a LineSegments vertex
+  index to an edge group. `edgeGroups` may be segment- or vertex-indexed depending on the
+  kernel build; call `edgeUnitForMesh`. Edges win only when their ray hit is not behind
+  the face, so hidden back edges cannot steal a face click. Hover and selected overlays
+  are separate groups; `BodyPick` is UI state, never `Doc`. A rebuild keeps a selection
+  whose stable ref still exists (so a fillet draft survives its preview), and drops one
+  whose ref is gone; Escape clears everything. `Shift` on an edge toggles it in the
+  multi-edge set. e2e picking coordinates rely on Fit view; call it before hovering.
+  Hovering also publishes the edge length (`data-hover-edge-length`) so tests can find
+  edges without clicking.
 - **`BodyStats.bounds` is tessellation bounds.** It is exact for axis-aligned planar
   profiles but curved meshes sample inside the true circle; round golden comparisons.
 - **Regions are faces, not every cycle.** `planarArrangement` splits line/arc segments at
@@ -358,23 +406,61 @@ docs/
   it with any mm value and `auto` restores it. Snap is independent of grid visibility.
   Do not reintroduce a fixed 10 mm grid.
 - **Feature forms live in the draggable popover, not the timeline.** `FeaturePopover`
-  holds the extrude sketch picker, height, direction, operation and end; the timeline
-  detail is a summary plus actions (`extrude`, edit, rename, select profiles, open sketch,
-  roll back, suppress, delete). The popover footer is a summary + quiet `cancel` + primary
-  `apply`; editing reopens the same controls and `cancel` restores the feature as it was
-  when the popover opened. A **new extrude is a UI-only draft** (`extrudeDraft`) started
+  holds the extrude sketch picker, height, direction, operation, end and the
+  `select profiles` hand-off. **Selecting a step is how you edit it**: a sketch opens the
+  sketch canvas, an extrude opens this popover, a datum opens `DatumPlanePopover`. There
+  is no footer `edit` command, no `rename` command (double-click a step name) and no
+  footer `select profiles`. **Selection is also the history cursor**: the stage renders
+  only the prefix through the selected step, and later steps are paused/dimmed. There is
+  no roll-back/roll-forward command. The timeline detail is a **readout**: the
+  lost-support message, the remaining actions (`extrude` on a sketch, open sketch,
+  suppress, delete, datum show/hide, support reselect/revert) and the autosave note. It
+  never repeats the step/type/outputs; those live in the step block. A `pointerdown` on
+  the model background cancels an open feature/datum editor with the same revert
+  semantics as its footer `cancel`; popovers, sketch tools and the stage-foot view
+  controls are exempt. The popover footer is a summary + quiet `cancel` + primary
+  `apply`; `cancel` restores the feature as it was when the popover opened. A **new extrude is a UI-only draft** (`extrudeDraft`) started
   from the selected sketch step: it is not written to the document and its `extrude`
   primary stays disabled until at least one profile is picked. The draft's own test ids
   are `extrude-draft-popover`, `extrude-apply` and `extrude-cancel`; existing features
   keep `feature-popover-apply` / `...-cancel`.
-- **Creation is contextual, never a header default.** `+ sketch` at the end of the
-  timeline opens `SupportPopover`; it shows the support explicitly (world XY/XZ/YZ,
-  planar faces and existing datum planes) and the primary is `new-sketch`.
-  `+ plane` opens the datum-plane draft popover. New sketches/planes insert after the
-  selected history step, not at the end; the previous step's sketch overlay is suppressed
-  while the draft/support picker is open. `new-extrude` lives on the selected sketch step.
-  There is no header New Sketch/New Extrude button and no implicit XY or first-consumer
-  fallback.
+- **Creation is contextual, never a header default.** Every gap in the timeline is an
+  insert affordance: a full-height divider with an inset `+` that is **hover-only** (there
+  is no always-visible one after the active step). There is a leading gap before the first
+  step too; clicking it opens the menu **without moving the cursor**, and its new step
+  lands at index 0 (`atStart`). A normal gap selects the step before it. The menu has
+  `sketch` and `plane`; `sketch` opens `SupportPopover` (world XY/XZ/YZ, planar faces and existing
+  datum planes; primary `new-sketch`) and `plane` opens the datum-plane draft. The new
+  step lands **at that gap**, not at the end, and the previous step's sketch overlay is
+  suppressed while the draft/support picker is open. `extrude` is not in the insert
+  menu: it lives on the selected sketch step. There is no header New Sketch/New Extrude
+  button and no implicit XY or first-consumer fallback.
+- **The timeline is a step block plus an insert gap.** Step head is `NN · KIND` on one
+  line, then the serif name, the meta line and the output chip (`+`/`→` with a
+  sketch/plane/body dot). The active marker is the bottom line only, reaching half a gap
+  past the step; there is no name wash. Steps after the active one are paused, not
+  hidden; the status is conveyed only by dimming/underline, never by meta text, so step
+  widths do not change as the cursor moves. The meta carries only the step's own
+  properties (support, distance, operation), never build status or paused/suppressed/
+  hidden; those are dimming and classes. Only the hover grip is a drag origin; the
+  card is the click target. The track is the only horizontal scroll surface: a vertical
+  wheel scrolls it sideways, and `overflow-y` is hidden so a horizontal overflow can
+  never add a second scrollbar. Native overlay scrollbars are an OS setting; do not
+  build a fake/virtual scrollbar. The empty tail after the last step is always at least
+  64px wide; clicking it clears the history cursor, renders the full document with no
+  active step and no feature popover/overlay. Multiple bodies, body chips as things,
+  groups and the lost-body bottom line are deferred (see `docs/showcase/TIMELINE.md` and
+  PLAN M6).
+- **Visibility is a chip affordance, not a footer command.** A datum plane's chip has
+  an always-visible eye split control (outline = shown, struck = hidden) with a tooltip;
+  the footer no longer has `hide`/`show`. The step still dims when hidden, but the eye is
+  the only visibility control. Bodies/sketches get the same chip eye when their
+  visibility model lands.
+- **The header `clear` is a file reset; `clear sketch` is scoped.** The header action
+  keeps the document id/name, drops every history step (the empty timeline tail starts the
+  first sketch; it is a temporary development shortcut and resets undo). The sketch tool line's quiet
+  `clear sketch` (test id `clear-sketch`) only empties the active sketch and keeps the
+  history; do not merge the two.
 - **A sketch step never owns region editing.** `activeExtrudeFor` returns null for a
   sketch. Select an extrude step to edit its existing regions, or start an extrude draft
   from the sketch step. Without an active extrude or draft, region fills are read-only
@@ -438,6 +524,23 @@ docs/
   `lost · cached frame` plus reselect/open sketch/revert. `reselect` uses the currently
   picked planar face for a face sketch, or opens the datum editor for a datum base.
   Transient "prefix solid no longer cached" errors must not be treated as lost.
+- **Datum/world sketches get a body reference.** A sketch on a world or datum plane has
+  no supporting face to project, so `SketchCanvas` draws the B-rep edges of the body in
+  the rendered prefix (`mesh.edgePositions`) projected into the sketch frame as faint,
+  dotted, non-selectable `bodyReference` lines. This is derived from the selection
+  cursor, so suppressed and downstream bodies do not appear; editing the body updates
+  it. Face sketches already get the supporting boundary through the live face projection
+  and do not duplicate it. Explicit user projections are still a separate M9 feature.
+- **Snapping order is points, then crossings, then lines, then grid.** Every existing
+  line is a snap target — ordinary sketch edges, the fixed X/Y axes and projected face
+  boundaries. A snapped vertex gets an ordinary `pointOnLine` constraint for every line
+  it lies on, not only projected references; at a crossing it attaches to **both** lines
+  (two point-on-line constraints) and is fully coincident with the intersection. Snapping
+  to an existing point reuses that point id (coincident), including projected points.
+  Drawing tools must return early from `onCurvePointerDown` (`tool` is not
+  select/dimension/trim) so an existing edge cannot swallow the click before the draft
+  starts. Regressions: draw a line onto two rectangle edges with off-grid positions, and
+  start a line at a crossing; both endpoints/constraints are asserted in e2e.
 - **Projected face boundaries are live fixed references.** Schema v6 adds
   `SketchFeature.projections` (the cached projected loops) and materializes them in
   `Sketch.references` as fixed points/lines with `projectionId`/`referenceLabel`, so
@@ -467,8 +570,11 @@ docs/
   draws the source sketch on its plane with a thick highlighter underlay and a dark ink
   centerline (`Viewport.setSketchOverlay`, `Line2` because WebGL ignores
   `LineBasicMaterial.linewidth`). Highlighter alone was unreadable over the body; keep
-  the centerline. Construction is dashed. It is `depthTest:false`, does not participate
-  in picking, and is hidden in sketch mode/suppressed sketches.
+  the centerline. Construction is dashed. It is depth-tested in world space: the body
+  occludes it when the plane is inside or behind the body, and `polygonOffset` keeps it
+  from z-fighting the face it sits on. Do not switch it back to `depthTest:false`; that
+  made a bottom sketch draw over the body from every angle. It does not participate in
+  picking and is hidden in sketch mode/suppressed sketches.
 - Every new constraint type also needs a row in `core/sketch/drag.ts`: arc equal-radius,
   point-on-circle, point-line distance, angle, tangent, symmetric, and fixed points (which
   are omitted from the parameter vector). If it is missing, the solver still cleans up,

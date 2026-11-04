@@ -285,7 +285,9 @@ body {
 
 .workspace {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) 84px;
+  /* The timeline is a step block with chips, so its height follows content;
+     the 84px floor lives on .timeline itself. */
+  grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
 }
 
@@ -628,7 +630,9 @@ body {
 
 .workspace {
   display: grid;
-  grid-template-rows: minmax(0, 1fr) 84px;
+  /* The timeline is a step block with chips, so its height follows content;
+     the 84px floor lives on .timeline itself. */
+  grid-template-rows: minmax(0, 1fr) auto;
   min-height: 0;
 }
 
@@ -1693,6 +1697,7 @@ body {
 }
 
 .timeline {
+  position: relative;
   display: grid;
   grid-template-rows: auto auto;
   gap: 0;
@@ -1705,36 +1710,42 @@ body {
 
 .timeline-track {
   align-self: stretch;
+  align-items: stretch;
   gap: 0;
+  padding: 0 22px;
+  /* Horizontal scrolling is expected for a long history; never let that
+     compute overflow-y:auto and add a vertical scrollbar to the strip. */
+  overflow-y: hidden;
 }
 
+/* A step is a block: NN · KIND, name, meta, output chips. The insert gaps
+   between steps own the dividers, so the steps themselves are borderless. */
 .timeline-item {
   position: relative;
-  display: grid;
-  grid-template-columns: 22px minmax(128px, auto);
-  grid-template-rows: auto auto auto;
-  align-content: center;
-  column-gap: 8px;
-  row-gap: 1px;
+  display: flex;
+  user-select: none;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  min-width: 132px;
   height: auto;
-  min-height: 56px;
-  padding: 9px 22px;
+  min-height: 64px;
+  padding: 8px 4px;
   border: 0;
-  border-left: 1px solid var(--rule);
   border-radius: 0;
   color: var(--ink-2);
   text-align: left;
   white-space: nowrap;
 }
 
-.timeline-item:last-child {
-  border-right: 1px solid var(--rule);
+.step-head {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
 }
 
 .timeline-index {
-  grid-row: 1 / 4;
-  align-self: start;
-  padding-top: 1px;
   color: var(--ink-3);
   font-family: var(--font-mono);
   font-size: var(--type-micro);
@@ -1742,8 +1753,14 @@ body {
   line-height: var(--leading-micro);
 }
 
+.step-sep {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  line-height: var(--leading-micro);
+}
+
 .step-type {
-  grid-column: 2;
   color: var(--ink-3);
   font-family: var(--font-mono);
   font-size: var(--type-micro);
@@ -1753,7 +1770,6 @@ body {
 }
 
 .step-name {
-  grid-column: 2;
   color: var(--ink);
   font-family: var(--font-serif);
   font-size: var(--type-name);
@@ -1763,7 +1779,6 @@ body {
 }
 
 .timeline-item .tree-meta {
-  grid-column: 2;
   margin-top: 1px;
   color: var(--ink-3);
   font-family: var(--font-mono);
@@ -1776,18 +1791,267 @@ body {
   background: var(--bg-2);
 }
 
+/* The active step is a bottom line only, reaching half a gap past the step
+   so it runs under the dividers instead of stopping at the block. */
 .timeline-item.is-active {
   background: var(--bg);
-  box-shadow: inset 0 -2px 0 var(--marker);
+  color: var(--ink-2);
+  box-shadow: none;
+}
+
+.timeline-item.is-active::after {
+  position: absolute;
+  right: -13px;
+  bottom: 0;
+  left: -13px;
+  height: 2px;
+  background: var(--marker);
+  content: "";
+  pointer-events: none;
 }
 
 .timeline-item.is-active .timeline-index {
   color: var(--ink);
 }
 
-.timeline-item.is-active .step-name {
-  background: var(--marker-wash);
-  box-shadow: 0 0 0 2px var(--marker-wash);
+/* the hover grip is the only drag origin; the step itself stays a click target */
+.step-grip {
+  position: absolute;
+  top: 8px;
+  right: 0;
+  width: 9px;
+  height: 13px;
+  opacity: 0;
+  cursor: grab;
+  background-image: radial-gradient(var(--ink-3) 1px, transparent 1.3px);
+  background-size: 4.5px 4.5px;
+}
+
+.timeline-item:hover .step-grip {
+  opacity: 0.55;
+}
+
+.step-grip:hover {
+  opacity: 1;
+}
+
+.timeline-item.is-dragging .step-grip {
+  opacity: 0;
+}
+
+/* the step's output: what it creates (+), references (→) or consumes (−) */
+.step-bodies {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 3px 8px;
+  margin-top: 4px;
+}
+
+.body-chip {
+  display: inline-block;
+  margin: 0;
+  padding: 1px 5px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+}
+
+.body-op {
+  color: var(--ink-3);
+}
+
+/* the type dot aligns to the text's x-height via vertical-align: middle */
+.body-dot {
+  display: inline-block;
+  vertical-align: middle;
+  width: 7px;
+  height: 7px;
+  margin: 0 4px;
+  border: 1px solid var(--ink);
+}
+
+.body-dot.is-body {
+  border-radius: 50%;
+}
+
+.body-dot.is-sketch {
+  border-style: dashed;
+}
+
+.body-dot.is-plane {
+  transform: rotate(45deg);
+}
+
+/* Visibility is a split affordance on the chip: the name selects, the eye
+   toggles. It is always visible, not hover-only. */
+.chip-eye {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  margin-left: 3px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.chip-eye:hover {
+  color: var(--ink);
+}
+
+.chip-eye-shape {
+  position: relative;
+  display: block;
+  width: 10px;
+  height: 6px;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+}
+
+.chip-eye-shape::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+  transform: translate(-50%, -50%);
+}
+
+.chip-eye.is-hidden .chip-eye-shape::before {
+  position: absolute;
+  top: 50%;
+  right: -2px;
+  left: -2px;
+  height: 1px;
+  background: currentColor;
+  content: "";
+  transform: rotate(-35deg);
+}
+
+/* The gap doubles as the divider and the insert affordance: a full-height
+   line at rest, with an inset + that grows out on hover (and stays out after
+   the active step, so it is reachable without hover). */
+.insert-gap {
+  position: relative;
+  flex: none;
+  align-self: stretch;
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  width: 26px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+
+.insert-gap::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  background: var(--rule);
+  content: "";
+  transform: translateX(-50%);
+}
+
+.insert-gap::after {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 0;
+  min-width: 0;
+  margin: 6px 0;
+  overflow: hidden;
+  background: var(--marker);
+  color: var(--marker-ink);
+  font-family: var(--font-mono);
+  font-size: var(--type-value);
+  line-height: var(--leading-label);
+  content: "+";
+  transition: width 0.12s ease;
+}
+
+.insert-gap:hover::after {
+  width: 14px;
+}
+
+/* Clicking the empty tail after the last step clears the history cursor. It
+   keeps a minimum width so there is always somewhere to click after the last
+   step, even when the track scrolls. */
+.timeline-empty {
+  flex: 0 0 44px;
+  width: 44px;
+  align-self: stretch;
+  min-height: 64px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.insert-menu {
+  position: absolute;
+  z-index: 12;
+  bottom: 100%;
+  min-width: 176px;
+  margin-bottom: 6px;
+  padding: 8px 12px 7px;
+  border-top: 1px solid var(--rule-strong);
+  border-bottom: 1px solid var(--rule-strong);
+  background: var(--bg);
+}
+
+.insert-menu-head {
+  padding-bottom: 6px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-label);
+  letter-spacing: var(--tracking-label);
+  line-height: var(--leading-label);
+  text-transform: uppercase;
+}
+
+.grid-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+  margin: 0 -4px;
+  padding: 4px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-value);
+  text-align: left;
+  cursor: pointer;
+}
+
+.grid-option:hover {
+  background: var(--marker-soft);
+}
+
+.grid-option-note {
+  color: var(--ink-3);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-micro);
 }
 
 .timeline-item.is-error .step-name {
@@ -1815,7 +2079,6 @@ body {
 }
 
 .timeline-rename {
-  grid-column: 2;
   min-width: 0;
   padding: 0;
   border: 0;
@@ -2573,13 +2836,6 @@ body {
   background: var(--ink-2);
 }
 
-.scale-bar em {
-  font-family: var(--font-mono);
-  font-size: var(--type-micro);
-  font-style: normal;
-  letter-spacing: var(--tracking-micro);
-}
-
 .zoom-control {
   display: inline-flex;
   align-items: baseline;
@@ -2701,7 +2957,6 @@ body {
 
 .timeline-item.is-paused {
   opacity: 0.45;
-  font-style: italic;
 }
 
 .timeline-item.is-suppressed {
@@ -2911,29 +3166,6 @@ body {
 
 .text-action.is-quiet {
   color: var(--ink-3);
-}
-
-/* ---------- contextual creation ---------- */
-
-.timeline-add {
-  display: flex;
-  align-items: center;
-  align-self: stretch;
-  padding: 0 14px;
-  border: 0;
-  border-left: 1px solid var(--rule);
-  background: transparent;
-  color: var(--ink-3);
-  font-family: var(--font-mono);
-  font-size: var(--type-micro);
-  letter-spacing: var(--tracking-control);
-  line-height: var(--leading-control);
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.timeline-add:hover {
-  color: var(--ink);
 }
 
 .seg {

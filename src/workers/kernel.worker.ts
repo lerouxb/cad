@@ -1,10 +1,12 @@
 import {
   OcctWasmAdapter,
   addHoles,
+  adjacentFaces,
   assignRoles,
   applyMatrix,
   captureHint,
   circle,
+  classifyPointOnFace,
   clearMeshCache,
   clone,
   createRef,
@@ -13,6 +15,9 @@ import {
   cutWithEvolution,
   extrude,
   face,
+  faceCenter,
+  facesOfEdge,
+  filletWithEvolution,
   fuseAll,
   fuseWithEvolution,
   getBounds,
@@ -25,28 +30,38 @@ import {
   measureVolume,
   outerWire,
   registerKernel,
+  projectPointOnFace,
   resolveRef,
   shape,
+  sharedEdges,
   threePointArc,
   toBufferGeometryData,
   translate,
   updateRoles,
   unwrap,
+  verticesOfEdge,
+  vertexPosition,
   wireLoop,
   withScope,
   type ClosedWire,
+  type Edge,
+  type EvolutionResult,
+  type Face,
   type Matrix4x4,
   type PlanarWire,
   type RoleTable,
   type Solid,
+  type ValidSolid,
 } from "brepjs";
 import { OcctKernel } from "occt-wasm";
 import type { PlaneFrame } from "../core/types";
 import type {
   BodyMesh,
+  EdgeRef,
   ExtrudeParams,
   FeatureBuildStatus,
   KernelFeature,
+  KernelFilletFeature,
   KernelRequest,
   ProfileRegion,
   KernelResponse,
@@ -176,6 +191,45 @@ function buildFeatures(features: KernelFeature[]): {
       continue;
     }
 
+    if (feature.kind === "fillet") {
+      if (!base) {
+        cacheInvalid = true;
+        statuses.push({
+          featureId: feature.featureId,
+          status: "error",
+          cached: false,
+          message: "Nothing exists to fillet.",
+        });
+        continue;
+      }
+      try {
+        const result = buildFilletFeature(feature, base, baseRoles);
+        base = result.solid;
+        baseRoles = result.roles;
+        baseKey = feature.cacheKey;
+        protectedKeys.add(feature.cacheKey);
+        pending.push({
+          key: feature.cacheKey,
+          solid: result.solid,
+          roles: result.roles,
+        });
+        statuses.push({
+          featureId: feature.featureId,
+          status: "ok",
+          cached: false,
+        });
+      } catch (error) {
+        cacheInvalid = true;
+        statuses.push({
+          featureId: feature.featureId,
+          status: "error",
+          cached: false,
+          message: errorMessage(error),
+        });
+      }
+      continue;
+    }
+
     let tool: Solid;
     try {
       if (feature.params.end === "throughAll" && feature.operation !== "cut") {
@@ -203,6 +257,19 @@ function buildFeatures(features: KernelFeature[]): {
             status: "error",
             cached: false,
             message: "Nothing exists to cut.",
+          });
+          continue;
+        }
+        if (feature.operation === "join") {
+          // No silent fallback: a join with nothing to join is an error the
+          // user sees, not an implicit first body.
+          tool.delete();
+          cacheInvalid = true;
+          statuses.push({
+            featureId: feature.featureId,
+            status: "error",
+            cached: false,
+            message: "Nothing exists to join.",
           });
           continue;
         }
@@ -251,10 +318,22 @@ function buildFeatures(features: KernelFeature[]): {
       for (const origin of [...roles.keys()]) {
         roles = updateRoles(roles, origin, result.evolution);
       }
-      tool.delete();
       // A boolean of two solids is a solid; brepjs's widest overload returns
       // Shape3D, so narrow it here before caching.
       const resultSolid = result.shape as Solid;
+      // OCCT does not report every boolean-made face as "modified": a tool wall
+      // that keeps only part of its length (or a cut's new hole wall) can arrive
+      // with no role at all. Name those faces against the tool they lie on, so
+      // selections and the feature highlight still see the geometry this
+      // operation created.
+      roles = adoptUntrackedFaces(
+        resultSolid,
+        tool,
+        feature.featureId,
+        toolRoles,
+        roles,
+      );
+      tool.delete();
       base = resultSolid;
       baseRoles = roles;
       baseKey = feature.cacheKey;
@@ -306,6 +385,185 @@ function buildFeatures(features: KernelFeature[]): {
 }
 
 /** Build one tool solid and return an independently owned clone. */
+/**
+ * Name boolean-result faces that the kernel's history did not track.
+ *
+ * `updateRoles` only follows hashes the kernel reports as modified. Generated
+ * faces (a cut's hole wall, a joined cylinder that keeps only its exposed
+ * length, the bottom disk of a pin filling a hole) are absent from that record,
+ * so they would otherwise be anonymous: no stable `TopoRef`, no edge/face
+ * highlight for the feature that created them. Match each anonymous result face
+ * to the tool face it lies on and adopt that tool face's role.
+ */
+function adoptUntrackedFaces(
+  result: Solid,
+  tool: Solid,
+  featureId: string,
+  toolRoles: RoleTable,
+  roles: RoleTable,
+): RoleTable {
+  const claimed = new Set<number>();
+  for (const originRoles of roles.values()) {
+    for (const hashes of originRoles.values()) {
+      for (const hash of hashes) claimed.add(hash);
+    }
+  }
+  const unclaimed = getFaces(result).filter(
+    (face) => !claimed.has(getHashCode(face)),
+  );
+  if (unclaimed.length === 0) return roles;
+
+  const toolRolesForFeature = toolRoles.get(featureId);
+  if (!toolRolesForFeature) return roles;
+  const roleByHash = new Map<number, string>();
+  for (const [role, hashes] of toolRolesForFeature) {
+    for (const hash of hashes) roleByHash.set(hash, role);
+  }
+  const toolFaces: Array<{
+    face: Parameters<typeof captureHint>[0];
+    role: string;
+    hint: ReturnType<typeof captureHint>;
+  }> = [];
+  for (const face of getFaces(tool)) {
+    const role = roleByHash.get(getHashCode(face));
+    if (!role) continue;
+    const typed = face as Parameters<typeof captureHint>[0];
+    toolFaces.push({ face: typed, role, hint: captureHint(typed) });
+  }
+  if (toolFaces.length === 0) return roles;
+
+  const adopted: Array<[string, number]> = [];
+  for (const face of unclaimed) {
+    const typed = face as Parameters<typeof captureHint>[0];
+    const points = sampleFacePoints(typed);
+    if (points.length === 0) continue;
+    const resultHint = captureHint(typed);
+    let best: { role: string; hits: number; score: number } | null = null;
+    for (const candidate of toolFaces) {
+      let hits = 0;
+      let distance = 0;
+      for (const point of points) {
+        try {
+          const projection = projectPointOnFace(candidate.face, point);
+          if (!projection.ok || projection.value.distance > 0.05) continue;
+          const where = classifyPointOnFace(candidate.face, point, 0.05);
+          if (where === "out") continue;
+          hits += 1;
+          distance += projection.value.distance;
+        } catch {
+          // An analytic projection can fail on exotic surfaces; skip the point.
+        }
+      }
+      if (hits === 0) continue;
+      const sameNormal =
+        resultHint.normal && candidate.hint.normal
+          ? resultHint.normal[0] * candidate.hint.normal[0] +
+              resultHint.normal[1] * candidate.hint.normal[1] +
+              resultHint.normal[2] * candidate.hint.normal[2] >
+            0.9
+          : false;
+      const score =
+        hits +
+        (sameNormal ? 1 : 0) -
+        distance / Math.max(points.length, 1) / 10;
+      if (!best || score > best.score) {
+        best = { role: candidate.role, hits, score };
+      }
+    }
+    if (best) adopted.push([best.role, getHashCode(face)]);
+  }
+  if (adopted.length === 0) return roles;
+
+  const next = new Map(roles);
+  const featureRoles = new Map(next.get(featureId) ?? []);
+  for (const [role, hash] of adopted) {
+    const hashes = featureRoles.get(role);
+    if (!hashes) featureRoles.set(role, [hash]);
+    else if (!hashes.includes(hash)) featureRoles.set(role, [...hashes, hash]);
+  }
+  next.set(featureId, featureRoles);
+  return next;
+}
+
+/** Surface points on a face: its centre plus edge samples, for tool matching. */
+function sampleFacePoints(
+  face: Parameters<typeof captureHint>[0],
+): Array<[number, number, number]> {
+  const points: Array<[number, number, number]> = [];
+  try {
+    const center = faceCenter(face);
+    points.push([center[0], center[1], center[2]]);
+  } catch {
+    // Non-analytic faces may not have a centre; edge samples still work.
+  }
+  for (const edge of getEdges(face).slice(0, 8)) {
+    for (const t of [0.25, 0.5, 0.75]) {
+      const point = curvePointAt(edge, t);
+      points.push([point[0], point[1], point[2]]);
+    }
+  }
+  return points;
+}
+
+/** True when a resolved face still matches the hint it was recorded with. */
+function hintAgrees(
+  ref: TopoRef,
+  hint: {
+    normal?: readonly [number, number, number];
+    centroid?: readonly [number, number, number];
+    area?: number;
+  },
+): boolean {
+  const wantedNormal = ref.hint.normal;
+  if (!wantedNormal || !hint.normal) return true;
+  const dot =
+    hint.normal[0] * wantedNormal[0] +
+    hint.normal[1] * wantedNormal[1] +
+    hint.normal[2] * wantedNormal[2];
+  return dot >= 0.95;
+}
+
+/** Best geometric face match for a support hint; tolerant of centroid drift. */
+function matchFaceByHint(
+  solid: Solid,
+  ref: TopoRef,
+): Parameters<typeof captureHint>[0] | null {
+  const wantedNormal = ref.hint.normal;
+  if (!wantedNormal) return null;
+  const wantedArea = ref.hint.area;
+  let best: { face: Parameters<typeof captureHint>[0]; score: number } | null =
+    null;
+  for (const face of getFaces(solid)) {
+    const hint = captureHint(face as Parameters<typeof captureHint>[0]);
+    if (!hint.normal) continue;
+    const normalDot =
+      hint.normal[0] * wantedNormal[0] +
+      hint.normal[1] * wantedNormal[1] +
+      hint.normal[2] * wantedNormal[2];
+    if (normalDot < 0.95) continue;
+    const areaRatio =
+      wantedArea !== undefined && hint.area !== undefined && hint.area > 0
+        ? Math.min(hint.area, wantedArea) / Math.max(hint.area, wantedArea)
+        : 1;
+    if (areaRatio < 0.5) continue;
+    const centroid = hint.centroid;
+    const wantedCentroid = ref.hint.centroid;
+    const distance =
+      centroid && wantedCentroid
+        ? Math.hypot(
+            centroid[0] - wantedCentroid[0],
+            centroid[1] - wantedCentroid[1],
+            centroid[2] - wantedCentroid[2],
+          )
+        : 0;
+    const score = normalDot + areaRatio - distance / 1000;
+    if (!best || score > best.score) {
+      best = { face: face as Parameters<typeof captureHint>[0], score };
+    }
+  }
+  return best?.face ?? null;
+}
+
 /** Sample a face's outer and inner wires into world-space boundary loops. */
 function faceBoundary(
   solid: Solid,
@@ -335,9 +593,37 @@ function faceBoundary(
       roles,
       solid,
     );
-    if (!("face" in resolved)) return { broken: resolved.reason };
-    const face = resolved.face;
-    const hint = captureHint(face as Parameters<typeof captureHint>[0]);
+    let face: Parameters<typeof captureHint>[0] | null =
+      "face" in resolved ? resolved.face : null;
+    let confidence: "exact" | "geometric-fallback" = "exact";
+    if (face) {
+      // A positional role can survive an upstream edit while now pointing at a
+      // completely different face (splits, reordered iteration). Trust it only
+      // when it still agrees with the geometric hint.
+      const exactHint = captureHint(face);
+      if (
+        !exactHint.normal ||
+        !hintAgrees(ref, {
+          normal: exactHint.normal,
+          centroid: exactHint.centroid,
+          area: exactHint.area,
+        })
+      ) {
+        face = null;
+      }
+    }
+    if (!face) {
+      // brepjs only falls back when the role is untracked. A role whose hashes
+      // are stale (common after an upstream edit) should still use the geometric
+      // hint, otherwise every positional role becomes a false lost support.
+      const fallback = matchFaceByHint(solid, ref);
+      if (!fallback) {
+        return { broken: "face" in resolved ? "ambiguous" : resolved.reason };
+      }
+      face = fallback;
+      confidence = "geometric-fallback";
+    }
+    const hint = captureHint(face);
     if (!hint.normal || !hint.centroid) return null;
     const loops: [number, number, number][][] = [];
     for (const wire of [outerWire(face), ...innerWires(face)]) {
@@ -436,11 +722,342 @@ function faceBoundary(
       normal: [hint.normal[0], hint.normal[1], hint.normal[2]],
       centroid: [hint.centroid[0], hint.centroid[1], hint.centroid[2]],
       loops,
-      confidence: resolved.confidence,
+      confidence,
     };
   } catch {
     return null;
   }
+}
+
+function buildFilletFeature(
+  feature: KernelFilletFeature,
+  base: Solid,
+  baseRoles: RoleTable,
+): { solid: Solid; roles: RoleTable } {
+  if (!Number.isFinite(feature.radius) || feature.radius <= 0) {
+    throw new Error("Fillet radius must be greater than zero.");
+  }
+  if (feature.edges.length === 0) {
+    throw new Error("Select at least one edge to fillet.");
+  }
+
+  const resolved: ResolvedEdge[] = [];
+  try {
+    for (const ref of feature.edges) {
+      const edge = resolveEdgeOnSolid(base, baseRoles, ref);
+      if ("broken" in edge) throw new Error(edge.broken);
+      resolved.push(edge);
+    }
+
+    const result: EvolutionResult<ValidSolid> = unwrap(
+      filletWithEvolution(
+        // `Solid` is the runtime-valid result of the worker's own builders; the
+        // ValidSolid brand is compile-time only.
+        base as ValidSolid,
+        resolved.map((entry) => entry.edge),
+        feature.radius,
+      ),
+    );
+    // OCCT reports an empty evolution for fillets, so `updateRoles` cannot
+    // carry the face roles across. Re-derive them from geometry: the adjacent
+    // faces are trimmed but keep their surface and position, and the generated
+    // rounds are the new faces between each filleted pair.
+    const remap = remapRolesByGeometry(base, result.shape as Solid, baseRoles);
+    const roles = adoptFilletFaces(
+      result.shape as Solid,
+      remap,
+      resolved,
+      feature.featureId,
+    );
+    return { solid: result.shape as Solid, roles };
+  } finally {
+    // `sharedEdges` hands back fresh, caller-owned edge handles. Faces are
+    // borrowed and must not be disposed here.
+    for (const entry of resolved) entry.edge.delete();
+  }
+}
+
+interface ResolvedEdge {
+  edge: Edge;
+  /** The two pre-fillet faces the edge bounded. */
+  faces: [Face, Face];
+}
+
+/**
+ * Resolve one face ref on a solid, with the same exact-role-first and
+ * geometric-fallback policy the projected references use.
+ */
+function resolveFaceOnSolid(
+  solid: Solid,
+  roles: RoleTable,
+  ref: TopoRef,
+):
+  | { face: Parameters<typeof captureHint>[0] }
+  | { broken: "deleted" | "ambiguous" | "not-found" } {
+  try {
+    const resolved = resolveRef(
+      {
+        origin: ref.source,
+        role: ref.role,
+        hint: {
+          entityType: "face",
+          ...(ref.hint.normal ? { normal: ref.hint.normal } : {}),
+          ...(ref.hint.centroid ? { centroid: ref.hint.centroid } : {}),
+          ...(ref.hint.area !== undefined ? { area: ref.hint.area } : {}),
+        },
+      },
+      roles,
+      solid,
+    );
+    let face: Parameters<typeof captureHint>[0] | null =
+      "face" in resolved ? resolved.face : null;
+    if (face) {
+      const hint = captureHint(face);
+      if (
+        !hint.normal ||
+        !hintAgrees(ref, {
+          normal: hint.normal,
+          centroid: hint.centroid,
+          area: hint.area,
+        })
+      ) {
+        face = null;
+      }
+    }
+    if (!face) {
+      const fallback = matchFaceByHint(solid, ref);
+      if (!fallback) {
+        return { broken: "face" in resolved ? "ambiguous" : resolved.reason };
+      }
+      face = fallback;
+    }
+    return { face };
+  } catch {
+    return { broken: "not-found" };
+  }
+}
+
+/** Resolve an edge as the shared boundary of its two recorded faces. */
+function resolveEdgeOnSolid(
+  solid: Solid,
+  roles: RoleTable,
+  ref: EdgeRef,
+): ResolvedEdge | { broken: string } {
+  const a = resolveFaceOnSolid(solid, roles, ref.faces[0]);
+  const b = resolveFaceOnSolid(solid, roles, ref.faces[1]);
+  if ("broken" in a || "broken" in b) {
+    return {
+      broken:
+        "The selected edge no longer exists on the current body; reselect it or remove the fillet.",
+    };
+  }
+  const candidates: Edge[] = [];
+  const seen = new Set<number>();
+  for (const edge of sharedEdges(a.face as Face, b.face as Face)) {
+    const hash = getHashCode(edge);
+    if (seen.has(hash)) continue;
+    seen.add(hash);
+    candidates.push(edge);
+  }
+  if (candidates.length === 0) {
+    return {
+      broken:
+        "The selected edge no longer exists on the current body; reselect it or remove the fillet.",
+    };
+  }
+  if (candidates.length === 1) {
+    return { edge: candidates[0]!, faces: [a.face as Face, b.face as Face] };
+  }
+  const edge = pickEdgeByHint(candidates, ref);
+  if (!edge) {
+    for (const candidate of candidates) candidate.delete();
+    return {
+      broken:
+        "The selected edge is ambiguous on the current body; reselect a single edge.",
+    };
+  }
+  for (const candidate of candidates) {
+    if (candidate !== edge) candidate.delete();
+  }
+  return { edge, faces: [a.face as Face, b.face as Face] };
+}
+
+/** Pick the edge closest to the captured midpoint/length, or nothing on a tie. */
+function pickEdgeByHint(edges: readonly Edge[], ref: EdgeRef): Edge | null {
+  if (ref.hint.length === undefined && ref.hint.midpoint === undefined) {
+    return null;
+  }
+  let best: Edge | null = null;
+  let bestScore = Infinity;
+  let secondScore = Infinity;
+  for (const edge of edges) {
+    let score = 0;
+    if (ref.hint.length !== undefined) {
+      score += Math.abs(curveLength(edge) - ref.hint.length);
+    }
+    if (ref.hint.midpoint) {
+      const points = verticesOfEdge(edge).map((vertex) =>
+        vertexPosition(vertex as Parameters<typeof vertexPosition>[0]),
+      );
+      if (points.length > 0) {
+        const midpoint = points.reduce(
+          (sum, point) => [
+            sum[0] + point[0] / points.length,
+            sum[1] + point[1] / points.length,
+            sum[2] + point[2] / points.length,
+          ],
+          [0, 0, 0] as [number, number, number],
+        );
+        score += Math.hypot(
+          midpoint[0] - ref.hint.midpoint[0],
+          midpoint[1] - ref.hint.midpoint[1],
+          midpoint[2] - ref.hint.midpoint[2],
+        );
+      }
+    }
+    if (score < bestScore) {
+      secondScore = bestScore;
+      bestScore = score;
+      best = edge;
+    } else if (score < secondScore) {
+      secondScore = score;
+    }
+  }
+  if (!best || secondScore - bestScore < 1e-6) return null;
+  return best;
+}
+
+interface RoleRemap {
+  roles: RoleTable;
+  /** Pre-fillet face hash -> the result face that geometrically continues it. */
+  faceMap: ReadonlyMap<number, Face | null>;
+  /** Result face hashes already accounted for by a carried-over role. */
+  claimed: ReadonlySet<number>;
+}
+
+/**
+ * Re-derive every existing face role on the filleted result. Fillets trim the
+ * adjacent faces without reporting an evolution, so hash lineage is lost;
+ * surface type + normal + sampled containment reattaches each old role to the
+ * trimmed face it became.
+ */
+function remapRolesByGeometry(
+  pre: Solid,
+  post: Solid,
+  roles: RoleTable,
+): RoleRemap {
+  type Face3D = Parameters<typeof captureHint>[0];
+  const preFaces = getFaces(pre) as Face3D[];
+  const postFaces = getFaces(post) as Face3D[];
+  const faceMap = new Map<number, Face | null>();
+  const claimed = new Set<number>();
+
+  for (const preFace of preFaces) {
+    const preHash = getHashCode(preFace);
+    if (faceMap.has(preHash)) continue;
+    const match = matchFaceGeometrically(preFace, postFaces);
+    faceMap.set(preHash, match);
+    if (match) claimed.add(getHashCode(match));
+  }
+
+  const next = new Map<string, Map<string, number[]>>();
+  for (const [origin, originRoles] of roles) {
+    const nextRoles = new Map<string, number[]>();
+    for (const [role, hashes] of originRoles) {
+      const mapped: number[] = [];
+      for (const hash of hashes) {
+        const face = faceMap.get(hash);
+        if (!face) continue;
+        const nextHash = getHashCode(face);
+        if (!mapped.includes(nextHash)) mapped.push(nextHash);
+      }
+      if (mapped.length > 0) nextRoles.set(role, mapped);
+    }
+    next.set(origin, nextRoles);
+  }
+  return { roles: next, faceMap, claimed };
+}
+
+/** The result face that best continues a pre-face, or null if it vanished. */
+function matchFaceGeometrically(
+  preFace: Parameters<typeof captureHint>[0],
+  candidates: ReadonlyArray<Parameters<typeof captureHint>[0]>,
+): Face | null {
+  const preHint = captureHint(preFace);
+  const points = sampleFacePoints(preFace);
+  if (points.length === 0) return null;
+  let best: { face: Parameters<typeof captureHint>[0]; hits: number } | null =
+    null;
+  for (const candidate of candidates) {
+    const hint = captureHint(candidate);
+    if (preHint.surfaceType && hint.surfaceType) {
+      if (String(preHint.surfaceType) !== String(hint.surfaceType)) continue;
+    }
+    if (preHint.normal && hint.normal) {
+      const dot =
+        preHint.normal[0] * hint.normal[0] +
+        preHint.normal[1] * hint.normal[1] +
+        preHint.normal[2] * hint.normal[2];
+      if (dot < 0.9) continue;
+    }
+    let hits = 0;
+    for (const point of points) {
+      try {
+        const projection = projectPointOnFace(candidate, point);
+        if (!projection.ok || projection.value.distance > 0.05) continue;
+        if (classifyPointOnFace(candidate, point, 0.05) === "out") continue;
+        hits += 1;
+      } catch {
+        // Analytic projection can fail on exotic surfaces; skip the point.
+      }
+    }
+    if (hits > 0 && (!best || hits > best.hits)) best = { face: candidate, hits };
+  }
+  return (best?.face as Face | undefined) ?? null;
+}
+
+/**
+ * Name the faces a fillet generated: the round between each filleted pair,
+ * plus anything still anonymous. They belong to the fillet step, so selecting
+ * it highlights the rounds and downstream edge refs can point at them.
+ */
+function adoptFilletFaces(
+  post: Solid,
+  remap: RoleRemap,
+  resolved: readonly ResolvedEdge[],
+  featureId: string,
+): RoleTable {
+  type Face3D = Parameters<typeof captureHint>[0];
+  const claimed = new Set(remap.claimed);
+  const featureRoles = new Map<string, number[]>();
+
+  resolved.forEach((entry, index) => {
+    const postA = remap.faceMap.get(getHashCode(entry.faces[0]));
+    const postB = remap.faceMap.get(getHashCode(entry.faces[1]));
+    if (!postA || !postB) return;
+    const adjacentToA = new Set(
+      adjacentFaces(post, postA).map((face) => getHashCode(face)),
+    );
+    const generate = adjacentFaces(post, postB)
+      .map((face) => getHashCode(face))
+      .filter((hash) => adjacentToA.has(hash) && !claimed.has(hash));
+    if (generate.length === 0) return;
+    featureRoles.set(`fillet:round_${index}`, generate);
+    for (const hash of generate) claimed.add(hash);
+  });
+
+  let anonymous = 0;
+  for (const face of getFaces(post) as Face3D[]) {
+    const hash = getHashCode(face);
+    if (claimed.has(hash)) continue;
+    featureRoles.set(`fillet:face_${anonymous++}`, [hash]);
+    claimed.add(hash);
+  }
+
+  if (featureRoles.size === 0) return remap.roles;
+  const next = new Map(remap.roles);
+  next.set(featureId, featureRoles);
+  return next;
 }
 
 function buildSolid(params: ExtrudeParams, base: Solid | null): Solid {
@@ -562,6 +1179,7 @@ function meshSolid(solid: Solid, roles: RoleTable): BodyMesh {
   }
 
   const refs = topoRefs(solid, roles);
+  const edgeRefs = topoEdgeRefs(solid, refs);
   return {
     positions: data.position,
     normals: data.normal,
@@ -577,11 +1195,15 @@ function meshSolid(solid: Solid, roles: RoleTable): BodyMesh {
       };
     }),
     edgePositions: edgeMesh.lines,
-    edgeGroups: edgeMesh.edgeGroups.map((group) => ({
-      start: group.start,
-      count: group.count,
-      edgeId: group.edgeId,
-    })),
+    edgeGroups: edgeMesh.edgeGroups.map((group) => {
+      const ref = edgeRefs.get(group.edgeId);
+      return {
+        start: group.start,
+        count: group.count,
+        edgeId: group.edgeId,
+        ...(ref ? { ref } : {}),
+      };
+    }),
     stats: {
       faces: mesh.faceGroups.length,
       edges: edgeMesh.edgeGroups.length,
@@ -591,6 +1213,57 @@ function meshSolid(solid: Solid, roles: RoleTable): BodyMesh {
       bounds: [minX, minY, minZ, maxX, maxY, maxZ],
     },
   };
+}
+
+/**
+ * Turn each BREP edge into a JSON-safe ref identified by its two face roles.
+ * The mesh's `edgeId` is the same `getHashCode(edge)` the kernel uses, verified
+ * against `meshEdges` edge groups.
+ */
+function topoEdgeRefs(
+  solid: Solid,
+  faceRefs: ReadonlyMap<number, TopoRef>,
+): Map<number, EdgeRef> {
+  const refs = new Map<number, EdgeRef>();
+  try {
+    for (const edge of getEdges(solid)) {
+      const faces = facesOfEdge(solid, edge);
+      if (faces.length !== 2) continue;
+      const a = faceRefs.get(getHashCode(faces[0]!));
+      const b = faceRefs.get(getHashCode(faces[1]!));
+      if (!a || !b) continue;
+      const vertices = verticesOfEdge(edge).map((vertex) =>
+        vertexPosition(vertex as Parameters<typeof vertexPosition>[0]),
+      );
+      const midpoint =
+        vertices.length > 0
+          ? vertices.reduce(
+              (sum, point) => [
+                sum[0] + point[0] / vertices.length,
+                sum[1] + point[1] / vertices.length,
+                sum[2] + point[2] / vertices.length,
+              ],
+              [0, 0, 0] as [number, number, number],
+            )
+          : undefined;
+      refs.set(getHashCode(edge), {
+        kind: "edge",
+        faces: [a, b],
+        hint: {
+          entityType: "edge",
+          ...(Number.isFinite(curveLength(edge))
+            ? { length: curveLength(edge) }
+            : {}),
+          ...(midpoint
+            ? { midpoint: [midpoint[0], midpoint[1], midpoint[2]] }
+            : {}),
+        },
+      });
+    }
+  } catch {
+    // Edge refs are additive metadata; a role failure must never break the mesh.
+  }
+  return refs;
 }
 
 /** Turn the propagated role table into JSON-safe refs for the final body. */

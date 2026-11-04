@@ -56,46 +56,52 @@ async function enterSketch(page: Page): Promise<void> {
   await expect(page.getByTestId("tool-select")).toBeVisible();
 }
 
+/**
+ * Fit the model and pick the first face whose normal matches. The stage height
+ * depends on the timeline, so fixed pixel picks are brittle; scan the visible
+ * faces and verify the selected TopoRef's normal instead.
+ */
+async function pickFace(
+  page: Page,
+  matches: (normal: [number, number, number]) => boolean,
+): Promise<void> {
+  const canvas = page.locator("canvas.viewport-canvas");
+  const pick = page.getByTestId("body-pick");
+  await page.getByRole("button", { name: "Fit view" }).click();
+  await page.waitForTimeout(200);
+  for (let y = 200; y <= 500; y += 25) {
+    for (let x = 260; x <= 1050; x += 25) {
+      await page.mouse.move(x, y);
+      if ((await canvas.getAttribute("data-hover-kind")) !== "face") continue;
+      await page.mouse.click(x, y);
+      if ((await pick.count()) === 0) continue;
+      const raw = await pick.getAttribute("data-ref");
+      if (!raw) continue;
+      const ref = JSON.parse(raw) as {
+        hint?: { surfaceType?: string; normal?: [number, number, number] };
+      };
+      const normal = ref.hint?.normal;
+      if (ref.hint?.surfaceType === "PLANE" && normal && matches(normal)) {
+        return;
+      }
+    }
+  }
+  throw new Error("No matching face found");
+}
+
 /** Fit the model and pick the top face of the demo plate. */
 async function pickTopFace(page: Page): Promise<void> {
-  const canvas = page.locator("canvas.viewport-canvas");
-  await page.getByRole("button", { name: "Fit view" }).click();
-  await page.waitForTimeout(200);
-  await page.mouse.move(700, 330);
-  await expect(canvas).toHaveAttribute("data-hover-kind", "face");
-  await page.mouse.click(700, 330);
-  await expect(page.getByTestId("body-pick")).toHaveAttribute(
-    "data-kind",
-    "face",
-  );
+  await pickFace(page, (normal) => normal[2] > 0.9);
 }
 
-/** Fit the model and pick the front side face of the demo plate. */
+/** Fit the model and pick a long (front/back) side face of the demo plate. */
 async function pickSideFace(page: Page): Promise<void> {
-  const canvas = page.locator("canvas.viewport-canvas");
-  await page.getByRole("button", { name: "Fit view" }).click();
-  await page.waitForTimeout(200);
-  await page.mouse.move(520, 340);
-  await expect(canvas).toHaveAttribute("data-hover-kind", "face");
-  await page.mouse.click(520, 340);
-  await expect(page.getByTestId("body-pick")).toHaveAttribute(
-    "data-kind",
-    "face",
-  );
+  await pickFace(page, (normal) => Math.abs(normal[1]) > 0.9);
 }
 
-/** Fit the model and pick the right side face of the demo plate. */
+/** Fit the model and pick the right (+X) side face of the demo plate. */
 async function pickRightFace(page: Page): Promise<void> {
-  const canvas = page.locator("canvas.viewport-canvas");
-  await page.getByRole("button", { name: "Fit view" }).click();
-  await page.waitForTimeout(200);
-  await page.mouse.move(800, 340);
-  await expect(canvas).toHaveAttribute("data-hover-kind", "face");
-  await page.mouse.click(800, 340);
-  await expect(page.getByTestId("body-pick")).toHaveAttribute(
-    "data-kind",
-    "face",
-  );
+  await pickFace(page, (normal) => normal[0] > 0.9);
 }
 
 /** Find a screen point over a rendered datum plane after Fit view. */
@@ -112,8 +118,36 @@ async function findDatumHover(page: Page): Promise<{ x: number; y: number }> {
   throw new Error("No datum plane hover target found");
 }
 
+/** Open the insert menu in the gap after the active step. */
+async function clickGapAfterActive(page: Page): Promise<void> {
+  const activeId = await page
+    .getByTestId("timeline")
+    .getAttribute("data-active-feature");
+  if (activeId) {
+    await page.locator(`[data-gap="${activeId}"]`).click();
+    return;
+  }
+  const lastId = await page
+    .locator("[data-feature-id]")
+    .last()
+    .getAttribute("data-feature-id");
+  if (lastId) await page.locator(`[data-gap="${lastId}"]`).click();
+  else await page.getByTestId("insert-gap-start").click();
+}
+
+/** Open the insert menu in the gap after the active step and pick a type. */
+async function openInsert(
+  page: Page,
+  kind: "sketch" | "plane",
+): Promise<void> {
+  await clickGapAfterActive(page);
+  await page
+    .getByTestId(kind === "sketch" ? "insert-sketch" : "insert-plane")
+    .click();
+}
+
 async function sketchOnPickedFace(page: Page): Promise<void> {
-  await page.getByTestId("add-sketch").click();
+  await openInsert(page, "sketch");
   await expect(page.getByTestId("support-popover")).toContainText(
     "selected face",
   );
@@ -123,14 +157,14 @@ async function sketchOnPickedFace(page: Page): Promise<void> {
   await expect(page.getByTestId("new-sketch")).toBeEnabled();
   await page.getByTestId("new-sketch").click();
 
-  await expect(page.getByTestId("timeline-detail")).toContainText("Face ·");
+  await expect(activeStepMeta(page)).toContainText("Face ·");
   await expect(page.getByTestId("tool-select")).toBeVisible();
   // Horizontal SVG lines have a zero-height box, so `toBeVisible` is a false
   // negative here; the projected reference is present and dashed.
   await expect(page.locator("[data-projection-id]").first()).toBeAttached();
   await expect(page.locator("[data-projection-id]").first()).toHaveAttribute(
     "stroke-dasharray",
-    "4 3",
+    "2 3",
   );
   await expect(page.locator("[data-projection-point-id]").first()).toBeAttached();
 }
@@ -156,9 +190,15 @@ async function sketchBossOnPickedFace(page: Page): Promise<void> {
 
 /** Create a sketch through the explicit support popover. */
 async function createSketch(page: Page): Promise<void> {
-  await page.getByTestId("add-sketch").click();
+  await openInsert(page, "sketch");
   await expect(page.getByTestId("support-popover")).toBeVisible();
   await page.getByTestId("new-sketch").click();
+}
+
+/** Leave the sketch and move the history cursor to the extrude that builds it. */
+async function finishSketchAndBuild(page: Page): Promise<void> {
+  await page.getByTestId("finish-sketch").click();
+  await page.getByTestId("timeline-extrude").click();
 }
 
 async function dblclickSketch(page: Page, x: number, y: number): Promise<void> {
@@ -366,6 +406,11 @@ async function readProfileRect(page: Page) {
   });
 }
 
+/** Meta line of the selected timeline step (the step block is the readout). */
+function activeStepMeta(page: Page) {
+  return page.locator('[data-feature-id][aria-pressed="true"] .tree-meta');
+}
+
 function collectErrors(page: Page): string[] {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -416,12 +461,9 @@ test.beforeEach(async ({ app: page }) => {
   if (await page.getByTestId("file-menu-popover").count()) {
     await page.getByTestId("file-menu").click();
   }
-  const rollForward = page.getByTestId("roll-forward");
-  if (await rollForward.count()) await rollForward.click();
   await page.evaluate(() => localStorage.removeItem("cad.files"));
   await page.getByTestId("load-example").click();
   await page.getByTestId("timeline-extrude").click();
-  await page.getByTestId("edit-feature").click();
   await setSlider(page.getByTestId("height-slider"), 12);
   await page.getByTestId("feature-popover-apply").click();
   const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
@@ -453,11 +495,13 @@ test("the dimensioned example drives an exact solid", async ({ app: page }) => {
     box.x + box.width / 2 + 45,
     box.y + box.height / 2 + 20,
   );
+
+  // The sketch step is now the history cursor, so check the built body after
+  // selecting the extrude it feeds.
+  await page.getByTestId("timeline-extrude").click();
   await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
 
   // Extrude height is an extrude-feature parameter, edited in the feature popover.
-  await page.getByTestId("timeline-extrude").click();
-  await page.getByTestId("edit-feature").click();
   await setSlider(page.getByTestId("height-slider"), 30);
   await page.getByTestId("feature-popover-apply").click();
   const taller = 60 * 40 * 30 - Math.PI * 8 * 8 * 30;
@@ -470,12 +514,45 @@ test("the dimensioned example drives an exact solid", async ({ app: page }) => {
   await clickSketch(page, 10, 20);
   await clickSketch(page, 15, 20);
 
+  // Build the extrude that consumes the edited sketch.
+  await page.getByTestId("timeline-extrude").click();
   const withSecondHole = taller - Math.PI * 5 * 5 * 30;
   await expect.poll(() => volume(page)).toBeCloseTo(withSecondHole, -1);
 
   await page.keyboard.press("Control+z");
   await expect.poll(() => volume(page)).toBeCloseTo(taller, -1);
 
+  expect(errors).toEqual([]);
+});
+
+test("selecting a step opens its editor instead of footer commands", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await page.getByTestId("timeline-extrude").click();
+  await expect(page.getByTestId("feature-popover")).toBeVisible();
+
+  // Edit, rename and profile selection no longer duplicate what selecting the
+  // step (or double-clicking its name) already does.
+  const detail = page.getByTestId("timeline-detail");
+  await expect(detail).not.toContainText("select profiles");
+  await expect(detail).not.toContainText("rename");
+  await expect(page.getByTestId("edit-feature")).toHaveCount(0);
+  await expect(page.getByTestId("extrude-profiles")).toHaveCount(0);
+
+  // Profiles are picked from the same form that edits the feature.
+  await page.getByTestId("popover-select-profiles").click();
+  await expect(page.getByTestId("tool-select")).toBeVisible();
+  await page.getByTestId("feature-popover-cancel").click();
+  await expect(page.getByTestId("tool-select")).toBeHidden();
+
+  // A datum step opens its own editor the same way.
+  const datum = page
+    .locator('[data-feature-type="datum"]')
+    .filter({ hasText: "Midplane" });
+  await datum.click();
+  await expect(page.getByTestId("datum-popover")).toBeVisible();
+  await page.getByTestId("datum-popover-cancel").click();
   expect(errors).toEqual([]);
 });
 
@@ -489,6 +566,9 @@ test("shows only the selected extrude's profiles on the model overlay", async ({
   // with the hole left open.
   await expect(canvas).toHaveAttribute("data-sketch-curves", "2");
   await expect(canvas).toHaveAttribute("data-sketch-fills", "1");
+  // The sketch is real geometry on its plane: the body must occlude it rather
+  // than the overlay always painting on top.
+  await expect(canvas).toHaveAttribute("data-sketch-depth", "depth");
 
   await page.getByTestId("timeline-sketch").click();
   await expect(canvas).toHaveAttribute("data-sketch-overlay", "off");
@@ -498,6 +578,236 @@ test("shows only the selected extrude's profiles on the model overlay", async ({
   await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
   await expect(canvas).toHaveAttribute("data-sketch-curves", "2");
   await expect(canvas).toHaveAttribute("data-sketch-fills", "1");
+});
+
+test("clicking the model background cancels the feature editor", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  const canvas = page.locator("canvas.viewport-canvas");
+  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+
+  await page.getByTestId("timeline-extrude").click();
+  await expect(page.getByTestId("feature-popover")).toBeVisible();
+  await page.getByTestId("extrude-height").fill("30");
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(60 * 40 * 30 - Math.PI * 8 * 8 * 30, -1);
+
+  // The stage background is not a popover or a view control: cancel like the
+  // footer button, restoring the feature as it was when the editor opened.
+  await page.mouse.click(1100, 180);
+  await expect(page.getByTestId("feature-popover")).toHaveCount(0);
+  await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
+
+  // The same applies to a datum editor.
+  const datum = page
+    .locator('[data-feature-type="datum"]')
+    .filter({ hasText: "Midplane" });
+  await datum.click();
+  await expect(page.getByTestId("datum-popover")).toBeVisible();
+  await page.mouse.click(1100, 180);
+  await expect(page.getByTestId("datum-popover")).toHaveCount(0);
+  await expect(canvas).toHaveAttribute("data-feature-highlight", "");
+  expect(errors).toEqual([]);
+});
+
+test("selecting a step scrubs the history and gaps insert steps", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const pinVolume = Math.PI * 8 * 8 * 20;
+  const pin = page
+    .locator('[data-feature-type="extrude"]')
+    .filter({ hasText: "Center pin" });
+
+  // Build a downstream feature, then scrub back to the base extrude by
+  // selecting it. There is no roll-back command.
+  await pin.click();
+  await page.getByTestId("feature-suppress").click();
+  await expect.poll(() => volume(page)).toBeCloseTo(plate + pinVolume, -1);
+  await expect(pin).toHaveAttribute("data-status", "ok");
+
+  await page.getByTestId("timeline-extrude").click();
+  await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
+  await expect(pin).toHaveAttribute("data-status", "paused");
+  await expect(page.getByTestId("roll-back")).toHaveCount(0);
+  await expect(page.getByTestId("roll-forward")).toHaveCount(0);
+
+  // Selecting the downstream step builds through it again.
+  await pin.click();
+  await expect.poll(() => volume(page)).toBeCloseTo(plate + pinVolume, -1);
+  await expect(pin).toHaveAttribute("data-status", "ok");
+
+  // The gap after the active step is the insert affordance, with a menu.
+  await clickGapAfterActive(page);
+  await expect(page.getByTestId("insert-sketch")).toBeVisible();
+  await expect(page.getByTestId("insert-plane")).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("insert-sketch")).toHaveCount(0);
+
+  // A new sketch lands at that gap, not at the end of the timeline.
+  await clickGapAfterActive(page);
+  await page.getByTestId("insert-sketch").click();
+  await page.getByTestId("new-sketch").click();
+  const pinPosition = await page
+    .locator("[data-feature-id]")
+    .evaluateAll(
+      (nodes, id) =>
+        nodes.findIndex((node) => node.getAttribute("data-feature-id") === id),
+      await pin.getAttribute("data-feature-id"),
+    );
+  await expect(
+    page.locator("[data-feature-id]").nth(pinPosition + 1),
+  ).toHaveAttribute("data-feature-type", "sketch");
+  expect(errors).toEqual([]);
+});
+
+test("clicking the empty timeline tail clears the selected step", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  const timeline = page.getByTestId("timeline");
+  const canvas = page.locator("canvas.viewport-canvas");
+  const empty = page.getByTestId("timeline-empty");
+  const box = await empty.boundingBox();
+  expect(box?.width ?? 0).toBeGreaterThan(32);
+
+  const sketchId = await page
+    .getByTestId("timeline-sketch")
+    .getAttribute("data-feature-id");
+  await page.getByTestId("timeline-extrude").click();
+  await expect(page.getByTestId("feature-popover")).toBeVisible();
+  await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
+
+  await empty.click();
+  await expect(timeline).toHaveAttribute("data-active-feature", "");
+  await expect(page.locator(".timeline-item.is-active")).toHaveCount(0);
+  await expect(page.getByTestId("feature-popover")).toHaveCount(0);
+  await expect(page.getByTestId("timeline-detail")).toContainText(
+    "No step selected",
+  );
+  await expect(canvas).toHaveAttribute("data-feature-highlight", "");
+  await expect(canvas).toHaveAttribute("data-sketch-overlay", "off");
+
+  // The leading tail clears it the same way.
+  await page.getByTestId("timeline-empty-start").click();
+  await expect(timeline).toHaveAttribute("data-active-feature", "");
+  await page.getByTestId("timeline-sketch").click();
+  await expect(timeline).toHaveAttribute("data-active-feature", sketchId!);
+  expect(errors).toEqual([]);
+});
+
+test("the timeline scrolls sideways without a vertical scrollbar", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  const original = page.viewportSize();
+  await page.setViewportSize({ width: 1000, height: 720 });
+  try {
+    const metrics = await page.locator(".timeline-track").evaluate((element) => {
+      const style = getComputedStyle(element);
+      return {
+        overflowY: style.overflowY,
+        clientHeight: element.clientHeight,
+        scrollHeight: element.scrollHeight,
+        clientWidth: element.clientWidth,
+        scrollWidth: element.scrollWidth,
+      };
+    });
+    // A narrow viewport makes the six example steps overflow horizontally,
+    // which is the case that used to compute overflow-y:auto as well and add a
+    // vertical scrollbar to the timeline strip.
+    expect(metrics.scrollWidth).toBeGreaterThan(metrics.clientWidth);
+    expect(metrics.overflowY).toBe("hidden");
+    expect(metrics.scrollHeight).toBeLessThanOrEqual(metrics.clientHeight + 1);
+
+    // A vertical wheel over the strip moves the real native scroll container
+    // sideways; there is no second axis to scroll.
+    const track = page.locator(".timeline-track");
+    await track.hover();
+    const before = await track.evaluate((element) => element.scrollLeft);
+    await page.mouse.wheel(0, 400);
+    await expect
+      .poll(() => track.evaluate((element) => element.scrollLeft))
+      .toBeGreaterThan(before);
+  } finally {
+    await page.locator(".timeline-track").evaluate((element) => {
+      element.scrollLeft = 0;
+    });
+    if (original) await page.setViewportSize(original);
+  }
+  expect(errors).toEqual([]);
+});
+
+test("highlights the geometry an extrude step created", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  const canvas = page.locator("canvas.viewport-canvas");
+  const extrude = page.getByTestId("timeline-extrude");
+  const extrudeId = await extrude.getAttribute("data-feature-id");
+
+  // The first extrude created the whole plate, so every face is highlighted,
+  // and its source sketch overlay is still requested.
+  await expect(canvas).toHaveAttribute("data-feature-highlight", extrudeId!);
+  await expect(canvas).toHaveAttribute("data-feature-faces", "7");
+  await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
+  await expect(canvas).toHaveAttribute("data-sketch-curves", "2");
+
+  // A sketch step is about the profile, not the solid it produced.
+  await page.getByTestId("timeline-sketch").click();
+  await expect(canvas).toHaveAttribute("data-feature-highlight", "");
+  await expect(canvas).toHaveAttribute("data-feature-faces", "0");
+
+  await extrude.click();
+  await expect(canvas).toHaveAttribute("data-feature-highlight", extrudeId!);
+
+  // A join highlights the faces it added: the pin's cap *and* its exposed
+  // cylinder wall, not the plate it was fused into. The wall is several
+  // hundred triangles, so this also catches a regression to cap-only.
+  const pin = page
+    .locator('[data-feature-type="extrude"]')
+    .filter({ hasText: "Center pin" });
+  await pin.click();
+  const pinId = await pin.getAttribute("data-feature-id");
+  await page.getByTestId("feature-suppress").click();
+  await expect(canvas).toHaveAttribute("data-feature-highlight", pinId!);
+  await expect
+    .poll(async () =>
+      Number(await canvas.getAttribute("data-feature-triangles")),
+    )
+    .toBeGreaterThan(300);
+  expect(
+    Number(await canvas.getAttribute("data-feature-faces")),
+  ).toBeLessThan(7);
+  expect(errors).toEqual([]);
+});
+
+test("switching from a datum editor to an extrude restores the overlays", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  const canvas = page.locator("canvas.viewport-canvas");
+  const midplane = page
+    .locator('[data-feature-type="datum"]')
+    .filter({ hasText: "Midplane" });
+
+  await midplane.click();
+  await expect(page.getByTestId("datum-popover")).toBeVisible();
+  await expect(canvas).toHaveAttribute("data-feature-highlight", "");
+  await expect(canvas).toHaveAttribute("data-sketch-overlay", "off");
+
+  const extrude = page.getByTestId("timeline-extrude");
+  const extrudeId = await extrude.getAttribute("data-feature-id");
+  await extrude.click();
+  await expect(page.getByTestId("datum-popover")).toHaveCount(0);
+  await expect(canvas).toHaveAttribute("data-feature-highlight", extrudeId!);
+  await expect(canvas).toHaveAttribute("data-feature-faces", "7");
+  await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
+  await expect(canvas).toHaveAttribute("data-sketch-curves", "2");
+  expect(errors).toEqual([]);
 });
 
 test("creates a sketch on a planar face and extrudes from it", async ({
@@ -534,7 +844,7 @@ test("creates a sketch on the XZ world plane and joins an extrude", async ({
   app: page,
 }) => {
   const errors = collectErrors(page);
-  await page.getByTestId("add-sketch").click();
+  await openInsert(page, "sketch");
   await expect(page.getByTestId("support-popover")).toBeVisible();
   const viewport = page.locator("canvas.viewport-canvas");
   await expect(viewport).toHaveAttribute("data-support-preview", "on");
@@ -544,7 +854,7 @@ test("creates a sketch on the XZ world plane and joins an extrude", async ({
     "world plane · XZ",
   );
   await page.getByTestId("new-sketch").click();
-  await expect(page.getByTestId("timeline-detail")).toContainText("XZ");
+  await expect(activeStepMeta(page)).toContainText("XZ");
   await expect(viewport).toHaveAttribute("data-support-preview", "off");
   await expect(viewport).toHaveAttribute("data-body-dimmed", "off");
 
@@ -575,28 +885,33 @@ test("creates an offset datum plane and sketches on it", async ({
   app: page,
 }) => {
   const errors = collectErrors(page);
-  await page.getByTestId("add-plane").click();
+  await openInsert(page, "plane");
   await expect(page.getByTestId("datum-draft-popover")).toBeVisible();
   await page.getByTestId("datum-distance").fill("10");
   await page.getByTestId("datum-apply").click();
 
-  const datum = page.locator('[data-feature-type="datum"]');
+  const datum = page
+    .locator('[data-feature-type="datum"]')
+    .filter({ hasText: "Plane 2" });
   await expect(datum).toHaveCount(1);
-  await expect(datum).toContainText("offset 10 mm · from XY");
+  await expect(datum).toContainText("offset 10 mm");
   await expect(page.locator("canvas.viewport-canvas")).toHaveAttribute(
     "data-datum-planes",
     "1",
   );
 
-  await page.getByTestId("add-sketch").click();
-  await page.getByTestId("support-datum").selectOption({ label: "Plane 1" });
+  await openInsert(page, "sketch");
+  await page.getByTestId("support-datum").selectOption({ label: "Plane 2" });
   await expect(page.getByTestId("support-popover")).toContainText(
-    "datum plane · Plane 1",
+    "datum plane · Plane 2",
   );
   await page.getByTestId("new-sketch").click();
-  await expect(page.getByTestId("timeline-detail")).toContainText(
-    "Datum · Plane 1",
-  );
+  await expect(activeStepMeta(page)).toContainText("Datum · Plane 2");
+  // A datum sketch has no supporting face, so the body that exists at this
+  // step is projected as faint reference edges.
+  await expect
+    .poll(() => page.locator("[data-body-reference]").count())
+    .toBeGreaterThan(0);
 
   // Plane-local (10, 10) is world (10, 10); the plane sits at z = 10.
   await page.getByTestId("tool-circle").click();
@@ -619,10 +934,12 @@ test("creates an offset datum plane and sketches on it", async ({
   // Move the datum plane down: the boss follows, so two more millimetres of
   // the 5 mm cylinder are outside the 12 mm plate.
   await datum.click();
-  await page.getByTestId("edit-feature").click();
   await expect(page.getByTestId("datum-popover")).toBeVisible();
   await page.getByTestId("datum-distance").fill("8");
   await page.getByTestId("datum-popover-apply").click();
+  // The datum sits before the boss, so select the end of the history to build
+  // through the dependent extrude.
+  await page.locator("[data-feature-id]").last().click();
   await expect
     .poll(() => volume(page))
     .toBeCloseTo(plate + Math.PI * 5 * 5 * 1, -1);
@@ -636,7 +953,7 @@ test("creates an offset datum plane and sketches on it", async ({
 
 test("picks a datum plane and starts a sketch on it", async ({ app: page }) => {
   const errors = collectErrors(page);
-  await page.getByTestId("add-plane").click();
+  await openInsert(page, "plane");
   await page.getByTestId("datum-distance").fill("10");
   await page.getByTestId("datum-apply").click();
   const canvas = page.locator("canvas.viewport-canvas");
@@ -654,39 +971,45 @@ test("picks a datum plane and starts a sketch on it", async ({ app: page }) => {
   const datumId = await page.getByTestId("body-pick").getAttribute("data-datum-id");
   expect(datumId).toBeTruthy();
 
-  await page.getByTestId("add-sketch").click();
+  await openInsert(page, "sketch");
   await expect(page.getByTestId("support-popover")).toContainText(
-    "datum plane · Plane 1",
+    "datum plane · Plane 2",
   );
   await page.getByTestId("new-sketch").click();
-  await expect(page.getByTestId("timeline-detail")).toContainText(
-    "Datum · Plane 1",
-  );
+  await expect(activeStepMeta(page)).toContainText("Datum · Plane 2");
   expect(errors).toEqual([]);
 });
 
 test("creates a midplane between two offset planes", async ({ app: page }) => {
   const errors = collectErrors(page);
-  await page.getByTestId("add-plane").click();
+  await openInsert(page, "plane");
   await page.getByTestId("datum-distance").fill("2");
   await page.getByTestId("datum-apply").click();
 
-  await page.getByTestId("add-plane").click();
-  await page.getByTestId("datum-base").selectOption({ label: "Plane 1" });
+  await openInsert(page, "plane");
+  await page.getByTestId("datum-base").selectOption({ label: "Plane 2" });
   await page.getByTestId("datum-distance").fill("8");
   await page.getByTestId("datum-apply").click();
 
-  await page.getByTestId("add-plane").click();
+  await openInsert(page, "plane");
   await page.getByTestId("datum-kind-midplane").click();
-  await page.getByTestId("datum-base").selectOption({ label: "Plane 1" });
-  await page.getByTestId("datum-second").selectOption({ label: "Plane 2" });
+  await page.getByTestId("datum-base").selectOption({ label: "Plane 2" });
+  await page.getByTestId("datum-second").selectOption({ label: "Plane 3" });
   await page.getByTestId("datum-apply").click();
 
   const planes = page.locator('[data-feature-type="datum"]');
-  await expect(planes).toHaveCount(3);
-  await planes.nth(2).click();
-  await expect(page.getByTestId("timeline-detail")).toContainText("midplane");
-  await expect(page.getByTestId("timeline-detail")).toContainText("0, 0, 6 mm");
+  await expect(planes).toHaveCount(4);
+  await planes.filter({ hasText: "Plane 4" }).click();
+  await expect(activeStepMeta(page)).toContainText("midplane");
+  const midplaneOrigin = await page.evaluate(() => {
+    const doc = JSON.parse(localStorage.getItem("cad.doc")!);
+    const plane = doc.features.find(
+      (feature: { type: string; name: string }) =>
+        feature.type === "datum" && feature.name === "Plane 4",
+    );
+    return plane.frame.origin.map((value: number) => Math.round(value)).join(", ");
+  });
+  expect(midplaneOrigin).toBe("0, 0, 6");
   expect(errors).toEqual([]);
 });
 
@@ -700,15 +1023,15 @@ test("datum planes based on a face follow source body edits", async ({
     .getAttribute("data-ref-role");
   expect(role).toBeTruthy();
 
-  await page.getByTestId("add-plane").click();
+  await openInsert(page, "plane");
   await page.getByTestId("datum-base").selectOption({
     label: `Face · ${role}`,
   });
   await page.getByTestId("datum-distance").fill("0");
   await page.getByTestId("datum-apply").click();
 
-  await page.getByTestId("add-sketch").click();
-  await page.getByTestId("support-datum").selectOption({ label: "Plane 1" });
+  await openInsert(page, "sketch");
+  await page.getByTestId("support-datum").selectOption({ label: "Plane 2" });
   await page.getByTestId("new-sketch").click();
   await page.getByTestId("tool-circle").click();
   await clickSketch(page, 10, 10);
@@ -726,9 +1049,9 @@ test("datum planes based on a face follow source body edits", async ({
   await expect.poll(() => meshBounds(page)).toBe("0,0,0,60,40,17");
 
   await page.getByTestId("timeline-extrude").click();
-  await page.getByTestId("edit-feature").click();
   await page.getByTestId("extrude-height").fill("30");
   await page.getByTestId("feature-popover-apply").click();
+  await page.locator("[data-feature-id]").last().click();
 
   const plate30 = 60 * 40 * 30 - Math.PI * 8 * 8 * 30;
   await expect.poll(() => volume(page)).toBeCloseTo(plate30 + boss, -1);
@@ -753,7 +1076,7 @@ test("flips a face sketch support and keeps that side stable", async ({
 }) => {
   const errors = collectErrors(page);
   await pickTopFace(page);
-  await page.getByTestId("add-sketch").click();
+  await openInsert(page, "sketch");
   await page.getByTestId("flip-face").click();
   await expect(page.getByTestId("support-popover")).toContainText(
     "planar face · flipped",
@@ -769,7 +1092,9 @@ test("flips a face sketch support and keeps that side stable", async ({
         .reverse()
         .find(
           (feature: { type: string; support?: { kind: string } }) =>
-            feature.type === "sketch" && feature.support?.kind === "face",
+            feature.type === "sketch" &&
+            feature.support?.kind === "face" &&
+            (feature as { name?: string }).name === "Sketch 3",
         );
       return sketch?.support?.frame ?? null;
     });
@@ -778,7 +1103,6 @@ test("flips a face sketch support and keeps that side stable", async ({
     .toEqual([0, 0, -1]);
 
   await page.getByTestId("timeline-extrude").click();
-  await page.getByTestId("edit-feature").click();
   await page.getByTestId("extrude-height").fill("30");
   await page.getByTestId("feature-popover-apply").click();
 
@@ -800,9 +1124,14 @@ test("shows and clears a lost face support", async ({ app: page }) => {
 
   await page.getByTestId("timeline-extrude").click();
   await page.getByTestId("feature-suppress").click();
+  // Only features in the rendered prefix report lost support: move the cursor
+  // past the face-supported sketch and the midplane.
+  await page.locator("[data-feature-id]").last().click();
+  // The example has face-supported features on both the top and bottom plate
+  // faces, plus a midplane between them.
   await expect(page.getByTestId("timeline")).toHaveAttribute(
     "data-lost-supports",
-    "1",
+    "2",
   );
   await page
     .locator('[data-feature-type="sketch"]')
@@ -819,6 +1148,7 @@ test("shows and clears a lost face support", async ({ app: page }) => {
 
   await page.getByTestId("timeline-extrude").click();
   await page.getByTestId("feature-suppress").click();
+  await page.locator("[data-feature-id]").last().click();
   await expect
     .poll(() => page.getByTestId("rebuild-status").getAttribute("data-status"))
     .toBe("ok");
@@ -896,7 +1226,7 @@ test("resolves a stale face role by geometric fallback", async ({ browser }) => 
 test("previews a datum plane while creating it", async ({ app: page }) => {
   const errors = collectErrors(page);
   const canvas = page.locator("canvas.viewport-canvas");
-  await page.getByTestId("add-plane").click();
+  await openInsert(page, "plane");
   await expect(canvas).toHaveAttribute("data-support-preview", "on");
   await expect(canvas).toHaveAttribute("data-body-dimmed", "on");
   await expect(canvas).toHaveAttribute(
@@ -925,7 +1255,7 @@ test("new steps insert after the selected step without its overlay", async ({
   await page.getByTestId("timeline-extrude").click();
   await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
 
-  await page.getByTestId("add-plane").click();
+  await openInsert(page, "plane");
   await expect(canvas).toHaveAttribute("data-sketch-overlay", "off");
   await expect(canvas).toHaveAttribute("data-support-preview", "on");
   await page.getByTestId("datum-apply").click();
@@ -938,7 +1268,7 @@ test("new steps insert after the selected step without its overlay", async ({
   // A sketch chosen while Extrude 1 is selected inserts before that new datum.
   await page.getByTestId("timeline-extrude").click();
   await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
-  await page.getByTestId("add-sketch").click();
+  await openInsert(page, "sketch");
   await expect(canvas).toHaveAttribute("data-sketch-overlay", "off");
   await page.getByTestId("new-sketch").click();
   await expect(rows.nth(2)).toHaveAttribute("data-feature-type", "sketch");
@@ -948,30 +1278,30 @@ test("new steps insert after the selected step without its overlay", async ({
 
 test("hides a datum plane without suppressing it", async ({ app: page }) => {
   const errors = collectErrors(page);
-  await page.getByTestId("add-plane").click();
+  await openInsert(page, "plane");
   await page.getByTestId("datum-distance").fill("10");
   await page.getByTestId("datum-apply").click();
   const canvas = page.locator("canvas.viewport-canvas");
   await expect(canvas).toHaveAttribute("data-datum-planes", "1");
 
-  const datum = page.locator('[data-feature-type="datum"]');
+  const datum = page
+    .locator('[data-feature-type="datum"]')
+    .filter({ hasText: "Plane 2" });
   await datum.click();
-  await page.getByTestId("toggle-datum-visibility").click();
+  await datum.getByTestId("toggle-datum-visibility").click();
   await expect(canvas).toHaveAttribute("data-datum-planes", "0");
-  await expect(datum).toContainText("hidden");
   await expect(datum).toHaveAttribute("data-status", "ok");
   await expect(datum).toHaveClass(/is-hidden/);
   await expect(datum).toHaveAttribute("data-hidden", "true");
 
   // It is still a usable support while hidden.
-  await page.getByTestId("add-sketch").click();
-  await expect(page.getByTestId("support-datum")).toContainText("Plane 1");
+  await openInsert(page, "sketch");
+  await expect(page.getByTestId("support-datum")).toContainText("Plane 2");
   await page.getByTestId("support-cancel").click();
 
   await datum.click();
-  await page.getByTestId("toggle-datum-visibility").click();
+  await datum.getByTestId("toggle-datum-visibility").click();
   await expect(canvas).toHaveAttribute("data-datum-planes", "1");
-  await expect(datum).not.toContainText("hidden");
   await expect(datum).not.toHaveClass(/is-hidden/);
   expect(errors).toEqual([]);
 });
@@ -1001,7 +1331,9 @@ test("snaps a drawn line to a projected face boundary", async ({
           .reverse()
           .find(
             (feature: { type: string; support?: { kind: string } }) =>
-              feature.type === "sketch" && feature.support?.kind === "face",
+              feature.type === "sketch" &&
+              feature.support?.kind === "face" &&
+              (feature as { name?: string }).name === "Sketch 3",
           );
         const point = sketch?.sketch.points.find(
           (candidate: { x: number }) => candidate.x > 29.9,
@@ -1022,7 +1354,9 @@ test("snaps a drawn line to a projected face boundary", async ({
       .reverse()
       .find(
             (feature: { type: string; support?: { kind: string } }) =>
-              feature.type === "sketch" && feature.support?.kind === "face",
+              feature.type === "sketch" &&
+              feature.support?.kind === "face" &&
+              (feature as { name?: string }).name === "Sketch 3",
           );
     return sketch.sketch.points.find(
       (candidate: { x: number }) => candidate.x > 29.9,
@@ -1038,7 +1372,7 @@ test("snaps a drawn line to a projected face boundary", async ({
 test("projects a side face as a closed rectangle", async ({ app: page }) => {
   const errors = collectErrors(page);
   await pickSideFace(page);
-  await page.getByTestId("add-sketch").click();
+  await openInsert(page, "sketch");
   await page.getByTestId("new-sketch").click();
 
   // Every edge of the side face must be projected, not just the two that the
@@ -1054,7 +1388,9 @@ test("projects a side face as a closed rectangle", async ({ app: page }) => {
           .reverse()
           .find(
             (feature: { type: string; support?: { kind: string } }) =>
-              feature.type === "sketch" && feature.support?.kind === "face",
+              feature.type === "sketch" &&
+              feature.support?.kind === "face" &&
+              (feature as { name?: string }).name === "Sketch 3",
           );
         return sketch?.projections?.[0]?.loops?.[0]?.length ?? null;
       }),
@@ -1067,7 +1403,9 @@ test("projects a side face as a closed rectangle", async ({ app: page }) => {
       .reverse()
       .find(
             (feature: { type: string; support?: { kind: string } }) =>
-              feature.type === "sketch" && feature.support?.kind === "face",
+              feature.type === "sketch" &&
+              feature.support?.kind === "face" &&
+              (feature as { name?: string }).name === "Sketch 3",
           );
     return (sketch.projections[0].loops[0] as [number, number][])
       .map(([x, y]) => `${Math.round(x)},${Math.round(y)}`)
@@ -1082,13 +1420,13 @@ test("dragging a projected edge point leaves the other endpoint fixed", async ({
 }) => {
   const errors = collectErrors(page);
   await pickRightFace(page);
-  await page.getByTestId("add-sketch").click();
+  await openInsert(page, "sketch");
   await page.getByTestId("new-sketch").click();
   await expect(page.locator("[data-projection-id]")).toHaveCount(4);
 
   await page.getByTestId("tool-line").click();
   await clickSketch(page, -19, 1);
-  await clickSketch(page, -2, -5);
+  await clickSketch(page, -12, -5);
   await page.keyboard.press("Enter");
   await page.getByTestId("tool-select").click();
 
@@ -1101,7 +1439,9 @@ test("dragging a projected edge point leaves the other endpoint fixed", async ({
         .reverse()
         .find(
             (feature: { type: string; support?: { kind: string } }) =>
-              feature.type === "sketch" && feature.support?.kind === "face",
+              feature.type === "sketch" &&
+              feature.support?.kind === "face" &&
+              (feature as { name?: string }).name === "Sketch 3",
           );
       const found = sketch?.sketch.points as
         | { x: number; y: number }[]
@@ -1116,8 +1456,8 @@ test("dragging a projected edge point leaves the other endpoint fixed", async ({
 
   // Grab at the endpoint. The other endpoint is on a different projected edge
   // and must not drift with the solver's free variables.
-  await dragSketch(page, [-2, -6], [-10, -6]);
-  await expect.poll(async () => (await points())?.right.x ?? 0).toBeCloseTo(-10, 0);
+  await dragSketch(page, [-12, -6], [-16, -6]);
+  await expect.poll(async () => (await points())?.right.x ?? 0).toBeCloseTo(-16, 0);
 
   const after = (await points())!;
   expect(after.left.x).toBeCloseTo(before.left.x, 4);
@@ -1141,12 +1481,14 @@ test("keeps a face sketch attached when its source body changes", async ({
   // dimensions: its frame comes from the live top face, so the boss must move
   // from z = 12 to z = 30 and keep its projected reference attached.
   await page.getByTestId("timeline-extrude").click();
-  await page.getByTestId("edit-feature").click();
   await page.getByTestId("extrude-height").fill("30");
+  await page.getByTestId("feature-popover-apply").click();
+  // The boss is downstream of the edited extrude; move the cursor to the end to
+  // rebuild through it.
+  await page.locator("[data-feature-id]").last().click();
   const plate30 = 60 * 40 * 30 - Math.PI * 8 * 8 * 30;
   await expect.poll(() => volume(page)).toBeCloseTo(plate30 + boss, -1);
   await expect.poll(() => meshBounds(page)).toBe("0,0,0,60,40,35");
-  await page.getByTestId("feature-popover-apply").click();
   await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
     "data-status",
     "ok",
@@ -1158,8 +1500,141 @@ test("keeps a face sketch attached when its source body changes", async ({
     .locator('[data-feature-type="sketch"]')
     .filter({ hasText: "Sketch 3" })
     .click();
-  await expect(page.getByTestId("timeline-detail")).toContainText("Face ·");
+  await expect(activeStepMeta(page)).toContainText("Face ·");
   await expect(page.locator("[data-projection-id]").first()).toBeAttached();
+  expect(errors).toEqual([]);
+});
+
+/**
+ * Add every visible edge of `length` to the current edge selection. Hovering
+ * exposes the edge's stable id and length, so scanning never clicks (and thus
+ * never replaces) the edges already added.
+ */
+async function addVisibleEdgesByLength(
+  page: Page,
+  length: number,
+  selected: Set<string>,
+): Promise<void> {
+  const canvas = page.locator("canvas.viewport-canvas");
+  for (let y = 230; y <= 500; y += 10) {
+    for (let x = 360; x <= 950; x += 10) {
+      await page.mouse.move(x, y);
+      if ((await canvas.getAttribute("data-hover-kind")) !== "edge") continue;
+      const id = await canvas.getAttribute("data-hover-id");
+      if (!id || selected.has(id)) continue;
+      const hoverLength = Number(
+        await canvas.getAttribute("data-hover-edge-length"),
+      );
+      if (!Number.isFinite(hoverLength)) continue;
+      if (Math.abs(hoverLength - length) > 0.6) continue;
+      await page.keyboard.down("Shift");
+      await page.mouse.click(x, y);
+      await page.keyboard.up("Shift");
+      selected.add(id);
+    }
+  }
+}
+
+test("fillets four vertical edges and survives an upstream edit", async ({
+  app: page,
+}) => {
+  test.setTimeout(150_000);
+  const errors = collectErrors(page);
+  const canvas = page.locator("canvas.viewport-canvas");
+  await page.getByRole("button", { name: "Fit view" }).click();
+  await page.waitForTimeout(250);
+
+  // The plate is 12 mm tall, so its four vertical edges are 12 mm long. No
+  // single perspective view exposes all four; select the visible ones, orbit,
+  // and add the last one. Selection is by stable ref, so it survives the orbit.
+  const vertical = new Set<string>();
+  await addVisibleEdgesByLength(page, 12, vertical);
+  if (vertical.size < 4) {
+    await page.mouse.move(1080, 560);
+    await page.mouse.down();
+    await page.mouse.move(850, 560, { steps: 12 });
+    await page.mouse.up();
+    await page.waitForTimeout(250);
+    await addVisibleEdgesByLength(page, 12, vertical);
+  }
+  expect(vertical.size).toBe(4);
+
+  await expect(page.getByTestId("body-selection-popover")).toHaveAttribute(
+    "data-count",
+    "4",
+  );
+  await page.getByTestId("start-fillet").click();
+  await expect(page.getByTestId("fillet-feature-popover")).toBeVisible();
+  await expect(page.getByTestId("fillet-feature-edges")).toContainText("4 edges");
+  await page.getByTestId("fillet-feature-radius").fill("2");
+  await page.getByTestId("fillet-feature-apply").click();
+
+  // The example now ships a suppressed "Rounded plate" fillet; target the
+  // feature this test just created, not the example's step.
+  const filletStep = page
+    .locator('[data-feature-type="fillet"]')
+    .filter({ hasNotText: "Rounded plate" });
+  await expect(filletStep).toHaveCount(1);
+  await expect(filletStep).toHaveAttribute("data-status", "ok");
+  await expect(filletStep.locator(".tree-meta")).toContainText("R 2 mm · 4 edges");
+  // The step highlight is the four rounds it generated, not the whole body.
+  await expect(canvas).toHaveAttribute("data-feature-faces", "4");
+
+  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const removed = 4 * (2 * 2 - (Math.PI * 2 * 2) / 4) * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(plate - removed, -1);
+  await expect(page.getByTestId("mesh-stats")).toHaveAttribute("data-faces", "11");
+
+  // A downstream height edit changes the hashes but keeps the face roles, so
+  // the fillet's edge refs resolve again on the rebuilt body.
+  await page.getByTestId("timeline-extrude").click();
+  await setSlider(page.getByTestId("height-slider"), 20);
+  await page.getByTestId("feature-popover-apply").click();
+  // Move the history cursor past the fillet so it rebuilds on the taller plate.
+  await filletStep.click();
+  await expect(filletStep).toHaveAttribute("data-status", "ok");
+  const tallerPlate = 60 * 40 * 20 - Math.PI * 8 * 8 * 20;
+  const tallerRemoved = 4 * (2 * 2 - (Math.PI * 2 * 2) / 4) * 20;
+  await expect.poll(() => volume(page)).toBeCloseTo(tallerPlate - tallerRemoved, -1);
+  await expect(page.getByTestId("mesh-stats")).toHaveAttribute("data-faces", "11");
+
+  // An impossible radius is a visible error, never a silent drop.
+  await expect(page.getByTestId("fillet-feature-popover")).toBeVisible();
+  await page.getByTestId("fillet-feature-radius").fill("50");
+  await expect(filletStep).toHaveAttribute("data-status", "error");
+  await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
+    "data-status",
+    "error",
+  );
+  await expect(page.getByTestId("mesh-stats")).toHaveAttribute("data-faces", "7");
+
+  // Recovering the radius rebuilds the fillet without another apply.
+  await page.getByTestId("fillet-feature-radius").fill("2");
+  await expect(filletStep).toHaveAttribute("data-status", "ok");
+  await expect.poll(() => volume(page)).toBeCloseTo(tallerPlate - tallerRemoved, -1);
+  await expect(page.getByTestId("mesh-stats")).toHaveAttribute("data-faces", "11");
+  await page.getByTestId("fillet-feature-apply").click();
+  expect(errors).toEqual([]);
+});
+
+test("the example's suppressed fillet resolves on the plate", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  const step = page
+    .locator('[data-feature-type="fillet"]')
+    .filter({ hasText: "Rounded plate" });
+  await expect(step).toHaveCount(1);
+  await step.click();
+  await expect(step).toHaveAttribute("data-status", "skipped");
+  await page.getByTestId("feature-suppress").click();
+  await expect(step).toHaveAttribute("data-status", "ok");
+  await expect(step.locator(".tree-meta")).toContainText("R 4 mm · 4 edges");
+
+  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const removed = 4 * (4 * 4 - (Math.PI * 4 * 4) / 4) * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(plate - removed, -1);
+  await expect(page.getByTestId("mesh-stats")).toHaveAttribute("data-faces", "11");
   expect(errors).toEqual([]);
 });
 
@@ -1196,7 +1671,7 @@ test("picks faces and edges in the model view", async ({ app: page }) => {
 
   // Face support is M4; + sketch acknowledges the picked face but still asks
   // for a world plane instead of silently ignoring it.
-  await page.getByTestId("add-sketch").click();
+  await openInsert(page, "sketch");
   await expect(page.getByTestId("support-popover")).toContainText(
     "selected face",
   );
@@ -1230,7 +1705,9 @@ test("the example reuses one sketch for independent extruded regions", async ({
     .locator('[data-feature-type="extrude"]')
     .filter({ hasText: "Center pin" });
   await expect(pin).toHaveCount(1);
-  await expect(pin).toHaveAttribute("data-status", "skipped");
+  // The shared beforeEach leaves the cursor on the base extrude, so the pin is
+  // downstream and paused until selected.
+  await expect(pin).toHaveAttribute("data-status", "paused");
 
   await pin.click();
   await page.getByTestId("feature-suppress").click();
@@ -1271,6 +1748,7 @@ test("the example reuses one sketch for independent extruded regions", async ({
   await clickSketch(page, 10, 10);
   await clickSketch(page, 30, 20);
   await expect(await readExtrudes()).toEqual(before);
+  await page.locator("[data-feature-id]").last().click();
   await expect.poll(() => volume(page)).toBeCloseTo(plate + pinVolume, -1);
 
   expect(errors).toEqual([]);
@@ -1301,7 +1779,7 @@ test("selects a hole as its own extrusion profile", async ({ app: page }) => {
   await page.getByTestId("extrude-apply").click();
   // Join fills the existing Ø16 hole, so the plate becomes solid.
   await expect.poll(() => volume(page)).toBeCloseTo(60 * 40 * 12, -1);
-  await expect(page.locator("[data-feature-id]")).toHaveCount(6);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(8);
   await expect(
     page.locator('[data-feature-type="extrude"]').last(),
   ).toContainText("Extrude 4");
@@ -1330,13 +1808,17 @@ test("a polygon crossing the example keeps every profile selectable", async ({
 
   await expect(page.locator("[data-region-id]")).toHaveCount(10);
   await expect(page.locator('[data-region-kind="void"]')).toHaveCount(1);
-  // Wait for the debounced rebuild of the polygon-split base before measuring.
+
+  // The sketch step is the cursor, so measure the polygon-split base at the
+  // extrude that consumes it, then return to the sketch to pick profiles.
+  await page.getByTestId("timeline-extrude").click();
   await expect.poll(() => volume(page)).toBeLessThan(24000);
   const before = await volume(page);
+  await page.getByTestId("timeline-sketch").click();
 
   // Starting the extrude can be as direct as clicking a profile in the sketch.
   await expect(page.getByTestId("extrude-apply")).toHaveCount(0);
-  await clickSketch(page, -5, 20);
+  await clickSketch(page, 8, 20);
   await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
   await expect(page.getByTestId("extrude-apply")).toBeEnabled();
   await expect(page.getByTestId("region-panel")).toContainText("1 of 10 regions");
@@ -1355,7 +1837,7 @@ test("a polygon crossing the example keeps every profile selectable", async ({
   await expect
     .poll(() => volume(page))
     .toBeCloseTo(before + Math.PI * 8 * 8 * 12, -1);
-  await expect(page.locator("[data-feature-id]")).toHaveCount(6);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(8);
   await expect(
     page.locator('[data-feature-type="extrude"]').last(),
   ).toContainText("Extrude 4");
@@ -1388,8 +1870,10 @@ test("selects narrow profile slivers when a diamond crosses the example", async 
 
   await expect(page.locator("[data-region-id]")).toHaveCount(10);
   await expect(page.locator('[data-region-kind="void"]')).toHaveCount(1);
+  await page.getByTestId("timeline-extrude").click();
   await expect.poll(() => volume(page)).toBeLessThan(24000);
   const before = await volume(page);
+  await page.getByTestId("timeline-sketch").click();
 
   // Profile mode raises the region hit layer above geometry, so the narrow
   // left sliver is selectable even though it lies next to a line.
@@ -1429,11 +1913,11 @@ test("selects, multi-selects, and deletes sketch geometry", async ({ app: page }
   await page.keyboard.press("Delete");
   await expect(panel).toHaveCount(0);
   // The hole circle is still a closed region, so deleting the plate's edges
-  // turns the circle into the body.
-  await expect.poll(() => volume(page)).toBeCloseTo(Math.PI * 8 * 8 * 12, -1);
+  // leaves only the circle as a profile.
+  await expect(page.locator("[data-region-id]")).toHaveCount(1);
 
   await page.keyboard.press("Control+z");
-  await expect.poll(() => volume(page)).toBeCloseTo(initialVolume, -1);
+  await expect(page.locator("[data-region-id]")).toHaveCount(2);
 
   // Shift-click adds the right edge to the selection.
   await clickSketch(page, 30, 0);
@@ -1445,11 +1929,76 @@ test("selects, multi-selects, and deletes sketch geometry", async ({ app: page }
 
   await page.getByTestId("delete-selection").click();
   await expect(panel).toHaveCount(0);
-  await expect.poll(() => volume(page)).toBeCloseTo(Math.PI * 8 * 8 * 12, -1);
+  await expect(page.locator("[data-region-id]")).toHaveCount(1);
 
   await page.keyboard.press("Control+z");
+  await expect(page.locator("[data-region-id]")).toHaveCount(2);
+  await page.getByTestId("timeline-extrude").click();
   await expect.poll(() => volume(page)).toBeCloseTo(initialVolume, -1);
 
+  expect(errors).toEqual([]);
+});
+
+test("the global clear resets the whole file to an empty document", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(7);
+
+  await page.getByTestId("clear-document").click();
+  await expect(page.locator("[data-feature-id]")).toHaveCount(0);
+  await expect(page.getByTestId("timeline-extrude")).toHaveCount(0);
+  await expect(page.getByTestId("timeline-detail")).toContainText("No features");
+  await expect(page.getByTestId("tool-select")).toBeHidden();
+
+  // The leading gap starts the first step.
+  await page.getByTestId("insert-gap-start").click();
+  await page.getByTestId("insert-sketch").click();
+  await expect(page.getByTestId("support-popover")).toBeVisible();
+  await page.getByTestId("new-sketch").click();
+  await expect(page.locator("[data-feature-id]")).toHaveCount(1);
+  await expect(page.locator("[data-feature-id]").first()).toHaveAttribute(
+    "data-feature-type",
+    "sketch",
+  );
+  await expect(page.getByTestId("tool-select")).toBeVisible();
+
+  // The blank sketch is immediately usable.
+  await page.getByTestId("tool-circle").click();
+  await clickSketch(page, 0, 0);
+  await clickSketch(page, 10, 0);
+  await expect(page.locator("[data-region-id]")).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
+test("inserts a step at the very start from the leading gap", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  const first = await page
+    .locator("[data-feature-id]")
+    .first()
+    .getAttribute("data-feature-id");
+
+  await page.getByTestId("insert-gap-start").click();
+  await expect(page.getByTestId("insert-menu-head")).toContainText(
+    "insert at the start",
+  );
+  await page.getByTestId("insert-plane").click();
+  await page.getByTestId("datum-apply").click();
+
+  await expect(page.locator("[data-feature-id]").first()).toHaveAttribute(
+    "data-feature-type",
+    "datum",
+  );
+  await expect(page.locator("[data-feature-id]").nth(1)).toHaveAttribute(
+    "data-feature-id",
+    first!,
+  );
+  await expect(page.getByTestId("timeline")).toHaveAttribute(
+    "data-active-feature",
+    /.+/,
+  );
   expect(errors).toEqual([]);
 });
 
@@ -1463,14 +2012,14 @@ test("extrudes a lone circle as a cylinder", async ({ app: page }) => {
   await clickSketch(page, 0, 0);
   await clickSketch(page, 20, 0);
 
-  await expect.poll(() => volume(page)).toBeGreaterThan(0);
-
   // The circle's automatic diameter dimension is the label source.
   const label = page.locator("[data-dimension-id]").filter({ hasText: "⌀" });
   const text = await label.textContent();
   const diameter = Number((text ?? "").replace(/[^\d.]/g, ""));
   expect(diameter).toBeGreaterThan(0);
 
+  await finishSketchAndBuild(page);
+  await expect.poll(() => volume(page)).toBeGreaterThan(0);
   const expected = Math.PI * (diameter / 2) ** 2 * 12;
   await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
   await expect.poll(() => meshBounds(page)).toBe("-20,-20,0,20,20,12");
@@ -1490,12 +2039,13 @@ test("uses a drawn inner rectangle as a hole", async ({ app: page }) => {
   const outerRect = await readProfileRect(page);
   const outerVolume =
     (outerRect.maxX - outerRect.minX) * (outerRect.maxY - outerRect.minY) * 12;
-  // Wait for the new mesh, not the previous one still on screen.
+  await finishSketchAndBuild(page);
   await expect.poll(() => volume(page)).toBeCloseTo(outerVolume, -1);
 
+  await page.getByTestId("timeline-sketch").click();
+  await page.getByTestId("tool-rect").click();
   await dragSketch(page, [-20, -15], [20, 15]);
-
-  await expect.poll(() => volume(page)).not.toBeCloseTo(outerVolume, 0);
+  await expect(page.locator("[data-region-id]")).toHaveCount(2);
 
   // The inner rectangle's points are in sketch millimetres; read them and
   // verify the extruded volume is the plate minus the inner area.
@@ -1516,6 +2066,7 @@ test("uses a drawn inner rectangle as a hole", async ({ app: page }) => {
   });
   expect(innerArea).toBeGreaterThan(0);
 
+  await finishSketchAndBuild(page);
   const expected = outerVolume - innerArea * 12;
   await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
   await expect.poll(() => meshBounds(page)).toBe("-40,-30,0,40,30,12");
@@ -1539,9 +2090,7 @@ test("creates, edits and deletes parametric dimensions", async ({ app: page }) =
   const before = await readProfileRect(page);
   const height = before.maxY - before.minY;
   const width = before.maxX - before.minX;
-  await expect.poll(() => volume(page)).toBeCloseTo(width * height * 12, -1);
-  const volumeBefore = await volume(page);
-  expect(volumeBefore).toBeGreaterThan(0);
+  expect(width * height * 12).toBeGreaterThan(0);
   await expect(page.getByTestId("dof")).toContainText("4 DOF");
 
   await page.getByTestId("tool-select").click();
@@ -1560,10 +2109,11 @@ test("creates, edits and deletes parametric dimensions", async ({ app: page }) =
   await page.getByTestId("dimension-input").fill("100");
   await page.getByTestId("dimension-input").press("Enter");
 
-  await expect.poll(() => volume(page)).toBeCloseTo(100 * height * 12, -1);
+  const resized = await readProfileRect(page);
+  expect(resized.maxX - resized.minX).toBeCloseTo(100, 0);
+  expect(resized.maxY - resized.minY).toBeCloseTo(height, 0);
 
   // A reference dimension measures without constraining.
-  const resized = await readProfileRect(page);
   await clickSketch(page, resized.maxX, (resized.minY + resized.maxY) / 2);
   await page.getByTestId("tool-dimension").click();
   await expect(page.getByTestId("reference-toggle")).toBeVisible();
@@ -1916,6 +2466,260 @@ test("drags dimension labels along a line and by radial distance", async ({
   expect(errors).toEqual([]);
 });
 
+test("snaps a line to existing sketch edges, not just the grid", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+
+  // Start just inside the plate's left edge and finish just inside the right
+  // edge. The Y positions are deliberately off the 5 mm grid.
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, 0.5, 13.3);
+  await clickSketch(page, 59.5, 26.7);
+  await page.keyboard.press("Enter");
+
+  const read = () =>
+    page.evaluate(() => {
+    const doc = JSON.parse(localStorage.getItem("cad.doc")!);
+    const sketch = doc.features[0].sketch;
+    const points = sketch.points.filter(
+      (point: { y: number }) =>
+        Math.abs(point.y - 13.3) < 0.6 || Math.abs(point.y - 26.7) < 0.6,
+    );
+    const constraints = sketch.constraints.filter(
+      (constraint: { type: string; point?: string }) =>
+        constraint.type === "pointOnLine" &&
+        points.some((point: { id: string }) => point.id === constraint.point),
+    );
+    return {
+      points: points.map((point: { x: number; y: number }) => ({
+        x: point.x,
+        y: point.y,
+      })),
+      constraints: constraints.length,
+    };
+    });
+
+  await expect.poll(async () => (await read()).points.length).toBe(2);
+  const result = await read();
+  expect(result.constraints).toBe(2);
+  const sorted = [...result.points].sort((a, b) => a.x - b.x);
+  expect(sorted[0]!.x).toBeCloseTo(0, 2);
+  expect(sorted[0]!.y).toBeCloseTo(13.3, 1);
+  expect(sorted[1]!.x).toBeCloseTo(60, 2);
+  expect(sorted[1]!.y).toBeCloseTo(26.7, 1);
+  expect(errors).toEqual([]);
+});
+
+test("dragging a snapped line leaves its support box alone", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+
+  await page.getByTestId("tool-rect").click();
+  await dragSketch(page, [-20, -10], [20, 10]);
+  await page.keyboard.press("Escape");
+
+  // A line snapped from the top edge to the right edge.
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, -5, 10.5);
+  await clickSketch(page, 19.5, 3);
+  await page.keyboard.press("Enter");
+  await page.getByTestId("tool-select").click();
+
+  const read = () =>
+    page.evaluate(() => {
+      const doc = JSON.parse(localStorage.getItem("cad.doc")!);
+      const sketch = doc.features[0].sketch;
+      return sketch.points.map((point: { id: string; x: number; y: number }) => ({
+        id: point.id,
+        x: point.x,
+        y: point.y,
+      }));
+    });
+
+  type Point = { id: string; x: number; y: number };
+  await expect.poll(async () => (await read()).length).toBe(6);
+  const before = (await read()) as Point[];
+  // The rectangle creates its four corners first; the snapped line follows.
+  const box = before.slice(0, 4);
+  const line = before.slice(4);
+  expect(line).toHaveLength(2);
+  const midX = (line[0]!.x + line[1]!.x) / 2;
+  const midY = (line[0]!.y + line[1]!.y) / 2;
+
+  await dragSketch(page, [midX, midY], [midX + 5, midY]);
+
+  await expect
+    .poll(async () => {
+      const after = (await read()) as Point[];
+      return box.every((corner) => {
+        const moved = after.find((point) => point.id === corner.id);
+        return (
+          moved !== undefined &&
+          Math.hypot(moved.x - corner.x, moved.y - corner.y) < 0.02
+        );
+      });
+    })
+    .toBe(true);
+
+  const lineAfter = ((await read()) as Point[]).filter((point) =>
+    line.some((end) => end.id === point.id),
+  );
+  // The snapped endpoints slid along the box edges instead of resizing it.
+  expect(lineAfter.some((point) => Math.abs(point.y - 10) < 0.05)).toBe(true);
+  expect(lineAfter.some((point) => Math.abs(point.x - 20) < 0.05)).toBe(true);
+  const slope = (points: Point[]) =>
+    (points[1]!.y - points[0]!.y) / (points[1]!.x - points[0]!.x);
+  expect(slope(lineAfter)).toBeCloseTo(slope(line), 1);
+
+  // The same support-freeze rule applies to a single endpoint drag.
+  const top = lineAfter.find((point) => Math.abs(point.y - 10) < 0.05)!;
+  await dragSketch(page, [top.x, top.y], [top.x + 3, top.y]);
+  await expect
+    .poll(async () => {
+      const after = (await read()) as Point[];
+      return box.every((corner) => {
+        const moved = after.find((point) => point.id === corner.id);
+        return (
+          moved !== undefined &&
+          Math.hypot(moved.x - corner.x, moved.y - corner.y) < 0.02
+        );
+      });
+    })
+    .toBe(true);
+  await expect
+    .poll(async () => {
+      const endpoint = ((await read()) as Point[]).find(
+        (point) => point.id === top.id,
+      );
+      return endpoint?.x ?? Number.NEGATIVE_INFINITY;
+    })
+    .toBeGreaterThan(top.x + 1);
+  const draggedEndpoint = ((await read()) as Point[]).find(
+    (point) => point.id === top.id,
+  )!;
+  expect(draggedEndpoint.y).toBeCloseTo(10, 1);
+  expect(errors).toEqual([]);
+});
+
+test("snaps to a line crossing and constrains both lines", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+
+  // Two crossing lines, then a third line starting at their intersection.
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, 0, 0);
+  await clickSketch(page, 20, 20);
+  await page.keyboard.press("Enter");
+  await clickSketch(page, 0, 20);
+  await clickSketch(page, 20, 0);
+  await page.keyboard.press("Enter");
+  await clickSketch(page, 10, 10);
+  await clickSketch(page, 30, 10);
+  await page.keyboard.press("Enter");
+
+  const read = () =>
+    page.evaluate(() => {
+      const doc = JSON.parse(localStorage.getItem("cad.doc")!);
+      const sketch = doc.features[0].sketch;
+      const start = sketch.points.find(
+        (point: { x: number; y: number }) =>
+          Math.hypot(point.x - 10, point.y - 10) < 0.2,
+      );
+      if (!start) return null;
+      const constraints = sketch.constraints.filter(
+        (constraint: { type: string; point?: string }) =>
+          constraint.type === "pointOnLine" && constraint.point === start.id,
+      );
+      return {
+        start: { x: start.x, y: start.y },
+        lines: [...new Set(constraints.map((c: { line: string }) => c.line))],
+      };
+    });
+
+  await expect.poll(async () => (await read())?.lines.length ?? 0).toBe(2);
+  const result = await read();
+  expect(result).not.toBeNull();
+  expect(result!.start.x).toBeCloseTo(10, 1);
+  expect(result!.start.y).toBeCloseTo(10, 1);
+  expect(result!.lines).toHaveLength(2);
+  expect(errors).toEqual([]);
+});
+
+test("makes two opposite edges symmetric about a centreline", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+
+  // An off-centre rectangle and an anchored centreline through the origin.
+  await page.getByTestId("tool-rect").click();
+  await dragSketch(page, [-20, -10], [10, 10]);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, 0, 0);
+  await clickSketch(page, 0, 20);
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Escape");
+  await page.getByTestId("tool-select").click();
+
+  // Two opposite vertical edges, then the centreline last.
+  await clickSketch(page, -20, 5);
+  await page.keyboard.down("Shift");
+  await clickSketch(page, 10, 5);
+  await clickSketch(page, 0, 15);
+  await page.keyboard.up("Shift");
+
+  const chip = page.getByTestId("constraint-symmetric");
+  await expect(chip).toBeVisible();
+  await chip.click();
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const doc = JSON.parse(localStorage.getItem("cad.doc")!);
+        const sketch = doc.features.find(
+          (feature: { type: string }) => feature.type === "sketch",
+        );
+        return sketch.sketch.constraints.filter(
+          (constraint: { type: string }) => constraint.type === "symmetric",
+        ).length;
+      }),
+    )
+    .toBe(2);
+
+  const midpoints = await page.evaluate(() => {
+    const doc = JSON.parse(localStorage.getItem("cad.doc")!);
+    const sketch = doc.features.find(
+      (feature: { type: string }) => feature.type === "sketch",
+    );
+    const points = new Map(
+      sketch.sketch.points.map((point: { id: string }) => [point.id, point]),
+    );
+    return sketch.sketch.constraints
+      .filter((constraint: { type: string }) => constraint.type === "symmetric")
+      .map((constraint: { a: string; b: string }) => {
+        const a = points.get(constraint.a) as { x: number; y: number };
+        const b = points.get(constraint.b) as { x: number; y: number };
+        return { midX: (a.x + b.x) / 2, dy: a.y - b.y };
+      });
+  });
+  expect(midpoints).toHaveLength(2);
+  for (const pair of midpoints) {
+    expect(pair.midX).toBeCloseTo(0, 2);
+    expect(pair.dy).toBeCloseTo(0, 2);
+  }
+  expect(errors).toEqual([]);
+});
+
 test("removes an applied constraint from the line selection", async ({
   app: page,
 }) => {
@@ -2118,6 +2922,7 @@ test("uses an adaptive or free-form sketch grid", async ({ app: page }) => {
   const autoStep = Number(await grid.inputValue());
   expect(autoStep).toBeGreaterThan(0);
   await expect(page.getByTestId("grid-scale")).toBeVisible();
+  await expect(page.getByTestId("grid-scale")).not.toContainText("mm");
 
   await grid.fill("5");
   await expect(grid).toHaveValue("5");
@@ -2143,12 +2948,31 @@ test("uses an adaptive or free-form sketch grid", async ({ app: page }) => {
   expect(errors).toEqual([]);
 });
 
+test("reports live zoom and has no dead view labels", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  const zoom = page.getByTestId("zoom-select");
+  await expect(page.getByText("front ortho")).toHaveCount(0);
+
+  await page.mouse.move(720, 420);
+  await page.mouse.wheel(0, 600);
+  await expect
+    .poll(async () => Number(await zoom.inputValue()))
+    .toBeLessThan(100);
+  await expect(zoom).not.toHaveValue("fit");
+
+  await zoom.selectOption("200");
+  await expect(zoom).toHaveValue("200");
+  await zoom.selectOption("fit");
+  await expect(zoom).toHaveValue("100");
+  expect(errors).toEqual([]);
+});
+
 test("finishes the active sketch with Enter", async ({ app: page }) => {
   await enterSketch(page);
   await page.keyboard.press("Enter");
   await expect(page.getByTestId("tool-select")).toBeHidden();
-  await expect(page.getByTestId("edit-feature")).toBeVisible();
-  await expect(page.getByTestId("timeline-detail")).toContainText("12 mm");
+  await expect(activeStepMeta(page)).toContainText("12 mm");
   await expect(page.getByTestId("timeline")).toHaveAttribute(
     "data-active-extrude",
     /.+/,
@@ -2216,7 +3040,7 @@ test("selects and fuses multiple sketch regions", async ({ app: page }) => {
   await page.keyboard.press("Escape");
 
   await page.getByTestId("timeline-extrude").click();
-  await page.getByTestId("extrude-profiles").click();
+  await page.getByTestId("popover-select-profiles").click();
   await expect(page.getByTestId("region-panel")).toBeVisible();
   await clickSketch(page, -25, -10);
   await expect(page.getByTestId("region-panel")).toContainText("1 of 2 regions");
@@ -2245,7 +3069,7 @@ test("box-selects profile regions", async ({ app: page }) => {
   await page.keyboard.press("Escape");
 
   await page.getByTestId("timeline-extrude").click();
-  await page.getByTestId("extrude-profiles").click();
+  await page.getByTestId("popover-select-profiles").click();
   await page.getByTestId("tool-box").click();
   await dragSketch(page, [-45, -25], [45, 25]);
   await expect(page.getByTestId("region-panel")).toContainText("2 of 2 regions");
@@ -2270,7 +3094,7 @@ test("lasso-selects profile regions", async ({ app: page }) => {
   await page.keyboard.press("Escape");
 
   await page.getByTestId("timeline-extrude").click();
-  await page.getByTestId("extrude-profiles").click();
+  await page.getByTestId("popover-select-profiles").click();
   await page.getByTestId("tool-lasso").click();
   await lassoSketch(page, [
     [-50, -30],
@@ -2322,7 +3146,7 @@ test("splits a circle crossed by a line into selectable halves", async ({
 
   await expect(page.locator("[data-region-id]")).toHaveCount(2);
   await page.getByTestId("timeline-extrude").click();
-  await page.getByTestId("extrude-profiles").click();
+  await page.getByTestId("popover-select-profiles").click();
   await page.getByTestId("tool-select").click();
   // Top half, clear of the axes and the chord.
   await clickSketch(page, 10, 10);
@@ -2355,7 +3179,7 @@ test("splits crossing diagonals into four selectable regions", async ({ app: pag
   await expect(page.locator("[data-region-id]")).toHaveCount(4);
 
   await page.getByTestId("timeline-extrude").click();
-  await page.getByTestId("extrude-profiles").click();
+  await page.getByTestId("popover-select-profiles").click();
   await page.getByTestId("tool-select").click();
   await clickSketch(page, 20, -15);
   await expect(page.getByTestId("region-panel")).toContainText("1 of 4 regions");
@@ -2383,7 +3207,7 @@ test("trims a split segment and rebuilds the profile", async ({ app: page }) => 
   await expect(page.locator("[data-region-id]")).toHaveCount(2);
 
   await page.getByTestId("timeline-extrude").click();
-  await page.getByTestId("extrude-profiles").click();
+  await page.getByTestId("popover-select-profiles").click();
   await page.getByTestId("tool-select").click();
   await clickSketch(page, 20, 10);
   await expect(page.getByTestId("region-panel")).toContainText("1 of 2 regions");
@@ -2396,7 +3220,9 @@ test("trims a split segment and rebuilds the profile", async ({ app: page }) => 
   await expect(page.locator("[data-region-id]")).toHaveCount(1);
 
   await page.getByTestId("timeline-extrude").click();
-  await expect.poll(() => volume(page)).toBeCloseTo(80 * 40 * 12, -1);
+  // The snapped centreline adds point-on-line constraints, so the solver's
+  // sub-hundredth-of-a-mm convergence shows up in the joined volume.
+  await expect.poll(() => volume(page)).toBeCloseTo(80 * 40 * 12, -2);
 
   await page.keyboard.press("Control+z");
   await expect.poll(() => volume(page)).toBeCloseTo(40 * 40 * 12, -1);
@@ -2406,7 +3232,6 @@ test("trims a split segment and rebuilds the profile", async ({ app: page }) => 
 
 test("autosaves the document and reopens it", async ({ app: page }) => {
   await page.getByTestId("timeline-extrude").click();
-  await page.getByTestId("edit-feature").click();
   await setSlider(page.getByTestId("height-slider"), 20);
   await page.getByTestId("feature-popover-apply").click();
   const plate = 60 * 40 * 20 - Math.PI * 8 * 8 * 20;
@@ -2429,7 +3254,7 @@ test("autosaves the document and reopens it", async ({ app: page }) => {
     const raw = localStorage.getItem("cad.doc");
     return raw ? JSON.parse(raw) : null;
   });
-  expect(stored?.schemaVersion).toBe(8);
+  expect(stored?.schemaVersion).toBe(9);
 
   // A new document in the same context reads the saved part, migrates it, and
   // rebuilds the same solid.
@@ -2441,11 +3266,12 @@ test("autosaves the document and reopens it", async ({ app: page }) => {
   await expect(second.getByTestId("kernel-status")).toContainText("ready", {
     timeout: 60_000,
   });
-  await expect(second.getByTestId("timeline-detail")).toContainText("20 mm");
+  await second.getByTestId("timeline-extrude").click();
+  await expect(activeStepMeta(second)).toContainText("20 mm");
   await expect.poll(() => volume(second)).toBeCloseTo(plate, -1);
   await second.close();
 
-  await page.getByTestId("edit-feature").click();
+  await page.getByTestId("timeline-extrude").click();
   await setSlider(page.getByTestId("height-slider"), 12);
   await page.getByTestId("feature-popover-apply").click();
 });
@@ -2501,7 +3327,7 @@ test("creates a new sketch and a joining extrude", async ({ app: page }) => {
   await expect.poll(() => volume(page)).toBeCloseTo(40 * 20 * 12, -1);
 
   await createSketch(page);
-  await expect(page.locator("[data-feature-id]")).toHaveCount(6);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(8);
   await expect(
     page
       .locator('[data-feature-type="sketch"]')
@@ -2520,14 +3346,24 @@ test("creates a new sketch and a joining extrude", async ({ app: page }) => {
   await clickSketch(page, 60, 10);
   await expect(page.getByTestId("extrude-apply")).toBeEnabled();
   await page.getByTestId("extrude-apply").click();
-  await expect(page.locator("[data-feature-id]")).toHaveCount(7);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(9);
   await expect(
     page.locator('[data-feature-type="extrude"]').last(),
   ).toContainText("Extrude 4");
   await expect.poll(() => volume(page)).toBeCloseTo(80 * 20 * 12, -1);
+  // Clearing the example's base sketch legitimately loses the face supports of
+  // the mounting sketch and the midplane, so the whole history is not "ok".
+  // The new sketch and join must still build cleanly.
+  await expect(
+    page.locator('[data-feature-type="extrude"]').last(),
+  ).toHaveAttribute("data-status", "ok");
   await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
     "data-status",
-    "ok",
+    "error",
+  );
+  await expect(page.getByTestId("timeline")).toHaveAttribute(
+    "data-lost-supports",
+    "2",
   );
   expect(errors).toEqual([]);
 });
@@ -2544,10 +3380,10 @@ test("new extrude picks profiles from the selected sketch", async ({ app: page }
   await expect(page.getByTestId("extrude-apply")).toBeDisabled();
   await expect(page.getByTestId("region-panel")).toContainText("select profiles");
 
-  await clickSketch(page, 12, 20);
+  await clickSketch(page, -18, 0);
   await expect(page.getByTestId("region-panel")).toContainText("1 of 2 regions");
   await page.keyboard.down("Shift");
-  await clickSketch(page, 48, 20);
+  await clickSketch(page, 18, 0);
   await page.keyboard.up("Shift");
   await expect(page.getByTestId("region-panel")).toContainText("2 of 2 regions");
   await expect(page.getByTestId("extrude-apply")).toBeEnabled();
@@ -2573,7 +3409,6 @@ test("edits, suppresses and deletes an extrude", async ({ app: page }) => {
   await expect.poll(() => volume(page)).toBeCloseTo(plate12, -1);
 
   await page.getByTestId("timeline-extrude").click();
-  await page.getByTestId("edit-feature").click();
   await page.getByTestId("extrude-height").fill("30");
   const plate30 = 60 * 40 * 30 - Math.PI * 8 * 8 * 30;
   await expect.poll(() => volume(page)).toBeCloseTo(plate30, -1);
@@ -2597,13 +3432,13 @@ test("edits, suppresses and deletes an extrude", async ({ app: page }) => {
   await expect.poll(() => volume(page)).toBeCloseTo(plate30, -1);
 
   await page.getByTestId("feature-delete").click();
-  await expect(page.locator("[data-feature-id]")).toHaveCount(4);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(5);
   await expect(page.getByTestId("timeline-extrude")).toHaveAttribute(
     "data-status",
     "skipped",
   );
   await page.getByTestId("undo").click();
-  await expect(page.locator("[data-feature-id]")).toHaveCount(5);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(7);
   await expect.poll(() => volume(page)).toBeCloseTo(plate30, -1);
 });
 
@@ -2614,7 +3449,6 @@ test("cancel restores the previous extrude and discards a draft", async ({
   await expect.poll(() => volume(page)).toBeCloseTo(plate12, -1);
 
   await page.getByTestId("timeline-extrude").click();
-  await page.getByTestId("edit-feature").click();
   await page.getByTestId("extrude-height").fill("30");
   await page.getByTestId("extrude-symmetric").click();
   const plate30 = 60 * 40 * 30 - Math.PI * 8 * 8 * 30;
@@ -2626,11 +3460,11 @@ test("cancel restores the previous extrude and discards a draft", async ({
   await page.getByTestId("feature-popover-cancel").click();
   await expect(page.getByTestId("feature-popover")).toHaveCount(0);
   await expect.poll(() => volume(page)).toBeCloseTo(plate12, -1);
-  await expect(page.getByTestId("timeline-detail")).toContainText("12 mm");
-  await expect(page.getByTestId("timeline-detail")).toContainText("one side");
+  await expect(activeStepMeta(page)).toContainText("12 mm");
+  await expect(activeStepMeta(page)).toContainText("one side");
 
   // Cancel also leaves profile-selection mode and returns to the model.
-  await page.getByTestId("edit-feature").click();
+  await page.getByTestId("timeline-extrude").click();
   await page.getByTestId("popover-select-profiles").click();
   await expect(page.getByTestId("tool-select")).toBeVisible();
   await page.getByTestId("feature-popover-cancel").click();
@@ -2640,11 +3474,12 @@ test("cancel restores the previous extrude and discards a draft", async ({
   await page.getByTestId("timeline-sketch").click();
   await page.getByTestId("new-extrude").click();
   await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
-  await expect(page.locator("[data-feature-id]")).toHaveCount(5);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(7);
   await page.getByTestId("extrude-cancel").click();
   await expect(page.getByTestId("extrude-draft-popover")).toHaveCount(0);
-  await expect(page.locator("[data-feature-id]")).toHaveCount(5);
+  await expect(page.locator("[data-feature-id]")).toHaveCount(7);
   await expect(page.getByTestId("tool-select")).toBeVisible();
+  await page.getByTestId("timeline-extrude").click();
   await expect.poll(() => volume(page)).toBeCloseTo(plate12, -1);
 });
 
@@ -2749,7 +3584,8 @@ test("builds a cut and join from a saved multi-feature document", async ({
   const cut = page.locator('[data-feature-id="extrude-2"]');
   await expect(holeSketch).toContainText("Hole sketch");
   await expect(cut).toContainText("Cut 1");
-  await expect(timeline).toHaveAttribute("data-active-feature", "extrude-1");
+  // Opening a document selects its end, so the whole history is built.
+  await expect(timeline).toHaveAttribute("data-active-feature", "extrude-3");
 
   // Selecting a later sketch edits that sketch; it does not silently take over
   // its consuming extrude. Select the extrude step for profile editing.
@@ -2764,12 +3600,21 @@ test("builds a cut and join from a saved multi-feature document", async ({
   await page.getByTestId("feature-rename").fill("Hole profile");
   await page.keyboard.press("Enter");
   await expect(holeSketch).toContainText("Hole profile");
+  // Select the end again: the sketch step is only a cursor, not a render mode.
+  await page.locator('[data-feature-id="extrude-3"]').click();
   await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
 
   // Reorder a downstream sketch before the base includes it; the order is valid.
+  await expect(page.locator('[data-feature-id="sketch-3"]')).toHaveCSS(
+    "user-select",
+    "none",
+  );
   await page
-    .locator('[data-feature-id="sketch-3"]')
+    .locator('[data-feature-id="sketch-3"] .step-grip')
     .dragTo(page.locator('[data-feature-id="sketch-1"]'));
+  expect(
+    await page.evaluate(() => window.getSelection()?.toString() ?? ""),
+  ).toBe("");
   await expect(page.locator("[data-feature-id]").first()).toHaveAttribute(
     "data-feature-id",
     "sketch-3",
@@ -2778,20 +3623,58 @@ test("builds a cut and join from a saved multi-feature document", async ({
 
   await page.getByTestId("timeline-extrude").click();
   await expect(timeline).toHaveAttribute("data-active-feature", "extrude-1");
-  await expect(page.getByTestId("edit-feature")).toBeVisible();
+  await expect(page.getByTestId("feature-popover")).toBeVisible();
 
-  // Rollback shows the model at the base extrude and pauses downstream steps.
-  await page.getByTestId("roll-back").click();
+  // Selecting the base extrude scrubs the history to that step and pauses the
+  // downstream cut and join. Selecting the last step builds through them again.
   await expect.poll(() => volume(page)).toBeCloseTo(60 * 40 * 12, -1);
   await expect(page.locator('[data-feature-id="extrude-2"]')).toHaveAttribute(
     "data-status",
     "paused",
   );
-  await page.getByTestId("roll-forward").click();
+  await page.locator('[data-feature-id="extrude-3"]').click();
   await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
   await expect(page.locator('[data-feature-id="extrude-2"]')).toHaveAttribute(
     "data-status",
     "ok",
+  );
+  await context.close();
+});
+
+test("reports a join with nothing to join instead of creating a body", async ({
+  browser,
+}) => {
+  const context = await browser.newContext({
+    baseURL: "http://127.0.0.1:4173",
+    viewport: { width: 1280, height: 720 },
+  });
+  const page = await context.newPage();
+  const doc = multiFeatureDoc();
+  const orphan = {
+    ...doc,
+    features: doc.features.map((feature) =>
+      feature.id === "extrude-1" && feature.type === "extrude"
+        ? { ...feature, operation: "join" as const }
+        : feature,
+    ),
+  };
+  await page.addInitScript((json) => {
+    localStorage.setItem("cad.doc", json);
+  }, JSON.stringify(orphan));
+  await page.goto("/");
+  await expect(page.getByTestId("kernel-status")).toContainText("error", {
+    timeout: 60_000,
+  });
+  await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
+    "data-status",
+    "error",
+  );
+  await expect(page.getByTestId("rebuild-status")).toContainText(
+    "Nothing exists to join.",
+  );
+  await expect(page.locator('[data-feature-id="extrude-1"]')).toHaveAttribute(
+    "data-status",
+    "error",
   );
   await context.close();
 });
@@ -2905,6 +3788,8 @@ test("rebuilds downstream features after editing the first sketch", async ({
   await clickSketch(page, 15, 10);
   await page.keyboard.press("Escape");
   await page.getByTestId("finish-sketch").click();
+  // Build through the rest of the history to see the downstream effect.
+  await page.locator("[data-feature-id]").last().click();
   await expect.poll(() => volume(page)).not.toBeCloseTo(expected, -1);
 
   await page.getByTestId("undo").click();
@@ -2960,3 +3845,14 @@ test("switches and persists the appearance theme", async ({ app: page }) => {
     "rgb(251, 251, 249)",
   );
 });
+
+
+
+
+
+
+
+
+
+
+

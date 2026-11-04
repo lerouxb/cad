@@ -100,6 +100,44 @@ describe("M1 constraints", () => {
     expect(dragged!.points.a![1]).toBeCloseTo(dragged!.points.b![1], 3);
   });
 
+  it("solves two edges symmetric about the Y axis", () => {
+    const sketch: Sketch = {
+      ...emptySketch(),
+      points: [
+        { id: "lt", x: -20, y: 10 },
+        { id: "lb", x: -20, y: -10 },
+        { id: "rt", x: 12, y: 10 },
+        { id: "rb", x: 12, y: -10 },
+      ],
+      curves: [
+        { id: "left", type: "line", a: "lt", b: "lb" },
+        { id: "right", type: "line", a: "rt", b: "rb" },
+      ],
+      constraints: [],
+    };
+    const ids = ["left", "right", "axis-y"];
+    expect(applicableConstraints(sketch, ids).map((a) => a.type)).toContain(
+      "symmetric",
+    );
+    const constrained = applyConstraint(sketch, "symmetric", ids);
+    const pairs = constrained.constraints.filter(
+      (constraint) => constraint.type === "symmetric",
+    );
+    expect(pairs).toHaveLength(2);
+    const solved = solveSketch(constrained);
+    expect(solved.ok).toBe(true);
+    for (const constraint of pairs) {
+      if (constraint.type !== "symmetric") continue;
+      const a = solved.points[constraint.a]!;
+      const b = solved.points[constraint.b]!;
+      expect((a[0] + b[0]) / 2).toBeCloseTo(0, 4);
+      expect(a[1]).toBeCloseTo(b[1], 4);
+    }
+    expect(applicableConstraints(constrained, ids).map((a) => a.type)).not.toContain(
+      "symmetric",
+    );
+  });
+
   it("solves a midpoint constraint", () => {
     const sketch: Sketch = {
       points: [

@@ -439,30 +439,42 @@ symmetric). The sketch is no longer React component state.
 - **Worker multi-feature rebuild is in.** The kernel request carries the ordered successful
   extrudes as `KernelFeature[]` (cacheKey, params, operation). The worker caches the
   prefix solid per cacheKey, applies new/join/cut, and returns per-feature build
-  statuses. It is still a single body: `new` after a base is an error, and multiple bodies
-  are later.
+  statuses. It is still a single body: `new` after a base is an error, a first `join` or
+  `cut` with no base is an error ("Nothing exists to join/cut"), and multiple bodies are
+  later. No operation silently falls back to a different one.
 - **The history is a real feature tree.** The timeline renders `doc.features` in order.
-  Clicking a feature makes it active: a sketch opens the sketch editor, an extrude opens
-  the model and makes that extrude's parameters live. Editing a sketch updates that
+  Clicking a feature makes it active and opens its editor: a sketch opens the sketch
+  canvas, an extrude opens the model plus its `FeaturePopover`, and a datum plane opens
+  `DatumPlanePopover`. There is no separate edit command. The active step is also the
+  **history cursor**: `buildDoc` slices the feature list through it, so the stage renders
+  only that prefix and later steps are visibly paused. There is no roll-back or
+  roll-forward control. Editing a sketch updates that
   feature by id (not the first sketch). A sketch step never owns region editing: select
   an extrude step to edit its existing regions, or start a new extrude draft from the
   sketch step. A shared sketch therefore cannot silently rewrite another extrude's
   profiles. Double-click renames through `renameFeature` as one undo
   entry. Each row shows its rebuild/worker status, diagnostic tooltip and paused/
-  suppressed state. `+ sketch` at the end of the timeline opens `SupportPopover` and
-  creates a sketch on the explicit support (world XY/XZ/YZ or a planar face; datum
-  planes are next). `extrude`
+  suppressed state. The timeline's leading/insert gaps open `SupportPopover` and
+  create a sketch on the explicit support (world XY/XZ/YZ or a planar face; datum
+  planes too). `extrude`
   on a selected sketch starts a UI-only `extrudeDraft` with no profile selected; it
   becomes a history feature only when at least one profile and the parameters are
-  applied. The first extrude is `new`, later ones default to `join`. A draggable popover
+  applied. The draft defaults to `new` unless an unsuppressed body exists; a first
+  `join` is a visible worker error, never an implicit body. A draggable popover
   (`FeaturePopover`) edits height/symmetric/operation/end over the stage; its footer is a
   one-line summary plus quiet `cancel` and primary `apply`, and cancel restores an
-  existing feature as it was when the popover opened. The detail line is a summary plus
-  actions (extrude, edit, rename, select profiles, open sketch, rollback, suppress,
-  delete). Steps are
+  existing feature as it was when the popover opened. Profile selection is a button in
+  that popover, not a timeline action. Double-click renames. The detail line is a
+  readout, not a summary: the lost-support message, the remaining actions (extrude on a
+  sketch, open sketch, suppress, delete) and the autosave note. A datum plane's visibility
+  is the eye split control on its output chip, not a footer action. Paused,
+  suppressed, hidden and build status are carried by dimming/underline/classes, never by
+  meta text, so a step keeps its width as the cursor and visibility change. The track scrolls only horizontally (a vertical wheel
+  maps onto it, `overflow-y` is hidden); native scrollbars are left native rather than
+  replaced with a fake overlay. Steps are
   drag-reordered; an invalid order (extrude before its sketch) is refused with a notice.
-  Rollback builds only the prefix and pauses downstream steps until “roll forward”. The
-  file menu handles `.cad` download/open/rename/new; the local file list supports open,
+  The stage builds only the prefix through the active step; downstream steps are paused
+  until selected. The file menu handles `.cad` download/open/rename/new; the local file list supports open,
   copy and a two-step delete, and the built-in example keeps a stable id so reloading
   updates one entry.
 
@@ -471,21 +483,28 @@ symmetric). The sketch is no longer React component state.
 Input: `Doc`. Output: the final solid, its tessellation, and per-feature status.
 
 Current split: the main thread evaluates sketches and produces ordered `KernelFeature`s;
-the worker builds a single body with a prefix-solid cache and booleans.
+the worker builds a single body with a prefix-solid cache, booleans and fillets.
 
 ```
 main thread: features in order
   ├─ evaluate sketch: solve -> regions
   ├─ evaluate extrude: source sketch -> selected regions -> ExtrudeParams
+  ├─ evaluate fillet: radius + stable EdgeRefs -> KernelFilletFeature
   ├─ cache output keyed by hash(feature, upstream key)
   └─ record { featureId, status, output, diagnostics }
-       ↓ successful extrudes only, in history order
-worker: KernelFeature[]
-  ├─ prefix cache: cacheKey -> Solid (new/join/cut already applied through this feature)
+       ↓ successful solid features only, in history order
+worker: KernelFeature[]  (extrude | fillet, discriminated)
+  ├─ prefix cache: cacheKey -> Solid (operations already applied through this feature)
   ├─ cache hit: reuse the solid and its face origins
-  ├─ cache miss: build tool -> fuse/cut -> cache the result
+  ├─ cache miss extrude: build tool -> fuse/cut -> cache the result
+  ├─ cache miss fillet: resolve EdgeRefs on the prefix -> filletWithEvolution
+  │                      -> re-derive roles geometrically -> cache the result
   └─ mesh the last good base -> BodyMesh + per-feature statuses
 ```
+
+A failed fillet is skipped exactly like a failed boolean: later features use the last good
+base and the step carries the error. App previews a **new** fillet by appending a synthetic
+`fillet-draft` feature to this list; it is never written to `Doc` until apply.
 
 The worker cache owns cloned solids. Cached solids cannot be meshed twice with the same
 mesh cache: the first request transfers the mesh ArrayBuffers, detaching them, so call
@@ -549,21 +568,52 @@ Rules:
 **First plumbing (M3).** The worker keeps a `RoleTable` per cached prefix solid. It
 assigns roles to each tool with `assignRoles(tool, "extrude")`, uses
 `fuseWithEvolution`/`cutWithEvolution`, and advances every origin's roles with
-`updateRoles` before caching the prefix. `captureHint`/`createRef` then produce JSON-safe
+`updateRoles` before caching the prefix. `updateRoles` deliberately ignores
+`evolution.generated` (on OCCT those hashes refer to an intermediate shape), so the
+worker then adopts anonymous result faces by matching sample points to the tool faces
+they lie on. A cut's new hole wall and the exposed wall of a joined cylinder therefore
+still get a role, a stable `TopoRef`, and feature attribution. `captureHint`/`createRef` then produce JSON-safe
 `TopoRef`s for the final body's faces; `FaceGroup.ref` and `BodyPick.ref` carry them to
 the main thread. Schema v5 stores a face `TopoRef` plus its cached `PlaneFrame` on
 `SketchFeature.support`; schema v6 adds cached face-boundary projections, schema v7 adds
-datum-plane features/supports, and schema v8 adds datum-plane visibility (`hidden`). The
+datum-plane features/supports, schema v8 adds datum-plane visibility (`hidden`), and
+schema v9 adds constant-radius fillets. The
 worker maps the local extrude solid through that frame, and resolves a projected boundary
 from the cached prefix solid that owns the face (never from a downstream boolean). The
 worker resolves stored `TopoRef`s with
 `resolveRef`: exact role hashes first, then a geometric hint fallback, then a visible
-lost-support error.
+lost-support error. An exact role is only trusted when its face still agrees with the
+stored hint normal; positional roles can survive an upstream edit while now naming a
+different face (for example after a split), and the hint fallback then takes over.
+
+Face roles also carry their **introducing feature id** in `TopoRef.source`. The viewer
+uses that attribution for the selected-feature highlight, so it never has to guess which
+faces came from which history step.
+
+**Fillet edges and generated rounds.** An edge is not named by its own hash; it is the
+intersection of its two adjacent faces, so `EdgeRef` stores two face `TopoRef`s plus a
+length/midpoint hint. The worker resolves both faces (role first, geometric fallback) and
+takes their `sharedEdges`; the hint breaks a tie when the faces meet along more than one
+edge. A plate resize therefore keeps the fillet attached without storing a kernel hash.
+
+Fillets do **not** use `updateRoles`: OCCT returns an empty evolution for
+`filletWithEvolution` (no modified/generated/deleted faces). After each fillet the worker
+re-derives the table geometrically — surface type, outward normal, and sampled
+containment map each old face to the trimmed result face that continues it — then names
+the generated rounds under the fillet feature (`fillet:round:<index>`) by finding the new
+face adjacent to both pre-fillet faces. The step highlight, downstream `EdgeRef`s, and
+face picks all depend on that re-derivation.
 
 This is the part to test hardest. Every kernel test that edits an upstream feature and
 re-runs a downstream fillet is a topological-naming regression test.
 
 ## 8. Sketch supports: faces and datum planes
+
+A sketch on a world or datum plane has no supporting face to project, so the sketch
+canvas draws the rendered prefix body's `mesh.edgePositions` projected into the sketch
+frame as faint dotted reference lines (`bodyReference`). They are derived from the
+selection cursor and are never document data, pickable or snappable. Face sketches keep
+their live supporting boundary instead, so the two references are not duplicated.
 
 A sketch is not "on XY" or "on a face"; it has a `PlaneRef` that resolves to a `Frame`
 (origin + x + y, normal = x × y). The same machinery serves world planes, planar faces,
@@ -657,6 +707,13 @@ solver has no 3D sketch representation.
 - **Body selection is ephemeral.** `BodyPick` lives in App UI state, uses `faceId`/`origin`
   or `edgeId` rather than array indices, and never enters the document or undo history.
   It is cleared when a new mesh arrives and by Escape.
+- **Feature highlight.** The active extrude step washes every final-body face whose
+  `TopoRef.source` is that feature (including faces adopted from anonymous boolean
+  results, so a joined pin lights its whole exposed wall, not just its cap). Roles travel through `updateRoles`, so a join or cut
+  highlights the faces it added (a new cap, a hole wall), not the whole body; a first
+  extrude consequently owns every face. The overlay follows the final mesh, so geometry
+  removed by a later feature is not shown. It is not part of picking and is cleared for
+  sketch steps, suppressed features, and open support/draft popovers.
 - **Active-extrude sketch overlay.** In model mode, the active extrude's source sketch
   is drawn on its plane with a thick highlighter underlay plus a dark ink centerline
   (`Line2`). Only the region loops that extrude uses are drawn, and their outer/hole
@@ -664,8 +721,12 @@ solver has no 3D sketch representation.
   A face-supported sketch transforms the whole overlay through its `PlaneFrame`
   (`Matrix4.makeBasis`). Construction/unused curves and all points are hidden until
   profile-selection mode, where the full sketch and every region return. It is
-  `depthTest:false` so it reads through the body, and it is separate from the
-  mesh/raycast groups. It is hidden in sketch mode and for a suppressed source sketch.
+  depth-tested in world space, so the body occludes a sketch that lies inside or behind
+  it (a bottom sketch no longer draws over the body from above). `polygonOffset` on the
+  fill and `Line2` quad materials wins the depth test against the coincident face the
+  sketch was drawn on without pulling it through unrelated geometry. It is separate
+  from the mesh/raycast groups and is hidden in sketch mode and for a suppressed source
+  sketch.
 - **Sketch mode:** a full-stage 2D surface rather than a sidebar. The timeline switches
   between this and the 3D model; the 3D renderer is paused while the sketch is active.
   `slvs` stays on the main thread, and a **separate SVG surface** carries sketch curves,
@@ -786,12 +847,12 @@ the honest map, so nobody assumes a layer exists because it is described above.
 
 | Layer | Status |
 | --- | --- |
-| `core/doc` | Real: `Doc` schema with sketch/extrude/datum features, selectors, migrations, schema v8 face/datum sketch supports (`TopoRef`/feature id + cached `PlaneFrame`), datum visibility, face-boundary projections, and `localStorage` autosave. |
+| `core/doc` | Real: `Doc` schema with sketch/extrude/datum/fillet features, selectors, migrations, schema v9 face/datum sketch supports (`TopoRef`/feature id + cached `PlaneFrame`), datum visibility, face-boundary projections, fillet `EdgeRef`s, and `localStorage` autosave. |
 | `core/sketch` | Real: types, `slvs` adapter, tangent-space `solveDrag`, pure drawing edits, loop extraction, geometry helpers, tests. `demo.ts` is the loadable example. |
-| `core/features` | Real: region selection + extrude params, including face/datum-plane frames mapped in the worker. The worker supports ordered new/join/cut; projected face-boundary references live in the sketch-support path. No feature fillets yet. |
-| `core/rebuild` | Real: ordered sketch/datum/extrude evaluation, prefix cache, per-feature diagnostics. Worker solid cache + new/join/cut are in. |
-| `core/kernel` | Real: typed protocol, worker client, OCCT worker, feature cache, face-frame extrude transforms, cached-prefix face-boundary requests, hole validation, exact stats + bounds. |
-| `viewer` | Real: Z-up scene, framing, meshing, edges, face/edge raycast picking, hover/selection highlights. |
+| `core/features` | Real: region selection + extrude params, including face/datum-plane frames mapped in the worker. The worker supports ordered new/join/cut and constant-radius fillets; projected face-boundary references live in the sketch-support path. |
+| `core/rebuild` | Real: ordered sketch/datum/extrude/fillet evaluation, prefix cache, per-feature diagnostics. Worker solid cache + new/join/cut/fillet are in. |
+| `core/kernel` | Real: typed protocol, worker client, OCCT worker, feature cache, face-frame extrude transforms, cached-prefix face-boundary requests, stable face/edge refs, hole validation, exact stats + bounds. |
+| `viewer` | Real: Z-up scene, framing, meshing, edges, face/edge raycast picking, multi-edge selection, hover/selection highlights. |
 | `sketch` UI | Real: full-stage sketch editor with a grouped text tool line, stage-foot DOF/status, contextual selection popover, adaptive/free-form grid, scale bar and fit/50/100/200 zoom. Select/drag, box-select profile regions, line/point/rectangle/circle/arc, fillet, explicit region fills (material and void, with All/Voids/Auto), contextual dimension/trim chips, inline dimension and point editors, construction toggle, snapping, auto H/V, Enter-to-finish, undo/redo. Standalone points are normal solver geometry but never profiles. |
 | Feature tree | Real: lists all `doc.features` (sketches, datum planes, extrudes), selects/renames/creates/edits, drag-reorders, suppresses, deletes with cascade, rolls back/forward, and shows per-feature status/diagnostics. |
 | Persistence | Autosave to `localStorage` with migration-on-load, a local file index/list (open/copy/delete/download/rename/new), and `.cad` import/export. |

@@ -9,6 +9,7 @@ import { deserializeDoc, serializeDoc } from "./persistence";
 import {
   addDatumPlaneFeature,
   addExtrudeFeature,
+  addFilletFeature,
   addSketchFeature,
   deleteFeature,
   extrudeFeatureById,
@@ -24,10 +25,12 @@ import {
   updateExtrudeFeature,
   updateExtrudeHeight,
   updateExtrudeRegions,
+  updateFilletFeature,
   updatePrimarySketch,
   updateSketchFeature,
 } from "./selectors";
-import type { Doc, ExtrudeFeature, SketchFeature } from "./types";
+import { isFilletFeature, type Doc, type ExtrudeFeature, type SketchFeature } from "./types";
+import type { EdgeRef } from "../kernel/protocol";
 
 function exampleDoc(): Doc {
   return createDocument(createDemoModel().sketch, {
@@ -42,7 +45,7 @@ function exampleDoc(): Doc {
 describe("document schema", () => {
   it("creates a two-feature part with stable ids", () => {
     const doc = exampleDoc();
-    expect(doc.schemaVersion).toBe(8);
+    expect(doc.schemaVersion).toBe(9);
     expect(doc.features.map((feature) => feature.type)).toEqual([
       "sketch",
       "extrude",
@@ -63,12 +66,26 @@ describe("document schema", () => {
     expect(doc.features.map((feature) => feature.type)).toEqual([
       "sketch",
       "extrude",
+      "datum",
       "extrude",
       "sketch",
       "extrude",
+      "fillet",
     ]);
     const baseSketch = doc.features[0]!;
-    const centerPin = doc.features[2]!;
+    const midplane = doc.features[2]!;
+    const centerPin = doc.features[3]!;
+    expect(midplane).toMatchObject({
+      type: "datum",
+      name: "Midplane",
+      definition: { kind: "midplane" },
+    });
+    const mounting = doc.features[4]!;
+    expect(mounting).toMatchObject({
+      type: "sketch",
+      name: "Mounting holes",
+      support: { kind: "face" },
+    });
     expect(centerPin).toMatchObject({
       type: "extrude",
       name: "Center pin",
@@ -83,12 +100,29 @@ describe("document schema", () => {
     }
     expect(centerPin.sketchId).toBe(baseSketch.id);
     expect(centerPin.regions).toHaveLength(1);
-    expect(doc.features[4]).toMatchObject({
+    expect(doc.features[5]).toMatchObject({
       type: "extrude",
       operation: "cut",
       end: "throughAll",
       suppressed: true,
     });
+    expect(doc.features[6]).toMatchObject({
+      type: "fillet",
+      name: "Rounded plate",
+      radius: 4,
+      suppressed: true,
+    });
+    const rounded = doc.features[6];
+    expect(rounded?.type === "fillet" ? rounded.edges : []).toHaveLength(4);
+
+    // The hand-authored fillet edge refs are valid plain JSON and survive the
+    // schema validator (which checks ordering against the face sources).
+    const parsed = validateDoc(JSON.parse(JSON.stringify(doc)));
+    expect(parsed?.features).toHaveLength(7);
+    const parsedRounded = parsed?.features[6];
+    expect(
+      parsedRounded?.type === "fillet" ? parsedRounded.edges : [],
+    ).toHaveLength(4);
   });
 
   it("survives JSON round-trips unchanged", () => {
@@ -261,10 +295,72 @@ describe("document schema", () => {
     ).toBe(extrude!.feature.id);
     expect(addExtrudeFeature(sketch.doc, "missing")).toBeNull();
 
+    const atStart = addSketchFeature(doc, {
+      atStart: true,
+      name: "Start sketch",
+    });
+    expect(atStart.doc.features[0]?.id).toBe(atStart.feature.id);
+
     const firstOnly: Doc = { ...doc, features: [doc.features[0]!] };
     expect(addExtrudeFeature(firstOnly, "sketch-1")?.feature.operation).toBe(
       "new",
     );
+  });
+
+  it("adds an undoable fillet, validates it and cascades when its source dies", () => {
+    const doc = exampleDoc();
+    const edge: EdgeRef = {
+      kind: "edge",
+      faces: [
+        {
+          source: "extrude-1",
+          kind: "face",
+          role: "extrude:face_1",
+          hint: { entityType: "face" },
+        },
+        {
+          source: "extrude-1",
+          kind: "face",
+          role: "extrude:face_2",
+          hint: { entityType: "face" },
+        },
+      ],
+      hint: { entityType: "edge", length: 12, midpoint: [0, 0, 6] },
+    };
+
+    const added = addFilletFeature(doc, [edge], 2);
+    expect(added.feature.name).toBe("Fillet 1");
+    expect(added.doc.features[added.doc.features.length - 1]?.id).toBe(
+      added.feature.id,
+    );
+    expect(added.feature.edges[0]).toEqual(edge);
+
+    // The fillet round-trips as plain JSON and keeps its edge refs.
+    const parsed = validateDoc(JSON.parse(JSON.stringify(added.doc)));
+    expect(parsed).not.toBeNull();
+    const migrated = parsed?.features.find(
+      (feature) => feature.id === added.feature.id,
+    );
+    expect(migrated?.type).toBe("fillet");
+    expect(
+      migrated?.type === "fillet" ? migrated.radius : null,
+    ).toBe(2);
+
+    // A fillet can never move before the feature that named its faces.
+    expect("error" in moveFeature(added.doc, added.feature.id, 1)).toBe(true);
+
+    const edited = updateFilletFeature(added.doc, added.feature.id, (feature) => ({
+      ...feature,
+      radius: 3.5,
+    }));
+    expect(
+      edited.features
+        .filter(isFilletFeature)
+        .find((feature) => feature.id === added.feature.id)?.radius,
+    ).toBe(3.5);
+
+    const deleted = deleteFeature(added.doc, "extrude-1");
+    expect(deleted.removedIds).toContain(added.feature.id);
   });
 
   it("returns a stable empty sketch when the document has none", () => {
@@ -289,7 +385,7 @@ describe("document migrations", () => {
     });
 
     expect(migrated).not.toBeNull();
-    expect(migrated!.schemaVersion).toBe(8);
+    expect(migrated!.schemaVersion).toBe(9);
     expect(migrated!.name).toBe("Legacy part");
     expect(migrated!.features).toHaveLength(2);
     expect(primaryExtrudeFeature(migrated!)?.height).toBe(25);
@@ -303,13 +399,13 @@ describe("document migrations", () => {
     const doc = exampleDoc();
     const migrated = migrateDoc({ ...doc, schemaVersion: 1 });
     expect(migrated).toEqual(doc);
-    expect(migrated?.schemaVersion).toBe(8);
+    expect(migrated?.schemaVersion).toBe(9);
   });
 
   it("opens a v2 document and adds the extrude defaults", () => {
     const doc = exampleDoc();
     const migrated = migrateDoc({ ...doc, schemaVersion: 2 });
-    expect(migrated?.schemaVersion).toBe(8);
+    expect(migrated?.schemaVersion).toBe(9);
     expect(primaryExtrudeFeature(migrated!)?.end).toBe("blind");
     expect(primaryExtrudeFeature(migrated!)?.suppressed).toBeUndefined();
   });
@@ -317,7 +413,7 @@ describe("document migrations", () => {
   it("opens a v3 document and keeps its dimension placements", () => {
     const doc = exampleDoc();
     const migrated = migrateDoc({ ...doc, schemaVersion: 3 });
-    expect(migrated?.schemaVersion).toBe(8);
+    expect(migrated?.schemaVersion).toBe(9);
   });
 
   it("opens a v4 document with a face-supported sketch", () => {
@@ -348,7 +444,7 @@ describe("document migrations", () => {
       schemaVersion: 4,
       features: [{ ...sketch, support }, ...doc.features.slice(1)],
     });
-    expect(migrated?.schemaVersion).toBe(8);
+    expect(migrated?.schemaVersion).toBe(9);
     expect(primarySketchFeature(migrated!)?.support).toEqual(support);
     expect(
       migrateDoc({
@@ -405,7 +501,7 @@ describe("document migrations", () => {
         ...doc.features.slice(1),
       ],
     });
-    expect(migrated?.schemaVersion).toBe(8);
+    expect(migrated?.schemaVersion).toBe(9);
     expect(primarySketchFeature(migrated!)?.projections).toEqual(projections);
   });
 
@@ -434,7 +530,7 @@ describe("document migrations", () => {
       ...withSketch.doc,
       schemaVersion: 6,
     });
-    expect(migrated?.schemaVersion).toBe(8);
+    expect(migrated?.schemaVersion).toBe(9);
     expect(migrated?.features.map((feature) => feature.type)).toEqual([
       "sketch",
       "extrude",
@@ -455,7 +551,7 @@ describe("document migrations", () => {
     const doc = exampleDoc();
     expect(migrateDoc(null)).toBeNull();
     expect(migrateDoc("nope")).toBeNull();
-    expect(migrateDoc({ ...doc, schemaVersion: 9 })).toBeNull();
+    expect(migrateDoc({ ...doc, schemaVersion: 10 })).toBeNull();
     expect(migrateDoc({ ...doc, features: "nope" })).toBeNull();
     expect(
       migrateDoc({

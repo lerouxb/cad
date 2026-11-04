@@ -1,4 +1,4 @@
-import { allCurves, allPoints, findSketchPoint, type Sketch, type SketchConstraint } from "./types";
+import { allCurves, allPoints, findSketchPoint, type Sketch, type SketchConstraint, type SketchCurve } from "./types";
 
 /**
  * Constrained dragging by tangent-space projection.
@@ -34,6 +34,13 @@ export interface DragTarget {
   y: number;
 }
 
+export interface DragOptions {
+  /** Points that must not move during this drag (all other geometry stays). */
+  frozen?: ReadonlySet<string>;
+  /** Keep this line's current direction while its endpoints slide. */
+  preserveAngle?: { a: string; b: string };
+}
+
 export interface ProjectedDrag {
   sketch: Sketch;
   /** How much of the requested motion survived the constraints, 0..1. */
@@ -46,6 +53,71 @@ export interface ProjectedDrag {
 }
 
 /**
+ * Points that support the dragged geometry, not part of it: the box a line
+ * endpoint is snapped to, the whole connected sketch curve network around that
+ * support line, and nothing the user is actually dragging. Freezing these makes
+ * a point drag slide along its support instead of resizing it.
+ */
+export function frozenSupportPoints(
+  sketch: Sketch,
+  targets: readonly string[],
+): Set<string> {
+  const targetSet = new Set(targets);
+  const byId = new Map(allCurves(sketch).map((curve) => [curve.id, curve]));
+  const frozen = new Set<string>();
+  const addCurvePoints = (curve: SketchCurve): void => {
+    if (curve.type === "line") {
+      frozen.add(curve.a);
+      frozen.add(curve.b);
+    } else if (curve.type === "circle") {
+      frozen.add(curve.center);
+    } else {
+      frozen.add(curve.center);
+      frozen.add(curve.start);
+      frozen.add(curve.end);
+    }
+  };
+
+  for (const constraint of sketch.constraints) {
+    if (constraint.type === "pointOnLine" && targetSet.has(constraint.point)) {
+      const line = byId.get(constraint.line);
+      if (line) addCurvePoints(line);
+    } else if (
+      constraint.type === "pointOnCircle" &&
+      targetSet.has(constraint.point)
+    ) {
+      const circle = byId.get(constraint.circle);
+      if (circle) addCurvePoints(circle);
+    }
+  }
+
+  // Follow shared points through curves: an edge snapped to a box freezes the
+  // rest of that box, but not a separate line whose endpoint merely lies on it.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const curve of allCurves(sketch)) {
+      const points =
+        curve.type === "line"
+          ? [curve.a, curve.b]
+          : curve.type === "circle"
+            ? [curve.center]
+            : [curve.center, curve.start, curve.end];
+      if (!points.some((id) => frozen.has(id))) continue;
+      for (const id of points) {
+        if (!frozen.has(id)) {
+          frozen.add(id);
+          changed = true;
+        }
+      }
+    }
+  }
+
+  for (const id of targets) frozen.delete(id);
+  return frozen;
+}
+
+/**
  * Project a set of target positions onto the constraint tangent space. A
  * single point is the usual case; a line supplies both endpoints with the same
  * delta, which translates the line. The endpoints may be constrained
@@ -54,6 +126,7 @@ export interface ProjectedDrag {
 export function projectDrag(
   sketch: Sketch,
   targets: readonly DragTarget[],
+  options: DragOptions = {},
 ): ProjectedDrag | null {
   const params = buildParameters(sketch);
   const delta = params.values.map(() => 0);
@@ -88,7 +161,37 @@ export function projectDrag(
 
   if (dragged.length === 0) return null;
 
+  // A whole-line drag moves the line, not its support geometry. Zero mobility
+  // makes frozen points absorb no correction; the dragged endpoints slide
+  // along their constraints instead (and are restored after cleanup too).
+  for (const id of options.frozen ?? []) {
+    const index = params.pointIndex.get(id);
+    if (!index) continue;
+    mobility[index[0]] = 0;
+    mobility[index[1]] = 0;
+  }
+
   const rows = buildRows(sketch, params);
+  const angle = options.preserveAngle;
+  if (angle) {
+    const a = params.pointIndex.get(angle.a);
+    const b = params.pointIndex.get(angle.b);
+    const pa = sketch.points.find((point) => point.id === angle.a);
+    const pb = sketch.points.find((point) => point.id === angle.b);
+    if (a && b && pa && pb) {
+      const dx = pb.x - pa.x;
+      const dy = pb.y - pa.y;
+      if (Math.hypot(dx, dy) > 1e-6) {
+        // Perpendicular change of (b-a) relative to the current direction.
+        const row: Row = new Map();
+        row.set(a[0], dy);
+        row.set(a[1], -dx);
+        row.set(b[0], -dy);
+        row.set(b[1], dx);
+        rows.push(row);
+      }
+    }
+  }
 
   // A handful of weighted Kaczmarz sweeps is plenty for a sketch-sized system.
   for (let sweep = 0; sweep < 32; sweep++) {
@@ -169,18 +272,23 @@ export function projectDrag(
       queue.push(next);
     }
   }
-  const detached = sketch.points
-    .filter(
-      (point) =>
-        params.pointIndex.has(point.id) && !reachable.has(point.id),
-    )
-    .map((point) => point.id);
+  const detached = new Set(
+    sketch.points
+      .filter(
+        (point) =>
+          params.pointIndex.has(point.id) && !reachable.has(point.id),
+      )
+      .map((point) => point.id),
+  );
+  for (const id of options.frozen ?? []) {
+    if (params.pointIndex.has(id)) detached.add(id);
+  }
 
   return {
     sketch: { ...sketch, points, curves },
     acceptance: requested > 1e-9 ? moved / requested : 0,
     moved,
-    detached,
+    detached: [...detached],
   };
 }
 

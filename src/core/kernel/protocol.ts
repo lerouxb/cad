@@ -41,6 +41,39 @@ export interface TopoRef {
   hint: TopoHint;
 }
 
+/** Geometric snapshot of an edge; a tiebreaker when faces share several. */
+export interface EdgeHint {
+  entityType: "edge";
+  length?: number;
+  midpoint?: [number, number, number];
+}
+
+/**
+ * A stable reference to an edge, identified by the two faces it bounds. An
+ * edge *is* the intersection of its adjacent faces, so a face-role change (an
+ * upstream edit or a fillet trimming it) keeps the reference resolvable as
+ * long as both faces still meet.
+ */
+export interface EdgeRef {
+  kind: "edge";
+  /** The two adjacent faces, in no particular order. */
+  faces: [TopoRef, TopoRef];
+  hint: EdgeHint;
+}
+
+/** Stable, rebuild-independent identity for a picked edge. */
+export function edgeRefKey(ref: EdgeRef): string {
+  const faces = ref.faces
+    .map((face) => `${face.source}:${face.role}`)
+    .sort()
+    .join("|");
+  return `edge:${faces}`;
+}
+
+export function edgeRefsEqual(a: EdgeRef, b: EdgeRef): boolean {
+  return edgeRefKey(a) === edgeRefKey(b);
+}
+
 export interface FaceGroup {
   /** Start index in the triangle index buffer. */
   start: number;
@@ -58,6 +91,8 @@ export interface EdgeGroup {
   start: number;
   count: number;
   edgeId: number;
+  /** Stable edge reference for selections; JSON-safe. */
+  ref?: EdgeRef;
 }
 
 export interface BodyStats {
@@ -83,14 +118,27 @@ export interface BodyMesh {
 
 export type KernelOperation = "new" | "join" | "cut";
 
-/** One resolved extrude in history order, with the main-thread cache key. */
-export interface KernelFeature {
+interface KernelFeatureBase {
   featureId: string;
   /** hash(canonical(feature) + upstreamKey); also the worker cache key. */
   cacheKey: string;
+}
+
+/** One resolved extrude in history order, with the main-thread cache key. */
+export interface KernelExtrudeFeature extends KernelFeatureBase {
+  kind: "extrude";
   params: ExtrudeParams;
   operation: KernelOperation;
 }
+
+/** A constant-radius fillet on selected edges of the current body. */
+export interface KernelFilletFeature extends KernelFeatureBase {
+  kind: "fillet";
+  edges: EdgeRef[];
+  radius: number;
+}
+
+export type KernelFeature = KernelExtrudeFeature | KernelFilletFeature;
 
 export interface FeatureBuildStatus {
   featureId: string;

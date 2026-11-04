@@ -115,6 +115,10 @@ export function solveDrag(sketch: Sketch, drag: DragTarget): SolveOutcome | null
 export function solveDragTargets(
   sketch: Sketch,
   targets: readonly DragTarget[],
+  options: {
+    frozen?: ReadonlySet<string>;
+    preserveAngle?: { a: string; b: string };
+  } = {},
 ): SolveOutcome | null {
   if (targets.length === 0) return null;
 
@@ -125,7 +129,7 @@ export function solveDragTargets(
   }
   if (origins.size === 0) return null;
 
-  const projected = projectDrag(sketch, targets);
+  const projected = projectDrag(sketch, targets, options);
   if (!projected) return null;
 
   // The tangent projection is first-order. A curved constraint leaves a

@@ -1,6 +1,6 @@
 import type { Vec2 } from "../types";
 import { circumcenter, normalizeAngle, updateConstraintValue } from "./geometry";
-import { allPoints, type Sketch, type SketchConstraint, type SketchCurve, type SketchPoint, type SketchReferences } from "./types";
+import { allCurves, allPoints, type Sketch, type SketchConstraint, type SketchCurve, type SketchPoint, type SketchReferences } from "./types";
 
 /**
  * Pure sketch edits used by the drawing tools. Keeping them here (instead of
@@ -19,18 +19,46 @@ export interface DraftVertex {
   point: Vec2;
   /** Reuse this document point (snapped to existing geometry). */
   existingPointId?: string;
-  /** Projected reference line this new point was snapped to. */
+  /** Line this new point snapped to (ordinary, axis or projected). */
   referenceLineId?: string;
+  /** Every line through the snapped point; an intersection has two. */
+  referenceLineIds?: string[];
 }
 
-/** True when the id names a projected (not axis) reference line. */
-function isProjectedReferenceLine(sketch: Sketch, id: string | undefined): id is string {
+/** True when the id names any line the point can be attached to. */
+function isSnapLine(sketch: Sketch, id: string | undefined): id is string {
   if (!id) return false;
-  return Boolean(
-    sketch.references?.lines.some(
-      (line) => line.id === id && line.projectionId !== undefined,
-    ),
+  return allCurves(sketch).some(
+    (curve) => curve.type === "line" && curve.id === id,
   );
+}
+
+/** The lines a snapped vertex should be tied to (one, or both at a crossing). */
+function snapLineIds(vertex: DraftVertex): string[] {
+  const ids =
+    vertex.referenceLineIds && vertex.referenceLineIds.length > 0
+      ? vertex.referenceLineIds
+      : vertex.referenceLineId
+        ? [vertex.referenceLineId]
+        : [];
+  return [...new Set(ids)];
+}
+
+function addSnapLineConstraints(
+  sketch: Sketch,
+  constraints: SketchConstraint[],
+  pointId: string,
+  vertex: DraftVertex,
+): void {
+  for (const lineId of snapLineIds(vertex)) {
+    if (!isSnapLine(sketch, lineId)) continue;
+    constraints.push({
+      id: newId("c"),
+      type: "pointOnLine",
+      point: pointId,
+      line: lineId,
+    });
+  }
 }
 
 /** Add a polyline, optionally closing it back to the first vertex. */
@@ -65,16 +93,8 @@ export function addPolyline(
     const id = newId("p");
     ids.push(id);
     points.push({ id, x: vertex.point[0], y: vertex.point[1] });
-    if (
-      !vertex.existingPointId &&
-      isProjectedReferenceLine(sketch, vertex.referenceLineId)
-    ) {
-      constraints.push({
-        id: newId("c"),
-        type: "pointOnLine",
-        point: id,
-        line: vertex.referenceLineId,
-      });
+    if (!vertex.existingPointId) {
+      addSnapLineConstraints(sketch, constraints, id, vertex);
     }
   }
 
@@ -113,17 +133,15 @@ export function addPoint(
   sketch: Sketch,
   point: Vec2,
   referenceLineId?: string,
+  referenceLineIds?: string[],
 ): Sketch {
   const id = newId("p");
   const constraints = [...sketch.constraints];
-  if (isProjectedReferenceLine(sketch, referenceLineId)) {
-    constraints.push({
-      id: newId("c"),
-      type: "pointOnLine",
-      point: id,
-      line: referenceLineId,
-    });
-  }
+  addSnapLineConstraints(sketch, constraints, id, {
+    point,
+    referenceLineId,
+    referenceLineIds,
+  });
   return {
     ...sketch,
     points: [
@@ -448,16 +466,8 @@ export function addCircle(
       value: radius * 2,
     },
   ];
-  if (
-    !center.existingPointId &&
-    isProjectedReferenceLine(sketch, center.referenceLineId)
-  ) {
-    constraints.push({
-      id: newId("c"),
-      type: "pointOnLine",
-      point: centerId,
-      line: center.referenceLineId,
-    });
+  if (!center.existingPointId) {
+    addSnapLineConstraints(sketch, constraints, centerId, center);
   }
   return {
     ...sketch,
@@ -581,14 +591,7 @@ function resolveDraftPoint(
   if (existing) return existing.id;
   const id = newId("p");
   points.push({ id, x: vertex.point[0], y: vertex.point[1] });
-  if (isProjectedReferenceLine(sketch, vertex.referenceLineId)) {
-    constraints.push({
-      id: newId("c"),
-      type: "pointOnLine",
-      point: id,
-      line: vertex.referenceLineId,
-    });
-  }
+  addSnapLineConstraints(sketch, constraints, id, vertex);
   return id;
 }
 

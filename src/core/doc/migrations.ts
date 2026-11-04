@@ -1,6 +1,6 @@
 import type { Sketch, SketchConstraint, SketchCurve, SketchPoint } from "../sketch/types";
 import type { PlaneFrame } from "../types";
-import type { TopoRef } from "../kernel/protocol";
+import type { EdgeRef, EdgeHint, TopoRef } from "../kernel/protocol";
 import { createDocument } from "./create";
 import {
   CURRENT_SCHEMA_VERSION,
@@ -35,7 +35,8 @@ export function migrateDoc(raw: unknown): Doc | null {
   // v4 → v5 adds face sketch supports (TopoRef + cached frame);
   // v5 → v6 adds cached face-boundary projections on sketch features;
   // v6 → v7 adds datum-plane features and datum sketch supports;
-  // v7 → v8 adds the datum-plane `hidden` presentation flag.
+  // v7 → v8 adds the datum-plane `hidden` presentation flag;
+  // v8 → v9 adds fillet features (older documents simply have none).
   if (
     version === 1 ||
     version === 2 ||
@@ -43,7 +44,8 @@ export function migrateDoc(raw: unknown): Doc | null {
     version === 4 ||
     version === 5 ||
     version === 6 ||
-    version === 7
+    version === 7 ||
+    version === 8
   ) {
     return validateDoc(raw);
   }
@@ -128,6 +130,18 @@ export function validateDoc(raw: unknown): Doc | null {
         return null;
       }
     }
+    if (feature.type === "fillet") {
+      // An edge's face roles come from earlier features. A missing source is
+      // a lost reference the worker reports; an out-of-order source is a
+      // malformed history and must not open.
+      for (const edge of feature.edges) {
+        for (const face of edge.faces) {
+          if (ids.has(face.source) && !before(face.source, feature.id)) {
+            return null;
+          }
+        }
+      }
+    }
   }
 
   return {
@@ -194,6 +208,27 @@ function validateFeature(raw: unknown): Feature | null {
       definition,
       frame,
       ...(raw.hidden === true ? { hidden: true } : {}),
+      ...(raw.suppressed === true ? { suppressed: true } : {}),
+    };
+  }
+
+  if (raw.type === "fillet") {
+    if (typeof raw.radius !== "number" || !Number.isFinite(raw.radius)) {
+      return null;
+    }
+    if (!Array.isArray(raw.edges)) return null;
+    const edges: EdgeRef[] = [];
+    for (const candidate of raw.edges) {
+      const edge = validateEdgeRef(candidate);
+      if (!edge) return null;
+      edges.push(edge);
+    }
+    return {
+      id,
+      type: "fillet",
+      name,
+      edges,
+      radius: raw.radius,
       ...(raw.suppressed === true ? { suppressed: true } : {}),
     };
   }
@@ -345,6 +380,29 @@ function validateTopoRef(raw: unknown): TopoRef | null {
         : {}),
     },
   };
+}
+
+function validateEdgeRef(raw: unknown): EdgeRef | null {
+  if (
+    !isRecord(raw) ||
+    raw.kind !== "edge" ||
+    !Array.isArray(raw.faces) ||
+    raw.faces.length !== 2
+  ) {
+    return null;
+  }
+  const a = validateTopoRef(raw.faces[0]);
+  const b = validateTopoRef(raw.faces[1]);
+  if (!a || !b) return null;
+  const hint = isRecord(raw.hint) ? raw.hint : {};
+  const edgeHint: EdgeHint = {
+    entityType: "edge",
+    ...(typeof hint.length === "number" && Number.isFinite(hint.length)
+      ? { length: hint.length }
+      : {}),
+    ...(isVec3(hint.midpoint) ? { midpoint: hint.midpoint } : {}),
+  };
+  return { kind: "edge", faces: [a, b], hint: edgeHint };
 }
 
 function isVec3(value: unknown): value is [number, number, number] {

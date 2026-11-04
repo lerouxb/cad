@@ -1,11 +1,13 @@
 import {
   isDatumPlaneFeature,
   isExtrudeFeature,
+  isFilletFeature,
   isSketchFeature,
   type DatumPlaneFeature,
   type Doc,
   type ExtrudeFeature,
   type Feature,
+  type FilletFeature,
   type PlaneRef,
   type SketchFeature,
 } from "../doc/types";
@@ -27,6 +29,7 @@ import {
   RebuildCache,
   type ExtrudeRebuildOutput,
   type FeatureResult,
+  type FilletRebuildOutput,
   type RebuildDeps,
   type RebuildDiagnostic,
   type RebuildInputs,
@@ -165,6 +168,9 @@ function evaluateFeature(
     }
     if (isExtrudeFeature(feature)) {
       return evaluateExtrude(feature, base, byId, deps);
+    }
+    if (isFilletFeature(feature)) {
+      return evaluateFillet(feature, base, byId);
     }
     return {
       ...base,
@@ -500,21 +506,153 @@ function evaluateExtrude(
   return { ...base, status: "ok", output, diagnostics };
 }
 
+function evaluateFillet(
+  feature: FilletFeature,
+  base: Omit<FeatureResult, "status" | "output" | "diagnostics">,
+  byId: Map<string, FeatureResult>,
+): FeatureResult {
+  if (!Number.isFinite(feature.radius) || feature.radius <= 0) {
+    return {
+      ...base,
+      status: "error",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "invalid-radius",
+          message: "Fillet radius must be greater than zero.",
+        },
+      ],
+    };
+  }
+  if (feature.edges.length === 0) {
+    return {
+      ...base,
+      status: "error",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "no-edges",
+          message: "Select at least one edge to fillet.",
+        },
+      ],
+    };
+  }
+
+  // A fillet consumes the current body. There is no separate document
+  // dependency for the body, so check the evaluated prefix instead.
+  const hasBody = [...byId.values()].some(
+    (result) =>
+      result.status === "ok" &&
+      (result.output?.kind === "extrude" || result.output?.kind === "fillet"),
+  );
+  if (!hasBody) {
+    return {
+      ...base,
+      status: "error",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "nothing-to-fillet",
+          message: "Nothing exists to fillet.",
+        },
+      ],
+    };
+  }
+
+  const sources = new Set<string>();
+  for (const edge of feature.edges) {
+    for (const face of edge.faces) sources.add(face.source);
+  }
+  for (const sourceId of sources) {
+    const source = byId.get(sourceId);
+    if (!source) {
+      return {
+        ...base,
+        status: "error",
+        output: null,
+        diagnostics: [
+          {
+            severity: "error",
+            code: "missing-edge-source",
+            message: `The edge's source "${sourceId}" does not exist earlier in the history.`,
+          },
+        ],
+      };
+    }
+    if (source.status !== "ok") {
+      return {
+        ...base,
+        status: "skipped",
+        output: null,
+        diagnostics: [
+          {
+            severity: "error",
+            code: "upstream-error",
+            message: `Skipped because ${source.name} could not be evaluated.`,
+          },
+        ],
+      };
+    }
+    if (
+      source.output?.kind !== "extrude" &&
+      source.output?.kind !== "fillet"
+    ) {
+      return {
+        ...base,
+        status: "error",
+        output: null,
+        diagnostics: [
+          {
+            severity: "error",
+            code: "invalid-edge-source",
+            message: `The edge's source "${source.name}" is not a solid feature.`,
+          },
+        ],
+      };
+    }
+  }
+
+  const output: FilletRebuildOutput = {
+    kind: "fillet",
+    edges: feature.edges,
+    radius: feature.radius,
+  };
+  return { ...base, status: "ok", output, diagnostics: [] };
+}
+
 /**
- * The successful extrude features, in history order, in the shape the kernel
+ * The successful solid features, in history order, in the shape the kernel
  * worker consumes. Main-thread failures are kept out of this list; their
  * statuses/diagnostics stay in the RebuildResult for the history UI.
  */
 export function extractKernelFeatures(result: RebuildResult): KernelFeature[] {
-  return result.features.flatMap((feature) => {
-    if (feature.status !== "ok" || feature.output?.kind !== "extrude") return [];
-    return [
-      {
-        featureId: feature.featureId,
-        cacheKey: feature.cacheKey,
-        params: feature.output.params,
-        operation: feature.output.operation,
-      },
-    ];
+  return result.features.flatMap((feature): KernelFeature[] => {
+    if (feature.status !== "ok" || !feature.output) return [];
+    if (feature.output.kind === "extrude") {
+      return [
+        {
+          kind: "extrude",
+          featureId: feature.featureId,
+          cacheKey: feature.cacheKey,
+          params: feature.output.params,
+          operation: feature.output.operation,
+        },
+      ];
+    }
+    if (feature.output.kind === "fillet") {
+      return [
+        {
+          kind: "fillet",
+          featureId: feature.featureId,
+          cacheKey: feature.cacheKey,
+          edges: feature.output.edges,
+          radius: feature.output.radius,
+        },
+      ];
+    }
+    return [];
   });
 }

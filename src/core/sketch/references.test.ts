@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { addCircle, addPolyline, emptySketch, isSketchEmpty } from "./create";
+import { addCircle, addPoint, addPolyline, emptySketch, isSketchEmpty } from "./create";
 import { applicableConstraints, applyConstraint } from "./constraints";
 import { addDimension, setDimensionValue } from "./dimensions";
 import { applySolution, distance, sketchGeometry } from "./geometry";
@@ -104,6 +104,55 @@ describe("sketch reference frame", () => {
       center: [0, 0],
       radius: 10,
     });
+  });
+
+  it("keeps a point snapped to an ordinary sketch line", () => {
+    const base = addPolyline(
+      emptySketch(),
+      [{ point: [0, 0] }, { point: [0, 40] }],
+      false,
+    );
+    const lineId = base.curves[0]!.id;
+    const fixed: Sketch = {
+      ...base,
+      points: base.points.map((point) => ({ ...point, fixed: true })),
+    };
+    const sketch = addPoint(fixed, [1, 10], lineId);
+    const pointId = sketch.points[sketch.points.length - 1]!.id;
+    expect(sketch.constraints).toContainEqual(
+      expect.objectContaining({
+        type: "pointOnLine",
+        point: pointId,
+        line: lineId,
+      }),
+    );
+    const solved = solveSketch(sketch);
+    expect(solved.ok).toBe(true);
+    expect(solved.points[pointId]![0]).toBeCloseTo(0, 6);
+  });
+
+  it("attaches a point to both lines at a crossing", () => {
+    let base = addPolyline(
+      emptySketch(),
+      [{ point: [-10, -10] }, { point: [10, 10] }],
+      false,
+    );
+    base = addPolyline(base, [{ point: [-10, 10] }, { point: [10, -10] }], false);
+    const [first, second] = base.curves.map((curve) => curve.id);
+    const sketch = addPoint(base, [0, 0], first, [first!, second!]);
+    const pointId = sketch.points[sketch.points.length - 1]!.id;
+    const attached = sketch.constraints.filter(
+      (constraint) =>
+        constraint.type === "pointOnLine" && constraint.point === pointId,
+    );
+    expect(attached).toHaveLength(2);
+    expect(
+      new Set(
+        attached.map((constraint) =>
+          constraint.type === "pointOnLine" ? constraint.line : "",
+        ),
+      ),
+    ).toEqual(new Set([first, second]));
   });
 
   it("keeps a polyline vertex snapped to a projected reference line", () => {

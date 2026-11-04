@@ -1,14 +1,17 @@
 import type { PlaneFrame } from "../types";
+import type { EdgeRef } from "../kernel/protocol";
 import { emptySketch } from "../sketch/create";
 import type { Sketch } from "../sketch/types";
 import {
   createDatumPlaneFeature,
   createExtrudeFeature,
+  createFilletFeature,
   createSketchFeature,
 } from "./create";
 import {
   isDatumPlaneFeature,
   isExtrudeFeature,
+  isFilletFeature,
   isSketchFeature,
   type DatumPlaneDefinition,
   type DatumPlaneFeature,
@@ -17,6 +20,7 @@ import {
   type ExtrudeOperation,
   type FaceProjection,
   type Feature,
+  type FilletFeature,
   type PlaneRef,
   type SketchFeature,
 } from "./types";
@@ -35,6 +39,10 @@ export function extrudeFeatures(doc: Doc): ExtrudeFeature[] {
 
 export function datumPlaneFeatures(doc: Doc): DatumPlaneFeature[] {
   return doc.features.filter(isDatumPlaneFeature);
+}
+
+export function filletFeatures(doc: Doc): FilletFeature[] {
+  return doc.features.filter(isFilletFeature);
 }
 
 export function primarySketchFeature(doc: Doc): SketchFeature | null {
@@ -120,6 +128,16 @@ export function updateExtrudeFeature(
   );
 }
 
+export function updateFilletFeature(
+  doc: Doc,
+  featureId: string,
+  update: (feature: FilletFeature) => FilletFeature,
+): Doc {
+  return updateFeature(doc, featureId, (feature) =>
+    isFilletFeature(feature) ? update(feature) : feature,
+  );
+}
+
 export function updatePrimarySketch(doc: Doc, sketch: Sketch): Doc {
   const id = primarySketchFeature(doc)?.id;
   if (!id) {
@@ -154,10 +172,16 @@ export function updateExtrudeRegions(doc: Doc, regions: readonly string[]): Doc 
   });
 }
 
-/** `Sketch 2`, `Extrude 3`, `Plane 2`, ... based on how many exist. */
+/** `Sketch 2`, `Extrude 3`, `Plane 2`, `Fillet 2`, ... */
 export function nextFeatureName(doc: Doc, type: Feature["type"]): string {
   const prefix =
-    type === "sketch" ? "Sketch" : type === "datum" ? "Plane" : "Extrude";
+    type === "sketch"
+      ? "Sketch"
+      : type === "datum"
+        ? "Plane"
+        : type === "fillet"
+          ? "Fillet"
+          : "Extrude";
   const count = doc.features.filter((feature) => feature.type === type).length;
   return `${prefix} ${count + 1}`;
 }
@@ -171,12 +195,13 @@ function insertFeature(
   feature: Feature,
   afterFeatureId: string | null | undefined,
   dependencyIds: readonly string[],
+  atStart = false,
 ): Doc {
   const features = [...doc.features];
   const anchor = afterFeatureId
     ? features.findIndex((candidate) => candidate.id === afterFeatureId)
     : -1;
-  let index = anchor >= 0 ? anchor + 1 : features.length;
+  let index = atStart ? 0 : anchor >= 0 ? anchor + 1 : features.length;
   for (const dependencyId of dependencyIds) {
     const dependency = features.findIndex(
       (candidate) => candidate.id === dependencyId,
@@ -206,6 +231,8 @@ export function addSketchFeature(
     support?: PlaneRef;
     projections?: FaceProjection[];
     afterFeatureId?: string | null;
+    /** Insert immediately after the current first step (start gap). */
+    atStart?: boolean;
   } = {},
 ): { doc: Doc; feature: SketchFeature } {
   const feature = createSketchFeature(options.sketch ?? emptySketch(), {
@@ -220,6 +247,7 @@ export function addSketchFeature(
       feature,
       options.afterFeatureId,
       options.support ? planeRefDependencies(options.support) : [],
+      options.atStart,
     ),
     feature,
   };
@@ -233,6 +261,8 @@ export function addDatumPlaneFeature(
     name?: string;
     id?: string;
     afterFeatureId?: string | null;
+    /** Insert immediately after the current first step (start gap). */
+    atStart?: boolean;
   } = {},
 ): { doc: Doc; feature: DatumPlaneFeature } {
   const feature = createDatumPlaneFeature(definition, frame, {
@@ -247,7 +277,13 @@ export function addDatumPlaneFeature(
           ...planeRefDependencies(definition.b),
         ];
   return {
-    doc: insertFeature(doc, feature, options.afterFeatureId, dependencies),
+    doc: insertFeature(
+      doc,
+      feature,
+      options.afterFeatureId,
+      dependencies,
+      options.atStart,
+    ),
     feature,
   };
 }
@@ -277,6 +313,47 @@ export function addExtrudeFeature(
   const feature = { ...base, operation };
   return {
     doc: { ...doc, features: [...doc.features, feature] },
+    feature,
+  };
+}
+
+function edgeSourceIds(edges: readonly EdgeRef[]): string[] {
+  const sources = new Set<string>();
+  for (const edge of edges) {
+    for (const face of edge.faces) {
+      if (face.source) sources.add(face.source);
+    }
+  }
+  return [...sources];
+}
+
+/**
+ * Insert a constant-radius fillet after the selected step. The edge refs name
+ * the faces they came from, so the feature can never be ordered before them.
+ */
+export function addFilletFeature(
+  doc: Doc,
+  edges: readonly EdgeRef[],
+  radius: number,
+  options: {
+    name?: string;
+    id?: string;
+    afterFeatureId?: string | null;
+    atStart?: boolean;
+  } = {},
+): { doc: Doc; feature: FilletFeature } {
+  const feature = createFilletFeature(edges, radius, {
+    name: options.name ?? nextFeatureName(doc, "fillet"),
+    ...(options.id ? { id: options.id } : {}),
+  });
+  return {
+    doc: insertFeature(
+      doc,
+      feature,
+      options.afterFeatureId,
+      edgeSourceIds(edges),
+      options.atStart,
+    ),
     feature,
   };
 }
@@ -359,7 +436,11 @@ export function deleteFeature(
           feature.support.kind === "datum" &&
           removed.has(feature.support.featureId)) ||
         (isDatumPlaneFeature(feature) &&
-          datumBaseFeatureIds(feature.definition).some((id) => removed.has(id)));
+          datumBaseFeatureIds(feature.definition).some((id) => removed.has(id))) ||
+        (isFilletFeature(feature) &&
+          feature.edges.some((edge) =>
+            edge.faces.some((face) => removed.has(face.source)),
+          ));
       if (dependsOnRemoved) {
         removed.add(feature.id);
         changed = true;
@@ -407,6 +488,13 @@ function hasValidOrder(features: readonly Feature[]): boolean {
     }
     if (isSketchFeature(feature) && feature.support.kind === "datum") {
       return before(feature.support.featureId, feature.id);
+    }
+    if (isFilletFeature(feature)) {
+      return feature.edges.every((edge) =>
+        edge.faces.every(
+          (face) => !index.has(face.source) || before(face.source, feature.id),
+        ),
+      );
     }
     return true;
   });

@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { addPolyline, emptySketch } from "./create";
 import { applyConstraint } from "./constraints";
+import { frozenSupportPoints } from "./drag";
 import { DEMO_DEFAULTS, createDemoModel } from "./demo";
 import { applySolution, updateConstraintValue } from "./geometry";
 import {
@@ -277,6 +278,93 @@ describe("slvs adapter", () => {
     expect(at(outcome!, line.a)[1]).toBeCloseTo(15, 3);
     expect(at(outcome!, line.b)[0]).toBeCloseTo(50, 3);
     expect(at(outcome!, line.b)[1]).toBeCloseTo(15, 3);
+  });
+
+  it("moves a single snapped endpoint without resizing its support box", () => {
+    const sketch: Sketch = {
+      points: [
+        { id: "b1", x: 0, y: 0 },
+        { id: "b2", x: 40, y: 0 },
+        { id: "b3", x: 40, y: 20 },
+        { id: "b4", x: 0, y: 20 },
+        { id: "l1", x: 10, y: 20 },
+        { id: "l2", x: 40, y: 8 },
+      ],
+      curves: [
+        { id: "top", type: "line", a: "b4", b: "b3" },
+        { id: "right", type: "line", a: "b3", b: "b2" },
+        { id: "bottom", type: "line", a: "b2", b: "b1" },
+        { id: "left", type: "line", a: "b1", b: "b4" },
+        { id: "line", type: "line", a: "l1", b: "l2" },
+      ],
+      constraints: [
+        { id: "c1", type: "pointOnLine", point: "l1", line: "top" },
+        { id: "c2", type: "pointOnLine", point: "l2", line: "right" },
+      ],
+    };
+    expect([...frozenSupportPoints(sketch, ["l1"])].sort()).toEqual([
+      "b1",
+      "b2",
+      "b3",
+      "b4",
+    ]);
+    const outcome = solveDragTargets(sketch, [{ pointId: "l1", x: 15, y: 25 }], {
+      frozen: frozenSupportPoints(sketch, ["l1"]),
+    });
+    expect(outcome).not.toBeNull();
+    expect(at(outcome!, "b1")).toEqual([0, 0]);
+    expect(at(outcome!, "b2")).toEqual([40, 0]);
+    expect(at(outcome!, "b3")).toEqual([40, 20]);
+    expect(at(outcome!, "b4")).toEqual([0, 20]);
+    expect(at(outcome!, "l1")[1]).toBeCloseTo(20, 1);
+    expect(at(outcome!, "l1")[0]).toBeCloseTo(15, 1);
+    expect(at(outcome!, "l2")[0]).toBeCloseTo(40, 1);
+    expect(at(outcome!, "l2")[1]).toBeCloseTo(8, 1);
+  });
+
+  it("moves a snapped line without resizing its support box", () => {
+    const sketch: Sketch = {
+      points: [
+        { id: "b1", x: 0, y: 0 },
+        { id: "b2", x: 40, y: 0 },
+        { id: "b3", x: 40, y: 20 },
+        { id: "b4", x: 0, y: 20 },
+        { id: "l1", x: 10, y: 20 },
+        { id: "l2", x: 40, y: 8 },
+      ],
+      curves: [
+        { id: "top", type: "line", a: "b4", b: "b3" },
+        { id: "right", type: "line", a: "b3", b: "b2" },
+        { id: "line", type: "line", a: "l1", b: "l2" },
+      ],
+      constraints: [
+        { id: "c1", type: "pointOnLine", point: "l1", line: "top" },
+        { id: "c2", type: "pointOnLine", point: "l2", line: "right" },
+      ],
+    };
+    const frozen = new Set(["b1", "b2", "b3", "b4"]);
+    const outcome = solveDragTargets(
+      sketch,
+      [
+        { pointId: "l1", x: 15, y: 25 },
+        { pointId: "l2", x: 45, y: 8 },
+      ],
+      { frozen, preserveAngle: { a: "l1", b: "l2" } },
+    );
+    expect(outcome).not.toBeNull();
+    // The box is untouched; the line endpoints slid along their edges.
+    expect(at(outcome!, "b1")).toEqual([0, 0]);
+    expect(at(outcome!, "b2")).toEqual([40, 0]);
+    expect(at(outcome!, "b3")).toEqual([40, 20]);
+    expect(at(outcome!, "b4")).toEqual([0, 20]);
+    const l1 = at(outcome!, "l1");
+    const l2 = at(outcome!, "l2");
+    expect(l1[1]).toBeCloseTo(20, 1);
+    expect(l2[0]).toBeCloseTo(40, 1);
+    expect((l2[1] - l1[1]) / (l2[0] - l1[0])).toBeCloseTo(
+      (8 - 20) / (40 - 10),
+      2,
+    );
   });
 
   it("does not drag fixed reference geometry", () => {

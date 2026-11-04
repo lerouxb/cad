@@ -1,4 +1,5 @@
 import type { PlaneFrame } from "../types";
+import type { EdgeRef } from "../kernel/protocol";
 import { emptySketch, newId } from "../sketch/create";
 import type { Sketch } from "../sketch/types";
 import {
@@ -8,6 +9,7 @@ import {
   type Doc,
   type ExtrudeFeature,
   type FaceProjection,
+  type FilletFeature,
   type PlaneRef,
   type SketchFeature,
 } from "./types";
@@ -46,7 +48,7 @@ export function createSketchFeature(
 export function createDatumPlaneFeature(
   definition: DatumPlaneDefinition,
   frame: PlaneFrame,
-  options: { name?: string; id?: string } = {},
+  options: { name?: string; id?: string; hidden?: boolean } = {},
 ): DatumPlaneFeature {
   return {
     id: options.id ?? newId("feat"),
@@ -54,6 +56,7 @@ export function createDatumPlaneFeature(
     name: options.name ?? "Plane 1",
     definition,
     frame,
+    ...(options.hidden ? { hidden: true } : {}),
   };
 }
 
@@ -71,6 +74,20 @@ export function createExtrudeFeature(
     operation: "new",
     symmetric: false,
     end: "blind",
+  };
+}
+
+export function createFilletFeature(
+  edges: readonly EdgeRef[],
+  radius: number,
+  options: { name?: string; id?: string } = {},
+): FilletFeature {
+  return {
+    id: options.id ?? newId("feat"),
+    type: "fillet",
+    name: options.name ?? "Fillet 1",
+    edges: [...edges],
+    radius,
   };
 }
 
