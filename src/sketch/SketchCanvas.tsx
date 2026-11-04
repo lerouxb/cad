@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -610,7 +611,7 @@ export function SketchCanvas({
     });
   };
 
-  const commitEditor = () => {
+  const commitEditor = useCallback(() => {
     if (!editor || dimensionCommittedRef.current) return;
     dimensionCommittedRef.current = true;
     const value = Number(editor.value);
@@ -623,7 +624,7 @@ export function SketchCanvas({
       onChangeDimension(editor.id, Number(editor.measured), false);
     }
     setEditor(null);
-  };
+  }, [editor, onChangeDimension, setEditor]);
 
   const handleEditorBlur = (
     event: ReactFocusEvent<HTMLDivElement>,
@@ -646,6 +647,23 @@ export function SketchCanvas({
     };
     window.addEventListener("pointerdown", onPointerDown, true);
     return () => window.removeEventListener("pointerdown", onPointerDown, true);
+  }, [editor, commitEditor]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key !== "Enter" && event.key !== "Escape") return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.key === "Enter") {
+        commitEditor();
+      } else {
+        dimensionCommittedRef.current = true;
+        setEditor(null);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [editor, commitEditor]);
 
   const circleLike = (
@@ -2303,48 +2321,65 @@ export function SketchCanvas({
       {editor ? (
         <div
           className="dim-editor is-selected"
+          data-kind={editor.reference ? "reference" : "driving"}
           style={{ left: editor.x, top: editor.y }}
           onBlur={handleEditorBlur}
           onPointerDown={(event) => event.stopPropagation()}
         >
-          <input
-            autoFocus
-            data-testid="dimension-input"
-            value={editor.value}
-            readOnly={editor.reference}
-            aria-readonly={editor.reference}
-            inputMode="decimal"
-            aria-label="Dimension value"
-            onChange={(event) => setEditor({ ...editor, value: event.target.value })}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                commitEditor();
-              } else if (event.key === "Escape") {
-                event.preventDefault();
-                dimensionCommittedRef.current = true;
-                setEditor(null);
-              }
-            }}
-          />
-          <span className="dim-unit">mm</span>
-          <button
-            className={`dim-kind${editor.reference ? "" : " is-active"}`}
-            type="button"
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() =>
-              setEditor({
-                ...editor,
-                reference: !editor.reference,
-                value: !editor.reference ? editor.measured : editor.value,
-              })
-            }
-            aria-pressed={!editor.reference}
-            title={editor.reference ? "Make driving" : "Make reference"}
-            data-testid="dimension-kind"
-          >
-            {editor.reference ? "reference" : "driving"}
-          </button>
+          <span className="dim-field">
+            {editor.reference ? (
+              <>
+                <span
+                  className="dim-readout"
+                  data-testid="dimension-readout"
+                >
+                  ({formatLength(Number(editor.measured))})
+                </span>
+                <span className="dim-unit">mm</span>
+                <span className="dim-measured">measured</span>
+              </>
+            ) : (
+              <>
+                <input
+                  autoFocus
+                  data-testid="dimension-input"
+                  value={editor.value}
+                  inputMode="decimal"
+                  aria-label="Dimension value"
+                  onChange={(event) =>
+                    setEditor({ ...editor, value: event.target.value })
+                  }
+                />
+                <span className="dim-unit">mm</span>
+              </>
+            )}
+          </span>
+          <span className="seg dim-kind" role="group" aria-label="Dimension kind">
+            <button
+              type="button"
+              className={!editor.reference ? "is-selected" : ""}
+              aria-pressed={!editor.reference}
+              data-testid="dimension-kind-driving"
+              onClick={(event) => {
+                setEditor({ ...editor, reference: false, value: editor.measured });
+                event.currentTarget.focus();
+              }}
+            >
+              driving
+            </button>
+            <button
+              type="button"
+              className={editor.reference ? "is-selected" : ""}
+              aria-pressed={editor.reference}
+              data-testid="dimension-kind-reference"
+              onClick={(event) => {
+                setEditor({ ...editor, reference: true, value: editor.measured });
+                event.currentTarget.focus();
+              }}
+            >
+              reference
+            </button>
+          </span>
           <button
             className="text-action is-quiet"
             type="button"

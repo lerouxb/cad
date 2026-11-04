@@ -3453,10 +3453,59 @@ body {
   text-align: right;
 }
 
-.dim-editor input[readonly] {
-  background: transparent;
+.dim-field {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+/* A reference value belongs to the geometry: show the measurement, not an
+   input that looks editable but refuses edits. */
+.dim-readout {
+  min-width: 52px;
   color: var(--ink-3);
-  cursor: default;
+  font-size: var(--type-prose);
+  font-style: italic;
+  text-align: right;
+}
+
+.dim-measured {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+/* Segmented control: both states visible, the current one filled. Shared by
+   the inline editor and the new-dimension options row. */
+.seg {
+  display: inline-flex;
+  gap: 1px;
+}
+
+.seg button {
+  margin: 0;
+  padding: 2px 7px;
+  border: 0;
+  background: var(--bg-2);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-control);
+  line-height: var(--leading-control);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.seg button:hover {
+  background: var(--marker-soft);
+  color: var(--ink);
+}
+
+.seg button.is-selected {
+  background: var(--marker);
+  color: var(--marker-ink);
 }
 
 .dim-unit {
@@ -3466,21 +3515,6 @@ body {
 
 .dim-kind {
   margin-left: auto;
-  padding: 1px 6px;
-  border: 0;
-  background: none;
-  color: var(--ink-3);
-  font-family: var(--font-mono);
-  font-size: var(--type-micro);
-  letter-spacing: var(--tracking-control);
-  line-height: var(--leading-control);
-  text-transform: uppercase;
-  cursor: pointer;
-}
-
-.dim-kind.is-active {
-  background: var(--marker);
-  color: var(--marker-ink);
 }
 
 .dim-editor .text-action {

@@ -3891,6 +3891,43 @@ export function App() {
                   note={selectionFilterNote(sketchFilter)}
                   testPrefix="sketch-filter"
                 />
+              ) : tool === "dimension" ? (
+                <div
+                  className="tool-options"
+                  role="toolbar"
+                  aria-label="New dimension"
+                >
+                  <span className="tool-kicker">new dimension</span>
+                  <span
+                    className="seg"
+                    role="group"
+                    aria-label="New dimension kind"
+                  >
+                    <button
+                      type="button"
+                      className={!referenceDimensions ? "is-selected" : ""}
+                      aria-pressed={!referenceDimensions}
+                      onClick={() => setReferenceDimensions(false)}
+                      data-testid="dimension-kind-driving"
+                    >
+                      driving
+                    </button>
+                    <button
+                      type="button"
+                      className={referenceDimensions ? "is-selected" : ""}
+                      aria-pressed={referenceDimensions}
+                      onClick={() => setReferenceDimensions(true)}
+                      data-testid="reference-toggle"
+                    >
+                      reference
+                    </button>
+                  </span>
+                  <span className="tool-note">
+                    {referenceDimensions
+                      ? "measures only — no DOF spent"
+                      : "constrains the geometry"}
+                  </span>
+                </div>
               ) : null}
 
               <div className="sketch-canvas-wrap">
@@ -4000,20 +4037,6 @@ export function App() {
                   onMove={setPopoverPosition}
                 />
               )
-            ) : null}
-
-            {tool === "dimension" ? (
-              <div className="sketch-flyout">
-                <label className="toggle-field">
-                  <input
-                    type="checkbox"
-                    checked={referenceDimensions}
-                    onChange={(event) => setReferenceDimensions(event.target.checked)}
-                    data-testid="reference-toggle"
-                  />
-                  <span>Reference dimension (measure only)</span>
-                </label>
-              </div>
             ) : null}
 
             {(activeExtrude || extrudeDraft) && regions.length > 1 ? (

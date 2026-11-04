@@ -2310,7 +2310,7 @@ test("creates, edits and deletes parametric dimensions", async ({ app: page }) =
   await clickSketch(page, resized.maxX, (resized.minY + resized.maxY) / 2);
   await page.getByTestId("tool-dimension").click();
   await expect(page.getByTestId("reference-toggle")).toBeVisible();
-  await page.getByTestId("reference-toggle").check();
+  await page.getByTestId("reference-toggle").click();
   await clickSketch(page, resized.maxX + 14, (resized.minY + resized.maxY) / 2 + 10);
   await expect(page.getByTestId("dof")).toContainText("3 DOF");
   await expect(page.locator("[data-dimension-id]")).toHaveCount(2);
@@ -2336,9 +2336,15 @@ test("commits a dimension kind change on blur and locks reference values", async
     .first();
   await expect(width).toBeVisible();
   await width.dblclick();
-  await expect(page.getByTestId("dimension-kind")).toHaveText("driving");
-  await page.getByTestId("dimension-kind").click();
-  await expect(page.getByTestId("dimension-kind")).toHaveText("reference");
+  await expect(page.getByTestId("dimension-kind-driving")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await page.getByTestId("dimension-kind-reference").click();
+  await expect(page.getByTestId("dimension-kind-reference")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
 
   // There is no apply button: clicking outside commits the kind.
   await page.mouse.click(200, 200);
@@ -2350,9 +2356,13 @@ test("commits a dimension kind change on blur and locks reference values", async
 
   // A reference value is a measurement, not an editable field.
   await reference.dblclick();
-  await expect(page.getByTestId("dimension-kind")).toHaveText("reference");
-  await expect(page.getByTestId("dimension-input")).not.toBeEditable();
-  await page.getByTestId("dimension-kind").click();
+  await expect(page.getByTestId("dimension-kind-reference")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await expect(page.getByTestId("dimension-readout")).toHaveText("(60)");
+  await expect(page.getByTestId("dimension-input")).toHaveCount(0);
+  await page.getByTestId("dimension-kind-driving").click();
   await page.mouse.click(200, 200);
   await expect(
     page.locator("[data-dimension-id]").filter({ hasText: /^60$/ }),
