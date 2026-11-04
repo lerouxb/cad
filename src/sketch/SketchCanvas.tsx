@@ -2336,7 +2336,6 @@ export function SketchCanvas({
                   ({formatLength(Number(editor.measured))})
                 </span>
                 <span className="dim-unit">mm</span>
-                <span className="dim-measured">measured</span>
               </>
             ) : (
               <>

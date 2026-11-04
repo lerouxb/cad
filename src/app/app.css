@@ -3460,21 +3460,15 @@ body {
 }
 
 /* A reference value belongs to the geometry: show the measurement, not an
-   input that looks editable but refuses edits. */
+   input that looks editable but refuses edits. It keeps the field's fixed
+   footprint so switching kinds never moves or resizes the editor. */
 .dim-readout {
-  min-width: 52px;
+  width: 52px;
   color: var(--ink-3);
   font-size: var(--type-prose);
   font-style: italic;
   text-align: right;
-}
-
-.dim-measured {
-  color: var(--ink-3);
-  font-family: var(--font-mono);
-  font-size: var(--type-micro);
-  letter-spacing: var(--tracking-label);
-  text-transform: uppercase;
+  white-space: nowrap;
 }
 
 /* Segmented control: both states visible, the current one filled. Shared by
