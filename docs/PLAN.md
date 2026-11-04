@@ -798,8 +798,11 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
 - [ ] **Offset Faces** — move selected faces by a distance; tolerance/fit and wall
       adjustments. The design audit shows 11 uses (third most-used modelling feature),
       so this is Keep at M5/M6 rather than Drop
-- [ ] Selection UX: edge chain selection, box select where sensible, hover prehighlight,
-      selection filters, and Select Other for cycling overlapping picks.
+- [x] Selection UX: box and lasso select model edges, hover prehighlight, selection
+      filters, and Select Other for cycling overlapping picks. Box = every projected
+      vertex inside (window), lasso = touched/crossed; both select through the body,
+      Shift adds, an empty marquee is a no-op, and the same jobs feed the fillet/chamfer
+      set. Face sets wait for shell/offset. Edge-chain selection is still open.
 - [x] **Tool options row** (design: `docs/showcase/select.html` and `select-model.html`;
       `TIMELINE.md`): a second row under the tool line that follows the *tool*, not the
       mode. One filter at a time (no multi-select), and the row collapses for tools with

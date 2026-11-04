@@ -171,6 +171,7 @@ import {
   Viewport,
   type BodyPick,
   type ModelPickFilter,
+  type ModelPickTool,
   type PickInfo,
   type SketchOverlayData,
 } from "../viewer/Viewport";
@@ -442,6 +443,7 @@ export function App() {
   /** Ephemeral model edge multi-selection; App owns the policy. */
   const [edgeSelection, setEdgeSelection] = useState<BodyPick[]>([]);
   const [modelFilter, setModelFilter] = useState<ModelPickFilter>("all");
+  const [modelTool, setModelTool] = useState<ModelPickTool>("select");
   const [sketchFilter, setSketchFilter] =
     useState<SketchSelectionFilter>("all");
   const [selectOther, setSelectOther] = useState<PickInfo | null>(null);
@@ -492,6 +494,9 @@ export function App() {
   const viewportRef = useRef<Viewport | null>(null);
   const handleBodyPickRef = useRef<
     (pick: BodyPick | null, additive: boolean, info?: PickInfo) => void
+  >(() => {});
+  const handleMarqueeRef = useRef<
+    (picks: readonly BodyPick[], additive: boolean) => void
   >(() => {});
   const cancelBlendRef = useRef<() => void>(() => {});
   const blendDraftOpenRef = useRef(false);
@@ -1140,6 +1145,7 @@ export function App() {
   /** Filters and Select Other are ephemeral; a new/loaded document starts clean. */
   const resetSelectionFilters = (): void => {
     setModelFilter("all");
+    setModelTool("select");
     setSketchFilter("all");
     setSelectOther(null);
   };
@@ -1258,6 +1264,15 @@ export function App() {
   };
 
   /**
+   * Can this face source be an edge input? Edges on the draft's own generated
+   * rounds, or on the feature being edited, would reference their output.
+   */
+  const edgeSourceKnown = (source: string): boolean =>
+    source !== "fillet-draft" &&
+    source !== blendDraft?.featureId &&
+    doc.features.some((feature) => feature.id === source);
+
+  /**
    * A pick from the 3D stage. Faces/datum stay single-select; edges accumulate
    * while Shift is held or a fillet draft is open, and toggle on a repeat click.
    */
@@ -1298,13 +1313,9 @@ export function App() {
     }
     if (pick.kind === "edge" && pick.edgeRef) {
       const ref = pick.edgeRef;
-      const known = (source: string): boolean =>
-        source !== "fillet-draft" &&
-        source !== blendDraft?.featureId &&
-        doc.features.some((feature) => feature.id === source);
       // The stage may be previewing the draft fillet itself. Edges on those
       // generated rounds (or on the feature being edited) cannot be inputs.
-      if (!known(ref.faces[0].source) || !known(ref.faces[1].source)) return;
+      if (!edgeSourceKnown(ref.faces[0].source) || !edgeSourceKnown(ref.faces[1].source)) return;
 
       const key = edgeRefKey(ref);
       const selected = edgeSelection.some(
@@ -1342,10 +1353,52 @@ export function App() {
     setEdgeSelection([]);
     viewportRef.current?.setEdgeSelection([]);
   };
+
+  /**
+   * A box/lasso gesture over the model. Edges are the only multi-selectable
+   * body thing, so the marquee feeds the same edge set as Shift-clicking.
+   * An empty marquee is a no-op, never "select nothing".
+   */
+  const handleBodyMarquee = (
+    picks: readonly BodyPick[],
+    additive: boolean,
+  ): void => {
+    const usable = picks.filter(
+      (pick) =>
+        pick.kind === "edge" &&
+        pick.edgeRef !== undefined &&
+        edgeSourceKnown(pick.edgeRef.faces[0].source) &&
+        edgeSourceKnown(pick.edgeRef.faces[1].source),
+    );
+    if (usable.length === 0) return;
+    const merged = new Map<string, BodyPick>();
+    // A blend form always accumulates: losing inputs mid-edit is never useful.
+    if (additive || blendDraft) {
+      for (const item of edgeSelection) {
+        if (item.edgeRef) merged.set(edgeRefKey(item.edgeRef), item);
+      }
+    }
+    for (const item of usable) {
+      if (item.edgeRef) merged.set(edgeRefKey(item.edgeRef), item);
+    }
+    const next = [...merged.values()];
+    setSelectOther(null);
+    setBodyPick(blendDraft ? null : (next[next.length - 1] ?? null));
+    setEdgeSelection(next);
+    viewportRef.current?.setEdgeSelection(next);
+    if (blendDraft) {
+      updateBlendEdges(
+        next
+          .map((item) => item.edgeRef)
+          .filter((edge): edge is EdgeRef => edge !== undefined),
+      );
+    }
+  };
   // The viewport and the global keyboard effect are created once; a ref keeps
   // them pointed at the current handlers without re-registering listeners.
   useEffect(() => {
     handleBodyPickRef.current = handleBodyPick;
+    handleMarqueeRef.current = handleBodyMarquee;
     cancelBlendRef.current = cancelBlendEditor;
     blendDraftOpenRef.current = blendDraft !== null;
   });
@@ -2132,6 +2185,9 @@ export function App() {
         // handler so edge multi-select sees fresh draft/selection state.
         handleBodyPickRef.current(pick, additive, info);
       },
+      onMarquee: (picks, additive) => {
+        handleMarqueeRef.current(picks, additive);
+      },
     });
     viewportRef.current = viewport;
 
@@ -2423,6 +2479,10 @@ export function App() {
   }, [modelFilter]);
 
   useEffect(() => {
+    viewportRef.current?.setPickTool(modelTool);
+  }, [modelTool]);
+
+  useEffect(() => {
     viewportRef.current?.setSketchOverlay(modelSketchOverlay);
   }, [modelSketchOverlay]);
 
@@ -2614,19 +2674,14 @@ export function App() {
 
       switch (event.key.toLowerCase()) {
         case "v":
-          enterSketchMode();
-          setTool("select");
-          setSelection([]);
-          break;
         case "b":
-          enterSketchMode();
-          setTool("box");
-          setSelection([]);
-          break;
         case "g":
-          enterSketchMode();
-          setTool("lasso");
-          setSelection([]);
+          if (mode === "sketch") {
+            setTool(event.key.toLowerCase() as "select" | "box" | "lasso");
+            setSelection([]);
+          } else {
+            setModelTool(event.key.toLowerCase() as ModelPickTool);
+          }
           break;
         case "l":
           enterSketchMode();
@@ -3704,14 +3759,29 @@ export function App() {
                 <ToolButton
                   label="select"
                   shortcut="v"
-                  active
+                  active={modelTool === "select"}
                   onClick={() => {
+                    setModelTool("select");
                     setBodyPick(null);
                     setEdgeSelection([]);
                     setSelectOther(null);
                     viewportRef.current?.clearPick();
                   }}
                   testId="model-tool-select"
+                />
+                <ToolButton
+                  label="box"
+                  shortcut="b"
+                  active={modelTool === "box"}
+                  onClick={() => setModelTool("box")}
+                  testId="model-tool-box"
+                />
+                <ToolButton
+                  label="lasso"
+                  shortcut="g"
+                  active={modelTool === "lasso"}
+                  onClick={() => setModelTool("lasso")}
+                  testId="model-tool-lasso"
                 />
               </div>
               <ToolOptionsRow

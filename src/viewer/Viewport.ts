@@ -9,6 +9,14 @@ import type { BodyMesh } from "../core/kernel/protocol";
 import { edgeRefKey } from "../core/kernel/protocol";
 import type { PlaneFrame } from "../core/types";
 import {
+  boxBetween,
+  boxIsEmpty,
+  polygonIsEmpty,
+  polylineInBox,
+  polylineTouchesPolygon,
+  type ScreenPoint,
+} from "./marquee";
+import {
   edgeGroupForVertex,
   edgePick,
   edgePositionsForGroup,
@@ -56,6 +64,11 @@ export interface ViewportOptions {
     additive: boolean,
     info?: PickInfo,
   ) => void;
+  /**
+   * Edges enclosed (box) or touched (lasso) by a marquee gesture. An empty
+   * list means the gesture selected nothing and must not change the selection.
+   */
+  onMarquee?: (picks: readonly BodyPick[], additive: boolean) => void;
 }
 
 /** A sketch rendered on its plane in the model view. Plain data, no three.js. */
@@ -78,6 +91,9 @@ export interface SketchOverlayData {
 }
 
 export type { BodyPick };
+
+/** The model selection gesture: click, window box, or freehand lasso. */
+export type ModelPickTool = "select" | "box" | "lasso";
 
 export interface DatumPlaneOverlay {
   featureId: string;
@@ -132,6 +148,15 @@ export class Viewport {
   private selectedPick: BodyPick | null = null;
   private edgePicks: BodyPick[] = [];
   private pickFilter: ModelPickFilter = "all";
+  private pickTool: ModelPickTool = "select";
+  private marquee: {
+    tool: "box" | "lasso";
+    additive: boolean;
+    pointerId: number;
+    points: ScreenPoint[];
+  } | null = null;
+  private marqueeEl: HTMLDivElement | null = null;
+  private readonly onMarquee?: (picks: readonly BodyPick[], additive: boolean) => void;
   private pickCandidates: BodyPick[] = [];
   private pickCandidateIndex = 0;
   private pickCursor = { x: 0, y: 0 };
@@ -141,6 +166,7 @@ export class Viewport {
     this.theme = options.theme ?? "night";
     this.highlightColor = options.highlightColor ?? "#ddff00";
     this.onPick = options.onPick;
+    this.onMarquee = options.onMarquee;
     this.renderer = new THREE.WebGLRenderer({
       canvas,
       antialias: true,
@@ -563,6 +589,7 @@ export class Viewport {
     this.canvas.removeEventListener("pointerup", this.onPointerUp);
     this.canvas.removeEventListener("pointercancel", this.onPointerCancel);
     this.canvas.removeEventListener("pointerleave", this.onPointerLeave);
+    this.cancelMarquee();
     this.clearBody();
     this.clearSketchOverlay();
     this.clearEnvironment();
@@ -571,6 +598,20 @@ export class Viewport {
 
   private onPointerDown = (event: PointerEvent): void => {
     if (!this.active || event.button !== 0) return;
+    if (this.pickTool !== "select") {
+      if (!this.mesh) return;
+      // The marquee owns the drag; do not also treat it as a click pick.
+      this.setHover(null);
+      this.marquee = {
+        tool: this.pickTool,
+        additive: event.shiftKey,
+        pointerId: event.pointerId,
+        points: [this.localPoint(event)],
+      };
+      this.canvas.setPointerCapture(event.pointerId);
+      this.updateMarquee();
+      return;
+    }
     this.pointerStart = {
       x: event.clientX,
       y: event.clientY,
@@ -580,6 +621,10 @@ export class Viewport {
 
   private onPointerMove = (event: PointerEvent): void => {
     if (!this.active || this.disposed) return;
+    if (this.marquee) {
+      this.updateMarquee(this.localPoint(event));
+      return;
+    }
     if (event.buttons !== 0) {
       this.setHover(null);
       return;
@@ -589,6 +634,14 @@ export class Viewport {
 
   private onPointerUp = (event: PointerEvent): void => {
     if (!this.active || this.disposed) return;
+    if (this.marquee) {
+      if (this.marquee.pointerId !== event.pointerId) return;
+      this.updateMarquee(this.localPoint(event));
+      const { picks, additive } = this.marqueeResult();
+      this.cancelMarquee();
+      this.onMarquee?.(picks, additive);
+      return;
+    }
     const start = this.pointerStart;
     this.pointerStart = null;
     if (!start || start.pointerId !== event.pointerId || event.button !== 0) {
@@ -626,13 +679,29 @@ export class Viewport {
 
   private onPointerCancel = (): void => {
     this.pointerStart = null;
+    this.cancelMarquee();
     this.setHover(null);
   };
 
   private onPointerLeave = (): void => {
+    if (this.marquee) return;
     this.pointerStart = null;
     this.setHover(null);
   };
+
+  /** Change the selection gesture. Box/lasso take over the drag. */
+  setPickTool(tool: ModelPickTool): void {
+    if (this.pickTool === tool) return;
+    this.pickTool = tool;
+    this.canvas.dataset.pickTool = tool;
+    // Orbit must not fight the marquee drag (it listens on the same canvas),
+    // but the wheel still zooms while a marquee tool is active.
+    const select = tool === "select";
+    this.controls.enableRotate = select;
+    this.controls.enablePan = select;
+    this.cancelMarquee();
+    this.setHover(null);
+  }
 
   /** Change what the cursor may pick; the current selection is untouched. */
   setPickFilter(filter: ModelPickFilter): void {
@@ -771,6 +840,142 @@ export class Viewport {
       candidates.length === 0 &&
       Boolean(faceHit || edgeHits.length > 0 || datumHit);
     return { candidates, x, y, blocked };
+  }
+
+  private localPoint(event: PointerEvent): ScreenPoint {
+    const rect = this.canvas.getBoundingClientRect();
+    return { x: event.clientX - rect.left, y: event.clientY - rect.top };
+  }
+
+  /** Draw the in-progress box or lasso in stage coordinates. */
+  private updateMarquee(point?: ScreenPoint): void {
+    const marquee = this.marquee;
+    if (!marquee) return;
+    if (point) {
+      if (marquee.tool === "lasso") {
+        const previous = marquee.points[marquee.points.length - 1];
+        if (!previous || Math.hypot(point.x - previous.x, point.y - previous.y) > 2) {
+          marquee.points.push(point);
+        }
+      } else {
+        marquee.points[1] = point;
+      }
+    }
+    const el =
+      this.marqueeEl ??
+      (() => {
+        const created = document.createElement("div");
+        created.className = "model-marquee";
+        created.dataset.testid = "model-marquee";
+        created.style.position = "absolute";
+        created.style.pointerEvents = "none";
+        created.style.zIndex = "6";
+        this.canvas.parentElement?.appendChild(created);
+        this.marqueeEl = created;
+        return created;
+      })();
+
+    if (marquee.tool === "box") {
+      const box = boxBetween(
+        marquee.points[0]!,
+        marquee.points[1] ?? marquee.points[0]!,
+      );
+      el.replaceChildren();
+      el.style.left = `${box.minX}px`;
+      el.style.top = `${box.minY}px`;
+      el.style.width = `${box.maxX - box.minX}px`;
+      el.style.height = `${box.maxY - box.minY}px`;
+      el.style.border = `1px dashed ${this.highlightColor}`;
+      el.style.background = `${this.highlightColor}1f`;
+      return;
+    }
+
+    el.style.left = "0";
+    el.style.top = "0";
+    el.style.width = "100%";
+    el.style.height = "100%";
+    el.style.border = "none";
+    el.style.background = "none";
+    const rect = this.canvas.getBoundingClientRect();
+    el.innerHTML = `<svg width="${rect.width}" height="${rect.height}" style="display:block"><polyline fill="${this.highlightColor}1f" stroke="${this.highlightColor}" stroke-width="1" stroke-dasharray="3 3" points="${marquee.points
+      .map((item) => `${item.x.toFixed(1)},${item.y.toFixed(1)}`)
+      .join(" ")}" /></svg>`;
+  }
+
+  private cancelMarquee(): void {
+    if (this.marquee) {
+      const pointerId = this.marquee.pointerId;
+      this.marquee = null;
+      if (this.canvas.hasPointerCapture(pointerId)) {
+        this.canvas.releasePointerCapture(pointerId);
+      }
+    }
+    this.marqueeEl?.remove();
+    this.marqueeEl = null;
+  }
+
+  /** Edges enclosed by the box or touched by the lasso. */
+  private marqueeResult(): { picks: BodyPick[]; additive: boolean } {
+    const marquee = this.marquee;
+    const none = { picks: [], additive: marquee?.additive ?? false };
+    if (!marquee || !this.mesh || !this.edges) return none;
+    // Faces are not multi-selectable yet; edges are the model's pickable sets.
+    if (this.pickFilter === "faces") return none;
+    const rect = this.canvas.getBoundingClientRect();
+    const points = marquee.points;
+    if (marquee.tool === "box") {
+      if (points.length < 2 || boxIsEmpty(boxBetween(points[0]!, points[1]!))) {
+        return none;
+      }
+    } else if (polygonIsEmpty(points)) {
+      return none;
+    }
+    this.camera.updateMatrixWorld();
+    const box =
+      marquee.tool === "box" ? boxBetween(points[0]!, points[1]!) : null;
+    const picks = new Map<string, BodyPick>();
+    for (const group of this.mesh.edgeGroups) {
+      if (!group.ref) continue;
+      const screen = this.projectPolyline(
+        edgePositionsForGroup(this.mesh, group, this.edgeUnit),
+        rect,
+      );
+      if (!screen) continue;
+      const hit = box
+        ? polylineInBox(screen, box)
+        : polylineTouchesPolygon(screen, points);
+      if (!hit) continue;
+      const pick = edgePick(group);
+      picks.set(edgeRefKey(group.ref), pick);
+    }
+    // A stable order keeps the selection (and its popover list) deterministic.
+    return {
+      picks: [...picks.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([, pick]) => pick),
+      additive: marquee.additive,
+    };
+  }
+
+  private projectPolyline(
+    positions: Float32Array,
+    rect: DOMRect,
+  ): ScreenPoint[] | null {
+    const screen: ScreenPoint[] = [];
+    const point = new THREE.Vector3();
+    for (let i = 0; i + 2 < positions.length; i += 3) {
+      point.set(positions[i]!, positions[i + 1]!, positions[i + 2]!);
+      // Points at or behind the camera have no meaningful screen position.
+      if (point.clone().applyMatrix4(this.camera.matrixWorldInverse).z > -this.camera.near) {
+        return null;
+      }
+      point.project(this.camera);
+      screen.push({
+        x: (point.x * 0.5 + 0.5) * rect.width,
+        y: (-point.y * 0.5 + 0.5) * rect.height,
+      });
+    }
+    return screen.length >= 2 ? screen : null;
   }
 
   /** Cursor distance in CSS pixels from a world point on the canvas. */

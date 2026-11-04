@@ -1962,6 +1962,91 @@ test("the model filter row limits picks and Select Other cycles", async ({
   expect(errors).toEqual([]);
 });
 
+test("box and lasso select model edges", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await page.getByRole("button", { name: "Fit view" }).click();
+  await page.waitForTimeout(250);
+
+  const visible = await scanVisibleEdges(page);
+  const left = visible.find(
+    (edge) => Math.abs(edge.length - 12) < 0.6 && edge.x < 600,
+  )!;
+  const right = visible.find(
+    (edge) => Math.abs(edge.length - 12) < 0.6 && edge.x > 800,
+  )!;
+  expect(left).toBeDefined();
+  expect(right).toBeDefined();
+
+  const drag = async (
+    points: Array<{ x: number; y: number }>,
+  ): Promise<void> => {
+    await page.mouse.move(points[0]!.x, points[0]!.y);
+    await page.mouse.down();
+    for (const point of points.slice(1)) {
+      await page.mouse.move(point.x, point.y, { steps: 6 });
+    }
+    await expect(page.getByTestId("model-marquee")).toBeVisible();
+    await page.mouse.up();
+    await expect(page.getByTestId("model-marquee")).toHaveCount(0);
+  };
+
+  // A box selects only what it fully encloses: the vertical edge at the
+  // corner, not the long top/bottom edges that merely pass nearby.
+  await page.getByTestId("model-tool-box").click();
+  await expect(page.getByTestId("model-tool-box")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+  await drag([
+    { x: left.x - 20, y: left.y - 55 },
+    { x: left.x + 20, y: left.y + 55 },
+  ]);
+  const boxed = await selectedEdgeRefs(page);
+  expect(boxed).toHaveLength(1);
+  expect(boxed[0]!.hint?.length).toBeCloseTo(12, 1);
+  expect(boxed[0]!.hint?.midpoint).toEqual([-30, -20, 6]);
+  await expect(page.getByTestId("body-selection-popover")).toHaveAttribute(
+    "data-count",
+    "1",
+  );
+
+  // An empty box is a no-op, not "select nothing".
+  await drag([
+    { x: 220, y: 480 },
+    { x: 280, y: 540 },
+  ]);
+  expect(await selectedEdgeRefs(page)).toHaveLength(1);
+
+  // Shift adds another window to the selection.
+  await page.keyboard.down("Shift");
+  await drag([
+    { x: right.x - 20, y: right.y - 55 },
+    { x: right.x + 20, y: right.y + 55 },
+  ]);
+  await page.keyboard.up("Shift");
+  const both = await selectedEdgeRefs(page);
+  expect(both).toHaveLength(2);
+  expect(both.map((ref) => ref.hint?.midpoint?.[0]).sort()).toEqual([-30, 30]);
+
+  // A lasso selects what it touches, so a small loop over the corner also
+  // catches the two edges that meet there.
+  await page.getByTestId("clear-body-selection").click();
+  await page.getByTestId("model-tool-lasso").click();
+  await drag([
+    { x: left.x - 14, y: left.y - 14 },
+    { x: left.x + 14, y: left.y - 14 },
+    { x: left.x + 14, y: left.y + 14 },
+    { x: left.x - 14, y: left.y + 14 },
+    { x: left.x - 14, y: left.y - 14 },
+  ]);
+  const lassoed = await selectedEdgeRefs(page);
+  expect(lassoed.some((ref) => ref.hint?.length === 12)).toBe(true);
+  expect(lassoed.length).toBeGreaterThan(1);
+
+  await page.getByTestId("model-tool-select").click();
+  expect(errors).toEqual([]);
+});
+
 test("the sketch filter row limits what select can pick", async ({
   app: page,
 }) => {
@@ -4261,6 +4346,8 @@ test("switches and persists the appearance theme", async ({ app: page }) => {
     "rgb(251, 251, 249)",
   );
 });
+
+
 
 
 

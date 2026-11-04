@@ -484,6 +484,22 @@ docs/
   draft). Model select filters are `all/edges/faces` and gate `Viewport.pickCandidatesAt`;
   a filtered-out hit is *blocked* and keeps the selection instead of clearing it. Bodies
   wait for multi-body. Do not put filters in the selection popover.
+- **Box and lasso run on the model too, and they select edges.** The model tool row is
+  `select / box / lasso` (`v/b/g` follow the active mode); box is a window selection
+  (every projected vertex inside), lasso is crossing (any vertex inside or a segment
+  crossing its path). Both select *through* the body, Shift adds, a plain marquee
+  replaces, and an empty marquee is a no-op. The marquee is ephemeral UI state drawn over
+  the canvas; `Viewport.marqueeResult` projects each edge group's polyline, and the pure
+  box/lasso rules live in `src/viewer/marquee.ts` with unit tests. Faces are not
+  multi-selectable yet, so a marquee under the `faces` filter selects nothing until
+  shell/offset lands. Orbit drags are disabled while a marquee tool is active (the same
+  pointer events would orbit), but the wheel still zooms.
+- **Edge picking at a corner is screen-distance deterministic.** `pickCandidatesAt`
+  updates the camera's world matrix first (OrbitControls moves it between render frames,
+  and a stale matrix made the same pixel resolve to different edges) and sorts every edge
+  hit inside the line threshold by cursor distance, with the stable ref key breaking
+  ties. Hover and click must agree at a corner; if they do not, the pick is wrong, not a
+  test flake.
 - **Select Other is a cursor chip, not a cycle-on-click.** `Viewport` returns every
   overlapping candidate (edge, datum, face) with the pick; the chip at the cursor cycles
   them via `cyclePick()`. It is hidden while a fillet/chamfer draft is open. The chip and
