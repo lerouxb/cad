@@ -10,6 +10,10 @@ import {
   createFilletFeature,
   createSketchFeature,
 } from "./create";
+import {
+  EXAMPLE_PLATE,
+  exampleVerticalEdgeMidpoints,
+} from "./exampleMetrics";
 import { datumDefinitionFrame, frameFromHint } from "./support";
 import type { Doc, PlaneRef } from "./types";
 
@@ -30,12 +34,17 @@ export const EXAMPLE_DOC_ID = "doc-example";
  * four-edge "Rounded plate" fillet and the alternative "Beveled plate" chamfer
  * are suppressed for the same reason.
  */
+function plateArea(): number {
+  const { width, height, holeDiameter } = EXAMPLE_PLATE;
+  return width * height - Math.PI * (holeDiameter / 2) ** 2;
+}
+
 export function createExampleDocument(): Doc {
   const model = createExampleModel();
   const base = createDocument(model.sketch, {
     id: EXAMPLE_DOC_ID,
     name: "Example",
-    height: 12,
+    height: EXAMPLE_PLATE.thickness,
   });
   const baseSketch = base.features[0]!;
   const baseExtrude = base.features[1]!;
@@ -47,15 +56,15 @@ export function createExampleDocument(): Doc {
     entityType: "face" as const,
     surfaceType: "PLANE",
     normal: [0, 0, 1] as [number, number, number],
-    centroid: [0, 0, 12] as [number, number, number],
-    area: 60 * 40 - Math.PI * 8 * 8,
+    centroid: [0, 0, EXAMPLE_PLATE.thickness] as [number, number, number],
+    area: plateArea(),
   };
   const bottomHint = {
     entityType: "face" as const,
     surfaceType: "PLANE",
     normal: [0, 0, -1] as [number, number, number],
     centroid: [0, 0, 0] as [number, number, number],
-    area: 60 * 40 - Math.PI * 8 * 8,
+    area: plateArea(),
   };
   const topFace: TopoRef = {
     source: baseExtrude.id,
@@ -94,7 +103,7 @@ export function createExampleDocument(): Doc {
   const centerPin = {
     ...createExtrudeFeature(baseSketch.id, {
       name: "Center pin",
-      height: 20,
+      height: EXAMPLE_PLATE.pinHeight,
     }),
     operation: "join" as const,
     regions: holeRegion ? [holeRegion.id] : [],
@@ -115,7 +124,7 @@ export function createExampleDocument(): Doc {
   const holesCut = {
     ...createExtrudeFeature(holesSketch.id, {
       name: "Mounting holes cut",
-      height: 12,
+      height: EXAMPLE_PLATE.thickness,
     }),
     operation: "cut" as const,
     end: "throughAll" as const,
@@ -144,32 +153,62 @@ export function createExampleDocument(): Doc {
       area,
     },
   });
-  const left = sideFace("extrude:side:left", [-1, 0, 0], [-30, 0, 6], 40 * 12);
-  const right = sideFace("extrude:side:right", [1, 0, 0], [30, 0, 6], 40 * 12);
-  const front = sideFace("extrude:side:front", [0, -1, 0], [0, -20, 6], 60 * 12);
-  const back = sideFace("extrude:side:back", [0, 1, 0], [0, 20, 6], 60 * 12);
-  const verticalEdge = (
-    a: TopoRef,
-    b: TopoRef,
-    x: number,
-    y: number,
-  ): EdgeRef => ({
+  const { width, height, thickness } = EXAMPLE_PLATE;
+  const halfWidth = width / 2;
+  const halfHeight = height / 2;
+  const midHeight = thickness / 2;
+  const sideArea = width * thickness;
+  const endArea = height * thickness;
+  const left = sideFace(
+    "extrude:side:left",
+    [-1, 0, 0],
+    [-halfWidth, 0, midHeight],
+    endArea,
+  );
+  const right = sideFace(
+    "extrude:side:right",
+    [1, 0, 0],
+    [halfWidth, 0, midHeight],
+    endArea,
+  );
+  const front = sideFace(
+    "extrude:side:front",
+    [0, -1, 0],
+    [0, -halfHeight, midHeight],
+    sideArea,
+  );
+  const back = sideFace(
+    "extrude:side:back",
+    [0, 1, 0],
+    [0, halfHeight, midHeight],
+    sideArea,
+  );
+  const corners = exampleVerticalEdgeMidpoints();
+  const verticalEdge = (a: TopoRef, b: TopoRef, at: number): EdgeRef => ({
     kind: "edge",
     faces: [a, b],
-    hint: { entityType: "edge", length: 12, midpoint: [x, y, 6] },
+    hint: {
+      entityType: "edge",
+      length: thickness,
+      midpoint: corners[at]!,
+    },
   });
   const plateEdges = [
-    verticalEdge(left, front, -30, -20),
-    verticalEdge(right, front, 30, -20),
-    verticalEdge(right, back, 30, 20),
-    verticalEdge(left, back, -30, 20),
+    verticalEdge(left, front, 0),
+    verticalEdge(right, front, 1),
+    verticalEdge(right, back, 2),
+    verticalEdge(left, back, 3),
   ];
   const roundedPlate = {
-    ...createFilletFeature(plateEdges, 4, { name: "Rounded plate" }),
+    ...createFilletFeature(plateEdges, EXAMPLE_PLATE.filletRadius, {
+      name: "Rounded plate",
+    }),
     suppressed: true,
   };
   const beveledPlate = {
-    ...createChamferFeature(plateEdges, 4, { name: "Beveled plate" }),
+    ...createChamferFeature(plateEdges, EXAMPLE_PLATE.chamferDistance, {
+      name: "Beveled plate",
+    }),
     suppressed: true,
   };
 

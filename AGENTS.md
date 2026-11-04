@@ -129,9 +129,15 @@ npm run typecheck  # tsc --noEmit
 npm run lint       # eslint
 npm run check:typography  # typography token audit (mockups + src/app/app.css)
 npm test           # vitest run
-npm run e2e        # playwright (chromium); starts its own dev server
+npm run e2e        # playwright (chromium), stops at the first failure; starts its own dev server
+npm run e2e:all    # the same suite without --max-failures (CI runs this)
 npm run verify     # typecheck + lint + typography audit + test  <-- run this before saying you're done
 ```
+
+Test strategy and the rules that keep a fixture change cheap are in
+`docs/TESTING.md`. The short version: fail fast, derive coordinates and
+expected values from shared constants, and assert on UI state readouts instead
+of guessing what a pixel click selected.
 
 ## Repo map
 

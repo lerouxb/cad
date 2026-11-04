@@ -2723,7 +2723,7 @@ export function App() {
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, redo]);
+  }, [undo, redo, mode]);
 
   const handleSetPointPosition = (pointId: string, x: number, y: number): void => {
     if (!isSolverReady()) return;

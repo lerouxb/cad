@@ -2,6 +2,11 @@ import { readFileSync } from "node:fs";
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
 import { createDocument } from "../src/core/doc/create";
 import { createExampleDocument } from "../src/core/doc/example";
+import {
+  exampleBounds,
+  examplePlateVolume,
+  exampleSolidPlateVolume,
+} from "../src/core/doc/exampleMetrics";
 import { addSketchFeature } from "../src/core/doc/selectors";
 import type { ExtrudeFeature, SketchFeature } from "../src/core/doc/types";
 import { addCircle, addPolyline, emptySketch } from "../src/core/sketch/create";
@@ -472,7 +477,7 @@ test.beforeEach(async ({ app: page }) => {
   await page.getByTestId("timeline-extrude").click();
   await setSlider(page.getByTestId("height-slider"), 12);
   await page.getByTestId("feature-popover-apply").click();
-  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const plate = examplePlateVolume();
   await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
 });
 
@@ -481,10 +486,10 @@ test("the dimensioned example drives an exact solid", async ({ app: page }) => {
 
   const stats = page.getByTestId("mesh-stats");
   await expect(stats).toBeVisible();
-  await expect.poll(() => meshBounds(page)).toBe("-30,-20,0,30,20,12");
+  await expect.poll(() => meshBounds(page)).toBe(exampleBounds());
   await expect(stats).toHaveAttribute("data-faces", "7");
 
-  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const plate = examplePlateVolume();
   await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
 
   await enterSketch(page);
@@ -510,7 +515,7 @@ test("the dimensioned example drives an exact solid", async ({ app: page }) => {
   // Extrude height is an extrude-feature parameter, edited in the feature popover.
   await setSlider(page.getByTestId("height-slider"), 30);
   await page.getByTestId("feature-popover-apply").click();
-  const taller = 60 * 40 * 30 - Math.PI * 8 * 8 * 30;
+  const taller = examplePlateVolume(30);
   await expect.poll(() => volume(page)).toBeCloseTo(taller, -1);
 
   // Drawing appends to the sketch instead of replacing it. A circle inside the
@@ -591,14 +596,14 @@ test("clicking the model background cancels the feature editor", async ({
 }) => {
   const errors = collectErrors(page);
   const canvas = page.locator("canvas.viewport-canvas");
-  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const plate = examplePlateVolume();
 
   await page.getByTestId("timeline-extrude").click();
   await expect(page.getByTestId("feature-popover")).toBeVisible();
   await page.getByTestId("extrude-height").fill("30");
   await expect
     .poll(() => volume(page))
-    .toBeCloseTo(60 * 40 * 30 - Math.PI * 8 * 8 * 30, -1);
+    .toBeCloseTo(examplePlateVolume(30), -1);
 
   // The stage background is not a popover or a view control: cancel like the
   // footer button, restoring the feature as it was when the editor opened.
@@ -622,7 +627,7 @@ test("selecting a step scrubs the history and gaps insert steps", async ({
   app: page,
 }) => {
   const errors = collectErrors(page);
-  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const plate = examplePlateVolume();
   const pinVolume = Math.PI * 8 * 8 * 20;
   const pin = page
     .locator('[data-feature-type="extrude"]')
@@ -843,9 +848,9 @@ test("creates a sketch on a planar face and extrudes from it", async ({
   await page.getByTestId("extrude-apply").click();
 
   const expected =
-    60 * 40 * 12 - Math.PI * 8 * 8 * 12 + Math.PI * 5 * 5 * 5;
+    examplePlateVolume() + Math.PI * 5 * 5 * 5;
   await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
-  await expect.poll(() => meshBounds(page)).toBe("-30,-20,0,30,20,17");
+  await expect.poll(() => meshBounds(page)).toBe(exampleBounds(17));
   await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
     "data-status",
     "ok",
@@ -884,9 +889,9 @@ test("creates a sketch on the XZ world plane and joins an extrude", async ({
   await page.getByTestId("extrude-height").fill("5");
   await page.getByTestId("extrude-apply").click();
 
-  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const plate = examplePlateVolume();
   await expect.poll(() => volume(page)).toBeCloseTo(plate + Math.PI * 5 * 5 * 5, -1);
-  await expect.poll(() => meshBounds(page)).toBe("-30,-20,0,30,20,12");
+  await expect.poll(() => meshBounds(page)).toBe(exampleBounds());
   await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
     "data-status",
     "ok",
@@ -939,11 +944,11 @@ test("creates an offset datum plane and sketches on it", async ({
   await page.getByTestId("extrude-height").fill("5");
   await page.getByTestId("extrude-apply").click();
 
-  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const plate = examplePlateVolume();
   await expect
     .poll(() => volume(page))
     .toBeCloseTo(plate + Math.PI * 5 * 5 * 3, -1);
-  await expect.poll(() => meshBounds(page)).toBe("-30,-20,0,30,20,15");
+  await expect.poll(() => meshBounds(page)).toBe(exampleBounds(15));
 
   // Move the datum plane down: the boss follows, so two more millimetres of
   // the 5 mm cylinder are outside the 12 mm plate.
@@ -957,7 +962,7 @@ test("creates an offset datum plane and sketches on it", async ({
   await expect
     .poll(() => volume(page))
     .toBeCloseTo(plate + Math.PI * 5 * 5 * 1, -1);
-  await expect.poll(() => meshBounds(page)).toBe("-30,-20,0,30,20,13");
+  await expect.poll(() => meshBounds(page)).toBe(exampleBounds(13));
   await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
     "data-status",
     "ok",
@@ -1058,18 +1063,18 @@ test("datum planes based on a face follow source body edits", async ({
   await page.getByTestId("extrude-apply").click();
 
   const boss = Math.PI * 5 * 5 * 5;
-  const plate12 = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const plate12 = examplePlateVolume();
   await expect.poll(() => volume(page)).toBeCloseTo(plate12 + boss, -1);
-  await expect.poll(() => meshBounds(page)).toBe("-30,-20,0,30,20,17");
+  await expect.poll(() => meshBounds(page)).toBe(exampleBounds(17));
 
   await page.getByTestId("timeline-extrude").click();
   await page.getByTestId("extrude-height").fill("30");
   await page.getByTestId("feature-popover-apply").click();
   await page.locator("[data-feature-id]").last().click();
 
-  const plate30 = 60 * 40 * 30 - Math.PI * 8 * 8 * 30;
+  const plate30 = examplePlateVolume(30);
   await expect.poll(() => volume(page)).toBeCloseTo(plate30 + boss, -1);
-  await expect.poll(() => meshBounds(page)).toBe("-30,-20,0,30,20,35");
+  await expect.poll(() => meshBounds(page)).toBe(exampleBounds(35));
 
   await expect
     .poll(() =>
@@ -1499,9 +1504,9 @@ test("keeps a face sketch attached when its source body changes", async ({
   await sketchBossOnPickedFace(page);
 
   const boss = Math.PI * 5 * 5 * 5;
-  const plate12 = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const plate12 = examplePlateVolume();
   await expect.poll(() => volume(page)).toBeCloseTo(plate12 + boss, -1);
-  await expect.poll(() => meshBounds(page)).toBe("-30,-20,0,30,20,17");
+  await expect.poll(() => meshBounds(page)).toBe(exampleBounds(17));
 
   // Make the source plate taller. The boss sketch has no own placement
   // dimensions: its frame comes from the live top face, so the boss must move
@@ -1512,9 +1517,9 @@ test("keeps a face sketch attached when its source body changes", async ({
   // The boss is downstream of the edited extrude; move the cursor to the end to
   // rebuild through it.
   await page.locator("[data-feature-id]").last().click();
-  const plate30 = 60 * 40 * 30 - Math.PI * 8 * 8 * 30;
+  const plate30 = examplePlateVolume(30);
   await expect.poll(() => volume(page)).toBeCloseTo(plate30 + boss, -1);
-  await expect.poll(() => meshBounds(page)).toBe("-30,-20,0,30,20,35");
+  await expect.poll(() => meshBounds(page)).toBe(exampleBounds(35));
   await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
     "data-status",
     "ok",
@@ -1766,7 +1771,7 @@ test("fillets four vertical edges and survives an upstream edit", async ({
   // The step highlight is the four rounds it generated, not the whole body.
   await expect(canvas).toHaveAttribute("data-feature-faces", "4");
 
-  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const plate = examplePlateVolume();
   const removed = 4 * (2 * 2 - (Math.PI * 2 * 2) / 4) * 12;
   await expect.poll(() => volume(page)).toBeCloseTo(plate - removed, -1);
   await expect(page.getByTestId("mesh-stats")).toHaveAttribute("data-faces", "11");
@@ -1779,7 +1784,7 @@ test("fillets four vertical edges and survives an upstream edit", async ({
   // Move the history cursor past the fillet so it rebuilds on the taller plate.
   await filletStep.click();
   await expect(filletStep).toHaveAttribute("data-status", "ok");
-  const tallerPlate = 60 * 40 * 20 - Math.PI * 8 * 8 * 20;
+  const tallerPlate = examplePlateVolume(20);
   const tallerRemoved = 4 * (2 * 2 - (Math.PI * 2 * 2) / 4) * 20;
   await expect.poll(() => volume(page)).toBeCloseTo(tallerPlate - tallerRemoved, -1);
   await expect(page.getByTestId("mesh-stats")).toHaveAttribute("data-faces", "11");
@@ -1817,7 +1822,7 @@ test("the example's suppressed fillet resolves on the plate", async ({
   await expect(step).toHaveAttribute("data-status", "ok");
   await expect(step.locator(".tree-meta")).toContainText("R 4 mm · 4 edges");
 
-  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const plate = examplePlateVolume();
   const removed = 4 * (4 * 4 - (Math.PI * 4 * 4) / 4) * 12;
   await expect.poll(() => volume(page)).toBeCloseTo(plate - removed, -1);
   await expect(page.getByTestId("mesh-stats")).toHaveAttribute("data-faces", "11");
@@ -1838,7 +1843,7 @@ test("the example's suppressed chamfer resolves on the plate", async ({
   await expect(step).toHaveAttribute("data-status", "ok");
   await expect(step.locator(".tree-meta")).toContainText("4 mm · 4 edges");
 
-  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const plate = examplePlateVolume();
   const removed = 4 * ((4 * 4) / 2) * 12;
   await expect.poll(() => volume(page)).toBeCloseTo(plate - removed, -1);
   await expect(page.getByTestId("mesh-stats")).toHaveAttribute("data-faces", "11");
@@ -1871,7 +1876,7 @@ test("creates a chamfer from selected edges with a live preview", async ({
   );
   await expect(page.getByTestId("chamfer-feature-distance-slider")).toBeVisible();
 
-  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const plate = examplePlateVolume();
   const removedAt = (distance: number): number =>
     selected.length * ((distance * distance) / 2) * 60;
   await page.getByTestId("chamfer-feature-distance").fill("2");
@@ -2160,10 +2165,10 @@ test("the example reuses one sketch for independent extruded regions", async ({
   await pin.click();
   await page.getByTestId("feature-suppress").click();
 
-  const plate = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const plate = examplePlateVolume();
   const pinVolume = Math.PI * 8 * 8 * 20;
   await expect.poll(() => volume(page)).toBeCloseTo(plate + pinVolume, -1);
-  await expect.poll(() => meshBounds(page)).toBe("-30,-20,0,30,20,20");
+  await expect.poll(() => meshBounds(page)).toBe(exampleBounds(20));
 
   const readExtrudes = () =>
     page.evaluate(() => {
@@ -2226,7 +2231,7 @@ test("selects a hole as its own extrusion profile", async ({ app: page }) => {
 
   await page.getByTestId("extrude-apply").click();
   // Join fills the existing Ø16 hole, so the plate becomes solid.
-  await expect.poll(() => volume(page)).toBeCloseTo(60 * 40 * 12, -1);
+  await expect.poll(() => volume(page)).toBeCloseTo(exampleSolidPlateVolume(), -1);
   await expect(page.locator("[data-feature-id]")).toHaveCount(9);
   await expect(
     page.locator('[data-feature-type="extrude"]').last(),
@@ -3735,7 +3740,7 @@ test("autosaves the document and reopens it", async ({ app: page }) => {
   await page.getByTestId("timeline-extrude").click();
   await setSlider(page.getByTestId("height-slider"), 20);
   await page.getByTestId("feature-popover-apply").click();
-  const plate = 60 * 40 * 20 - Math.PI * 8 * 8 * 20;
+  const plate = examplePlateVolume(20);
   await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
 
   await expect
@@ -3894,7 +3899,7 @@ test("new extrude picks profiles from the selected sketch", async ({ app: page }
   await page.getByTestId("extrude-apply").click();
 
   const expected =
-    60 * 40 * 12 - Math.PI * 8 * 8 * 12 - 2 * Math.PI * 3 * 3 * 12;
+    examplePlateVolume() - 2 * Math.PI * 3 * 3 * 12;
   await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
   await expect(
     page.locator('[data-feature-type="extrude"]').last(),
@@ -3906,12 +3911,12 @@ test("new extrude picks profiles from the selected sketch", async ({ app: page }
 });
 
 test("edits, suppresses and deletes an extrude", async ({ app: page }) => {
-  const plate12 = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const plate12 = examplePlateVolume();
   await expect.poll(() => volume(page)).toBeCloseTo(plate12, -1);
 
   await page.getByTestId("timeline-extrude").click();
   await page.getByTestId("extrude-height").fill("30");
-  const plate30 = 60 * 40 * 30 - Math.PI * 8 * 8 * 30;
+  const plate30 = examplePlateVolume(30);
   await expect.poll(() => volume(page)).toBeCloseTo(plate30, -1);
 
   await page.getByTestId("extrude-symmetric").click();
@@ -3946,13 +3951,13 @@ test("edits, suppresses and deletes an extrude", async ({ app: page }) => {
 test("cancel restores the previous extrude and discards a draft", async ({
   app: page,
 }) => {
-  const plate12 = 60 * 40 * 12 - Math.PI * 8 * 8 * 12;
+  const plate12 = examplePlateVolume();
   await expect.poll(() => volume(page)).toBeCloseTo(plate12, -1);
 
   await page.getByTestId("timeline-extrude").click();
   await page.getByTestId("extrude-height").fill("30");
   await page.getByTestId("extrude-symmetric").click();
-  const plate30 = 60 * 40 * 30 - Math.PI * 8 * 8 * 30;
+  const plate30 = examplePlateVolume(30);
   await expect.poll(() => volume(page)).toBeCloseTo(plate30, -1);
   await expect(page.getByTestId("feature-popover")).toContainText(
     "30 mm · new · symmetric · 1 region",
@@ -4128,7 +4133,7 @@ test("builds a cut and join from a saved multi-feature document", async ({
 
   // Selecting the base extrude scrubs the history to that step and pauses the
   // downstream cut and join. Selecting the last step builds through them again.
-  await expect.poll(() => volume(page)).toBeCloseTo(60 * 40 * 12, -1);
+  await expect.poll(() => volume(page)).toBeCloseTo(exampleSolidPlateVolume(), -1);
   await expect(page.locator('[data-feature-id="extrude-2"]')).toHaveAttribute(
     "data-status",
     "paused",

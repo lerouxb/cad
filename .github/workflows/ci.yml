@@ -30,7 +30,8 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run e2e
+      # CI wants the whole failure picture; fail-fast is for local iteration.
+      - run: npm run e2e:all
 
   # The two WASM payloads are the only things that can silently break the
   # product; once the app grows, add a budget check here (slvs ~1.6 MB gzip,
