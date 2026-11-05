@@ -1,5 +1,5 @@
 import type { PlaneFrame } from "../types";
-import type { EdgeRef } from "../kernel/protocol";
+import type { EdgeRef, TopoRef } from "../kernel/protocol";
 import { emptySketch } from "../sketch/create";
 import type { Sketch } from "../sketch/types";
 import {
@@ -7,6 +7,7 @@ import {
   createDatumPlaneFeature,
   createExtrudeFeature,
   createFilletFeature,
+  createShellFeature,
   createSketchFeature,
 } from "./create";
 import {
@@ -15,6 +16,7 @@ import {
   isEdgeBlendFeature,
   isExtrudeFeature,
   isFilletFeature,
+  isShellFeature,
   isSketchFeature,
   type ChamferFeature,
   type DatumPlaneDefinition,
@@ -27,6 +29,7 @@ import {
   type Feature,
   type FilletFeature,
   type PlaneRef,
+  type ShellFeature,
   type SketchFeature,
 } from "./types";
 
@@ -151,6 +154,16 @@ export function updateFilletFeature(
   );
 }
 
+export function updateShellFeature(
+  doc: Doc,
+  featureId: string,
+  update: (feature: ShellFeature) => ShellFeature,
+): Doc {
+  return updateFeature(doc, featureId, (feature) =>
+    isShellFeature(feature) ? update(feature) : feature,
+  );
+}
+
 export function updateChamferFeature(
   doc: Doc,
   featureId: string,
@@ -217,7 +230,9 @@ export function nextFeatureName(doc: Doc, type: Feature["type"]): string {
           ? "Fillet"
           : type === "chamfer"
             ? "Chamfer"
-            : "Extrude";
+            : type === "shell"
+              ? "Shell"
+              : "Extrude";
   const count = doc.features.filter((feature) => feature.type === type).length;
   return `${prefix} ${count + 1}`;
 }
@@ -394,6 +409,41 @@ export function addFilletFeature(
   };
 }
 
+/** The solid features a set of face refs came from. */
+function faceSourceIds(faces: readonly TopoRef[]): string[] {
+  const sources = new Set<string>();
+  for (const face of faces) sources.add(face.source);
+  return [...sources];
+}
+
+/** Insert a shell after the selected step, with the listed faces open. */
+export function addShellFeature(
+  doc: Doc,
+  faces: readonly TopoRef[],
+  thickness: number,
+  options: {
+    name?: string;
+    id?: string;
+    afterFeatureId?: string | null;
+    atStart?: boolean;
+  } = {},
+): { doc: Doc; feature: ShellFeature } {
+  const feature = createShellFeature(faces, thickness, {
+    name: options.name ?? nextFeatureName(doc, "shell"),
+    ...(options.id ? { id: options.id } : {}),
+  });
+  return {
+    doc: insertFeature(
+      doc,
+      feature,
+      options.afterFeatureId,
+      faceSourceIds(faces),
+      options.atStart,
+    ),
+    feature,
+  };
+}
+
 /** Insert a constant-distance chamfer after the selected step. */
 export function addChamferFeature(
   doc: Doc,
@@ -504,7 +554,9 @@ export function deleteFeature(
         (isEdgeBlendFeature(feature) &&
           feature.edges.some((edge) =>
             edge.faces.some((face) => removed.has(face.source)),
-          ));
+          )) ||
+        (isShellFeature(feature) &&
+          feature.faces.some((face) => removed.has(face.source)));
       if (dependsOnRemoved) {
         removed.add(feature.id);
         changed = true;
@@ -558,6 +610,11 @@ function hasValidOrder(features: readonly Feature[]): boolean {
         edge.faces.every(
           (face) => !index.has(face.source) || before(face.source, feature.id),
         ),
+      );
+    }
+    if (isShellFeature(feature)) {
+      return feature.faces.every(
+        (face) => !index.has(face.source) || before(face.source, feature.id),
       );
     }
     return true;

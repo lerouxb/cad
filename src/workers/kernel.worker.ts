@@ -34,6 +34,7 @@ import {
   projectPointOnFace,
   resolveRef,
   shape,
+  shellWithEvolution,
   sharedEdges,
   threePointArc,
   toBufferGeometryData,
@@ -63,6 +64,7 @@ import type {
   FeatureBuildStatus,
   KernelEdgeBlendFeature,
   KernelFeature,
+  KernelShellFeature,
   KernelRequest,
   ProfileRegion,
   KernelResponse,
@@ -192,7 +194,11 @@ function buildFeatures(features: KernelFeature[]): {
       continue;
     }
 
-    if (feature.kind === "fillet" || feature.kind === "chamfer") {
+    if (
+      feature.kind === "fillet" ||
+      feature.kind === "chamfer" ||
+      feature.kind === "shell"
+    ) {
       if (!base) {
         cacheInvalid = true;
         statuses.push({
@@ -204,7 +210,10 @@ function buildFeatures(features: KernelFeature[]): {
         continue;
       }
       try {
-        const result = buildEdgeBlendFeature(feature, base, baseRoles);
+        const result: { solid: Solid; roles: RoleTable } =
+          feature.kind === "shell"
+            ? buildShellFeature(feature, base, baseRoles)
+            : buildEdgeBlendFeature(feature, base, baseRoles);
         base = result.solid;
         baseRoles = result.roles;
         baseKey = feature.cacheKey;
@@ -792,6 +801,87 @@ interface ResolvedEdge {
   edge: Edge;
   /** The two pre-fillet faces the edge bounded. */
   faces: [Face, Face];
+}
+
+/**
+ * Hollow the current body, removing `faces` as openings. OCCT offsets the
+ * remaining faces inward by `thickness`; the outer faces keep their roles, and
+ * the new inner/rim faces are named under the feature so the step highlight and
+ * downstream picks work.
+ */
+function buildShellFeature(
+  feature: KernelShellFeature,
+  base: Solid,
+  baseRoles: RoleTable,
+): { solid: Solid; roles: RoleTable } {
+  const thickness = feature.thickness;
+  if (!Number.isFinite(thickness) || thickness <= 0) {
+    throw new Error("Shell thickness must be greater than zero.");
+  }
+  if (feature.faces.length === 0) {
+    throw new Error("Select at least one face to open.");
+  }
+
+  const openFaces: Face[] = [];
+  for (const ref of feature.faces) {
+    const resolved = resolveFaceOnSolid(base, baseRoles, ref);
+    if ("broken" in resolved) {
+      throw new Error(
+        "The selected face no longer exists on the current body; reselect it or remove the shell.",
+      );
+    }
+    openFaces.push(resolved.face as Face);
+  }
+
+  const result = unwrap(
+    shellWithEvolution(base as ValidSolid, openFaces, thickness),
+  );
+  // OCCT silently returns a *larger* solid when the wall is thicker than the
+  // body can absorb (e.g. 50 mm on a 12 mm plate). A shell only removes
+  // material and never grows the body, so reject that result explicitly.
+  const before = getBounds(base);
+  const after = getBounds(result.shape as Solid);
+  const grew =
+    unwrap(measureVolume(result.shape as Solid)) >=
+    unwrap(measureVolume(base)) - 1e-6;
+  const outside =
+    after.xMin < before.xMin - 1e-3 ||
+    after.xMax > before.xMax + 1e-3 ||
+    after.yMin < before.yMin - 1e-3 ||
+    after.yMax > before.yMax + 1e-3 ||
+    after.zMin < before.zMin - 1e-3 ||
+    after.zMax > before.zMax + 1e-3;
+  if (grew || outside) {
+    throw new Error("The shell thickness is too large for this body.");
+  }
+  const remap = remapRolesByGeometry(base, result.shape as Solid, baseRoles);
+  const roles = adoptShellFaces(
+    result.shape as Solid,
+    remap,
+    feature.featureId,
+  );
+  return { solid: result.shape as Solid, roles };
+}
+
+/** Name the inner and rim faces a shell generated under its feature step. */
+function adoptShellFaces(
+  post: Solid,
+  remap: RoleRemap,
+  featureId: string,
+): RoleTable {
+  const claimed = new Set(remap.claimed);
+  const featureRoles = new Map<string, number[]>();
+  let anonymous = 0;
+  for (const face of getFaces(post) as Array<Parameters<typeof captureHint>[0]>) {
+    const hash = getHashCode(face);
+    if (claimed.has(hash)) continue;
+    featureRoles.set(`shell:face_${anonymous++}`, [hash]);
+    claimed.add(hash);
+  }
+  if (featureRoles.size === 0) return remap.roles;
+  const next = new Map(remap.roles);
+  next.set(featureId, featureRoles);
+  return next;
 }
 
 /**

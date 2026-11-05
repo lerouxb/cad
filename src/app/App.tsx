@@ -57,6 +57,7 @@ import {
   primaryExtrudeFeature,
   primarySketch,
   primarySketchFeature,
+  addShellFeature,
   renameDocument,
   renameFeature,
   setDatumPlaneHidden,
@@ -68,6 +69,7 @@ import {
   updateExtrudeFeature,
   updateFeature,
   updateFilletFeature,
+  updateShellFeature,
   updateSketchFeature,
 } from "../core/doc/selectors";
 import {
@@ -76,6 +78,7 @@ import {
   isEdgeBlendFeature,
   isExtrudeFeature,
   isFilletFeature,
+  isShellFeature,
   isSketchFeature,
   type DatumPlaneDefinition,
   type DatumPlaneFeature,
@@ -84,6 +87,7 @@ import {
   type ExtrudeFeature,
   type Feature,
   type PlaneRef,
+  type ShellFeature,
   type SketchFeature,
   type WorldPlane,
 } from "../core/doc/types";
@@ -94,6 +98,7 @@ import type {
   EdgeRef,
   FeatureBuildStatus,
   KernelFeature,
+  TopoRef,
 } from "../core/kernel/protocol";
 import { edgeRefKey } from "../core/kernel/protocol";
 import { formatLength } from "../core/format";
@@ -185,6 +190,8 @@ import {
 } from "./DatumPlanePopover";
 import { SelectionPopover } from "./SelectionPopover";
 import { BodySelectionPopover } from "./BodySelectionPopover";
+import { FaceSelectionPopover } from "./FaceSelectionPopover";
+import { ShellPopover } from "./ShellPopover";
 import { SolidBlendPopover } from "./SolidBlendPopover";
 import { FilletPopover } from "./FilletPopover";
 import type { PopoverPosition } from "./StagePopover";
@@ -248,7 +255,7 @@ function featureTimelineOutput(feature: Feature): TimelineOutput {
   if (isDatumPlaneFeature(feature)) {
     return { op: "+", kind: "plane", name: feature.name };
   }
-  if (isEdgeBlendFeature(feature)) {
+  if (isEdgeBlendFeature(feature) || isShellFeature(feature)) {
     return { op: "→", kind: "body", name: "body" };
   }
   return {
@@ -327,12 +334,37 @@ function defaultBlendValue(
   return Math.max(0.5, Math.min(5, Math.round(basedOnEdge * 10) / 10));
 }
 
+/** A plausible starting wall: 10% of the body's shortest dimension. */
+function defaultShellThickness(mesh: BodyMesh | null): number {
+  const bounds = mesh?.stats.bounds;
+  const shortest = bounds
+    ? Math.min(bounds[3] - bounds[0], bounds[4] - bounds[1], bounds[5] - bounds[2])
+    : 12;
+  return Math.max(0.5, Math.min(5, Math.round(shortest * 0.1 * 10) / 10));
+}
+
 function edgeBodyPick(edge: EdgeRef): BodyPick {
   return {
     kind: "edge",
     id: `edge-${edgeRefKey(edge)}`,
     edgeRef: edge,
   };
+}
+
+function faceBodyPick(ref: TopoRef): BodyPick {
+  return {
+    kind: "face",
+    id: `face-${faceRefKey(ref)}`,
+    ref,
+  };
+}
+
+interface ShellDraft {
+  mode: "new" | "edit";
+  featureId: string | null;
+  faces: TopoRef[];
+  thickness: number;
+  anchorId: string | null;
 }
 
 const PENDING_CONFLICT_ID = "pending-conflict";
@@ -443,6 +475,8 @@ export function App() {
   const [bodyPick, setBodyPick] = useState<BodyPick | null>(null);
   /** Ephemeral model edge multi-selection; App owns the policy. */
   const [edgeSelection, setEdgeSelection] = useState<BodyPick[]>([]);
+  /** Ephemeral model face multi-selection; the shell's open-face input. */
+  const [faceSelection, setFaceSelection] = useState<BodyPick[]>([]);
   const [modelFilter, setModelFilter] = useState<ModelPickFilter>("all");
   const [modelTool, setModelTool] = useState<ModelPickTool>("select");
   const [sketchFilter, setSketchFilter] =
@@ -454,6 +488,8 @@ export function App() {
   const [blendBaseline, setBlendBaseline] = useState<EdgeBlendFeature | null>(
     null,
   );
+  const [shellDraft, setShellDraft] = useState<ShellDraft | null>(null);
+  const [shellBaseline, setShellBaseline] = useState<ShellFeature | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportPlane, setSupportPlane] = useState<WorldPlane>("XY");
@@ -501,6 +537,8 @@ export function App() {
   >(() => {});
   const cancelBlendRef = useRef<() => void>(() => {});
   const blendDraftOpenRef = useRef(false);
+  const shellDraftOpenRef = useRef(false);
+  const cancelShellRef = useRef<() => void>(() => {});
   const faceBoundaryCache = useRef(
     new Map<string, { frame: PlaneFrame; loops: Vec3[][] }>(),
   );
@@ -758,6 +796,13 @@ export function App() {
         .filter((ref): ref is EdgeRef => ref !== undefined),
     [edgeSelection],
   );
+  const selectedFaceRefs = useMemo(
+    () =>
+      faceSelection
+        .map((pick) => pick.ref)
+        .filter((ref): ref is TopoRef => ref !== undefined),
+    [faceSelection],
+  );
   // The quick-adjust ceiling for a fillet/chamfer: a blend larger than half
   // the shortest selected edge or body dimension stops being plausible. The
   // number field still accepts a larger value for an explicit failure test.
@@ -777,6 +822,18 @@ export function App() {
     const ceiling = Math.min(shortest, minBody) * 0.5;
     return Math.max(1, Math.round(ceiling * 10) / 10);
   }, [blendDraft, mesh]);
+  // The shell quick-adjust ceiling: half the body's shortest dimension.
+  const shellThicknessMax = useMemo(() => {
+    const bounds = mesh?.stats.bounds;
+    const shortest = bounds
+      ? Math.min(
+          bounds[3] - bounds[0],
+          bounds[4] - bounds[1],
+          bounds[5] - bounds[2],
+        )
+      : 12;
+    return Math.max(1, Math.round(shortest * 0.5 * 10) / 10);
+  }, [mesh]);
   const solidFeatures = useMemo<KernelFeature[]>(() => {
     let features: KernelFeature[];
     if (rebuild) {
@@ -826,8 +883,33 @@ export function App() {
           : { kind: "chamfer", ...common, distance: draft.value },
       ];
     }
+    // A new shell previews the same way: a synthetic feature after the prefix.
+    if (
+      shellDraft?.mode === "new" &&
+      shellDraft.faces.length > 0 &&
+      shellDraft.thickness > 0 &&
+      features.length > 0
+    ) {
+      const draft = shellDraft;
+      features = [
+        ...features,
+        {
+          kind: "shell",
+          featureId: "shell-draft",
+          cacheKey: `shell-draft-${stableHash(
+            canonicalJson({
+              faces: draft.faces,
+              thickness: draft.thickness,
+              upstream: features.map((feature) => feature.cacheKey),
+            }),
+          )}`,
+          faces: draft.faces,
+          thickness: draft.thickness,
+        },
+      ];
+    }
     return features;
-  }, [rebuild, fallbackParams, activeExtrude, blendDraft]);
+  }, [rebuild, fallbackParams, activeExtrude, blendDraft, shellDraft]);
   // While editing a sketch on a world or datum plane there is no supporting
   // face to project. Show the body that exists at this step as faint projected
   // edges, so the sketch has a spatial reference. Face sketches already get
@@ -1143,6 +1225,8 @@ export function App() {
     setExtrudeDraft(null);
     setBlendDraft(null);
     setBlendBaseline(null);
+    setShellDraft(null);
+    setShellBaseline(null);
   };
 
   /** Filters and Select Other are ephemeral; a new/loaded document starts clean. */
@@ -1286,18 +1370,171 @@ export function App() {
     }
   };
 
-  /**
-   * Can this face source be an edge input? Edges on the draft's own generated
-   * rounds, or on the feature being edited, would reference their output.
-   */
-  const edgeSourceKnown = (source: string): boolean =>
-    source !== "fillet-draft" &&
-    source !== blendDraft?.featureId &&
-    doc.features.some((feature) => feature.id === source);
+  /** Open the shell feature form; edits commit live like the blend form. */
+  const openShellEditor = (feature: ShellFeature): void => {
+    dismissEditor();
+    setDatumDraft(null);
+    setSupportOpen(false);
+    setShellBaseline(feature);
+    setShellDraft({
+      mode: "edit",
+      featureId: feature.id,
+      faces: [...feature.faces],
+      thickness: feature.thickness,
+      anchorId: null,
+    });
+    const picks = feature.faces.map(faceBodyPick);
+    setFaceSelection(picks);
+    viewportRef.current?.setFaceSelection(picks);
+    setModelFilter("faces");
+    setMode("model");
+    setSelection([]);
+    setBodyPick(null);
+  };
+
+  /** Cancel restores the shell's open faces and thickness, never suppression. */
+  const cancelShellEditor = (): void => {
+    const baseline = shellBaseline;
+    setShellDraft(null);
+    setShellBaseline(null);
+    if (baseline) {
+      const current = getState();
+      const next = updateShellFeature(current.doc, baseline.id, (feature) => ({
+        ...feature,
+        faces: baseline.faces,
+        thickness: baseline.thickness,
+      }));
+      if (next !== current.doc) {
+        commit({
+          doc: next,
+          solved: current.solved,
+          solvedFor: current.solvedFor,
+        });
+      }
+      setActiveFeatureId(baseline.id);
+    }
+    setFaceSelection([]);
+    viewportRef.current?.setFaceSelection([]);
+    setBodyPick(null);
+    setSelectOther(null);
+    viewportRef.current?.clearPick();
+    setSelection([]);
+    setModelFilter("all");
+  };
+
+  /** Start a UI-only shell draft from the selected faces. */
+  const beginShellDraft = (): void => {
+    const faces = selectedFaceRefs;
+    if (faces.length === 0) return;
+    dismissEditor();
+    setDatumDraft(null);
+    setSupportOpen(false);
+    setHistoryNotice(null);
+    setShellDraft({
+      mode: "new",
+      featureId: null,
+      faces: [...faces],
+      thickness: defaultShellThickness(mesh),
+      anchorId: activeFeatureId,
+    });
+    setModelFilter("faces");
+    setMode("model");
+    setSelection([]);
+    setBodyPick(null);
+  };
+
+  const updateShellValue = (value: number): void => {
+    if (!shellDraft || !Number.isFinite(value) || value <= 0) return;
+    setShellDraft({ ...shellDraft, thickness: value });
+    if (shellDraft.mode === "edit" && shellDraft.featureId) {
+      const current = getState();
+      const next = updateShellFeature(
+        current.doc,
+        shellDraft.featureId,
+        (feature) => ({ ...feature, thickness: value }),
+      );
+      if (next !== current.doc) {
+        commit(
+          { doc: next, solved: current.solved, solvedFor: current.solvedFor },
+          "shell-thickness",
+        );
+      }
+    }
+  };
+
+  const updateShellFaces = (faces: TopoRef[]): void => {
+    if (!shellDraft) return;
+    setShellDraft({ ...shellDraft, faces });
+    const picks = faces.map(faceBodyPick);
+    setFaceSelection(picks);
+    viewportRef.current?.setFaceSelection(picks);
+    if (shellDraft.mode === "edit" && shellDraft.featureId) {
+      const current = getState();
+      const next = updateShellFeature(
+        current.doc,
+        shellDraft.featureId,
+        (feature) => ({ ...feature, faces }),
+      );
+      if (next !== current.doc) {
+        commit({
+          doc: next,
+          solved: current.solved,
+          solvedFor: current.solvedFor,
+        });
+      }
+    }
+  };
+
+  const applyShellDraft = (): void => {
+    const draft = shellDraft;
+    if (!draft || draft.faces.length === 0 || !(draft.thickness > 0)) return;
+    const current = getState();
+    if (draft.mode === "new") {
+      const result = addShellFeature(
+        current.doc,
+        draft.faces,
+        draft.thickness,
+        { afterFeatureId: draft.anchorId },
+      );
+      commit({
+        doc: result.doc,
+        solved: current.solved,
+        solvedFor: current.solvedFor,
+      });
+      setActiveFeatureId(result.feature.id);
+    } else if (draft.featureId) {
+      setActiveFeatureId(draft.featureId);
+    }
+    dismissEditor();
+    setFaceSelection([]);
+    viewportRef.current?.setFaceSelection([]);
+    setBodyPick(null);
+    setSelectOther(null);
+    viewportRef.current?.clearPick();
+    setMode("model");
+    setSelection([]);
+    setHistoryNotice(null);
+    setModelFilter("all");
+  };
 
   /**
-   * A pick from the 3D stage. Faces/datum stay single-select; edges accumulate
-   * while Shift is held or a fillet draft is open, and toggle on a repeat click.
+   * Which feature sources may be inputs right now? Edges/faces from a draft's
+   * generated geometry, or from the feature being edited, would reference
+   * their own output.
+   */
+  const sourceKnown = (source: string): boolean => {
+    if (source === "fillet-draft" || source === "chamfer-draft") return false;
+    if (source === "shell-draft") return false;
+    if (blendDraft?.featureId === source) return false;
+    if (shellDraft?.featureId === source) return false;
+    return doc.features.some((feature) => feature.id === source);
+  };
+
+  /**
+   * A pick from the 3D stage. Edges and faces are separate multi-sets: Shift
+   * (or an open blend/shell draft) adds or toggles within the kind that is
+   * already collecting, and a plain pick replaces the other set. Mixed sets are
+   * not supported yet, so an additive pick of the other kind is ignored.
    */
   const handleBodyPick = (
     pick: BodyPick | null,
@@ -1307,7 +1544,9 @@ export function App() {
     // A filtered-out hit is not a background click: keep the selection.
     if (info?.blocked) return;
     setSelectOther(
-      info && info.candidates.length > 1 && !blendDraft ? info : null,
+      info && info.candidates.length > 1 && !blendDraft && !shellDraft
+        ? info
+        : null,
     );
     setSupportDatumId(
       pick?.kind === "datum" ? pick.datumId ?? null : null,
@@ -1317,28 +1556,34 @@ export function App() {
         cancelBlendEditor();
         return;
       }
+      if (shellDraft) {
+        cancelShellEditor();
+        return;
+      }
       // A Shift-click on empty space is additive too: it must not throw away
-      // the edges collected so far (the blend form would lose its inputs).
-      if (additive && edgeSelection.length > 0) return;
+      // the selection collected so far (a draft would lose its inputs).
+      if (additive && (edgeSelection.length > 0 || faceSelection.length > 0)) {
+        return;
+      }
       setBodyPick(null);
       setEdgeSelection([]);
+      setFaceSelection([]);
       viewportRef.current?.setEdgeSelection([]);
-      return;
-    }
-    // Mixed selections are not a thing yet. An additive face/datum hit keeps
-    // the edge set instead of silently replacing it with a single pick.
-    if (
-      additive &&
-      edgeSelection.length > 0 &&
-      !(pick.kind === "edge" && pick.edgeRef)
-    ) {
+      viewportRef.current?.setFaceSelection([]);
       return;
     }
     if (pick.kind === "edge" && pick.edgeRef) {
+      // Mixed sets are not a thing yet.
+      if (additive && faceSelection.length > 0) return;
       const ref = pick.edgeRef;
-      // The stage may be previewing the draft fillet itself. Edges on those
-      // generated rounds (or on the feature being edited) cannot be inputs.
-      if (!edgeSourceKnown(ref.faces[0].source) || !edgeSourceKnown(ref.faces[1].source)) return;
+      // The stage may be previewing the draft itself. Edges on its generated
+      // rounds (or on the feature being edited) cannot be inputs.
+      if (
+        !sourceKnown(ref.faces[0].source) ||
+        !sourceKnown(ref.faces[1].source)
+      ) {
+        return;
+      }
 
       const key = edgeRefKey(ref);
       const selected = edgeSelection.some(
@@ -1357,11 +1602,15 @@ export function App() {
       } else {
         next = [pick];
       }
-      // While the fillet form is open it is the readout; the small pick badge
+      // While the blend form is open it is the readout; the small pick badge
       // would overlap it and repeat the same selection.
       setBodyPick(!blendDraft && next.length > 0 ? pick : null);
       setEdgeSelection(next);
       viewportRef.current?.setEdgeSelection(next);
+      if (!toggle) {
+        setFaceSelection([]);
+        viewportRef.current?.setFaceSelection([]);
+      }
       if (blendDraft) {
         updateBlendEdges(
           next
@@ -1371,27 +1620,99 @@ export function App() {
       }
       return;
     }
+    if (pick.kind === "face" && pick.ref) {
+      if (additive && edgeSelection.length > 0) return;
+      const ref = pick.ref;
+      if (!sourceKnown(ref.source)) return;
+      const key = faceRefKey(ref);
+      const selected = faceSelection.some(
+        (item) => item.ref !== undefined && faceRefKey(item.ref) === key,
+      );
+      const toggle = additive || shellDraft !== null;
+      let next: BodyPick[];
+      if (toggle && selected) {
+        next = faceSelection.filter(
+          (item) => item.ref === undefined || faceRefKey(item.ref) !== key,
+        );
+      } else if (toggle) {
+        next = [...faceSelection, pick];
+      } else {
+        next = [pick];
+      }
+      setBodyPick(!shellDraft && next.length > 0 ? pick : null);
+      setFaceSelection(next);
+      viewportRef.current?.setFaceSelection(next);
+      if (!toggle) {
+        setEdgeSelection([]);
+        viewportRef.current?.setEdgeSelection([]);
+      }
+      if (shellDraft) {
+        updateShellFaces(
+          next
+            .map((item) => item.ref)
+            .filter((item): item is TopoRef => item !== undefined),
+        );
+      }
+      return;
+    }
 
+    // A datum/body pick is a single selection: drop both sets.
     setBodyPick(pick);
     setEdgeSelection([]);
+    setFaceSelection([]);
     viewportRef.current?.setEdgeSelection([]);
+    viewportRef.current?.setFaceSelection([]);
   };
 
   /**
-   * A box/lasso gesture over the model. Edges are the only multi-selectable
-   * body thing, so the marquee feeds the same edge set as Shift-clicking.
+   * A box/lasso gesture over the model. Which kind it collects follows the
+   * pick filter: `faces` yields faces (the shell input), anything else edges.
    * An empty marquee is a no-op, never "select nothing".
    */
   const handleBodyMarquee = (
     picks: readonly BodyPick[],
     additive: boolean,
   ): void => {
+    const kind = picks[0]?.kind;
+    if (kind === "face") {
+      const usable = picks.filter(
+        (pick): pick is BodyPick & { ref: TopoRef } =>
+          pick.kind === "face" &&
+          pick.ref !== undefined &&
+          sourceKnown(pick.ref.source),
+      );
+      if (usable.length === 0) return;
+      const merged = new Map<string, BodyPick>();
+      if (additive || shellDraft) {
+        for (const item of faceSelection) {
+          if (item.ref) merged.set(faceRefKey(item.ref), item);
+        }
+      }
+      for (const item of usable) {
+        merged.set(faceRefKey(item.ref), item);
+      }
+      const next = [...merged.values()];
+      setSelectOther(null);
+      setBodyPick(shellDraft ? null : (next[next.length - 1] ?? null));
+      setFaceSelection(next);
+      viewportRef.current?.setFaceSelection(next);
+      setEdgeSelection([]);
+      viewportRef.current?.setEdgeSelection([]);
+      if (shellDraft) {
+        updateShellFaces(
+          next
+            .map((item) => item.ref)
+            .filter((item): item is TopoRef => item !== undefined),
+        );
+      }
+      return;
+    }
     const usable = picks.filter(
-      (pick) =>
+      (pick): pick is BodyPick & { edgeRef: EdgeRef } =>
         pick.kind === "edge" &&
         pick.edgeRef !== undefined &&
-        edgeSourceKnown(pick.edgeRef.faces[0].source) &&
-        edgeSourceKnown(pick.edgeRef.faces[1].source),
+        sourceKnown(pick.edgeRef.faces[0].source) &&
+        sourceKnown(pick.edgeRef.faces[1].source),
     );
     if (usable.length === 0) return;
     const merged = new Map<string, BodyPick>();
@@ -1402,13 +1723,15 @@ export function App() {
       }
     }
     for (const item of usable) {
-      if (item.edgeRef) merged.set(edgeRefKey(item.edgeRef), item);
+      merged.set(edgeRefKey(item.edgeRef), item);
     }
     const next = [...merged.values()];
     setSelectOther(null);
     setBodyPick(blendDraft ? null : (next[next.length - 1] ?? null));
     setEdgeSelection(next);
     viewportRef.current?.setEdgeSelection(next);
+    setFaceSelection([]);
+    viewportRef.current?.setFaceSelection([]);
     if (blendDraft) {
       updateBlendEdges(
         next
@@ -1424,6 +1747,8 @@ export function App() {
     handleMarqueeRef.current = handleBodyMarquee;
     cancelBlendRef.current = cancelBlendEditor;
     blendDraftOpenRef.current = blendDraft !== null;
+    cancelShellRef.current = cancelShellEditor;
+    shellDraftOpenRef.current = shellDraft !== null;
   });
 
   const applyBlendDraft = (): void => {
@@ -1636,8 +1961,10 @@ export function App() {
     setTrimNotice(null);
     setBodyPick(null);
     setEdgeSelection([]);
+    setFaceSelection([]);
     setSelectOther(null);
     viewportRef.current?.clearPick();
+    viewportRef.current?.setFaceSelection([]);
     if (feature.type === "sketch") {
       setTool("select");
       setCancelToken((token) => token + 1);
@@ -1650,6 +1977,8 @@ export function App() {
       openExtrudeEditor(feature, "model");
     } else if (isEdgeBlendFeature(feature)) {
       openBlendEditor(feature);
+    } else if (isShellFeature(feature)) {
+      openShellEditor(feature);
     } else {
       openDatumEditor(feature);
     }
@@ -1835,6 +2164,10 @@ export function App() {
     setSupportFaceFlipped(false);
     setCreationAnchorId(atStart ? null : anchorId);
     setCreationAtStart(atStart);
+    // Keep the picked face as the support candidate, but the face multi-set is
+    // a shell input, not a support choice; its popover would overlap this one.
+    setFaceSelection([]);
+    viewportRef.current?.setFaceSelection([]);
     setSupportOpen(true);
     setFileMenuOpen(false);
     setInsertMenu(null);
@@ -2512,6 +2845,10 @@ export function App() {
   }, [edgeSelection]);
 
   useEffect(() => {
+    viewportRef.current?.setFaceSelection(faceSelection);
+  }, [faceSelection]);
+
+  useEffect(() => {
     viewportRef.current?.setPickFilter(modelFilter);
   }, [modelFilter]);
 
@@ -2537,8 +2874,11 @@ export function App() {
     // The draft is a synthetic feature that owns its generated faces while it
     // previews.
     if (blendDraft?.mode === "new") return `${blendDraft.kind}-draft`;
+    if (shellDraft?.mode === "new") return "shell-draft";
     return activeFeature &&
-      (isExtrudeFeature(activeFeature) || isEdgeBlendFeature(activeFeature)) &&
+      (isExtrudeFeature(activeFeature) ||
+        isEdgeBlendFeature(activeFeature) ||
+        isShellFeature(activeFeature)) &&
       !activeFeature.suppressed
       ? activeFeature.id
       : null;
@@ -2548,6 +2888,7 @@ export function App() {
     datumDraft,
     extrudeDraft,
     blendDraft,
+    shellDraft,
     activeFeature,
   ]);
 
@@ -2688,6 +3029,10 @@ export function App() {
           cancelBlendRef.current();
           return;
         }
+        if (shellDraftOpenRef.current) {
+          cancelShellRef.current();
+          return;
+        }
         setPendingConstraint(null);
         setSolveError(null);
         setTool("select");
@@ -2698,8 +3043,10 @@ export function App() {
         setCancelToken((token) => token + 1);
         setBodyPick(null);
         setEdgeSelection([]);
+        setFaceSelection([]);
         setSelectOther(null);
         viewportRef.current?.clearPick();
+        viewportRef.current?.setFaceSelection([]);
         return;
       }
       if (event.key === "Delete" || event.key === "Backspace") {
@@ -3207,10 +3554,12 @@ export function App() {
     setFitToken((token) => token + 1);
     setBodyPick(null);
     setEdgeSelection([]);
+    setFaceSelection([]);
     setSelectOther(null);
     setMesh(null);
     viewportRef.current?.clearPick();
     viewportRef.current?.clearMesh();
+    viewportRef.current?.setFaceSelection([]);
   };
 
   const openDocument = (next: Doc): void => {
@@ -3232,15 +3581,19 @@ export function App() {
     setSelection([]);
     setSolveError(null);
     setMesh(null);
+    setFaceSelection([]);
     viewportRef.current?.clearMesh();
+    viewportRef.current?.setFaceSelection([]);
     setFileError(null);
     setFileMenuOpen(false);
     setBodyPick(null);
     setEdgeSelection([]);
+    setFaceSelection([]);
     setSelectOther(null);
     setMesh(null);
     viewportRef.current?.clearPick();
     viewportRef.current?.clearMesh();
+    viewportRef.current?.setFaceSelection([]);
     saveDoc(next);
     saveLocalFile(next);
     setFileIndex(loadFileIndex());
@@ -3776,8 +4129,13 @@ export function App() {
             // an edge click must not cancel it, and an empty click is handled
             // by the viewport's null pick. Other editors still cancel here.
             if (target.closest(".viewport-canvas") && blendDraft) return;
+            if (target.closest(".viewport-canvas") && shellDraft) return;
             if (blendDraft) {
               cancelBlendEditor();
+              return;
+            }
+            if (shellDraft) {
+              cancelShellEditor();
               return;
             }
             if (extrudeDraft) {
@@ -3807,8 +4165,10 @@ export function App() {
                     setModelTool("select");
                     setBodyPick(null);
                     setEdgeSelection([]);
+                    setFaceSelection([]);
                     setSelectOther(null);
                     viewportRef.current?.clearPick();
+                    viewportRef.current?.setFaceSelection([]);
                   }}
                   testId="model-tool-select"
                 />
@@ -3842,7 +4202,8 @@ export function App() {
 
             {selectOther &&
             selectOther.candidates.length > 1 &&
-            !blendDraft ? (
+            !blendDraft &&
+            !shellDraft ? (
               <div
                 className="select-other"
                 role="status"
@@ -3881,7 +4242,9 @@ export function App() {
                 <span className="body-pick-dot" />
                 <span>
                   {bodyPick.kind === "face"
-                    ? "Face selected"
+                    ? faceSelection.length > 1
+                      ? `${faceSelection.length} faces selected`
+                      : "Face selected"
                     : bodyPick.kind === "datum"
                       ? "Datum plane selected"
                       : edgeSelection.length > 1
@@ -4522,6 +4885,40 @@ export function App() {
               onFillet={() => beginBlendDraft("fillet")}
               onChamfer={() => beginBlendDraft("chamfer")}
             />
+          ) : shellDraft ? (
+            <ShellPopover
+              thickness={shellDraft.thickness}
+              max={shellThicknessMax}
+              faces={shellDraft.faces}
+              isDraft={shellDraft.mode === "new"}
+              position={popoverPosition}
+              onMove={setPopoverPosition}
+              onValue={updateShellValue}
+              onValueEnd={endMerge}
+              onRemoveFace={(index) =>
+                updateShellFaces(
+                  shellDraft.faces.filter((_, at) => at !== index),
+                )
+              }
+              onApply={applyShellDraft}
+              onCancel={cancelShellEditor}
+            />
+          ) : faceSelection.length > 0 &&
+            mode === "model" &&
+            !supportOpen &&
+            !datumDraft ? (
+            <FaceSelectionPopover
+              faces={selectedFaceRefs}
+              position={bodyPopoverPosition}
+              onMove={setBodyPopoverPosition}
+              onClear={() => {
+                setFaceSelection([]);
+                setBodyPick(null);
+                setSelectOther(null);
+                viewportRef.current?.clearPick();
+              }}
+              onShell={beginShellDraft}
+            />
           ) : null}
 
           {editorOpen && activeFeature?.type === "extrude" ? (
@@ -4583,7 +4980,9 @@ export function App() {
                     ? "fillet"
                     : isChamferFeature(feature)
                       ? "chamfer"
-                      : "extrude";
+                      : isShellFeature(feature)
+                        ? "shell"
+                        : "extrude";
               const meta = isSketchFeature(feature)
                 ? `${supportLabel(feature.support)} · ${feature.sketch.curves.length} curves`
                 : isDatumPlaneFeature(feature)
@@ -4592,7 +4991,9 @@ export function App() {
                     ? `R ${feature.radius} mm · ${feature.edges.length} edge${feature.edges.length === 1 ? "" : "s"}`
                     : isChamferFeature(feature)
                       ? `${feature.distance} mm · ${feature.edges.length} edge${feature.edges.length === 1 ? "" : "s"}`
-                      : `${
+                      : isShellFeature(feature)
+                        ? `${feature.thickness} mm · ${feature.faces.length} open face${feature.faces.length === 1 ? "" : "s"}`
+                        : `${
                           feature.end === "throughAll"
                             ? "through all"
                             : `${feature.height} mm`

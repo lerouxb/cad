@@ -33,6 +33,26 @@ export function examplePlateVolume(
   );
 }
 
+/**
+ * Volume of the example plate after shelling it with the TOP face open: the
+ * base plate minus the hollow, whose walls are `wall` thick. The through hole
+ * becomes a tube, so the cavity's inner boundary is `holeRadius + wall`.
+ */
+export function exampleShelledPlateVolume(
+  thickness: number = EXAMPLE_PLATE.thickness,
+  wall = 2,
+): number {
+  const { width, height, holeDiameter } = EXAMPLE_PLATE;
+  const holeRadius = holeDiameter / 2;
+  const outer =
+    width * height * thickness -
+    Math.PI * holeRadius * holeRadius * thickness;
+  const cavity =
+    (width - 2 * wall) * (height - 2 * wall) * (thickness - wall) -
+    Math.PI * (holeRadius + wall) ** 2 * (thickness - wall);
+  return outer - cavity;
+}
+
 /** Volume of the plate's solid blank, before the hole is cut. */
 export function exampleSolidPlateVolume(
   thickness: number = EXAMPLE_PLATE.thickness,

@@ -6,11 +6,12 @@ import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import type { BodyMesh } from "../core/kernel/protocol";
-import { edgeRefKey } from "../core/kernel/protocol";
+import { edgeRefKey, faceRefKey } from "../core/kernel/protocol";
 import type { PlaneFrame } from "../core/types";
 import {
   boxBetween,
   boxIsEmpty,
+  pointInBox,
   polygonIsEmpty,
   polylineInBox,
   polylineTouchesPolygon,
@@ -121,6 +122,7 @@ export class Viewport {
   private hoverGroup = new THREE.Group();
   private selectionGroup = new THREE.Group();
   private edgeSelectionGroup = new THREE.Group();
+  private faceSelectionGroup = new THREE.Group();
   /** The faces one history feature introduced, highlighted on its step. */
   private featureGroup = new THREE.Group();
   private featureHighlightId: string | null = null;
@@ -147,6 +149,7 @@ export class Viewport {
   private hoverPick: BodyPick | null = null;
   private selectedPick: BodyPick | null = null;
   private edgePicks: BodyPick[] = [];
+  private facePicks: BodyPick[] = [];
   private pickFilter: ModelPickFilter = "all";
   private pickTool: ModelPickTool = "select";
   private marquee: {
@@ -201,6 +204,7 @@ export class Viewport {
     this.scene.add(this.hoverGroup);
     this.scene.add(this.selectionGroup);
     this.scene.add(this.edgeSelectionGroup);
+    this.scene.add(this.faceSelectionGroup);
     this.scene.add(this.featureGroup);
     this.addEnvironment();
 
@@ -433,6 +437,7 @@ export class Viewport {
 
     this.rebuildFeatureHighlight();
     this.rebuildEdgeSelection();
+    this.rebuildFaceSelection();
     if (!this.framed && geometry.boundingSphere) {
       this.frameAll();
       this.framed = true;
@@ -450,6 +455,23 @@ export class Viewport {
   setEdgeSelection(picks: readonly BodyPick[]): void {
     this.edgePicks = picks.filter((pick) => pick.kind === "edge");
     this.rebuildEdgeSelection();
+  }
+
+  /** Highlight a set of selected faces (the shell/offset input). */
+  setFaceSelection(picks: readonly BodyPick[]): void {
+    this.facePicks = picks.filter(
+      (pick) => pick.kind === "face" && pick.ref !== undefined,
+    );
+    this.rebuildFaceSelection();
+  }
+
+  private rebuildFaceSelection(): void {
+    this.clearGroup(this.faceSelectionGroup);
+    if (!this.mesh) return;
+    for (const pick of this.facePicks) {
+      this.addOverlay(this.faceSelectionGroup, pick, true);
+    }
+    this.dirty = true;
   }
 
   private rebuildEdgeSelection(): void {
@@ -919,8 +941,6 @@ export class Viewport {
     const marquee = this.marquee;
     const none = { picks: [], additive: marquee?.additive ?? false };
     if (!marquee || !this.mesh || !this.edges) return none;
-    // Faces are not multi-selectable yet; edges are the model's pickable sets.
-    if (this.pickFilter === "faces") return none;
     const rect = this.canvas.getBoundingClientRect();
     const points = marquee.points;
     if (marquee.tool === "box") {
@@ -934,19 +954,38 @@ export class Viewport {
     const box =
       marquee.tool === "box" ? boxBetween(points[0]!, points[1]!) : null;
     const picks = new Map<string, BodyPick>();
-    for (const group of this.mesh.edgeGroups) {
-      if (!group.ref) continue;
-      const screen = this.projectPolyline(
-        edgePositionsForGroup(this.mesh, group, this.edgeUnit),
-        rect,
-      );
-      if (!screen) continue;
-      const hit = box
-        ? polylineInBox(screen, box)
-        : polylineTouchesPolygon(screen, points);
-      if (!hit) continue;
-      const pick = edgePick(group);
-      picks.set(edgeRefKey(group.ref), pick);
+    if (this.pickFilter === "faces") {
+      for (const group of this.mesh.faceGroups) {
+        if (!group.ref) continue;
+        const triangles = this.projectFace(group, rect);
+        if (!triangles) continue;
+        const hit = box
+          ? triangles.every((triangle) =>
+              triangle.every((point) => pointInBox(point, box)),
+            )
+          : triangles.some((triangle) =>
+              polylineTouchesPolygon(
+                [...triangle, triangle[0]!],
+                points,
+              ),
+            );
+        if (!hit) continue;
+        picks.set(faceRefKey(group.ref), facePick(group));
+      }
+    } else {
+      for (const group of this.mesh.edgeGroups) {
+        if (!group.ref) continue;
+        const screen = this.projectPolyline(
+          edgePositionsForGroup(this.mesh, group, this.edgeUnit),
+          rect,
+        );
+        if (!screen) continue;
+        const hit = box
+          ? polylineInBox(screen, box)
+          : polylineTouchesPolygon(screen, points);
+        if (!hit) continue;
+        picks.set(edgeRefKey(group.ref), edgePick(group));
+      }
     }
     // A stable order keeps the selection (and its popover list) deterministic.
     return {
@@ -955,6 +994,48 @@ export class Viewport {
         .map(([, pick]) => pick),
       additive: marquee.additive,
     };
+  }
+
+  /**
+   * The face's mesh triangles as screen-space point triples. A face with any
+   * triangle behind the camera is skipped (its projection is meaningless).
+   */
+  private projectFace(
+    group: { start: number; count: number },
+    rect: DOMRect,
+  ): Array<[ScreenPoint, ScreenPoint, ScreenPoint]> | null {
+    if (!this.mesh) return null;
+    const positions = this.mesh.positions;
+    const indices = this.mesh.indices;
+    this.camera.updateMatrixWorld();
+    const point = new THREE.Vector3();
+    const project = (index: number): ScreenPoint | null => {
+      point.set(
+        positions[index * 3]!,
+        positions[index * 3 + 1]!,
+        positions[index * 3 + 2]!,
+      );
+      if (
+        point.clone().applyMatrix4(this.camera.matrixWorldInverse).z >
+        -this.camera.near
+      ) {
+        return null;
+      }
+      point.project(this.camera);
+      return {
+        x: (point.x * 0.5 + 0.5) * rect.width,
+        y: (-point.y * 0.5 + 0.5) * rect.height,
+      };
+    };
+    const triangles: Array<[ScreenPoint, ScreenPoint, ScreenPoint]> = [];
+    for (let i = group.start; i + 2 < group.start + group.count; i += 3) {
+      const a = project(indices[i]!);
+      const b = project(indices[i + 1]!);
+      const c = project(indices[i + 2]!);
+      if (!a || !b || !c) return null;
+      triangles.push([a, b, c]);
+    }
+    return triangles.length > 0 ? triangles : null;
   }
 
   private projectPolyline(
@@ -1039,6 +1120,7 @@ export class Viewport {
     if (hover) this.addOverlay(this.hoverGroup, hover, false);
     if (selected) this.addOverlay(this.selectionGroup, selected, true);
     this.rebuildEdgeSelection();
+    this.rebuildFaceSelection();
     this.dirty = true;
   }
 
@@ -1434,6 +1516,7 @@ export class Viewport {
     this.clearGroup(this.hoverGroup);
     this.clearGroup(this.selectionGroup);
     this.clearGroup(this.edgeSelectionGroup);
+    this.clearGroup(this.faceSelectionGroup);
     this.clearGroup(this.featureGroup);
     this.canvas.dataset.featureHighlight = "";
     this.canvas.dataset.featureFaces = "0";

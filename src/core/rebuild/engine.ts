@@ -3,6 +3,7 @@ import {
   isDatumPlaneFeature,
   isExtrudeFeature,
   isFilletFeature,
+  isShellFeature,
   isSketchFeature,
   type ChamferFeature,
   type DatumPlaneFeature,
@@ -12,6 +13,7 @@ import {
   type Feature,
   type FilletFeature,
   type PlaneRef,
+  type ShellFeature,
   type SketchFeature,
 } from "../doc/types";
 import {
@@ -38,6 +40,7 @@ import {
   type RebuildDiagnostic,
   type RebuildInputs,
   type RebuildResult,
+  type ShellRebuildOutput,
   type SketchRebuildOutput,
 } from "./types";
 
@@ -178,6 +181,9 @@ function evaluateFeature(
     }
     if (isChamferFeature(feature)) {
       return evaluateChamfer(feature, base, byId);
+    }
+    if (isShellFeature(feature)) {
+      return evaluateShell(feature, base, byId);
     }
     return {
       ...base,
@@ -651,6 +657,122 @@ function evaluateEdgeBlend(
   return { ...base, status: "ok", output, diagnostics: [] };
 }
 
+function evaluateShell(
+  feature: ShellFeature,
+  base: Omit<FeatureResult, "status" | "output" | "diagnostics">,
+  byId: Map<string, FeatureResult>,
+): FeatureResult {
+  if (!Number.isFinite(feature.thickness) || feature.thickness <= 0) {
+    return {
+      ...base,
+      status: "error",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "invalid-thickness",
+          message: "Shell thickness must be greater than zero.",
+        },
+      ],
+    };
+  }
+  if (feature.faces.length === 0) {
+    return {
+      ...base,
+      status: "error",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "no-open-faces",
+          message: "Select at least one face to open.",
+        },
+      ],
+    };
+  }
+
+  const hasBody = [...byId.values()].some(
+    (result) =>
+      result.status === "ok" &&
+      (result.output?.kind === "extrude" ||
+        result.output?.kind === "fillet" ||
+        result.output?.kind === "chamfer" ||
+        result.output?.kind === "shell"),
+  );
+  if (!hasBody) {
+    return {
+      ...base,
+      status: "error",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "nothing-to-shell",
+          message: "Nothing exists to shell.",
+        },
+      ],
+    };
+  }
+
+  for (const face of feature.faces) {
+    const source = byId.get(face.source);
+    if (!source) {
+      return {
+        ...base,
+        status: "error",
+        output: null,
+        diagnostics: [
+          {
+            severity: "error",
+            code: "missing-face-source",
+            message: `The face's source "${face.source}" does not exist earlier in the history.`,
+          },
+        ],
+      };
+    }
+    if (source.status !== "ok") {
+      return {
+        ...base,
+        status: "skipped",
+        output: null,
+        diagnostics: [
+          {
+            severity: "error",
+            code: "upstream-error",
+            message: `Skipped because ${source.name} could not be evaluated.`,
+          },
+        ],
+      };
+    }
+    if (
+      source.output?.kind !== "extrude" &&
+      source.output?.kind !== "fillet" &&
+      source.output?.kind !== "chamfer" &&
+      source.output?.kind !== "shell"
+    ) {
+      return {
+        ...base,
+        status: "error",
+        output: null,
+        diagnostics: [
+          {
+            severity: "error",
+            code: "invalid-face-source",
+            message: `The face's source "${source.name}" is not a solid feature.`,
+          },
+        ],
+      };
+    }
+  }
+
+  const output: ShellRebuildOutput = {
+    kind: "shell",
+    faces: feature.faces,
+    thickness: feature.thickness,
+  };
+  return { ...base, status: "ok", output, diagnostics: [] };
+}
+
 /**
  * The successful solid features, in history order, in the shape the kernel
  * worker consumes. Main-thread failures are kept out of this list; their
@@ -689,6 +811,17 @@ export function extractKernelFeatures(result: RebuildResult): KernelFeature[] {
           cacheKey: feature.cacheKey,
           edges: feature.output.edges,
           distance: feature.output.distance,
+        },
+      ];
+    }
+    if (feature.output.kind === "shell") {
+      return [
+        {
+          kind: "shell",
+          featureId: feature.featureId,
+          cacheKey: feature.cacheKey,
+          faces: feature.output.faces,
+          thickness: feature.output.thickness,
         },
       ];
     }

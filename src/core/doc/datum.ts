@@ -1,4 +1,4 @@
-import type { TopoRef } from "../kernel/protocol";
+import { faceRefKey, type TopoRef } from "../kernel/protocol";
 import type { PlaneFrame } from "../types";
 import { datumDefinitionFrame, framesClose, stabilizeFrame } from "./support";
 import {
@@ -9,9 +9,7 @@ import {
 } from "./types";
 
 /** Key used to cache a resolved face frame by its stable source/role pair. */
-export function faceRefKey(ref: TopoRef): string {
-  return `${ref.source}|${ref.role}`;
-}
+export { faceRefKey };
 
 /** Every face reference used to derive a datum plane. */
 export function collectDatumFaceRefs(doc: Doc): TopoRef[] {

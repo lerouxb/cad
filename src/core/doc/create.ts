@@ -1,5 +1,5 @@
 import type { PlaneFrame } from "../types";
-import type { EdgeRef } from "../kernel/protocol";
+import type { EdgeRef, TopoRef } from "../kernel/protocol";
 import { emptySketch, newId } from "../sketch/create";
 import type { Sketch } from "../sketch/types";
 import {
@@ -12,6 +12,7 @@ import {
   type FaceProjection,
   type FilletFeature,
   type PlaneRef,
+  type ShellFeature,
   type SketchFeature,
 } from "./types";
 
@@ -103,6 +104,21 @@ export function createChamferFeature(
     name: options.name ?? "Chamfer 1",
     edges: [...edges],
     distance,
+  };
+}
+
+/** A shell with the listed faces removed (open) and a wall thickness. */
+export function createShellFeature(
+  faces: readonly TopoRef[],
+  thickness: number,
+  options: { name?: string; id?: string } = {},
+): ShellFeature {
+  return {
+    id: options.id ?? newId("feat"),
+    type: "shell",
+    name: options.name ?? "Shell 1",
+    faces: [...faces],
+    thickness,
   };
 }
 

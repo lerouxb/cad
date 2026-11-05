@@ -3,7 +3,7 @@ import type { PlaneFrame, Vec2 } from "../types";
 import type { EdgeRef, TopoRef } from "../kernel/protocol";
 
 /** The document schema version. Bump this on every shape change. */
-export const CURRENT_SCHEMA_VERSION = 10;
+export const CURRENT_SCHEMA_VERSION = 11;
 
 export type WorldPlane = "XY" | "XZ" | "YZ";
 
@@ -106,12 +106,27 @@ export interface ChamferFeature {
   suppressed?: boolean;
 }
 
+/**
+ * A shell (hollow) operation on the current body. `faces` are the faces to
+ * remove, i.e. the openings; `thickness` is the wall left behind. Faces are
+ * stable refs, never kernel hashes.
+ */
+export interface ShellFeature {
+  id: string;
+  type: "shell";
+  name: string;
+  faces: TopoRef[];
+  thickness: number;
+  suppressed?: boolean;
+}
+
 export type Feature =
   | SketchFeature
   | ExtrudeFeature
   | DatumPlaneFeature
   | FilletFeature
-  | ChamferFeature;
+  | ChamferFeature
+  | ShellFeature;
 
 /**
  * The whole persisted part. Plain JSON only: no kernel handles, no solver
@@ -144,6 +159,10 @@ export function isFilletFeature(feature: Feature): feature is FilletFeature {
 
 export function isChamferFeature(feature: Feature): feature is ChamferFeature {
   return feature.type === "chamfer";
+}
+
+export function isShellFeature(feature: Feature): feature is ShellFeature {
+  return feature.type === "shell";
 }
 
 /** A fillet or chamfer: both consume the current body along selected edges. */

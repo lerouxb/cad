@@ -11,6 +11,7 @@ import {
   enterSketch,
 } from "./support/sketch";
 import { examplePlateVolume, exampleSolidPlateVolume } from "../src/core/doc/exampleMetrics";
+import { CURRENT_SCHEMA_VERSION } from "../src/core/doc/types";
 import { multiFeatureDoc } from "./support/fixtures";
 
 test.beforeEach(async ({ app: page }) => {
@@ -42,7 +43,7 @@ test("autosaves the document and reopens it", async ({ app: page }) => {
     const raw = localStorage.getItem("cad.doc");
     return raw ? JSON.parse(raw) : null;
   });
-  expect(stored?.schemaVersion).toBe(10);
+  expect(stored?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
 
   // A new document in the same context reads the saved part, migrates it, and
   // rebuilds the same solid.

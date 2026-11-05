@@ -37,7 +37,8 @@ export function migrateDoc(raw: unknown): Doc | null {
   // v6 → v7 adds datum-plane features and datum sketch supports;
   // v7 → v8 adds the datum-plane `hidden` presentation flag;
   // v8 → v9 adds fillet features;
-  // v9 → v10 adds chamfer features (older documents simply have none).
+  // v9 → v10 adds chamfer features (older documents simply have none);
+  // v10 → v11 adds shell features (older documents simply have none).
   if (
     version === 1 ||
     version === 2 ||
@@ -47,7 +48,8 @@ export function migrateDoc(raw: unknown): Doc | null {
     version === 6 ||
     version === 7 ||
     version === 8 ||
-    version === 9
+    version === 9 ||
+    version === 10
   ) {
     return validateDoc(raw);
   }
@@ -144,6 +146,14 @@ export function validateDoc(raw: unknown): Doc | null {
         }
       }
     }
+    if (feature.type === "shell") {
+      // Shell open faces come from earlier solid features for the same reason.
+      for (const face of feature.faces) {
+        if (ids.has(face.source) && !before(face.source, feature.id)) {
+          return null;
+        }
+      }
+    }
   }
 
   return {
@@ -210,6 +220,23 @@ function validateFeature(raw: unknown): Feature | null {
       definition,
       frame,
       ...(raw.hidden === true ? { hidden: true } : {}),
+      ...(raw.suppressed === true ? { suppressed: true } : {}),
+    };
+  }
+
+  if (raw.type === "shell") {
+    const thickness = raw.thickness;
+    if (typeof thickness !== "number" || !Number.isFinite(thickness)) {
+      return null;
+    }
+    const faces = validateTopoRefs(raw.faces);
+    if (!faces || faces.length === 0) return null;
+    return {
+      id,
+      type: "shell",
+      name,
+      faces,
+      thickness,
       ...(raw.suppressed === true ? { suppressed: true } : {}),
     };
   }
@@ -381,6 +408,17 @@ function validateTopoRef(raw: unknown): TopoRef | null {
         : {}),
     },
   };
+}
+
+function validateTopoRefs(raw: unknown): TopoRef[] | null {
+  if (!Array.isArray(raw)) return null;
+  const refs: TopoRef[] = [];
+  for (const candidate of raw) {
+    const ref = validateTopoRef(candidate);
+    if (!ref) return null;
+    refs.push(ref);
+  }
+  return refs;
 }
 
 function validateEdgeRefs(raw: unknown): EdgeRef[] | null {

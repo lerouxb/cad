@@ -1,5 +1,5 @@
 import type { Doc, ExtrudeOperation, Feature } from "../doc/types";
-import type { EdgeRef, ExtrudeParams } from "../kernel/protocol";
+import type { EdgeRef, ExtrudeParams, TopoRef } from "../kernel/protocol";
 import type { SketchRegion } from "../sketch/loops";
 import type { SolveOutcome, SolveStatus } from "../sketch/solver";
 import type { Sketch } from "../sketch/types";
@@ -61,12 +61,20 @@ export interface ChamferRebuildOutput {
   distance: number;
 }
 
+export interface ShellRebuildOutput {
+  kind: "shell";
+  /** Faces removed by the shell (the openings). */
+  faces: TopoRef[];
+  thickness: number;
+}
+
 export type FeatureOutput =
   | SketchRebuildOutput
   | ExtrudeRebuildOutput
   | DatumRebuildOutput
   | FilletRebuildOutput
-  | ChamferRebuildOutput;
+  | ChamferRebuildOutput
+  | ShellRebuildOutput;
 
 export interface FeatureResult {
   featureId: string;

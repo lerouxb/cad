@@ -223,6 +223,81 @@ export async function findHoverNear(
   );
 }
 
+/** A face hover record from the fast sweep (no ref: faces publish only ids). */
+export interface FaceHover {
+  id: string;
+  x: number;
+  y: number;
+}
+
+/**
+ * Sweep the model for hoverable faces in one browser round trip, like the edge
+ * scan. Used to pick a face other than the one already selected.
+ */
+export async function scanVisibleFaces(page: Page): Promise<FaceHover[]> {
+  return page.evaluate(() => {
+    const canvas = document.querySelector<HTMLCanvasElement>(
+      "canvas.viewport-canvas",
+    );
+    if (!canvas) return [];
+    const found: Array<{ id: string; x: number; y: number }> = [];
+    const seen = new Set<string>();
+    for (let y = 200; y <= 500; y += 10) {
+      for (let x = 260; x <= 1050; x += 10) {
+        canvas.dispatchEvent(
+          new PointerEvent("pointermove", {
+            clientX: x,
+            clientY: y,
+            bubbles: true,
+            pointerId: 1,
+            pointerType: "mouse",
+          }),
+        );
+        if (canvas.dataset.hoverKind !== "face") continue;
+        const id = canvas.dataset.hoverId;
+        if (!id || seen.has(id)) continue;
+        seen.add(id);
+        found.push({ id, x, y });
+      }
+    }
+    return found;
+  });
+}
+
+/** The authoritative multi-face selection, as the face popover renders it. */
+export async function selectedFaceRefs(page: Page): Promise<
+  Array<{ role: string; hint?: { surfaceType?: string; area?: number } }>
+> {
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  return page.evaluate(() => {
+    const el = document.querySelector(
+      '[data-testid="face-selection-popover"]',
+    );
+    const raw = el?.getAttribute("data-face-refs");
+    return raw ? (JSON.parse(raw) as unknown[]) : [];
+  }) as Promise<
+    Array<{ role: string; hint?: { surfaceType?: string; area?: number } }>
+  >;
+}
+
+/** Shift-click a visible face whose pick id is not in `exclude`. */
+export async function addFacePick(
+  page: Page,
+  exclude: ReadonlySet<string> = new Set(),
+): Promise<FaceHover> {
+  const face = (await scanVisibleFaces(page)).find(
+    (candidate) => !exclude.has(candidate.id),
+  );
+  if (!face) throw new Error("No other face hover target found");
+  await shiftClick(page, face.x, face.y);
+  return face;
+}
+
 export function edgeKey(ref: EdgeRefLike | null | undefined): string {
   return (ref?.faces ?? [])
     .map((face) => `${face.source ?? ""}:${face.role ?? ""}`)

@@ -4,6 +4,7 @@ import {
   addChamferFeature,
   addDatumPlaneFeature,
   addFilletFeature,
+  addShellFeature,
   addSketchFeature,
   setDatumPlaneHidden,
   updateDatumPlaneFeature,
@@ -20,7 +21,7 @@ import { createDemoModel } from "../sketch/demo";
 import { sketchGeometry } from "../sketch/geometry";
 import { regionsFromSketch } from "../sketch/loops";
 import type { ExtrudeFeature, SketchFeature } from "../doc/types";
-import type { EdgeRef } from "../kernel/protocol";
+import type { EdgeRef, TopoRef } from "../kernel/protocol";
 import type { SolveOutcome } from "../sketch/solver";
 import type { Sketch } from "../sketch/types";
 import { extractKernelFeatures, rebuildDocument } from "./engine";
@@ -530,6 +531,81 @@ describe("ordered rebuild", () => {
     );
   });
 
+  it("evaluates and extracts a shell after its body", () => {
+    const doc = exampleDoc();
+    const added = addShellFeature(doc, [faceRef("extrude")], 2);
+    const result = rebuildDocument(added.doc, {}, countingDeps().deps);
+
+    expect(result.status).toBe("ok");
+    expect(result.features.map((feature) => feature.type)).toEqual([
+      "sketch",
+      "extrude",
+      "shell",
+    ]);
+    expect(result.features[2]?.output?.kind).toBe("shell");
+    const kernel = extractKernelFeatures(result);
+    expect(kernel.map((feature) => feature.kind)).toEqual(["extrude", "shell"]);
+    expect(kernel[1]?.kind === "shell" ? kernel[1].thickness : null).toBe(2);
+    expect(kernel[1]?.kind === "shell" ? kernel[1].faces : []).toHaveLength(1);
+  });
+
+  it("makes shell failures visible instead of silently skipping them", () => {
+    const doc = exampleDoc();
+    const deps = countingDeps().deps;
+    const noBody = rebuildDocument(
+      {
+        ...doc,
+        features: [
+          doc.features[0]!,
+          ...addShellFeature(doc, [faceRef("extrude")], 2).doc.features.slice(2),
+        ],
+      },
+      {},
+      deps,
+    );
+    expect(noBody.features[1]?.status).toBe("error");
+    expect(noBody.features[1]?.diagnostics[0]?.code).toBe("nothing-to-shell");
+
+    const badThickness = rebuildDocument(
+      addShellFeature(doc, [faceRef("extrude")], 0).doc,
+      {},
+      deps,
+    );
+    expect(badThickness.features[2]?.diagnostics[0]?.code).toBe(
+      "invalid-thickness",
+    );
+
+    const noFaces = rebuildDocument(
+      addShellFeature(doc, [], 2).doc,
+      {},
+      deps,
+    );
+    expect(noFaces.features[2]?.diagnostics[0]?.code).toBe("no-open-faces");
+
+    const lost = rebuildDocument(
+      addShellFeature(doc, [faceRef("missing")], 2).doc,
+      {},
+      deps,
+    );
+    expect(lost.features[2]?.diagnostics[0]?.code).toBe("missing-face-source");
+
+    const suppressed = addShellFeature(
+      {
+        ...doc,
+        features: doc.features.map((feature) =>
+          feature.type === "extrude" ? { ...feature, suppressed: true } : feature,
+        ),
+      },
+      [faceRef("extrude")],
+      2,
+    );
+    const suppressedResult = rebuildDocument(suppressed.doc, {}, deps);
+    expect(suppressedResult.features[2]?.status).toBe("error");
+    expect(suppressedResult.features[2]?.diagnostics[0]?.code).toBe(
+      "nothing-to-shell",
+    );
+  });
+
   it("evaluates and extracts a chamfer in order", () => {
     const doc = exampleDoc();
     const added = addChamferFeature(doc, [edgeRef("extrude")], 1.5);
@@ -556,6 +632,15 @@ describe("ordered rebuild", () => {
     expect(bad.features[2]?.diagnostics[0]?.code).toBe("invalid-distance");
   });
 });
+
+function faceRef(source: string): TopoRef {
+  return {
+    source,
+    kind: "face",
+    role: "extrude:face_6",
+    hint: { entityType: "face", surfaceType: "PLANE" },
+  };
+}
 
 function edgeRef(source: string): EdgeRef {
   return {

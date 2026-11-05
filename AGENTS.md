@@ -42,13 +42,14 @@ is an editable sketcher driving an exact solid:
   fixed origin + X/Y axis reference frame, exact X/Y editing for a selected point,
   undo/redo, DOF/diagnostics, worker protocol, three.js viewport, exact volume/face counts,
   unit + e2e tests. The part is a plain-JSON `Doc` with
-  sketch/extrude/datum/fillet/chamfer features, schemaVersion + migrations, autosave to
+  sketch/extrude/datum/fillet/chamfer/shell features, schemaVersion + migrations, autosave to
   `localStorage`, and undoable feature parameters (extrude height and regions, datum
   definition, fillet radius / chamfer distance and edges). The main-thread rebuild walks
   the feature list in order with a prefix cache and per-feature diagnostics. The worker
   receives the successful solid features, caches prefix solids by cache key, applies
-  new/join/cut booleans and constant-size fillets/chamfers, with per-feature build
-  statuses. Multi-edge model selection opens the body-selection popover; `fillet` and
+  new/join/cut booleans, constant-size fillets/chamfers and open-face shells, with
+  per-feature build statuses. Multi-edge model selection opens the body-selection
+  popover; multi-face selection opens the face-selection popover; `fillet` and
   `chamfer` start UI-only drafts that preview through the kernel, then apply as history
   steps.
 - UI: one main stage. The bottom timeline switches between the full-stage sketch editor
@@ -323,6 +324,18 @@ docs/
   new or join; cut needs a base; new after a base is an error; an edge blend needs a base.
   Any worker feature error clears the prefix cache after the last-good mesh is produced,
   so a later successful retry cannot reuse downstream solids built past a skipped feature.
+- **A shell removes the selected open faces and hollows the rest.** Schema v11 adds
+  `ShellFeature` (`faces: TopoRef[]`, `thickness`). The worker resolves each face against
+  the prefix, calls `shellWithEvolution(solid, openFaces, thickness)`, re-derives the old
+  face roles geometrically (the outer faces keep their role; the removed face drops) and
+  names every unclaimed inner/rim face under the feature as `shell:face_<i>`, so the step
+  highlight and downstream picks work. OCCT silently returns a *larger* solid when the wall
+  is thicker than the body can absorb (50 mm on a 12 mm plate), so the worker rejects a
+  result that does not shrink or that escapes the pre-shell bounds: "The shell thickness is
+  too large for this body." A new shell is a UI-only draft that previews through the
+  kernel; editing an existing shell commits live, and cancel restores only its faces and
+  thickness. Selecting a shell step switches the model filter to `faces` while the form is
+  open and restores `all` on close.
 - **Fillets/chamfers name their generated faces and re-derive roles.**
   `filletWithEvolution`/`chamferWithEvolution` return an **empty evolution on OCCT**, so
   `updateRoles` cannot carry roles across. After each blend the worker reattaches every
@@ -422,7 +435,7 @@ docs/
   Do not reintroduce a fixed 10 mm grid.
 - **Every feature length uses the same control.** `MeasureField` is a range slider plus
   an exact number field and unit: extrude distance, fillet radius, chamfer distance,
-  datum offset and the sketch corner fillet all use it. Do not add a bare number for a
+  datum offset, shell thickness and the sketch corner fillet all use it. Do not add a bare number for a
   new length. Blends use an adaptive quick-adjust ceiling (half the shortest selected
   edge/body dimension); the sketch fillet uses 45% of the shorter adjacent line. The
   number field may exceed the slider range (e.g. to surface a failure), so the rail is a

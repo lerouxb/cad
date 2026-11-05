@@ -794,7 +794,14 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       multi-edge selection, preview, live edit, failure handling and role re-derivation.
       Schema v10 adds `ChamferFeature`; the example ships a suppressed `Beveled plate`
       alternative on the same four edges.
-- [ ] Shell (open faces) — maybe defer
+- [x] **Shell (open faces)** — schema v11 `ShellFeature` (open-face `TopoRef`s + wall
+      thickness). The worker resolves the faces against the prefix, calls
+      `shellWithEvolution`, keeps the outer face roles by geometric re-derivation and
+      names the generated inner/rim faces under the step (`shell:face:<i>`), so the
+      highlight and downstream picks work. A wall thicker than the body can absorb is a
+      visible error (OCCT silently returns a larger solid), and the unchanged body stays
+      visible. New shells preview through the kernel; editing commits live; cancel
+      restores faces and thickness. The example does not ship a shell step.
 - [ ] **Offset Faces** — move selected faces by a distance; tolerance/fit and wall
       adjustments. The design audit shows 11 uses (third most-used modelling feature),
       so this is Keep at M5/M6 rather than Drop
@@ -802,7 +809,9 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       filters, and Select Other for cycling overlapping picks. Box = every projected
       vertex inside (window), lasso = touched/crossed; both select through the body,
       Shift adds, an empty marquee is a no-op, and the same jobs feed the fillet/chamfer
-      set. Face sets wait for shell/offset. Edge-chain selection is still open.
+      set. Faces are a second multi-set: Shift-click and the marquee under the `faces`
+      filter collect them, the face popover starts a shell, and a plain pick replaces the
+      other kind. Edge-chain selection is still open.
 - [x] **Tool options row** (design: `docs/showcase/select.html` and `select-model.html`;
       `TIMELINE.md`): a second row under the tool line that follows the *tool*, not the
       mode. One filter at a time (no multi-select), and the row collapses for tools with
@@ -817,7 +826,8 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       helpers in `e2e/support/`, one `resetExample` setup per test, fail-fast default,
       4 local workers (~1.2 min for the whole suite), the example's metrics in one
       module, and authoritative `data-*` readouts instead of guessed pixel state.
-      New ephemeral modes go into the shared reset, not individual tests.
+      New ephemeral modes go into the shared reset, not individual tests. Shell lives in
+      `shell.spec.ts` (98 browser tests total as of the split).
 - [ ] Section Analysis: a view-only inspect overlay (never in history), with the
       visibility questions resolved first
 - [x] Feature selection highlights the geometry that feature created (mockup 03:

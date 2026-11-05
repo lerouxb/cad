@@ -30,6 +30,7 @@ e2e/
   blends.spec.ts       fillet/chamfer create, edit, fail, recover
   model-picking.spec.ts filters, Select Other, box/lasso
   extrude.spec.ts      extrude create/edit/cancel, symmetric, through-all
+  shell.spec.ts        face multi-selection, box/lasso faces, shell create/edit/fail
   sketch.spec.ts       sketch tools, constraints, dimensions, region gestures
   documents.spec.ts    autosave, files, download/open, boot from a saved doc
 ```
@@ -42,7 +43,7 @@ typical dev machine with four workers (including the Vite + WASM startup):
 | `model-picking` | ~6 s | `extrude` | ~13 s |
 | `blends` | ~10 s | `documents` | ~13 s |
 | `example` | ~15 s | `sketch` | ~21 s |
-| | | `support` | ~25 s |
+| `shell` | ~13 s | `support` | ~25 s |
 
 ```bash
 npx playwright test e2e/blends.spec.ts
@@ -78,7 +79,8 @@ persists, add it to `resetExample`, not to the individual spec.
    finds hoverable model edges in one browser round trip. Pixel picks may only
    be used as *inputs* after being derived, never as expected values.
 3. **Assert on authoritative state readouts.** The selection popover publishes
-   `data-edge-refs`; the stage publishes `data-hover-kind`, `data-hover-edge-length`,
+   `data-edge-refs` (faces: `data-face-refs`); the stage publishes `data-hover-kind`,
+   `data-hover-edge-length`,
    `data-hover-edge-ref` and `data-camera`; the mesh publishes bounds/volume/faces.
    A test that clicks a pixel and then guesses what got selected is a future
    flake. Click, read the readout, compare the stable ref.

@@ -11,6 +11,7 @@ import {
   addDatumPlaneFeature,
   addExtrudeFeature,
   addFilletFeature,
+  addShellFeature,
   addSketchFeature,
   deleteFeature,
   extrudeFeatureById,
@@ -28,17 +29,19 @@ import {
   updateChamferFeature,
   updateExtrudeRegions,
   updateFilletFeature,
+  updateShellFeature,
   updatePrimarySketch,
   updateSketchFeature,
 } from "./selectors";
 import {
+  CURRENT_SCHEMA_VERSION,
   isChamferFeature,
   isFilletFeature,
   type Doc,
   type ExtrudeFeature,
   type SketchFeature,
 } from "./types";
-import type { EdgeRef } from "../kernel/protocol";
+import type { EdgeRef, TopoRef } from "../kernel/protocol";
 
 function exampleDoc(): Doc {
   return createDocument(createDemoModel().sketch, {
@@ -53,7 +56,7 @@ function exampleDoc(): Doc {
 describe("document schema", () => {
   it("creates a two-feature part with stable ids", () => {
     const doc = exampleDoc();
-    expect(doc.schemaVersion).toBe(10);
+    expect(doc.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(doc.features.map((feature) => feature.type)).toEqual([
       "sketch",
       "extrude",
@@ -384,6 +387,80 @@ describe("document schema", () => {
     expect(deleted.removedIds).toContain(added.feature.id);
   });
 
+  it("adds a shell with stable open-face references", () => {
+    const doc = exampleDoc();
+    const face: TopoRef = {
+      source: "extrude-1",
+      kind: "face",
+      role: "extrude:face_6",
+      hint: {
+        entityType: "face",
+        surfaceType: "PLANE",
+        normal: [0, 0, 1],
+        centroid: [30, 20, 12],
+        area: 60 * 40,
+      },
+    };
+
+    const added = addShellFeature(doc, [face], 2);
+    expect(added.feature.name).toBe("Shell 1");
+    expect(added.feature.faces[0]).toEqual(face);
+    expect(added.doc.features.map((feature) => feature.type)).toEqual([
+      "sketch",
+      "extrude",
+      "shell",
+    ]);
+
+    // Plain JSON round-trip: the open face keeps its role and hint.
+    const parsed = validateDoc(JSON.parse(JSON.stringify(added.doc)));
+    const migrated = parsed?.features.find(
+      (feature) => feature.id === added.feature.id,
+    );
+    expect(migrated?.type).toBe("shell");
+    expect(
+      migrated?.type === "shell" ? migrated.faces[0]?.role : null,
+    ).toBe("extrude:face_6");
+    expect(
+      migrated?.type === "shell" ? migrated.thickness : null,
+    ).toBe(2);
+
+    // A shell can never move before the feature that named its faces.
+    expect("error" in moveFeature(added.doc, added.feature.id, 1)).toBe(true);
+
+    const edited = updateShellFeature(
+      added.doc,
+      added.feature.id,
+      (feature) => ({ ...feature, thickness: 3 }),
+    );
+    expect(
+      edited.features.find((feature) => feature.type === "shell")?.type ===
+        "shell"
+        ? (
+            edited.features.find(
+              (feature) => feature.type === "shell",
+            ) as { thickness: number }
+          ).thickness
+        : null,
+    ).toBe(3);
+
+    const deleted = deleteFeature(added.doc, "extrude-1");
+    expect(deleted.removedIds).toContain(added.feature.id);
+
+    // Malformed shells must not open.
+    expect(
+      validateDoc({
+        ...added.doc,
+        features: [...added.doc.features.slice(0, 2), { ...added.feature, thickness: "2" }],
+      }),
+    ).toBeNull();
+    expect(
+      validateDoc({
+        ...added.doc,
+        features: [...added.doc.features.slice(0, 2), { ...added.feature, faces: [] }],
+      }),
+    ).toBeNull();
+  });
+
   it("adds a chamfer with the same edge identity rules", () => {
     const doc = exampleDoc();
     const edge: EdgeRef = {
@@ -457,7 +534,7 @@ describe("document migrations", () => {
     });
 
     expect(migrated).not.toBeNull();
-    expect(migrated!.schemaVersion).toBe(10);
+    expect(migrated!.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated!.name).toBe("Legacy part");
     expect(migrated!.features).toHaveLength(2);
     expect(primaryExtrudeFeature(migrated!)?.height).toBe(25);
@@ -471,13 +548,13 @@ describe("document migrations", () => {
     const doc = exampleDoc();
     const migrated = migrateDoc({ ...doc, schemaVersion: 1 });
     expect(migrated).toEqual(doc);
-    expect(migrated?.schemaVersion).toBe(10);
+    expect(migrated?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
   });
 
   it("opens a v2 document and adds the extrude defaults", () => {
     const doc = exampleDoc();
     const migrated = migrateDoc({ ...doc, schemaVersion: 2 });
-    expect(migrated?.schemaVersion).toBe(10);
+    expect(migrated?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(primaryExtrudeFeature(migrated!)?.end).toBe("blind");
     expect(primaryExtrudeFeature(migrated!)?.suppressed).toBeUndefined();
   });
@@ -485,7 +562,7 @@ describe("document migrations", () => {
   it("opens a v3 document and keeps its dimension placements", () => {
     const doc = exampleDoc();
     const migrated = migrateDoc({ ...doc, schemaVersion: 3 });
-    expect(migrated?.schemaVersion).toBe(10);
+    expect(migrated?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
   });
 
   it("opens a v4 document with a face-supported sketch", () => {
@@ -516,7 +593,7 @@ describe("document migrations", () => {
       schemaVersion: 4,
       features: [{ ...sketch, support }, ...doc.features.slice(1)],
     });
-    expect(migrated?.schemaVersion).toBe(10);
+    expect(migrated?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(primarySketchFeature(migrated!)?.support).toEqual(support);
     expect(
       migrateDoc({
@@ -573,7 +650,7 @@ describe("document migrations", () => {
         ...doc.features.slice(1),
       ],
     });
-    expect(migrated?.schemaVersion).toBe(10);
+    expect(migrated?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(primarySketchFeature(migrated!)?.projections).toEqual(projections);
   });
 
@@ -602,7 +679,7 @@ describe("document migrations", () => {
       ...withSketch.doc,
       schemaVersion: 6,
     });
-    expect(migrated?.schemaVersion).toBe(10);
+    expect(migrated?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     expect(migrated?.features.map((feature) => feature.type)).toEqual([
       "sketch",
       "extrude",
@@ -619,11 +696,23 @@ describe("document migrations", () => {
     ).toBeNull();
   });
 
+  it("opens a v10 document without shell features and bumps the schema", () => {
+    const doc = exampleDoc();
+    const migrated = migrateDoc({ ...doc, schemaVersion: 10 });
+    expect(migrated?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated?.features.map((feature) => feature.type)).toEqual([
+      "sketch",
+      "extrude",
+    ]);
+  });
+
   it("rejects malformed, unknown and newer documents", () => {
     const doc = exampleDoc();
     expect(migrateDoc(null)).toBeNull();
     expect(migrateDoc("nope")).toBeNull();
-    expect(migrateDoc({ ...doc, schemaVersion: 11 })).toBeNull();
+    expect(
+      migrateDoc({ ...doc, schemaVersion: CURRENT_SCHEMA_VERSION + 1 }),
+    ).toBeNull();
     expect(migrateDoc({ ...doc, features: "nope" })).toBeNull();
     expect(
       migrateDoc({

@@ -61,6 +61,11 @@ export interface EdgeRef {
   hint: EdgeHint;
 }
 
+/** Stable, rebuild-independent identity for a face reference. */
+export function faceRefKey(ref: TopoRef): string {
+  return `${ref.source}|${ref.role}`;
+}
+
 /** Stable, rebuild-independent identity for a picked edge. */
 export function edgeRefKey(ref: EdgeRef): string {
   const faces = ref.faces
@@ -145,6 +150,13 @@ export interface KernelChamferFeature extends KernelFeatureBase {
   distance: number;
 }
 
+/** A shell on the current body; `faces` are the faces to remove. */
+export interface KernelShellFeature extends KernelFeatureBase {
+  kind: "shell";
+  faces: TopoRef[];
+  thickness: number;
+}
+
 export type KernelEdgeBlendFeature =
   | KernelFilletFeature
   | KernelChamferFeature;
@@ -152,7 +164,8 @@ export type KernelEdgeBlendFeature =
 export type KernelFeature =
   | KernelExtrudeFeature
   | KernelFilletFeature
-  | KernelChamferFeature;
+  | KernelChamferFeature
+  | KernelShellFeature;
 
 export interface FeatureBuildStatus {
   featureId: string;
