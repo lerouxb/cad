@@ -79,7 +79,8 @@ persists, add it to `resetExample`, not to the individual spec.
    finds hoverable model edges in one browser round trip. Pixel picks may only
    be used as *inputs* after being derived, never as expected values.
 3. **Assert on authoritative state readouts.** The selection popover publishes
-   `data-edge-refs` (faces: `data-face-refs`); the stage publishes `data-hover-kind`,
+   `data-edge-refs` (faces: `data-face-refs`); the stage publishes `data-picked-face`,
+   `data-hover-kind`,
    `data-hover-edge-length`,
    `data-hover-edge-ref` and `data-camera`; the mesh publishes bounds/volume/faces.
    A test that clicks a pixel and then guesses what got selected is a future

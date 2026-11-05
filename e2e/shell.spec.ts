@@ -79,11 +79,19 @@ test("shift-click selects and toggles multiple faces", async ({ app: page }) => 
   await expect(popover).toHaveAttribute("data-count", "2");
   expect(await selectedFaceRefs(page)).toHaveLength(2);
 
-  // Clicking a selected face again removes it.
+  // Clicking a selected face again removes it, and the single overlay moves
+  // back to the face that is still selected.
+  const canvas = page.locator("canvas.viewport-canvas");
   await shiftClick(page, other.x, other.y);
   await expect(popover).toHaveAttribute("data-count", "1");
+  expect(await canvas.getAttribute("data-picked-face")).not.toBe("");
   await shiftClick(page, other.x, other.y);
   await expect(popover).toHaveAttribute("data-count", "2");
+
+  // Removing the last face clears the single overlay as well.
+  await page.getByTestId("clear-face-selection").click();
+  await expect(popover).toHaveCount(0);
+  expect(await canvas.getAttribute("data-picked-face")).toBe("");
   expect(errors).toEqual([]);
 });
 
@@ -113,6 +121,22 @@ test("a click refines a box selection without switching tools", async ({
   expect(after.map((ref) => ref.role)).not.toEqual(
     before.map((ref) => ref.role),
   );
+  // The single selected overlay follows the set: the toggled-off face must not
+  // stay as the picked anchor (it used to keep a stale wash).
+  const removed = before.find(
+    (candidate) =>
+      !after.some(
+        (ref) =>
+          ref.source === candidate.source && ref.role === candidate.role,
+      ),
+  )!;
+  const canvas = page.locator("canvas.viewport-canvas");
+  expect(await canvas.getAttribute("data-picked-face")).not.toBe(
+    `${removed.source}|${removed.role}`,
+  );
+  expect(
+    after.map((ref) => `${ref.source}|${ref.role}`),
+  ).toContain(await canvas.getAttribute("data-picked-face"));
 
   // Switching to select keeps the set; a Shift-click there also toggles.
   await page.getByTestId("model-tool-select").click();

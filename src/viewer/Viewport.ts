@@ -474,6 +474,24 @@ export class Viewport {
     this.dirty = true;
   }
 
+  /**
+   * Sync the single face overlay with App's face set, without firing a pick
+   * callback. Toggling a face off used to leave its single selected overlay
+   * behind (a stale 0.38 wash) even though the multi-set no longer had it.
+   */
+  setPickedFace(pick: BodyPick | null): void {
+    this.selectedPick = pick?.kind === "face" ? pick : null;
+    this.clearGroup(this.selectionGroup);
+    if (this.selectedPick) {
+      this.addOverlay(this.selectionGroup, this.selectedPick, true);
+    }
+    this.canvas.dataset.pickedFace =
+      this.selectedPick?.ref !== undefined
+        ? faceRefKey(this.selectedPick.ref)
+        : "";
+    this.dirty = true;
+  }
+
   private rebuildEdgeSelection(): void {
     this.clearGroup(this.edgeSelectionGroup);
     if (!this.mesh) return;
@@ -515,10 +533,13 @@ export class Viewport {
   clearPick(): void {
     this.selectedPick = null;
     this.edgePicks = [];
+    this.facePicks = [];
     this.pickCandidates = [];
     this.pickCandidateIndex = 0;
     this.clearGroup(this.selectionGroup);
     this.clearGroup(this.edgeSelectionGroup);
+    this.clearGroup(this.faceSelectionGroup);
+    this.canvas.dataset.pickedFace = "";
     this.dirty = true;
   }
 
@@ -1133,6 +1154,8 @@ export class Viewport {
       this.selectedPick = pick;
       this.clearGroup(this.selectionGroup);
       if (pick) this.addOverlay(this.selectionGroup, pick, true);
+      this.canvas.dataset.pickedFace =
+        pick?.kind === "face" && pick.ref ? faceRefKey(pick.ref) : "";
     }
     this.dirty = true;
     this.onPick?.(pick, additive, info);
@@ -1539,6 +1562,7 @@ export class Viewport {
     this.canvas.dataset.hoverId = "";
     this.canvas.dataset.hoverEdgeLength = "";
     this.canvas.dataset.hoverEdgeRef = "";
+    this.canvas.dataset.pickedFace = "";
     this.clearGroup(this.hoverGroup);
     this.clearGroup(this.selectionGroup);
     this.clearGroup(this.edgeSelectionGroup);

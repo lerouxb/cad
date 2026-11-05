@@ -1602,14 +1602,26 @@ export function App() {
       } else {
         next = [pick];
       }
+      const stillSelected = next.some(
+        (item) =>
+          item.edgeRef !== undefined && edgeRefKey(item.edgeRef) === key,
+      );
+      // The badge names the last picked edge; a toggled-off edge must not stay
+      // as the anchor, or it reads as selected while the set no longer has it.
+      const anchor = stillSelected
+        ? pick
+        : ([...next].reverse().find((item) => item.edgeRef !== undefined) ??
+          null);
       // While the blend form is open it is the readout; the small pick badge
       // would overlap it and repeat the same selection.
-      setBodyPick(!blendDraft && next.length > 0 ? pick : null);
+      setBodyPick(!blendDraft && anchor ? anchor : null);
       setEdgeSelection(next);
       viewportRef.current?.setEdgeSelection(next);
       if (!toggle) {
         setFaceSelection([]);
         viewportRef.current?.setFaceSelection([]);
+        // The edge pick replaces the face set; drop its single overlay too.
+        viewportRef.current?.setPickedFace(null);
       }
       if (blendDraft) {
         updateBlendEdges(
@@ -1639,9 +1651,18 @@ export function App() {
       } else {
         next = [pick];
       }
-      setBodyPick(!shellDraft && next.length > 0 ? pick : null);
+      const stillSelected = next.some(
+        (item) => item.ref !== undefined && faceRefKey(item.ref) === key,
+      );
+      const anchor = stillSelected
+        ? pick
+        : (next[next.length - 1] ?? null);
+      // The single overlay mirrors the face set's anchor; leaving the clicked
+      // (now removed) face there kept it washed until the next click.
+      setBodyPick(!shellDraft && anchor ? anchor : null);
       setFaceSelection(next);
       viewportRef.current?.setFaceSelection(next);
+      viewportRef.current?.setPickedFace(shellDraft ? null : anchor);
       if (!toggle) {
         setEdgeSelection([]);
         viewportRef.current?.setEdgeSelection([]);
@@ -1692,10 +1713,12 @@ export function App() {
         merged.set(faceRefKey(item.ref), item);
       }
       const next = [...merged.values()];
+      const anchor = next[next.length - 1] ?? null;
       setSelectOther(null);
-      setBodyPick(shellDraft ? null : (next[next.length - 1] ?? null));
+      setBodyPick(shellDraft ? null : anchor);
       setFaceSelection(next);
       viewportRef.current?.setFaceSelection(next);
+      viewportRef.current?.setPickedFace(shellDraft ? null : anchor);
       setEdgeSelection([]);
       viewportRef.current?.setEdgeSelection([]);
       if (shellDraft) {
@@ -1732,6 +1755,7 @@ export function App() {
     viewportRef.current?.setEdgeSelection(next);
     setFaceSelection([]);
     viewportRef.current?.setFaceSelection([]);
+    viewportRef.current?.setPickedFace(null);
     if (blendDraft) {
       updateBlendEdges(
         next

@@ -266,7 +266,11 @@ export async function scanVisibleFaces(page: Page): Promise<FaceHover[]> {
 
 /** The authoritative multi-face selection, as the face popover renders it. */
 export async function selectedFaceRefs(page: Page): Promise<
-  Array<{ role: string; hint?: { surfaceType?: string; area?: number } }>
+  Array<{
+    source: string;
+    role: string;
+    hint?: { surfaceType?: string; area?: number };
+  }>
 > {
   await page.evaluate(
     () =>
@@ -281,7 +285,11 @@ export async function selectedFaceRefs(page: Page): Promise<
     const raw = el?.getAttribute("data-face-refs");
     return raw ? (JSON.parse(raw) as unknown[]) : [];
   }) as Promise<
-    Array<{ role: string; hint?: { surfaceType?: string; area?: number } }>
+    Array<{
+      source: string;
+      role: string;
+      hint?: { surfaceType?: string; area?: number };
+    }>
   >;
 }
 
