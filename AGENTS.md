@@ -532,6 +532,13 @@ docs/
   Selecting a dimension opens the inline editor at its label: value + unit + driving/
   reference, Enter commits, Escape or click outside cancels, no apply/cancel pair. Point
   X/Y uses the same inline shape at the point.
+- **Measurements are formatted once, at the point of display.** `core/format.ts` owns
+  `formatLength` (readouts: whole millimetres or one decimal) and `formatEditable`
+  (fields: up to two decimals, trimmed). The dimension editor keeps the value it
+  measured as a **number** and formats it when rendering; formatting it to the two-decimal
+  field text and re-formatting that string for the reference readout double-rounds
+  (56.2499 → "56.25" → 56.3 while the label shows 56.2). Do not store formatted strings
+  in editor state. The e2e regression draws 56.2499 and compares the label and readout.
 - **Active-extrude overlay is the used profile, not the whole sketch.** In model mode,
   `modelSketchOverlay` draws and shades only the region loops the active extrude uses
   (outer + holes, hole left open). Construction/unused curves and points are hidden until

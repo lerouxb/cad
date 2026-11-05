@@ -8,6 +8,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import { formatEditable, formatLength } from "../core/format";
 import type { ProfileLoop, Vec2 } from "../core/types";
 import {
   regionsFullyInside,
@@ -239,8 +240,11 @@ export function SketchCanvas({
   const [editor, setEditor] = useState<{
     id: string;
     value: string;
-    /** The value measured when the editor opened; shown when reference. */
-    measured: string;
+    /**
+     * The value measured when the editor opened, kept numeric: the readout and
+     * the sketch label must format the same number (see core/format.ts).
+     */
+    measured: number;
     reference: boolean;
     asRadius?: boolean;
     x: number;
@@ -608,11 +612,11 @@ export function SketchCanvas({
       x = screen.x - rect.left;
       y = screen.y - rect.top;
     }
-    const measured = formatEditable(asRadius ? value / 2 : value);
+    const measured = asRadius ? value / 2 : value;
     dimensionCommittedRef.current = false;
     setEditor({
       id,
-      value: measured,
+      value: formatEditable(measured),
       measured,
       reference,
       asRadius,
@@ -631,7 +635,7 @@ export function SketchCanvas({
     if (!editor.reference && Number.isFinite(value) && value > 0) {
       onChangeDimension(editor.id, editor.asRadius ? value * 2 : value, true);
     } else if (editor.reference) {
-      onChangeDimension(editor.id, Number(editor.measured), false);
+      onChangeDimension(editor.id, editor.measured, false);
     }
     setEditor(null);
   }, [editor, onChangeDimension, setEditor]);
@@ -2449,7 +2453,7 @@ export function SketchCanvas({
                   className="dim-readout"
                   data-testid="dimension-readout"
                 >
-                  ({formatLength(Number(editor.measured))})
+                  ({formatLength(editor.measured)})
                 </span>
                 <span className="dim-unit">mm</span>
               </>
@@ -2476,7 +2480,11 @@ export function SketchCanvas({
               aria-pressed={!editor.reference}
               data-testid="dimension-kind-driving"
               onClick={(event) => {
-                setEditor({ ...editor, reference: false, value: editor.measured });
+                setEditor({
+                  ...editor,
+                  reference: false,
+                  value: formatEditable(editor.measured),
+                });
                 event.currentTarget.focus();
               }}
             >
@@ -2488,7 +2496,11 @@ export function SketchCanvas({
               aria-pressed={editor.reference}
               data-testid="dimension-kind-reference"
               onClick={(event) => {
-                setEditor({ ...editor, reference: true, value: editor.measured });
+                setEditor({
+                  ...editor,
+                  reference: true,
+                  value: formatEditable(editor.measured),
+                });
                 event.currentTarget.focus();
               }}
             >
@@ -3173,10 +3185,6 @@ function normalizeRect(a: Vec2, b: Vec2) {
   };
 }
 
-function formatLength(value: number): string {
-  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
-}
-
 function roundTo(value: number, step: number): number {
   return Math.round(value / step) * step;
 }
@@ -3266,10 +3274,6 @@ function PointInlineEditor({
       <span className="dim-unit">mm</span>
     </div>
   );
-}
-
-function formatEditable(value: number): string {
-  return String(Math.round(value * 100) / 100);
 }
 
 function projectPointOnLine(a: Vec2, b: Vec2, point: Vec2): Vec2 {

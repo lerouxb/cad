@@ -210,6 +210,51 @@ test("commits a dimension kind change on blur and locks reference values", async
 });
 
 
+test("a reference readout formats the same measurement as its label", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+
+  // A length just under a display boundary: 56.2499 reads 56.2, while rounding
+  // it to "56.25" first and then to one decimal would read 56.3.
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, -28, 0);
+  await clickSketch(page, 0, 0);
+  await page.keyboard.press("Enter");
+  await page.getByTestId("tool-select").click();
+  await clickSketch(page, -14, 0);
+  await page.getByTestId("tool-dimension").click();
+  await clickSketch(page, -14, 14);
+
+  const label = page.locator("[data-dimension-id]").first();
+  await expect(label).toBeVisible();
+  await label.dblclick();
+  await page.getByTestId("dimension-input").fill("56.2499");
+  await page.getByTestId("dimension-input").press("Enter");
+  const driving = page
+    .locator("[data-dimension-id]")
+    .filter({ hasText: /^56\.2$/ });
+  await expect(driving).toHaveCount(1);
+
+  // The editor seeds its driving field at two decimals, but the reference
+  // readout is a display of the measurement and must match the label exactly.
+  // It used to re-round the seeded "56.25" and show (56.3) next to a 56.2
+  // label.
+  await driving.dblclick();
+  await expect(page.getByTestId("dimension-input")).toHaveValue("56.25");
+  await page.getByTestId("dimension-kind-reference").click();
+  await expect(page.getByTestId("dimension-readout")).toHaveText("(56.2)");
+  await expect(page.getByTestId("dimension-input")).toHaveCount(0);
+
+  // Escape leaves the driving dimension (and the geometry) untouched.
+  await page.keyboard.press("Escape");
+  await expect(driving).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
+
 test("applies constraints and construction from the floating bar", async ({ app: page }) => {
   const errors = collectErrors(page);
   await enterSketch(page);

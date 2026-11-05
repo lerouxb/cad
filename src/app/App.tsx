@@ -96,6 +96,7 @@ import type {
   KernelFeature,
 } from "../core/kernel/protocol";
 import { edgeRefKey } from "../core/kernel/protocol";
+import { formatLength } from "../core/format";
 import { extractKernelFeatures, rebuildDocument } from "../core/rebuild/engine";
 import { canonicalJson, stableHash } from "../core/rebuild/hash";
 import {
@@ -5103,10 +5104,6 @@ function formatInt(value: number): string {
 
 function formatVolume(value: number): string {
   return value.toFixed(1);
-}
-
-function formatLength(value: number): string {
-  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
 }
 
 function formatFileWhen(updatedAt: number): string {
