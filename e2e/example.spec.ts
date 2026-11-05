@@ -215,6 +215,35 @@ test("clicking the model background cancels the feature editor", async ({
 });
 
 
+test("cancelling an editor does not undo a suppression change", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  const plate = examplePlateVolume();
+  const pinVolume = Math.PI * 8 * 8 * 20;
+  const pin = page
+    .locator('[data-feature-type="extrude"]')
+    .filter({ hasText: "Center pin" });
+
+  // Select the suppressed pin, then unsuppress it from the step's own detail.
+  await pin.click();
+  await expect(page.getByTestId("feature-popover")).toBeVisible();
+  await expect(pin).toHaveAttribute("data-status", "skipped");
+  await page.getByTestId("feature-suppress").click();
+  await expect(pin).toHaveAttribute("data-status", "ok");
+  await expect.poll(() => volume(page)).toBeCloseTo(plate + pinVolume, -1);
+
+  // Cancelling the parameter editor restores the form's parameters, not the
+  // history actions taken while it was open.
+  await page.mouse.click(1100, 180);
+  await expect(page.getByTestId("feature-popover")).toHaveCount(0);
+  await expect(pin).toHaveAttribute("data-status", "ok");
+  await expect.poll(() => volume(page)).toBeCloseTo(plate + pinVolume, -1);
+  await expect(page.getByTestId("feature-suppress")).toHaveText("suppress");
+  expect(errors).toEqual([]);
+});
+
+
 test("selecting a step scrubs the history and gaps insert steps", async ({
   app: page,
 }) => {

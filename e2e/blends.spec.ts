@@ -191,6 +191,32 @@ test("the example's suppressed chamfer resolves on the plate", async ({
 });
 
 
+test("cancelling the fillet editor does not re-suppress the step", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  const step = page
+    .locator('[data-feature-type="fillet"]')
+    .filter({ hasText: "Rounded plate" });
+  const plate = examplePlateVolume();
+  const removed = 4 * (4 * 4 - (Math.PI * 4 * 4) / 4) * 12;
+
+  await step.click();
+  await expect(page.getByTestId("fillet-feature-popover")).toBeVisible();
+  await page.getByTestId("feature-suppress").click();
+  await expect(step).toHaveAttribute("data-status", "ok");
+  await expect.poll(() => volume(page)).toBeCloseTo(plate - removed, -1);
+
+  // An empty canvas click cancels the blend editor; like the extrude form it
+  // restores the edited parameters, never the suppression.
+  await page.mouse.click(1100, 180);
+  await expect(page.getByTestId("fillet-feature-popover")).toHaveCount(0);
+  await expect(step).toHaveAttribute("data-status", "ok");
+  await expect.poll(() => volume(page)).toBeCloseTo(plate - removed, -1);
+  expect(errors).toEqual([]);
+});
+
+
 test("creates a chamfer from selected edges with a live preview", async ({
   app: page,
 }) => {

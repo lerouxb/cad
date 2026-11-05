@@ -1174,7 +1174,11 @@ export function App() {
     setBodyPick(null);
   };
 
-  /** Footer cancel / background click restores an edge blend as opened. */
+  /**
+   * Footer cancel / background click restores an edge blend's edges and size as
+   * opened. Suppression and the name are timeline actions, not form fields, so
+   * they are left as the user set them.
+   */
   const cancelBlendEditor = (): void => {
     const baseline = blendBaseline;
     dismissEditor();
@@ -1183,7 +1187,23 @@ export function App() {
       const next = updateEdgeBlendFeature(
         current.doc,
         baseline.id,
-        () => baseline,
+        (feature) => {
+          if (feature.type === "fillet" && baseline.type === "fillet") {
+            return {
+              ...feature,
+              edges: baseline.edges,
+              radius: baseline.radius,
+            };
+          }
+          if (feature.type === "chamfer" && baseline.type === "chamfer") {
+            return {
+              ...feature,
+              edges: baseline.edges,
+              distance: baseline.distance,
+            };
+          }
+          return feature;
+        },
       );
       if (next !== current.doc) {
         commit({
@@ -1446,17 +1466,31 @@ export function App() {
     setEditorOpen(true);
   };
 
-  /** Cancel restores the feature as it was when the popover opened. */
+  /**
+   * Cancel restores the *parameters* the popover edits, as they were when it
+   * opened. History actions taken while it was open (suppress, rename) are not
+   * part of the form and must survive: restoring the whole feature re-suppressed
+   * a step that the user had just unsuppressed from the same timeline detail.
+   */
   const cancelFeatureEditor = (): void => {
     const baseline = editorBaseline;
     setEditorOpen(false);
     setEditorBaseline(null);
     if (!baseline) return;
+    const original = baseline.feature;
     const current = getState();
     const next = updateExtrudeFeature(
       current.doc,
-      baseline.feature.id,
-      () => baseline.feature,
+      original.id,
+      (feature) => ({
+        ...feature,
+        sketchId: original.sketchId,
+        regions: original.regions,
+        height: original.height,
+        operation: original.operation,
+        end: original.end,
+        symmetric: original.symmetric,
+      }),
     );
     if (next !== current.doc) {
       commit({ doc: next, solved: current.solved, solvedFor: current.solvedFor });
