@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { expect } from "@playwright/test";
 import { resetExample, test } from "./support/app";
 import {
@@ -5,6 +6,7 @@ import {
   volume,
   meshBounds,
   activeStepMeta,
+  collectErrors,
 } from "./support/app";
 import {
   clickSketch,
@@ -63,6 +65,51 @@ test("autosaves the document and reopens it", async ({ app: page }) => {
   await page.getByTestId("timeline-extrude").click();
   await setSlider(page.getByTestId("height-slider"), 12);
   await page.getByTestId("feature-popover-apply").click();
+});
+
+
+test("exports the current body as STL and STEP", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  const triangles = Number(
+    await page.getByTestId("mesh-stats").getAttribute("data-triangles"),
+  );
+  expect(triangles).toBeGreaterThan(0);
+
+  await page.getByTestId("file-menu").click();
+  const [stl] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByTestId("export-stl").click(),
+  ]);
+  expect(stl.suggestedFilename()).toBe("Example.stl");
+  const stlPath = await stl.path();
+  if (!stlPath) throw new Error("No STL download path");
+  const stlData = readFileSync(stlPath);
+  // Binary STL: 80-byte header, uint32 triangle count, 50 bytes per triangle.
+  expect(stlData.length).toBe(84 + 50 * stlData.readUInt32LE(80));
+  expect(stlData.readUInt32LE(80)).toBe(triangles);
+
+  await page.getByTestId("file-menu").click();
+  const [step] = await Promise.all([
+    page.waitForEvent("download"),
+    page.getByTestId("export-step").click(),
+  ]);
+  expect(step.suggestedFilename()).toBe("Example.step");
+  const stepPath = await step.path();
+  if (!stepPath) throw new Error("No STEP download path");
+  const stepText = readFileSync(stepPath, "utf8");
+  expect(stepText.startsWith("ISO-10303-21;")).toBe(true);
+  expect(stepText).toContain("END-ISO-10303-21;");
+
+  // The history cursor is the export source: the first sketch has no body yet.
+  await page.getByTestId("timeline-sketch").click();
+  await page.getByTestId("file-menu").click();
+  await expect(page.getByTestId("export-stl")).toBeDisabled();
+  await expect(page.getByTestId("export-step")).toBeDisabled();
+  await expect(page.getByTestId("export-stl")).toHaveAttribute(
+    "title",
+    /no body/,
+  );
+  expect(errors).toEqual([]);
 });
 
 

@@ -515,6 +515,7 @@ export function App() {
   const [historyNotice, setHistoryNotice] = useState<string | null>(null);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [exporting, setExporting] = useState<"stl" | "step" | null>(null);
   const [docRename, setDocRename] = useState<string | null>(null);
   const [fileIndex, setFileIndex] = useState<LocalFileEntry[]>(() =>
     loadFileIndex(),
@@ -910,6 +911,25 @@ export function App() {
     }
     return features;
   }, [rebuild, fallbackParams, activeExtrude, blendDraft, shellDraft]);
+  // The final solid in the rendered prefix, for export. Drafts are not in the
+  // document, so they are excluded: export is always the applied body.
+  const exportCacheKey = useMemo(() => {
+    if (!rebuild) return null;
+    for (let index = rebuild.features.length - 1; index >= 0; index -= 1) {
+      const feature = rebuild.features[index]!;
+      if (feature.status !== "ok" || !feature.output) continue;
+      if (
+        feature.output.kind === "extrude" ||
+        feature.output.kind === "fillet" ||
+        feature.output.kind === "chamfer" ||
+        feature.output.kind === "shell"
+      ) {
+        return feature.cacheKey;
+      }
+    }
+    return null;
+  }, [rebuild]);
+
   // While editing a sketch on a world or datum plane there is no supporting
   // face to project. Show the body that exists at this step as faint projected
   // edges, so the sketch has a spatial reference. Face sketches already get
@@ -3667,16 +3687,37 @@ export function App() {
 
   const downloadDocument = (): void => {
     const current = getState();
-    const blob = new Blob([serializeDoc(current.doc)], {
-      type: "application/json",
-    });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${current.doc.name || "part"}.cad`;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    downloadBlob(
+      new Blob([serializeDoc(current.doc)], { type: "application/json" }),
+      `${current.doc.name || "part"}.cad`,
+    );
     setFileMenuOpen(false);
+  };
+
+  /** Export the rendered prefix solid, derived from the worker's cache. */
+  const exportModel = async (format: "stl" | "step"): Promise<void> => {
+    const cacheKey = exportCacheKey;
+    const client = clientRef.current;
+    if (!cacheKey || !client || exporting) return;
+    setExporting(format);
+    setFileError(null);
+    try {
+      const data = await client.exportSolid(format, cacheKey);
+      const current = getState();
+      downloadBlob(
+        new Blob([data], {
+          type: format === "stl" ? "model/stl" : "application/step",
+        }),
+        `${current.doc.name || "part"}.${format}`,
+      );
+      setFileMenuOpen(false);
+    } catch (error) {
+      setFileError(
+        `Export failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    } finally {
+      setExporting(null);
+    }
   };
 
   const openDocumentFile = async (file: File): Promise<void> => {
@@ -3977,6 +4018,34 @@ export function App() {
                 data-testid="open-doc"
               >
                 open .cad…
+              </button>
+              <button
+                className="text-action"
+                type="button"
+                onClick={() => void exportModel("stl")}
+                disabled={!exportCacheKey || exporting !== null}
+                title={
+                  exportCacheKey
+                    ? "Export the current body as STL"
+                    : "There is no body at this step to export"
+                }
+                data-testid="export-stl"
+              >
+                {exporting === "stl" ? "exporting…" : "export .stl"}
+              </button>
+              <button
+                className="text-action"
+                type="button"
+                onClick={() => void exportModel("step")}
+                disabled={!exportCacheKey || exporting !== null}
+                title={
+                  exportCacheKey
+                    ? "Export the current body as STEP"
+                    : "There is no body at this step to export"
+                }
+                data-testid="export-step"
+              >
+                {exporting === "step" ? "exporting…" : "export .step"}
               </button>
               <button
                 className="text-action"
@@ -5574,6 +5643,16 @@ function StatusBadge({
       </span>
     </span>
   );
+}
+
+/** Trigger a browser download without leaving a blob URL behind. */
+function downloadBlob(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 
 function formatInt(value: number): string {

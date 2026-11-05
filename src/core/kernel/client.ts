@@ -1,5 +1,6 @@
 import type {
   BodyMesh,
+  ExportFormat,
   FeatureBuildStatus,
   KernelFeature,
   KernelRequest,
@@ -46,6 +47,14 @@ export class KernelClient {
     }
   >();
   private nextBoundaryId = 1;
+  private exportRequests = new Map<
+    number,
+    {
+      resolve: (data: ArrayBuffer) => void;
+      reject: (error: Error) => void;
+    }
+  >();
+  private nextExportId = 1;
 
   constructor(handlers: KernelClientHandlers = {}) {
     this.handlers = handlers;
@@ -89,7 +98,29 @@ export class KernelClient {
     });
   }
 
+  /**
+   * Export the cached prefix solid as a file. The caller passes the final
+   * feature's cacheKey from the rendered rebuild, so the file always matches
+   * the body on screen (not a stale or in-flight mesh).
+   */
+  exportSolid(format: ExportFormat, cacheKey: string): Promise<ArrayBuffer> {
+    const requestId = this.nextExportId++;
+    return new Promise((resolve, reject) => {
+      this.exportRequests.set(requestId, { resolve, reject });
+      this.post({
+        type: "export",
+        requestId,
+        format,
+        cacheKey,
+      });
+    });
+  }
+
   dispose(): void {
+    for (const pending of this.exportRequests.values()) {
+      pending.reject(new Error("The geometry worker was disposed."));
+    }
+    this.exportRequests.clear();
     this.worker.terminate();
   }
 
@@ -142,6 +173,20 @@ export class KernelClient {
             new Error(message.message ?? "The face boundary could not be resolved."),
           );
         }
+        break;
+      }
+      case "exported": {
+        const pending = this.exportRequests.get(message.requestId);
+        if (!pending) break;
+        this.exportRequests.delete(message.requestId);
+        pending.resolve(message.data);
+        break;
+      }
+      case "exportError": {
+        const pending = this.exportRequests.get(message.requestId);
+        if (!pending) break;
+        this.exportRequests.delete(message.requestId);
+        pending.reject(new Error(message.message));
         break;
       }
     }

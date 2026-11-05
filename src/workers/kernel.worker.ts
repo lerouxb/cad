@@ -14,6 +14,8 @@ import {
   curveLength,
   curvePointAt,
   cutWithEvolution,
+  exportSTEP,
+  exportSTL,
   extrude,
   face,
   faceCenter,
@@ -131,6 +133,46 @@ async function handle(request: KernelRequest): Promise<void> {
         ok: true,
         ...boundary,
       });
+      return;
+    }
+
+    if (request.type === "export") {
+      const entry = solidCache.get(request.cacheKey);
+      if (!entry) {
+        reply({
+          type: "exportError",
+          requestId: request.requestId,
+          message:
+            "The current body is not ready to export. Rebuild it and try again.",
+        });
+        return;
+      }
+      try {
+        // The export meshes the solid itself; drop cached tessellations whose
+        // buffers may have been transferred to the main thread.
+        if (request.format === "stl") clearMeshCache();
+        const blob = unwrap(
+          request.format === "stl"
+            ? exportSTL(entry.solid, { binary: true, tolerance: 0.05 })
+            : exportSTEP(entry.solid),
+        );
+        const data = await blob.arrayBuffer();
+        reply(
+          {
+            type: "exported",
+            requestId: request.requestId,
+            format: request.format,
+            data,
+          },
+          [data],
+        );
+      } catch (error) {
+        reply({
+          type: "exportError",
+          requestId: request.requestId,
+          message: errorMessage(error),
+        });
+      }
       return;
     }
 

@@ -175,6 +175,9 @@ export interface FeatureBuildStatus {
   message?: string;
 }
 
+/** File formats the worker can derive from a cached prefix solid. */
+export type ExportFormat = "stl" | "step";
+
 export type KernelRequest =
   | { type: "init" }
   | { type: "rebuild"; gen: number; features: KernelFeature[] }
@@ -183,6 +186,13 @@ export type KernelRequest =
       requestId: number;
       cacheKey: string;
       ref: TopoRef;
+    }
+  | {
+      type: "export";
+      requestId: number;
+      format: ExportFormat;
+      /** The final prefix solid of the rendered rebuild. */
+      cacheKey: string;
     };
 
 export type KernelResponse =
@@ -208,4 +218,11 @@ export type KernelResponse =
       loops?: Vec3[][];
       confidence?: "exact" | "geometric-fallback";
       message?: string;
-    };
+    }
+  | {
+      type: "exported";
+      requestId: number;
+      format: ExportFormat;
+      data: ArrayBuffer;
+    }
+  | { type: "exportError"; requestId: number; message: string };

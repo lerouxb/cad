@@ -47,8 +47,8 @@ is an editable sketcher driving an exact solid:
   definition, fillet radius / chamfer distance and edges). The main-thread rebuild walks
   the feature list in order with a prefix cache and per-feature diagnostics. The worker
   receives the successful solid features, caches prefix solids by cache key, applies
-  new/join/cut booleans, constant-size fillets/chamfers and open-face shells, with
-  per-feature build statuses. Multi-edge model selection opens the body-selection
+  new/join/cut booleans, constant-size fillets/chamfers, open-face shells and
+  STL/STEP export of the cached prefix, with per-feature build statuses. Multi-edge model selection opens the body-selection
   popover; multi-face selection opens the face-selection popover; `fillet` and
   `chamfer` start UI-only drafts that preview through the kernel, then apply as history
   steps.
@@ -324,6 +324,15 @@ docs/
   new or join; cut needs a base; new after a base is an error; an edge blend needs a base.
   Any worker feature error clears the prefix cache after the last-good mesh is produced,
   so a later successful retry cannot reuse downstream solids built past a skipped feature.
+- **Export is derived from the cached prefix, not the mesh or the document.** The
+  main thread picks the last successful *solid* feature of the rendered rebuild and sends its
+  `cacheKey`; the worker exports the cached prefix solid (`exportSTL` with the same 0.05
+  tolerance as the stage mesh, so the binary triangle count equals `data-triangles`, or
+  `exportSTEP`, which starts `ISO-10303-21;`). Drafts are not in the rebuild, so a preview
+  never leaks into a file. The file menu disables both actions when the prefix has no body
+  (e.g. the first sketch step). If the key is missing — a failed feature cleared the
+  prefix cache — the worker returns a visible "not ready to export" error instead of
+  exporting a stale or disposed solid. `downloadBlob` is the one download path.
 - **A shell removes the selected open faces and hollows the rest.** Schema v11 adds
   `ShellFeature` (`faces: TopoRef[]`, `thickness`). The worker resolves each face against
   the prefix, calls `shellWithEvolution(solid, openFaces, thickness)`, re-derives the old

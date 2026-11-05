@@ -32,7 +32,7 @@ e2e/
   extrude.spec.ts      extrude create/edit/cancel, symmetric, through-all
   shell.spec.ts        face multi-selection, box/lasso faces, shell create/edit/fail
   sketch.spec.ts       sketch tools, constraints, dimensions, region gestures
-  documents.spec.ts    autosave, files, download/open, boot from a saved doc
+  documents.spec.ts    autosave, files, download/open, STL/STEP export, boot from a saved doc
 ```
 
 Pick the file that owns the area; run only that file while iterating. On a

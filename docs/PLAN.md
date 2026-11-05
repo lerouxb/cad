@@ -838,8 +838,12 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       dimensions can sit on the model like drawing annotations (mockup 03)
 - [ ] Body health line: 1 body · 1 shell · N faces · watertight, alongside volume and
       bounds (mockup 03/05)
-- [ ] Export STL + STEP from the worker, derived from the current rebuild state (not a
-      frozen mesh)
+- [x] Export STL + STEP from the worker, derived from the current rebuild state (not a
+      frozen mesh). The file menu exports the last successful solid of the rendered
+      prefix by its `cacheKey`: binary STL (same 0.05 tolerance as the stage, so the
+      triangle count matches the stats) and STEP (`ISO-10303-21;`). Disabled when the
+      cursor has no body; a cleared prefix cache is a visible error. The export *page*
+      below (checks, size, build-volume fit) remains.
 - [ ] Export page (mockup 05): visible model, body/watertight/shell/no-open-edges/outward
       normals, units/scale/triangles/file size, build-volume fit, one quiet export action
 - [ ] Body appearance (mockup 08): **document data** attached to the body-creating
