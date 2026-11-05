@@ -34,7 +34,15 @@ e2e/
   documents.spec.ts    autosave, files, download/open, boot from a saved doc
 ```
 
-Pick the file that owns the area; run only that file while iterating:
+Pick the file that owns the area; run only that file while iterating. On a
+typical dev machine with four workers (including the Vite + WASM startup):
+
+| Spec | Time | Spec | Time |
+| --- | --- | --- | --- |
+| `model-picking` | ~6 s | `extrude` | ~13 s |
+| `blends` | ~10 s | `documents` | ~13 s |
+| `example` | ~15 s | `sketch` | ~21 s |
+| | | `support` | ~25 s |
 
 ```bash
 npx playwright test e2e/blends.spec.ts
