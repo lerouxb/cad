@@ -760,6 +760,8 @@ export class Viewport {
 
   /** Change the selection gesture. Box/lasso take over the drag. */
   setPickTool(tool: ModelPickTool): void {
+    // Runtime guard: a bad key mapping once left this as "v".
+    if (tool !== "select" && tool !== "box" && tool !== "lasso") return;
     if (this.pickTool === tool) return;
     this.pickTool = tool;
     this.canvas.dataset.pickTool = tool;

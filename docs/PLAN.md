@@ -827,7 +827,7 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       4 local workers (~1.2 min for the whole suite), the example's metrics in one
       module, and authoritative `data-*` readouts instead of guessed pixel state.
       New ephemeral modes go into the shared reset, not individual tests. Shell lives in
-      `shell.spec.ts` (99 browser tests total as of the split).
+      `shell.spec.ts` (100 browser tests total as of the split).
 - [ ] Section Analysis: a view-only inspect overlay (never in history), with the
       visibility questions resolved first
 - [x] Feature selection highlights the geometry that feature created (mockup 03:

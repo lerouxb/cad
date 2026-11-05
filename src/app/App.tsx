@@ -3083,14 +3083,22 @@ export function App() {
       switch (event.key.toLowerCase()) {
         case "v":
         case "b":
-        case "g":
+        case "g": {
+          // The shortcut letters are not the tool names: v/b/g map to
+          // select/box/lasso. Passing the raw key through left the model tool
+          // as "v" (no button active, and the viewport treated it as a marquee
+          // tool) and made b/g draw the wrong marquee.
+          const key = event.key.toLowerCase();
+          const selectionTool =
+            key === "v" ? "select" : key === "b" ? "box" : "lasso";
           if (mode === "sketch") {
-            setTool(event.key.toLowerCase() as "select" | "box" | "lasso");
+            setTool(selectionTool as "select" | "box" | "lasso");
             setSelection([]);
           } else {
-            setModelTool(event.key.toLowerCase() as ModelPickTool);
+            setModelTool(selectionTool as ModelPickTool);
           }
           break;
+        }
         case "l":
           enterSketchMode();
           setTool("line");

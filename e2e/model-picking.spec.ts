@@ -170,6 +170,56 @@ test("box and lasso select model edges", async ({ app: page }) => {
 });
 
 
+test("v, b and g select model tools by name", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  const marquee = page.getByTestId("model-marquee");
+  const select = page.getByTestId("model-tool-select");
+  const box = page.getByTestId("model-tool-box");
+  const lasso = page.getByTestId("model-tool-lasso");
+  const marqueeKind = () =>
+    marquee.evaluate((element) =>
+      element.querySelector("svg") ? "lasso" : "box",
+    );
+
+  await expect(select).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("v");
+  await expect(select).toHaveAttribute("aria-pressed", "true");
+
+  // b is the box tool, not a tool literally called "b".
+  await page.keyboard.press("b");
+  await expect(box).toHaveAttribute("aria-pressed", "true");
+  await expect(select).toHaveAttribute("aria-pressed", "false");
+  await expect(box).toHaveCount(1);
+  await page.mouse.move(400, 200);
+  await page.mouse.down();
+  await page.mouse.move(600, 400, { steps: 4 });
+  await expect(marquee).toBeVisible();
+  expect(await marqueeKind()).toBe("box");
+  await page.mouse.up();
+
+  await page.keyboard.press("g");
+  await expect(lasso).toHaveAttribute("aria-pressed", "true");
+  await page.mouse.move(400, 200);
+  await page.mouse.down();
+  await page.mouse.move(500, 220, { steps: 4 });
+  await page.mouse.move(520, 320, { steps: 4 });
+  await expect(marquee).toBeVisible();
+  expect(await marqueeKind()).toBe("lasso");
+  await page.mouse.up();
+
+  // v returns to a real click tool: no marquee is drawn and the pick works.
+  await page.keyboard.press("v");
+  await expect(select).toHaveAttribute("aria-pressed", "true");
+  await page.mouse.click(700, 330);
+  await expect(marquee).toHaveCount(0);
+  await expect(page.getByTestId("body-pick")).toHaveAttribute(
+    "data-kind",
+    "face",
+  );
+  expect(errors).toEqual([]);
+});
+
+
 test("picks faces and edges in the model view", async ({ app: page }) => {
   const canvas = page.locator("canvas.viewport-canvas");
   await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
