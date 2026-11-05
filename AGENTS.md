@@ -93,14 +93,20 @@ expressions, threads) and the upstream SolveSpace/OCCT work are documented in **
 Scripted features (editable code behind a sketch/feature) and the command/AI layer are
 planned in **M8.5 / ADR-0005**.
 
-**E2E**: tests reuse one worker-scoped page per worker and reset the app through its UI;
-do not add `page.goto()` per test. The WASM stays warm, which takes the suite from ~1 min
-to ~30 s locally (2 workers; 1 in CI). Reset modes, the demo and the height slider in the
-shared `beforeEach`; if state leaks between tests, extend that reset. That reset now
-includes day mode and the yellow highlighter (both persist in `localStorage`), plus the
-sketch grid step (auto), snap on, and zoom fit, since those are ephemeral view controls.
-The shared-page reset leaks are what made the crossing-diagonals test flaky: a previous
-test left snap off, so the diagonals no longer snapped to the rectangle corners.
+**E2E**: the suite is split by area (`example`, `support`, `blends`, `model-picking`,
+`extrude`, `sketch`, `documents`) with shared helpers in `e2e/support/`. Tests reuse one
+worker-scoped page per worker and reset the app through its UI; do not add `page.goto()`
+per test. The WASM stays warm, which takes the whole suite to ~1.2 min locally (4
+workers; 1 in CI). The reset lives in `support/app.ts` (`resetExample`) and is called
+from each spec's `beforeEach`; extend that reset when a new ephemeral mode persists, not
+the individual tests. It covers day mode and the yellow highlighter (both persist in
+`localStorage`), snap on, the auto grid step, the example document and a known mesh.
+`fitView()` and every orbit must be followed by `waitForCameraSettled()`: orbit damping
+moves the camera for several frames and a pixel scan taken mid-drift can miss an edge.
+The old shared-page leaks are what made the crossing-diagonals test flaky (a previous
+test left snap off); the new reset covers snap and the example in one page evaluation.
+See `docs/TESTING.md` for the coverage map and the rules that keep a fixture change
+cheap.
 
 ## Stack (decided)
 

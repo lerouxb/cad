@@ -5,7 +5,10 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: true,
-  workers: process.env.CI ? 1 : 2,
+  // Four warm pages saturate a typical dev machine without starving the WASM
+  // builds; CI keeps one worker because its runners have fewer cores. The suite
+  // is CPU-bound, so more workers past this point only add WASM instances.
+  workers: process.env.CI ? 1 : 4,
   reporter: [["list"]],
   use: {
     baseURL: "http://127.0.0.1:4173",

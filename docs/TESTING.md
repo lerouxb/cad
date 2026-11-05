@@ -5,8 +5,8 @@ The suite is split by what it costs and what it proves. Keep it that way.
 | Layer | Command | What belongs here |
 | --- | --- | --- |
 | Pure core | `npm test` (`src/**/*.test.ts`) | geometry, constraints, regions, migrations, rebuild keys, kernel numbers, screen-space rules. No DOM, no WASM worker unless the test is explicitly a kernel test. |
-| Browser | `npm run e2e` (fail-fast) | the *wiring*: a gesture reaches the right document mutation, a popover edits the right feature, a failure is visible. |
-| Whole picture | `npm run e2e:all` | what CI runs. Local iteration uses the fail-fast script. |
+| Browser | `npm run e2e` (fail-fast, 4 workers locally) | the *wiring*: a gesture reaches the right document mutation, a popover edits the right feature, a failure is visible. |
+| Whole picture | `npm run e2e:all` | what CI runs (1 worker). Local iteration uses the fail-fast script. |
 
 ## Fail fast, then ask "one cause?"
 
@@ -14,6 +14,48 @@ The suite is split by what it costs and what it proves. Keep it that way.
 before running the suite again. If several failures are obviously one cause (the
 same volume number, the same missing test id), fix the cause; otherwise do not
 collect a list of red tests and start at random.
+
+## Layout
+
+```
+e2e/
+  support/
+    app.ts        fixture, resetExample(), volume/bounds readers, error collector
+    sketch.ts     sketch-canvas gestures (millimetres -> screen via the SVG CTM)
+    model.ts      viewport picking, hover scans, edge selection, camera settle
+    workflow.ts   timeline/insert/support flows shared by feature tests
+    fixtures.ts   documents built in the test process and opened through the UI
+  example.spec.ts      the example document, region selection, timeline basics
+  support.spec.ts      face/plane/datum sketches, projections, support loss
+  blends.spec.ts       fillet/chamfer create, edit, fail, recover
+  model-picking.spec.ts filters, Select Other, box/lasso
+  extrude.spec.ts      extrude create/edit/cancel, symmetric, through-all
+  sketch.spec.ts       sketch tools, constraints, dimensions, region gestures
+  documents.spec.ts    autosave, files, download/open, boot from a saved doc
+```
+
+Pick the file that owns the area; run only that file while iterating:
+
+```bash
+npx playwright test e2e/blends.spec.ts
+npx playwright test e2e/sketch.spec.ts -g "dimension"
+```
+
+A new spec imports the fixture and opts into the shared reset:
+
+```ts
+import { expect, resetExample, test } from "./support/app";
+
+test.beforeEach(async ({ app: page }) => {
+  await resetExample(page);
+});
+```
+
+The reset is one page evaluation for the view controls (day theme, yellow
+highlighter, snap, auto grid, file menu) plus `load-example`, a click on the base
+extrude, and a volume poll. `load-example` already selects the first sketch and
+sets select/zoom-fit, so do not re-click those. If a new ephemeral UI mode
+persists, add it to `resetExample`, not to the individual spec.
 
 ## Rules that keep a change cheap
 
@@ -28,45 +70,52 @@ collect a list of red tests and start at random.
    finds hoverable model edges in one browser round trip. Pixel picks may only
    be used as *inputs* after being derived, never as expected values.
 3. **Assert on authoritative state readouts.** The selection popover publishes
-   `data-edge-refs`; the stage publishes `data-hover-kind`, `data-hover-edge-length`
-   and `data-hover-edge-ref`; the mesh publishes bounds/volume/faces. A test that
-   clicks a pixel and then guesses what got selected is a future flake. Click,
-   read the readout, compare the stable ref.
-4. **One behaviour per test.** The blend suite used to be a 100-line create →
-   volume → edit height → impossible radius → recover flow. Split it when you
-   touch it: a failure should name the behaviour, not the setup. Share the setup
-   helper, not the assertions.
-5. **Interaction tests prove wiring, not maths.** If an assertion is about a
+   `data-edge-refs`; the stage publishes `data-hover-kind`, `data-hover-edge-length`,
+   `data-hover-edge-ref` and `data-camera`; the mesh publishes bounds/volume/faces.
+   A test that clicks a pixel and then guesses what got selected is a future
+   flake. Click, read the readout, compare the stable ref.
+4. **A still camera is a precondition.** `fitView()` and every orbit in a test
+   must be followed by `waitForCameraSettled()`. Orbit damping moves the camera
+   for several frames; a screen-space scan taken mid-drift can miss an edge on
+   one row and hit it on another. Picking itself always refreshes the camera
+   matrix, so a still camera is only needed for scans.
+5. **One behaviour per test.** A failure should name the behaviour, not the
+   setup. Share the setup helper, not the assertions. The blend create test is
+   still one long flow; split it when you next touch it.
+6. **Interaction tests prove wiring, not maths.** If an assertion is about a
    volume, a bound, a face count or a solve outcome, the number belongs in a
    `core` test where it runs in milliseconds. The e2e test then checks that the
    UI shows that result (with `toBeCloseTo(..., -1)` tolerance where meshing
    sampling matters).
-6. **The shared page is a fixture, not a dumping ground.** One worker-scoped
-   page per worker keeps the WASM warm. Every new ephemeral UI mode must be
-   reset in the shared `beforeEach` (theme, highlighter, grid, snap, zoom,
-   selection filters and tool, open editor). If a test needs a different
-   starting document, load it through the UI or the file dialog inside the test
-   and restore the example at the end; do not mutate the previous test's state.
-7. **Test ids are part of the UI contract.** Popovers, tools, filters and
+7. **The shared page is a fixture, not a dumping ground.** One worker-scoped
+   page per worker keeps the WASM warm. Do not add `page.goto()` per test; a
+   test that must boot from a saved document uses its own context on purpose
+   (and still pays the shared reset, which is the price of the fixture).
+8. **Test ids are part of the UI contract.** Popovers, tools, filters and
    readouts expose a `data-testid` (and, where useful, data attributes). Prefer
    them over CSS classes and text, which are visual decisions.
 
-## Splitting the browser suite
+## Coverage map and deliberate overlap
 
-`e2e/smoke.spec.ts` is one file because it started as one smoke test. Split it
-by area as each area is touched, keeping the shared page fixture:
+There are no duplicate tests as of the split; the 88 browser tests each own a
+behaviour. These pairs look similar but assert different invariants and should
+stay separate:
 
-- `example` — goldens, dimensions, the document's shape
-- `sketch` — tools, constraints, dimensions, trim, marquee profiles
-- `model-picking` — filters, Select Other, box/lasso, hover readouts
-- `blends` — fillet/chamfer create, edit, fail, recover
-- `history` — timeline cursor, rebuild, suppress, datum chains
-- `documents` — files, autosave, theme, appearance
+- `the example's suppressed fillet/chamfer` (role remap on the authored
+  document) vs `fillets four vertical edges` / `creates a chamfer` (creating a
+  step from the UI).
+- `flips a face sketch support and keeps that side stable` (side stability under
+  a body edit) vs `keeps a face sketch attached when its source body changes`
+  (downstream boss follows the face and its projections survive).
+- `creates an offset datum plane and sketches on it` (support selected from the
+  popover's datum list) vs `picks a datum plane and starts a sketch on it` (the
+  datum is ray-picked in 3D).
+- `box-selects profile regions` vs `lasso-selects profile regions` (window vs
+  crossing rules).
 
-Helpers move to `e2e/support/` (`app.ts` fixture + reset, `sketch.ts`,
-`model.ts`, `metrics.ts`) so a new spec is a few imports, not a copy of the
-1,000-line preamble. Each file gets its own worker-scoped page, so parallel
-files still share no state *within* a file's tests.
+If you think a test is redundant, check this list first, then delete the weaker
+one only if the remaining test still fails when the behaviour breaks (revert the
+fix locally and run it).
 
 ## When a fixture change ripples
 

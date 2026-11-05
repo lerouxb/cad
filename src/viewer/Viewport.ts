@@ -1450,6 +1450,15 @@ export class Viewport {
       const moved = this.controls.update();
       if (!moved && !this.dirty) return;
       this.dirty = false;
+      // Publish the settled camera for tests: orbit damping moves it for a few
+      // frames after the gesture, and a screen-space scan taken mid-drift can
+      // miss an edge (or pick a different one) at the same pixel.
+      this.canvas.dataset.camera = [
+        ...this.camera.position.toArray(),
+        ...this.controls.target.toArray(),
+      ]
+        .map((value) => value.toFixed(3))
+        .join(",");
       this.renderer.render(this.scene, this.camera);
     });
   }

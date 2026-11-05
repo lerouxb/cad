@@ -813,6 +813,11 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       and cycles them on click. **Bodies wait for multi-body**; sketch create variants
       (`rect`/`circle`/`arc`) are still to be added to this same row. Do not bolt filters
       into the selection popover.
+- [x] **Browser test architecture** (`docs/TESTING.md`): area-split specs with shared
+      helpers in `e2e/support/`, one `resetExample` setup per test, fail-fast default,
+      4 local workers (~1.2 min for the whole suite), the example's metrics in one
+      module, and authoritative `data-*` readouts instead of guessed pixel state.
+      New ephemeral modes go into the shared reset, not individual tests.
 - [ ] Section Analysis: a view-only inspect overlay (never in history), with the
       visibility questions resolved first
 - [x] Feature selection highlights the geometry that feature created (mockup 03:
