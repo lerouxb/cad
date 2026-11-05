@@ -4276,7 +4276,13 @@ export function App() {
             <div className="stage-foot-right">
               {mode === "model" ? (
                 <>
-                  <span className="stage-meta">Z-up · mm</span>
+                  <span
+                    className="stage-meta"
+                    title="Model space is Z-up, in millimetres"
+                    data-testid="stage-units"
+                  >
+                    Z-up · mm
+                  </span>
                   <button
                     className="text-action"
                     type="button"
