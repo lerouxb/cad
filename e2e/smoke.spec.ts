@@ -481,6 +481,51 @@ test.beforeEach(async ({ app: page }) => {
   await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
 });
 
+test("the sketch body reference follows the history cursor", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  const references = page.locator("[data-body-reference]");
+
+  // Editing the example's first sketch is before the first extrude: no body
+  // exists at that step, so there is nothing to project. (The stage used to
+  // keep the last built mesh in React state after clearing the viewport, so
+  // this drew the *previous* document's body as construction-looking lines.)
+  await page.getByTestId("timeline-sketch").click();
+  await expect(references).toHaveCount(0);
+
+  // A later world-plane sketch's prefix does have a body; its projected
+  // outline is the example plate, not whatever happened to be on screen.
+  // Insert after the extrude so the new sketch's prefix includes the body.
+  await page.getByTestId("timeline-extrude").click();
+  await createSketch(page);
+  await expect(references.first()).toBeAttached();
+  const box = await references.evaluateAll((lines) => {
+    const xs: number[] = [];
+    const ys: number[] = [];
+    for (const line of lines) {
+      for (const key of ["x1", "x2"]) xs.push(Number(line.getAttribute(key)));
+      for (const key of ["y1", "y2"]) ys.push(Number(line.getAttribute(key)));
+    }
+    return {
+      minX: Math.min(...xs),
+      maxX: Math.max(...xs),
+      minY: Math.min(...ys),
+      maxY: Math.max(...ys),
+    };
+  });
+  expect(box.minX).toBeCloseTo(-30, 0);
+  expect(box.maxX).toBeCloseTo(30, 0);
+  expect(box.minY).toBeCloseTo(-20, 0);
+  expect(box.maxY).toBeCloseTo(20, 0);
+
+  // Loading the example resets the cursor to its first sketch and drops the
+  // body with it, so no stale reference survives the document switch.
+  await page.getByTestId("load-example").click();
+  await expect(references).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
 test("the dimensioned example drives an exact solid", async ({ app: page }) => {
   const errors = collectErrors(page);
 
@@ -4351,6 +4396,9 @@ test("switches and persists the appearance theme", async ({ app: page }) => {
     "rgb(251, 251, 249)",
   );
 });
+
+
+
 
 
 

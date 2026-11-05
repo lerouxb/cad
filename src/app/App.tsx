@@ -732,66 +732,6 @@ export function App() {
     supportOpen,
     datumDraft,
   ]);
-  // While editing a sketch on a world or datum plane there is no supporting
-  // face to project. Show the body that exists at this step as faint projected
-  // edges, so the sketch has a spatial reference. Face sketches already get
-  // the supporting boundary through their live projection.
-  const bodyReferenceEdges = useMemo<
-    Array<[number, number, number, number]>
-  >(() => {
-    if (
-      mode !== "sketch" ||
-      activeFeature?.type !== "sketch" ||
-      !activeSketchFeature ||
-      !mesh ||
-      activeSketchFeature.support.kind === "face"
-    ) {
-      return [];
-    }
-    const frame =
-      activeSketchBuild?.frame ??
-      (isDefaultSupport(activeSketchFeature.support)
-        ? undefined
-        : supportFrame(activeSketchFeature.support));
-    const origin = frame?.origin ?? [0, 0, 0];
-    const xAxis = frame?.xAxis ?? [1, 0, 0];
-    const yAxis = frame?.yAxis ?? [0, 1, 0];
-    const positions = mesh.edgePositions;
-    const edges: Array<[number, number, number, number]> = [];
-    const project = (
-      x: number,
-      y: number,
-      z: number,
-    ): [number, number] => {
-      const dx = x - origin[0];
-      const dy = y - origin[1];
-      const dz = z - origin[2];
-      return [
-        dx * xAxis[0] + dy * xAxis[1] + dz * xAxis[2],
-        dx * yAxis[0] + dy * yAxis[1] + dz * yAxis[2],
-      ];
-    };
-    for (let index = 0; index + 5 < positions.length; index += 6) {
-      const a = project(
-        positions[index]!,
-        positions[index + 1]!,
-        positions[index + 2]!,
-      );
-      const b = project(
-        positions[index + 3]!,
-        positions[index + 4]!,
-        positions[index + 5]!,
-      );
-      edges.push([a[0], a[1], b[0], b[1]]);
-    }
-    return edges;
-  }, [
-    mode,
-    activeFeature,
-    activeSketchFeature,
-    activeSketchBuild,
-    mesh,
-  ]);
   const activeVoidCount = useMemo(
     () => activeRegions.filter((region) => region.kind === "void").length,
     [activeRegions],
@@ -887,6 +827,68 @@ export function App() {
     }
     return features;
   }, [rebuild, fallbackParams, activeExtrude, blendDraft]);
+  // While editing a sketch on a world or datum plane there is no supporting
+  // face to project. Show the body that exists at this step as faint projected
+  // edges, so the sketch has a spatial reference. Face sketches already get
+  // the supporting boundary through their live projection.
+  const bodyReferenceEdges = useMemo<
+    Array<[number, number, number, number]>
+  >(() => {
+    if (
+      mode !== "sketch" ||
+      activeFeature?.type !== "sketch" ||
+      !activeSketchFeature ||
+      !mesh ||
+      solidFeatures.length === 0 ||
+      activeSketchFeature.support.kind === "face"
+    ) {
+      return [];
+    }
+    const frame =
+      activeSketchBuild?.frame ??
+      (isDefaultSupport(activeSketchFeature.support)
+        ? undefined
+        : supportFrame(activeSketchFeature.support));
+    const origin = frame?.origin ?? [0, 0, 0];
+    const xAxis = frame?.xAxis ?? [1, 0, 0];
+    const yAxis = frame?.yAxis ?? [0, 1, 0];
+    const positions = mesh.edgePositions;
+    const edges: Array<[number, number, number, number]> = [];
+    const project = (
+      x: number,
+      y: number,
+      z: number,
+    ): [number, number] => {
+      const dx = x - origin[0];
+      const dy = y - origin[1];
+      const dz = z - origin[2];
+      return [
+        dx * xAxis[0] + dy * xAxis[1] + dz * xAxis[2],
+        dx * yAxis[0] + dy * yAxis[1] + dz * yAxis[2],
+      ];
+    };
+    for (let index = 0; index + 5 < positions.length; index += 6) {
+      const a = project(
+        positions[index]!,
+        positions[index + 1]!,
+        positions[index + 2]!,
+      );
+      const b = project(
+        positions[index + 3]!,
+        positions[index + 4]!,
+        positions[index + 5]!,
+      );
+      edges.push([a[0], a[1], b[0], b[1]]);
+    }
+    return edges;
+  }, [
+    mode,
+    activeFeature,
+    activeSketchFeature,
+    activeSketchBuild,
+    mesh,
+    solidFeatures,
+  ]);
   const rebuildDiagnostics = useMemo(
     () =>
       rebuild?.features
@@ -3171,7 +3173,9 @@ export function App() {
     setBodyPick(null);
     setEdgeSelection([]);
     setSelectOther(null);
+    setMesh(null);
     viewportRef.current?.clearPick();
+    viewportRef.current?.clearMesh();
   };
 
   const openDocument = (next: Doc): void => {
@@ -3192,12 +3196,16 @@ export function App() {
     setMode(feature?.type === "sketch" ? "sketch" : "model");
     setSelection([]);
     setSolveError(null);
+    setMesh(null);
+    viewportRef.current?.clearMesh();
     setFileError(null);
     setFileMenuOpen(false);
     setBodyPick(null);
     setEdgeSelection([]);
     setSelectOther(null);
+    setMesh(null);
     viewportRef.current?.clearPick();
+    viewportRef.current?.clearMesh();
     saveDoc(next);
     saveLocalFile(next);
     setFileIndex(loadFileIndex());
