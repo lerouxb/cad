@@ -9,6 +9,7 @@ import {
   addFacePick,
   fitView,
   pickTopFace,
+  scanVisibleFaces,
   selectedFaceRefs,
   shiftClick,
 } from "./support/model";
@@ -83,6 +84,41 @@ test("shift-click selects and toggles multiple faces", async ({ app: page }) => 
   await expect(popover).toHaveAttribute("data-count", "1");
   await shiftClick(page, other.x, other.y);
   await expect(popover).toHaveAttribute("data-count", "2");
+  expect(errors).toEqual([]);
+});
+
+test("a click refines a box selection without switching tools", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await fitView(page);
+  await page.getByTestId("model-filter-faces").click();
+  await page.getByTestId("model-tool-box").click();
+
+  await page.mouse.move(260, 140);
+  await page.mouse.down();
+  await page.mouse.move(1040, 560, { steps: 8 });
+  await page.mouse.up();
+  const popover = page.getByTestId("face-selection-popover");
+  await expect(popover).toHaveAttribute("data-count", "7");
+  const before = await selectedFaceRefs(page);
+
+  // Still on the box tool: a plain click is a click pick, not an empty
+  // marquee, so Shift-click removes one face from the set.
+  const face = (await scanVisibleFaces(page))[0]!;
+  await shiftClick(page, face.x, face.y);
+  await expect(popover).toHaveAttribute("data-count", "6");
+  const after = await selectedFaceRefs(page);
+  expect(after).toHaveLength(6);
+  expect(after.map((ref) => ref.role)).not.toEqual(
+    before.map((ref) => ref.role),
+  );
+
+  // Switching to select keeps the set; a Shift-click there also toggles.
+  await page.getByTestId("model-tool-select").click();
+  await expect(popover).toHaveAttribute("data-count", "6");
+  await shiftClick(page, face.x, face.y);
+  await expect(popover).toHaveAttribute("data-count", "7");
   expect(errors).toEqual([]);
 });
 

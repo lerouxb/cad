@@ -622,7 +622,9 @@ export class Viewport {
     if (!this.active || event.button !== 0) return;
     if (this.pickTool !== "select") {
       if (!this.mesh) return;
-      // The marquee owns the drag; do not also treat it as a click pick.
+      // A press starts a marquee. If it never moves, pointer-up falls through
+      // to a normal pick (see onPointerUp), so a marquee tool can refine its
+      // own selection without switching tools.
       this.setHover(null);
       this.marquee = {
         tool: this.pickTool,
@@ -657,8 +659,27 @@ export class Viewport {
   private onPointerUp = (event: PointerEvent): void => {
     if (!this.active || this.disposed) return;
     if (this.marquee) {
-      if (this.marquee.pointerId !== event.pointerId) return;
-      this.updateMarquee(this.localPoint(event));
+      const marquee = this.marquee;
+      if (marquee.pointerId !== event.pointerId) return;
+      const end = this.localPoint(event);
+      this.updateMarquee(end);
+      // A click with a marquee tool is a normal pick. Check the marquee's
+      // shape, not the end-to-start distance: a closed lasso ends where it
+      // began but is not a click.
+      const empty =
+        marquee.tool === "box"
+          ? marquee.points.length < 2 ||
+            boxIsEmpty(
+              boxBetween(marquee.points[0]!, marquee.points[1]!),
+            )
+          : polygonIsEmpty(marquee.points);
+      if (empty) {
+        // The natural refine gesture: box everything, then Shift-click one
+        // face/edge away without switching tools.
+        this.cancelMarquee();
+        this.commitClickPick(event);
+        return;
+      }
       const { picks, additive } = this.marqueeResult();
       this.cancelMarquee();
       this.onMarquee?.(picks, additive);
@@ -672,6 +693,11 @@ export class Viewport {
     if (Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4) {
       return;
     }
+    this.commitClickPick(event);
+  };
+
+  /** A single click pick, with Select Other cycling for overlapping hits. */
+  private commitClickPick(event: PointerEvent): void {
     const { candidates, ...info } = this.pickCandidatesAt(event);
     const sameOverlap =
       !event.shiftKey &&
@@ -697,7 +723,7 @@ export class Viewport {
         index: this.pickCandidateIndex,
       },
     );
-  };
+  }
 
   private onPointerCancel = (): void => {
     this.pointerStart = null;

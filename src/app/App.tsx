@@ -4161,14 +4161,12 @@ export function App() {
                   label="select"
                   shortcut="v"
                   active={modelTool === "select"}
+                  // Switching tools never touches the selection: a box can be
+                  // refined by a Shift-click (even without switching), and the
+                  // old clear-on-select lost the whole set.
                   onClick={() => {
                     setModelTool("select");
-                    setBodyPick(null);
-                    setEdgeSelection([]);
-                    setFaceSelection([]);
                     setSelectOther(null);
-                    viewportRef.current?.clearPick();
-                    viewportRef.current?.setFaceSelection([]);
                   }}
                   testId="model-tool-select"
                 />
