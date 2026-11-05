@@ -4676,6 +4676,10 @@ export function App() {
                   >
                     Z-up · mm
                   </span>
+                  {/* A hairline separates the readout group from the action:
+                      the annotation is not a control and should not read like
+                      the fit button next to it. */}
+                  <span className="stage-divider" aria-hidden="true" />
                   <button
                     className="text-action"
                     type="button"

@@ -2446,6 +2446,14 @@ body {
   min-width: 0;
 }
 
+/* The model foot's readout group ends here; the action after it is a button. */
+.stage-divider {
+  width: 1px;
+  height: 12px;
+  margin-inline: -6px;
+  background: var(--rule);
+}
+
 .stage-meta {
   color: var(--ink-3);
   font-family: var(--font-mono);
