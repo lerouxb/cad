@@ -88,8 +88,11 @@ persists, add it to `resetExample`, not to the individual spec.
    one row and hit it on another. Picking itself always refreshes the camera
    matrix, so a still camera is only needed for scans.
 5. **One behaviour per test.** A failure should name the behaviour, not the
-   setup. Share the setup helper, not the assertions. The blend create test is
-   still one long flow; split it when you next touch it.
+   setup. Share the setup helper, not the assertions. The fillet flow shows the
+   trade-off: `createPlateFillet()` (fit, select four edges, apply) plus three
+   focused tests costs ~12 s of CPU instead of ~8 s, because each test repays
+   the shared setup, but a failure now names create / upstream edit / invalid
+   radius, and running just that behaviour takes ~6 s instead of ~8 s.
 6. **Interaction tests prove wiring, not maths.** If an assertion is about a
    volume, a bound, a face count or a solve outcome, the number belongs in a
    `core` test where it runs in milliseconds. The e2e test then checks that the
@@ -110,8 +113,8 @@ behaviour. These pairs look similar but assert different invariants and should
 stay separate:
 
 - `the example's suppressed fillet/chamfer` (role remap on the authored
-  document) vs `fillets four vertical edges` / `creates a chamfer` (creating a
-  step from the UI).
+  document) vs `creates a fillet on four vertical edges` / `creates a chamfer`
+  (creating a step from the UI).
 - `flips a face sketch support and keeps that side stable` (side stability under
   a body edit) vs `keeps a face sketch attached when its source body changes`
   (downstream boss follows the face and its projections survive).
