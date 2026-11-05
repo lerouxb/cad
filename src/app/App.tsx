@@ -5477,8 +5477,8 @@ function describeSelection(
 
 function selectionFilterNote(value: string): string {
   return value === "all"
-    ? "everything can be picked"
-    : `only ${value} can be picked`;
+    ? "Everything can be picked"
+    : `Only ${value} can be picked`;
 }
 
 /**
@@ -5503,7 +5503,11 @@ function ToolOptionsRow({
 }) {
   return (
     <div className="tool-options" role="toolbar" aria-label="Tool options">
-      <span className="tool-kicker">{kicker}</span>
+      {/* The current filter's consequence is a tooltip, not inline prose: it is
+          self-evident from the enabled options and the hit feedback. */}
+      <span className="tool-kicker" title={note}>
+        {kicker}
+      </span>
       {options.map((option) => (
         <button
           key={option}
@@ -5516,7 +5520,6 @@ function ToolOptionsRow({
           {option}
         </button>
       ))}
-      <span className="tool-note">{note}</span>
     </div>
   );
 }

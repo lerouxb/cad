@@ -29,6 +29,14 @@ test("the sketch filter row limits what select can pick", async ({
     "aria-pressed",
     "true",
   );
+  const filters = page
+    .locator(".tool-options")
+    .filter({ has: page.getByTestId("sketch-filter-all") });
+  await expect(filters.locator(".tool-kicker")).toHaveAttribute(
+    "title",
+    "Everything can be picked",
+  );
+  await expect(filters).not.toContainText("picked");
   const selection = page.getByTestId("selection-panel");
 
   // Curves: a line midpoint selects the line.

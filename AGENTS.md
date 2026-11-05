@@ -507,8 +507,10 @@ docs/
   filters are `all/points/curves/dimensions` and gate the hit targets in `SketchCanvas`
   (a filter turns profile-region fills into decoration, so a click cannot start an extrude
   draft). Model select filters are `all/edges/faces` and gate `Viewport.pickCandidatesAt`;
-  a filtered-out hit is *blocked* and keeps the selection instead of clearing it. Bodies
-  wait for multi-body. Do not put filters in the selection popover.
+  a filtered-out hit is *blocked* and keeps the selection instead of clearing it. The
+  current filter's consequence is a tooltip on the `FILTER` kicker, not inline prose (the
+  row said "everything can be picked", which is self-evident and read like a status line).
+  Bodies wait for multi-body. Do not put filters in the selection popover.
 - **Box and lasso run on the model too, and they select edges.** The model tool row is
   `select / box / lasso` (`v/b/g` follow the active mode); box is a window selection
   (every projected vertex inside), lasso is crossing (any vertex inside or a segment

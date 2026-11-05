@@ -31,6 +31,15 @@ test("the model filter row limits picks and Select Other cycles", async ({
     "aria-pressed",
     "true",
   );
+  // The filter's consequence lives in the kicker tooltip, not as inline prose.
+  const filters = page
+    .locator(".model-tools .tool-options")
+    .filter({ has: page.getByTestId("model-filter-all") });
+  await expect(filters.locator(".tool-kicker")).toHaveAttribute(
+    "title",
+    "Everything can be picked",
+  );
+  await expect(filters).not.toContainText("picked");
 
   // A face interior is not pickable under the edges filter.
   const facePoint = { x: 700, y: 330 };
