@@ -75,10 +75,35 @@ test("exports the current body as STL and STEP", async ({ app: page }) => {
   );
   expect(triangles).toBeGreaterThan(0);
 
+  // The export page reports the body and real checks before writing a file.
   await page.getByTestId("file-menu").click();
+  await expect(page.getByTestId("open-export")).toBeEnabled();
+  await page.getByTestId("open-export").click();
+  const exportPage = page.getByTestId("export-page");
+  await expect(exportPage).toBeVisible();
+  await expect(page.getByTestId("export-page-body")).toHaveText(
+    "1 body · watertight",
+  );
+  await expect(page.getByTestId("export-page-checks")).toContainText(
+    "1 shell · no open edges · outward normals",
+  );
+  await expect(page.getByTestId("export-page-checks")).toHaveAttribute(
+    "data-valid",
+    "true",
+  );
+  await expect(page.getByTestId("export-page-fit")).toHaveAttribute(
+    "data-fits",
+    "true",
+  );
+  await expect(page.getByTestId("export-page-size")).toHaveText(
+    `≈ ${Math.round((84 + 50 * triangles) / 1024)} KB`,
+  );
+  await expect(exportPage).toContainText("millimetres");
+  await expect(exportPage).toContainText("1:1");
+
   const [stl] = await Promise.all([
     page.waitForEvent("download"),
-    page.getByTestId("export-stl").click(),
+    page.getByTestId("export-page-stl").click(),
   ]);
   expect(stl.suggestedFilename()).toBe("Example.stl");
   const stlPath = await stl.path();
@@ -87,11 +112,14 @@ test("exports the current body as STL and STEP", async ({ app: page }) => {
   // Binary STL: 80-byte header, uint32 triangle count, 50 bytes per triangle.
   expect(stlData.length).toBe(84 + 50 * stlData.readUInt32LE(80));
   expect(stlData.readUInt32LE(80)).toBe(triangles);
+  // A successful export closes the page.
+  await expect(exportPage).toHaveCount(0);
 
   await page.getByTestId("file-menu").click();
+  await page.getByTestId("open-export").click();
   const [step] = await Promise.all([
     page.waitForEvent("download"),
-    page.getByTestId("export-step").click(),
+    page.getByTestId("export-page-step").click(),
   ]);
   expect(step.suggestedFilename()).toBe("Example.step");
   const stepPath = await step.path();
@@ -103,9 +131,8 @@ test("exports the current body as STL and STEP", async ({ app: page }) => {
   // The history cursor is the export source: the first sketch has no body yet.
   await page.getByTestId("timeline-sketch").click();
   await page.getByTestId("file-menu").click();
-  await expect(page.getByTestId("export-stl")).toBeDisabled();
-  await expect(page.getByTestId("export-step")).toBeDisabled();
-  await expect(page.getByTestId("export-stl")).toHaveAttribute(
+  await expect(page.getByTestId("open-export")).toBeDisabled();
+  await expect(page.getByTestId("open-export")).toHaveAttribute(
     "title",
     /no body/,
   );

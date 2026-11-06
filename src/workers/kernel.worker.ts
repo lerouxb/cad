@@ -28,7 +28,10 @@ import {
   getEdges,
   getFaces,
   getHashCode,
+  getShells,
+  getSolids,
   innerWires,
+  isValid,
   line,
   measureVolume,
   outerWire,
@@ -1322,6 +1325,9 @@ function meshSolid(solid: Solid, roles: RoleTable): BodyMesh {
     if (z > maxZ) maxZ = z;
   }
 
+  const bodies = getSolids(solid).length;
+  const shells = getShells(solid).length;
+  const valid = isValid(solid);
   const refs = topoRefs(solid, roles);
   const edgeRefs = topoEdgeRefs(solid, refs);
   return {
@@ -1354,6 +1360,9 @@ function meshSolid(solid: Solid, roles: RoleTable): BodyMesh {
       triangles: data.index.length / 3,
       volume,
       buildMs: 0,
+      bodies,
+      shells,
+      valid,
       bounds: [minX, minY, minZ, maxX, maxY, maxZ],
     },
   };

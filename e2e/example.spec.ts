@@ -80,6 +80,13 @@ test("the dimensioned example drives an exact solid", async ({ app: page }) => {
   const plate = examplePlateVolume();
   await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
 
+  // The stage foot reports the body's real health, not just its size.
+  const health = page.getByTestId("body-health");
+  await expect(health).toHaveAttribute("data-bodies", "1");
+  await expect(health).toHaveAttribute("data-shells", "1");
+  await expect(health).toHaveAttribute("data-valid", "true");
+  await expect(health).toContainText("1 body · 1 shell · watertight");
+
   await enterSketch(page);
   await expect(page.getByTestId("dof")).toContainText("Fully constrained");
 

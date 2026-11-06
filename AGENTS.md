@@ -48,7 +48,9 @@ is an editable sketcher driving an exact solid:
   the feature list in order with a prefix cache and per-feature diagnostics. The worker
   receives the successful solid features, caches prefix solids by cache key, applies
   new/join/cut booleans, constant-size fillets/chamfers, open-face shells and
-  STL/STEP export of the cached prefix, with per-feature build statuses. Multi-edge model selection opens the body-selection
+  STL/STEP export of the cached prefix, with per-feature build statuses. The worker also
+  reports body health (bodies, shells, BRepCheck validity) and the file menu opens an
+  export page with those checks. Multi-edge model selection opens the body-selection
   popover; multi-face selection opens the face-selection popover; `fillet` and
   `chamfer` start UI-only drafts that preview through the kernel, then apply as history
   steps.
@@ -324,15 +326,29 @@ docs/
   new or join; cut needs a base; new after a base is an error; an edge blend needs a base.
   Any worker feature error clears the prefix cache after the last-good mesh is produced,
   so a later successful retry cannot reuse downstream solids built past a skipped feature.
+- **Body health comes from OCCT, not from counting seam edges.** `BodyStats` carries
+  `bodies` (`getSolids`), `shells` (`getShells`) and `valid` (`isValid`, BRepCheck:
+  closed shells + consistent orientation). Do **not** report a raw "open edge" count:
+  a seam edge (the cylinder's seam on a hole) belongs to one face and `facesOfEdge` /
+  `edgesOfFace` dedupe it, so a perfectly watertight plate looks like it has an open edge.
+  The stage foot shows `1 body · 1 shell · watertight` (or `invalid`), and the export page
+  derives "no open edges / outward normals" from the same `valid` flag. The health span is
+  `body-health` with `data-bodies`/`data-shells`/`data-valid` for tests.
 - **Export is derived from the cached prefix, not the mesh or the document.** The
   main thread picks the last successful *solid* feature of the rendered rebuild and sends its
   `cacheKey`; the worker exports the cached prefix solid (`exportSTL` with the same 0.05
   tolerance as the stage mesh, so the binary triangle count equals `data-triangles`, or
   `exportSTEP`, which starts `ISO-10303-21;`). Drafts are not in the rebuild, so a preview
-  never leaks into a file. The file menu disables both actions when the prefix has no body
-  (e.g. the first sketch step). If the key is missing — a failed feature cleared the
-  prefix cache — the worker returns a visible "not ready to export" error instead of
-  exporting a stale or disposed solid. `downloadBlob` is the one download path.
+  never leaks into a file. The file menu's `export…` opens the export page
+  (`ExportPopover`, mockup 05): body/watertight, volume, triangles, units, scale, exact
+  binary STL size, build-volume fit (a documented 220 × 220 × 250 default), the shell /
+  open-edge / normals checks, and the two export actions. The actions are disabled unless
+  the body is valid. Opening the page dismisses live editors/drafts and the stage
+  selection so they do not peek out behind it; a successful export closes it. The page is
+  disabled entirely when the prefix has no body (e.g. the first sketch step). If the key is
+  missing — a failed feature cleared the prefix cache — the worker returns a visible "not
+  ready to export" error instead of exporting a stale or disposed solid. `downloadBlob` is
+  the one download path.
 - **A shell removes the selected open faces and hollows the rest.** Schema v11 adds
   `ShellFeature` (`faces: TopoRef[]`, `thickness`). The worker resolves each face against
   the prefix, calls `shellWithEvolution(solid, openFaces, thickness)`, re-derives the old

@@ -52,6 +52,12 @@ test("shells the plate with the top face open", async ({ app: page }) => {
     "data-faces",
     "14",
   );
+  // The hollow tray is still one watertight shell.
+  const health = page.getByTestId("body-health");
+  await expect(health).toHaveAttribute("data-bodies", "1");
+  await expect(health).toHaveAttribute("data-shells", "1");
+  await expect(health).toHaveAttribute("data-valid", "true");
+  await expect(health).toContainText("watertight");
   // The step highlight is the inner/rim faces the shell generated.
   await expect
     .poll(async () =>

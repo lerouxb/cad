@@ -32,7 +32,7 @@ e2e/
   extrude.spec.ts      extrude create/edit/cancel, symmetric, through-all
   shell.spec.ts        face multi-selection, box/lasso faces, shell create/edit/fail
   sketch.spec.ts       sketch tools, constraints, dimensions, region gestures
-  documents.spec.ts    autosave, files, download/open, STL/STEP export, boot from a saved doc
+  documents.spec.ts    autosave, files, download/open, export page + STL/STEP, boot from a saved doc
 ```
 
 Pick the file that owns the area; run only that file while iterating. On a
@@ -79,7 +79,8 @@ persists, add it to `resetExample`, not to the individual spec.
    finds hoverable model edges in one browser round trip. Pixel picks may only
    be used as *inputs* after being derived, never as expected values.
 3. **Assert on authoritative state readouts.** The selection popover publishes
-   `data-edge-refs` (faces: `data-face-refs`); the stage publishes `data-picked-face`,
+   `data-edge-refs` (faces: `data-face-refs`); the health readout publishes
+   `data-bodies`/`data-shells`/`data-valid`; the stage publishes `data-picked-face`,
    `data-hover-kind`,
    `data-hover-edge-length`,
    `data-hover-edge-ref` and `data-camera`; the mesh publishes bounds/volume/faces.

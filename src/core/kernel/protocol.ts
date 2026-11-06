@@ -106,6 +106,16 @@ export interface BodyStats {
   triangles: number;
   volume: number;
   buildMs: number;
+  /** Solid bodies in the result (a boolean can wrap a compound). */
+  bodies: number;
+  /** Shells across those bodies; a watertight solid with a hole is one shell. */
+  shells: number;
+  /**
+   * OCCT's BRepCheck validity: closed shells (watertight) and consistent
+   * orientation. A raw "open edge" count is not exposed: a seam edge belongs to
+   * one face and would be misreported as a boundary edge.
+   */
+  valid: boolean;
   /** [minX, minY, minZ, maxX, maxY, maxZ] in model millimetres. */
   bounds: [number, number, number, number, number, number];
 }

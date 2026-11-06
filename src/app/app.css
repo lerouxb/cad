@@ -2464,6 +2464,16 @@ body {
   white-space: nowrap;
 }
 
+.stage-health {
+  overflow: hidden;
+  color: var(--ink-2);
+  font-size: var(--type-value);
+  letter-spacing: var(--tracking-value);
+  line-height: var(--leading-value);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .stage-stats {
   overflow: hidden;
   color: var(--ink-2);
@@ -2472,6 +2482,26 @@ body {
   line-height: var(--leading-value);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.export-checks {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.export-check {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-micro);
+  line-height: var(--leading-micro);
+}
+
+.export-check.is-warn {
+  color: var(--ink);
+  text-decoration: underline dotted var(--ink-2);
+  text-underline-offset: 2px;
 }
 
 .stage-sep {

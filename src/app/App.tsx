@@ -190,6 +190,7 @@ import {
 } from "./DatumPlanePopover";
 import { SelectionPopover } from "./SelectionPopover";
 import { BodySelectionPopover } from "./BodySelectionPopover";
+import { ExportPopover } from "./ExportPopover";
 import { FaceSelectionPopover } from "./FaceSelectionPopover";
 import { ShellPopover } from "./ShellPopover";
 import { SolidBlendPopover } from "./SolidBlendPopover";
@@ -515,7 +516,13 @@ export function App() {
   const [historyNotice, setHistoryNotice] = useState<string | null>(null);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const [exporting, setExporting] = useState<"stl" | "step" | null>(null);
+  const [exportPosition, setExportPosition] = useState<PopoverPosition>({
+    x: 22,
+    y: 96,
+  });
   const [docRename, setDocRename] = useState<string | null>(null);
   const [fileIndex, setFileIndex] = useState<LocalFileEntry[]>(() =>
     loadFileIndex(),
@@ -540,6 +547,7 @@ export function App() {
   const blendDraftOpenRef = useRef(false);
   const shellDraftOpenRef = useRef(false);
   const cancelShellRef = useRef<() => void>(() => {});
+  const exportOpenRef = useRef(false);
   const faceBoundaryCache = useRef(
     new Map<string, { frame: PlaneFrame; loops: Vec3[][] }>(),
   );
@@ -1793,6 +1801,7 @@ export function App() {
     blendDraftOpenRef.current = blendDraft !== null;
     cancelShellRef.current = cancelShellEditor;
     shellDraftOpenRef.current = shellDraft !== null;
+    exportOpenRef.current = exportOpen;
   });
 
   const applyBlendDraft = (): void => {
@@ -3069,6 +3078,10 @@ export function App() {
         return;
       }
       if (event.key === "Escape") {
+        if (exportOpenRef.current) {
+          setExportOpen(false);
+          return;
+        }
         if (blendDraftOpenRef.current) {
           cancelBlendRef.current();
           return;
@@ -3608,6 +3621,7 @@ export function App() {
     setEdgeSelection([]);
     setFaceSelection([]);
     setSelectOther(null);
+    setExportOpen(false);
     setMesh(null);
     viewportRef.current?.clearPick();
     viewportRef.current?.clearMesh();
@@ -3632,6 +3646,7 @@ export function App() {
     setMode(feature?.type === "sketch" ? "sketch" : "model");
     setSelection([]);
     setSolveError(null);
+    setExportOpen(false);
     setMesh(null);
     setFaceSelection([]);
     viewportRef.current?.clearMesh();
@@ -3642,6 +3657,7 @@ export function App() {
     setEdgeSelection([]);
     setFaceSelection([]);
     setSelectOther(null);
+    setExportOpen(false);
     setMesh(null);
     viewportRef.current?.clearPick();
     viewportRef.current?.clearMesh();
@@ -3700,7 +3716,7 @@ export function App() {
     const client = clientRef.current;
     if (!cacheKey || !client || exporting) return;
     setExporting(format);
-    setFileError(null);
+    setExportError(null);
     try {
       const data = await client.exportSolid(format, cacheKey);
       const current = getState();
@@ -3710,10 +3726,10 @@ export function App() {
         }),
         `${current.doc.name || "part"}.${format}`,
       );
-      setFileMenuOpen(false);
+      setExportOpen(false);
     } catch (error) {
-      setFileError(
-        `Export failed: ${error instanceof Error ? error.message : String(error)}`,
+      setExportError(
+        error instanceof Error ? error.message : String(error),
       );
     } finally {
       setExporting(null);
@@ -4022,30 +4038,32 @@ export function App() {
               <button
                 className="text-action"
                 type="button"
-                onClick={() => void exportModel("stl")}
-                disabled={!exportCacheKey || exporting !== null}
+                onClick={() => {
+                  // The page is a document-level surface: close live editors
+                  // and drafts (their edits are already committed) and the
+                  // stage selection so they do not peek out behind it.
+                  dismissEditor();
+                  setDatumDraft(null);
+                  setSupportOpen(false);
+                  setBodyPick(null);
+                  setEdgeSelection([]);
+                  setFaceSelection([]);
+                  setSelectOther(null);
+                  viewportRef.current?.clearPick();
+                  viewportRef.current?.setFaceSelection([]);
+                  setFileMenuOpen(false);
+                  setExportError(null);
+                  setExportOpen(true);
+                }}
+                disabled={!exportCacheKey}
                 title={
                   exportCacheKey
-                    ? "Export the current body as STL"
+                    ? "Inspect and export the current body"
                     : "There is no body at this step to export"
                 }
-                data-testid="export-stl"
+                data-testid="open-export"
               >
-                {exporting === "stl" ? "exporting…" : "export .stl"}
-              </button>
-              <button
-                className="text-action"
-                type="button"
-                onClick={() => void exportModel("step")}
-                disabled={!exportCacheKey || exporting !== null}
-                title={
-                  exportCacheKey
-                    ? "Export the current body as STEP"
-                    : "There is no body at this step to export"
-                }
-                data-testid="export-step"
-              >
-                {exporting === "step" ? "exporting…" : "export .step"}
+                export…
               </button>
               <button
                 className="text-action"
@@ -4226,6 +4244,9 @@ export function App() {
             if (target.closest(".model-tools")) return;
             if (target.closest(".select-other")) return;
             if (target.closest(".stage-foot")) return;
+            // The export page is page-level, not a feature editor: any click
+            // outside its own chrome closes it (the timeline click still runs).
+            if (exportOpen) setExportOpen(false);
             // While a fillet editor is open the canvas is the pick surface:
             // an edge click must not cancel it, and an empty click is handled
             // by the viewport's null pick. Other editors still cancel here.
@@ -4715,6 +4736,21 @@ export function App() {
               ) : null}
               {shownMesh ? (
                 <span
+                  className="mono stage-health"
+                  data-testid="body-health"
+                  data-bodies={shownMesh.stats.bodies}
+                  data-shells={shownMesh.stats.shells}
+                  data-valid={shownMesh.stats.valid}
+                >
+                  {shownMesh.stats.bodies} bod
+                  {shownMesh.stats.bodies === 1 ? "y" : "ies"} ·{" "}
+                  {shownMesh.stats.shells} shell
+                  {shownMesh.stats.shells === 1 ? "" : "s"} ·{" "}
+                  {shownMesh.stats.valid ? "watertight" : "invalid"}
+                </span>
+              ) : null}
+              {shownMesh ? (
+                <span
                   className="mono stage-stats"
                   data-testid="mesh-stats"
                   data-volume={shownMesh.stats.volume.toFixed(2)}
@@ -5041,6 +5077,19 @@ export function App() {
               onOperation={handleExtrudeOperation}
               onEnd={handleExtrudeEnd}
               onSelectProfiles={selectExtrudeProfiles}
+            />
+          ) : null}
+
+          {exportOpen && shownMesh && exportCacheKey ? (
+            <ExportPopover
+              stats={shownMesh.stats}
+              fileName={`${doc.name || "part"}.stl`}
+              busy={exporting}
+              error={exportError}
+              position={exportPosition}
+              onMove={setExportPosition}
+              onExport={(format) => void exportModel(format)}
+              onClose={() => setExportOpen(false)}
             />
           ) : null}
         </section>
