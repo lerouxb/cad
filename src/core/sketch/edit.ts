@@ -75,6 +75,11 @@ export function deleteEntities(sketch: Sketch, ids: readonly string[]): Sketch {
       case "horizontal":
       case "vertical":
         return !doomedCurves.has(constraint.line);
+      case "parallel":
+      case "perpendicular":
+      case "collinear":
+      case "equal":
+        return !doomedCurves.has(constraint.a) && !doomedCurves.has(constraint.b);
       case "distance":
         return keptPoints.has(constraint.a) && keptPoints.has(constraint.b);
       case "diameter":
@@ -156,6 +161,7 @@ export function pruneSketch(sketch: Sketch): Sketch {
         return curveIds.has(constraint.line);
       case "parallel":
       case "perpendicular":
+      case "collinear":
       case "equal":
         return curveIds.has(constraint.a) && curveIds.has(constraint.b);
       case "distance":

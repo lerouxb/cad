@@ -297,6 +297,7 @@ function referencesCurve(
       return constraint.line === curveId;
     case "parallel":
     case "perpendicular":
+    case "collinear":
     case "equal":
     case "angle":
     case "tangent":
@@ -337,6 +338,7 @@ function remapConstraint(
 
     case "parallel":
     case "perpendicular":
+    case "collinear":
       if (constraint.a !== oldId && constraint.b !== oldId) return constraint;
       if (!primaryLine) return null;
       if (

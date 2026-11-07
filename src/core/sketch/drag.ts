@@ -436,7 +436,8 @@ function buildRows(sketch: Sketch, params: Parameters): Row[] {
         break;
       }
       case "parallel":
-      case "perpendicular": {
+      case "perpendicular":
+      case "collinear": {
         const a = byId.get(constraint.a);
         const b = byId.get(constraint.b);
         if (!a || a.type !== "line" || !b || b.type !== "line") break;
@@ -450,7 +451,7 @@ function buildRows(sketch: Sketch, params: Parameters): Row[] {
         const dbx = b2.x - b1.x;
         const dby = b2.y - b1.y;
         const r = row();
-        if (constraint.type === "parallel") {
+        if (constraint.type !== "perpendicular") {
           // d(dax*dby - day*dbx)
           addPoint(r, a.a, -dby, dbx);
           addPoint(r, a.b, dby, -dbx);
@@ -464,6 +465,28 @@ function buildRows(sketch: Sketch, params: Parameters): Row[] {
           addPoint(r, b.b, dax, day);
         }
         if (r.size) rows.push(r);
+        if (constraint.type === "collinear") {
+          const shared =
+            a.a === b.a || a.a === b.b || a.b === b.a || a.b === b.b;
+          if (!shared) {
+            const moving = a.reference ? b : a;
+            const support = a.reference ? a : b;
+            const p = pointById.get(moving.a);
+            const s1 = pointById.get(support.a);
+            const s2 = pointById.get(support.b);
+            if (p && s1 && s2) {
+              const dx = s2.x - s1.x;
+              const dy = s2.y - s1.y;
+              const ex = p.x - s1.x;
+              const ey = p.y - s1.y;
+              const onLine = row();
+              addPoint(onLine, moving.a, -dy, dx);
+              addPoint(onLine, support.a, dy - ey, ex - dx);
+              addPoint(onLine, support.b, ey, -ex);
+              if (onLine.size) rows.push(onLine);
+            }
+          }
+        }
         break;
       }
       case "equal": {

@@ -3,7 +3,7 @@ import { projectDrag, type DragTarget } from "./drag";
 
 export type { DragTarget };
 import type { Vec2 } from "../types";
-import type { Sketch } from "./types";
+import { allCurves, type Sketch } from "./types";
 
 /**
  * Adapter around SolveSpace's `slvs` constraint solver (GPLv3, WASM).
@@ -255,6 +255,7 @@ function solveWithModule(s: SlvsModule, sketch: Sketch, drag?: DragTarget): Solv
     // Reference dimensions are annotations; they must not enter the system.
     if ("driving" in constraint && constraint.driving === false) continue;
     let added;
+    let extraAdded;
     switch (constraint.type) {
       case "coincident":
         added = s.coincident(
@@ -285,6 +286,43 @@ function solveWithModule(s: SlvsModule, sketch: Sketch, drag?: DragTarget): Solv
       case "parallel":
         added = s.parallel(group, need(entities, constraint.a), need(entities, constraint.b), workplane);
         break;
+      case "collinear": {
+        // SolveSpace has no collinear primitive: parallel plus one endpoint
+        // from the movable line on the supporting line. A shared endpoint
+        // already makes the pair collinear, so parallel alone is exact there.
+        const a = allCurves(sketch).find((curve) => curve.id === constraint.a);
+        const b = allCurves(sketch).find((curve) => curve.id === constraint.b);
+        if (a?.type !== "line" || b?.type !== "line") break;
+        added = s.parallel(
+          group,
+          need(entities, a.id),
+          need(entities, b.id),
+          workplane,
+        );
+        const shared =
+          a.a === b.a || a.a === b.b || a.b === b.a || a.b === b.b;
+        if (!shared) {
+          // Put the movable line's endpoint on the support, so a fixed
+          // reference axis constrains the user line rather than the reverse.
+          const moving = a.reference ? b : a;
+          const support = a.reference ? a : b;
+          extraAdded = s.addConstraint(
+            group,
+            s.C_PT_ON_LINE,
+            workplane,
+            0,
+            need(entities, moving.a),
+            none,
+            need(entities, support.id),
+            none,
+            none,
+            none,
+            false,
+            false,
+          );
+        }
+        break;
+      }
       case "perpendicular":
         added = s.perpendicular(
           group,
@@ -418,6 +456,7 @@ function solveWithModule(s: SlvsModule, sketch: Sketch, drag?: DragTarget): Solv
         break;
     }
     if (added) constraintIds.set(added.h, constraint.id);
+    if (extraAdded) constraintIds.set(extraAdded.h, constraint.id);
   }
 
   if (drag) {

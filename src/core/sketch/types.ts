@@ -73,6 +73,8 @@ export type SketchConstraint =
   | { id: string; type: "coincident"; a: string; b: string }
   | { id: string; type: "horizontal" | "vertical"; line: string }
   | { id: string; type: "parallel" | "perpendicular" | "equal"; a: string; b: string }
+  /** Two lines on the same infinite line: parallel plus a shared point/endpoint. */
+  | { id: string; type: "collinear"; a: string; b: string }
   | { id: string; type: "pointOnLine"; point: string; line: string }
   | { id: string; type: "pointOnCircle"; point: string; circle: string }
   | { id: string; type: "tangent"; a: string; b: string }

@@ -6,6 +6,7 @@ export type ConstraintType =
   | "vertical"
   | "parallel"
   | "perpendicular"
+  | "collinear"
   | "equal"
   | "pointOnLine"
   | "pointOnCircle"
@@ -30,6 +31,7 @@ const LABELS: Record<ConstraintType, string> = {
   vertical: "Vertical",
   parallel: "Parallel",
   perpendicular: "Perpendicular",
+  collinear: "Collinear",
   equal: "Equal",
   pointOnLine: "Point on line",
   pointOnCircle: "Point on circle",
@@ -109,6 +111,9 @@ export function applicableConstraints(
     push("parallel");
     push("perpendicular");
     if (selection.lines.every((candidate) => !candidate.reference)) push("equal");
+    if (selection.lines.some((candidate) => !candidate.reference)) {
+      push("collinear");
+    }
   }
   if (
     selection.curves.length === 2 &&
@@ -204,6 +209,7 @@ export function appliedConstraints(
         break;
       case "parallel":
       case "perpendicular":
+      case "collinear":
       case "equal":
       case "tangent":
       case "coincident":
@@ -265,7 +271,12 @@ export function applyConstraint(
   if (type === "horizontal" || type === "vertical") {
     if (selection.lines[0]!.reference) return sketch;
     constraint = { id: newId("c"), type, line: selection.lines[0]!.id };
-  } else if (type === "parallel" || type === "perpendicular" || type === "equal") {
+  } else if (
+    type === "parallel" ||
+    type === "perpendicular" ||
+    type === "collinear" ||
+    type === "equal"
+  ) {
     constraint = {
       id: newId("c"),
       type,
@@ -455,6 +466,7 @@ function isApplicable(selection: Selection, type: ConstraintType): boolean {
       );
     case "parallel":
     case "perpendicular":
+    case "collinear":
       return (
         selection.curves.length === 2 &&
         selection.lines.length === 2 &&
@@ -549,16 +561,40 @@ function hasConstraint(
     );
   }
   if (
-    (type === "parallel" || type === "perpendicular" || type === "equal") &&
+    (type === "parallel" ||
+      type === "perpendicular" ||
+      type === "collinear" ||
+      type === "equal") &&
     selection.curves.length === 2
   ) {
     const [a, b] = [selection.curves[0]!.id, selection.curves[1]!.id];
-    return sketch.constraints.some(
+    const existing = sketch.constraints.some(
       (constraint) =>
-        constraint.type === type &&
+        (constraint.type === type ||
+          // Collinear already implies parallel, so do not offer a redundant
+          // parallel chip on top of it.
+          (type === "parallel" && constraint.type === "collinear")) &&
         ((constraint.a === a && constraint.b === b) ||
           (constraint.a === b && constraint.b === a)),
     );
+    if (existing) return true;
+    // Parallel lines that already share an endpoint are collinear; offering a
+    // second chip would only add a redundant constraint.
+    if (type === "collinear" && selection.lines.length === 2) {
+      const [lineA, lineB] = selection.lines;
+      const shared = [lineA!.a, lineA!.b].some(
+        (point) => point === lineB!.a || point === lineB!.b,
+      );
+      return (
+        shared &&
+        sketch.constraints.some(
+          (constraint) =>
+            constraint.type === "parallel" &&
+            ((constraint.a === a && constraint.b === b) ||
+              (constraint.a === b && constraint.b === a)),
+        )
+      );
+    }
   }
   if (type === "pointOnLine" && selection.points[0] && selection.lines[0]) {
     return sketch.constraints.some(
