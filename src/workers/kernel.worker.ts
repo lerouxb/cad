@@ -33,7 +33,12 @@ import {
   innerWires,
   isValid,
   line,
+  measureDistance,
+  measureLength,
+  measureLinearProps,
+  measureSurfaceProps,
   measureVolume,
+  measureVolumeProps,
   outerWire,
   registerKernel,
   projectPointOnFace,
@@ -61,7 +66,7 @@ import {
   type ValidSolid,
 } from "brepjs";
 import { OcctKernel } from "occt-wasm";
-import type { PlaneFrame } from "../core/types";
+import type { PlaneFrame, Vec3 } from "../core/types";
 import type {
   BodyMesh,
   EdgeRef,
@@ -71,6 +76,8 @@ import type {
   KernelFeature,
   KernelShellFeature,
   KernelRequest,
+  MeasureResult,
+  MeasureTarget,
   ProfileRegion,
   KernelResponse,
   ProfileLoop,
@@ -136,6 +143,36 @@ async function handle(request: KernelRequest): Promise<void> {
         ok: true,
         ...boundary,
       });
+      return;
+    }
+
+    if (request.type === "measure") {
+      const entry = solidCache.get(request.cacheKey);
+      if (!entry) {
+        reply({
+          type: "measured",
+          requestId: request.requestId,
+          ok: false,
+          message:
+            "The current body is not ready to measure. Rebuild it and try again.",
+        });
+        return;
+      }
+      try {
+        reply({
+          type: "measured",
+          requestId: request.requestId,
+          ok: true,
+          result: measureTargets(entry.solid, entry.roles, request.targets),
+        });
+      } catch (error) {
+        reply({
+          type: "measured",
+          requestId: request.requestId,
+          ok: false,
+          message: errorMessage(error),
+        });
+      }
       return;
     }
 
@@ -210,6 +247,134 @@ async function handle(request: KernelRequest): Promise<void> {
 
 function reply(message: KernelResponse, transfer?: Transferable[]): void {
   self.postMessage(message, { transfer: transfer ?? [] });
+}
+
+/** Measure the body, one face/edge, or the distance/angle between two. */
+function measureTargets(
+  solid: Solid,
+  roles: RoleTable,
+  targets: readonly MeasureTarget[],
+): MeasureResult {
+  type Face3D = Parameters<typeof captureHint>[0];
+  const faces: Face3D[] = [];
+  const edges: Edge[] = [];
+  try {
+    for (const target of targets.slice(0, 2)) {
+      if (target.kind === "face") {
+        const resolved = resolveFaceOnSolid(solid, roles, target.ref);
+        if ("broken" in resolved) {
+          throw new Error(
+            "The selected face no longer exists on the current body.",
+          );
+        }
+        faces.push(resolved.face as Face3D);
+      } else {
+        const resolved = resolveEdgeOnSolid(solid, roles, target.ref);
+        if ("broken" in resolved) throw new Error(resolved.broken);
+        edges.push(resolved.edge);
+      }
+    }
+
+    if (faces.length === 0 && edges.length === 0) {
+      const volume = unwrap(measureVolumeProps(solid));
+      const surface = unwrap(measureSurfaceProps(solid));
+      return {
+        volume: volume.volume,
+        area: surface.area,
+        centerOfMass: volume.centerOfMass,
+      };
+    }
+
+    if (faces.length === 0 && edges.length === 1) {
+      const edge = edges[0]!;
+      const linear = unwrap(measureLinearProps(edge));
+      const result: MeasureResult = {
+        length: linear.length,
+        centerOfMass: linear.centerOfMass,
+      };
+      if (getCurveType(edge) === "CIRCLE") {
+        const radius = circumradius(
+          curvePointAt(edge, 0),
+          curvePointAt(edge, 1 / 3),
+          curvePointAt(edge, 2 / 3),
+        );
+        if (radius !== null) result.radius = radius;
+      }
+      return result;
+    }
+
+    if (edges.length === 0 && faces.length === 1) {
+      const face = faces[0]! as unknown as Face;
+      const surface = unwrap(measureSurfaceProps(face));
+      let perimeter = 0;
+      const outer = outerWire(face);
+      if (outer) perimeter += unwrap(measureLength(outer));
+      for (const inner of innerWires(face)) {
+        if (inner) perimeter += unwrap(measureLength(inner));
+      }
+      return {
+        area: surface.area,
+        perimeter,
+        centerOfMass: surface.centerOfMass,
+      };
+    }
+
+    // Two targets: exact minimum distance, plus an angle when it is meaningful.
+    const result: MeasureResult = {};
+    try {
+      result.distance = unwrap(measureDistance(faces[0] ?? edges[0]!, faces[1] ?? edges[1]!));
+    } catch {
+      // Distance is undefined for exotic pairs; the shape metrics still show.
+    }
+    if (faces.length === 2) {
+      const a = captureHint(faces[0]! as unknown as Face).normal;
+      const b = captureHint(faces[1]! as unknown as Face).normal;
+      if (a && b) result.angle = angleBetween(a, b);
+    }
+    if (edges.length === 2) {
+      if (
+        getCurveType(edges[0]!) === "LINE" &&
+        getCurveType(edges[1]!) === "LINE"
+      ) {
+        result.angle = angleBetween(
+          directionOf(edges[0]!),
+          directionOf(edges[1]!),
+        );
+      }
+    }
+    return result;
+  } finally {
+    // `sharedEdges` returns caller-owned handles; faces are borrowed.
+    for (const edge of edges) edge.delete();
+  }
+}
+
+function directionOf(edge: Edge): Vec3 {
+  const start = curvePointAt(edge, 0);
+  const end = curvePointAt(edge, 1);
+  return [end[0] - start[0], end[1] - start[1], end[2] - start[2]];
+}
+
+function angleBetween(a: Vec3, b: Vec3): number {
+  const lengths = Math.hypot(...a) * Math.hypot(...b);
+  if (lengths < 1e-12) return 0;
+  const dot =
+    Math.abs(a[0] * b[0] + a[1] * b[1] + a[2] * b[2]) / lengths;
+  return (Math.acos(Math.min(1, Math.max(0, dot))) * 180) / Math.PI;
+}
+
+function circumradius(a: Vec3, b: Vec3, c: Vec3): number | null {
+  const ab = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]);
+  const bc = Math.hypot(c[0] - b[0], c[1] - b[1], c[2] - b[2]);
+  const ca = Math.hypot(a[0] - c[0], a[1] - c[1], a[2] - c[2]);
+  const cross = [
+    (b[1] - a[1]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[1] - a[1]),
+    (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]),
+    (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]),
+  ];
+  const area = Math.hypot(...cross) / 2;
+  if (area < 1e-9) return null;
+  return (ab * bc * ca) / (4 * area);
 }
 
 function buildFeatures(features: KernelFeature[]): {

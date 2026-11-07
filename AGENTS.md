@@ -48,9 +48,9 @@ is an editable sketcher driving an exact solid:
   the feature list in order with a prefix cache and per-feature diagnostics. The worker
   receives the successful solid features, caches prefix solids by cache key, applies
   new/join/cut booleans, constant-size fillets/chamfers, open-face shells and
-  STL/STEP export of the cached prefix, with per-feature build statuses. The worker also
-  reports body health (bodies, shells, BRepCheck validity) and the file menu opens an
-  export page with those checks. Multi-edge model selection opens the body-selection
+  STL/STEP export of the cached prefix and exact measurements, with per-feature build
+  statuses. The worker also reports body health (bodies, shells, BRepCheck validity), and
+  the file menu opens an export page with those checks. Multi-edge model selection opens the body-selection
   popover; multi-face selection opens the face-selection popover; `fillet` and
   `chamfer` start UI-only drafts that preview through the kernel, then apply as history
   steps.
@@ -214,6 +214,10 @@ docs/
 - **Selection is ephemeral UI state, never document state.** It is not undoable, not
   persisted, and is cleared on tool change, Escape, and delete. Selection ids are checked
   against the current sketch before use (undo can remove them).
+- **Input modes are governed by `docs/showcase/MODES.md`.** It is the source of truth for
+  what Enter, Escape, a background click, a timeline click and Delete do in every mode.
+  A new mode must fill in those five cells and join the Escape stack; do not add a
+  component-local key listener that races the global one.
 - The worker protocol is a discriminated union in `core/kernel/protocol.ts`. Both
   sides import the same types.
 - Prefer small, explicit functions over clever abstractions. This domain is already
@@ -326,6 +330,19 @@ docs/
   new or join; cut needs a base; new after a base is an error; an edge blend needs a base.
   Any worker feature error clears the prefix cache after the last-good mesh is produced,
   so a later successful retry cannot reuse downstream solids built past a skipped feature.
+- **Measure is a mode with exact kernel properties, not a selection.** The model tool row
+  has `select / box / lasso / measure` (Escape or the tool keys leave it). `m` toggles it.
+  Picks feed an ephemeral target list of up to two faces/edges (click again to remove, a
+  third replaces the oldest); the targets are highlighted with the same overlays but never
+  touch the document selection or `bodyPick`. A `measure` worker request takes the rendered
+  prefix's `cacheKey` and resolves the refs there: no targets → volume, surface area and
+  centre of mass (`measureVolumeProps` / `measureSurfaceProps`); one face → area + all-wire
+  perimeter + centre; one edge → length and, for a `CIRCLE`, the circumradius from three
+  sampled points; two targets → exact minimum distance (`measureDistance`) plus the acute
+  angle between two planar faces' normals or two `LINE` edges' directions. Absent fields
+  mean "not applicable", never zero. The popover rows are the readout; there is no primary.
+  Opening measure cancels the open operation the way its cancel would (`cancelOpenOperation`,
+  MODES.md D5), not a silent `dismissEditor`. MODES.md §3.2 row M15 owns its five cells.
 - **Body health comes from OCCT, not from counting seam edges.** `BodyStats` carries
   `bodies` (`getSolids`), `shells` (`getShells`) and `valid` (`isValid`, BRepCheck:
   closed shells + consistent orientation). Do **not** report a raw "open edge" count:

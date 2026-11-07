@@ -14,7 +14,8 @@ system:
 The [study index](../mockups/index.html) lists both, and the shared interaction
 rules are in [`INTERACTION.md`](INTERACTION.md). The timeline surface — steps,
 bodies, groups and insertion — has its own contract in
-[`TIMELINE.md`](TIMELINE.md).
+[`TIMELINE.md`](TIMELINE.md). What Enter, Escape, a background click and a
+timeline click do in every mode is in [`MODES.md`](MODES.md).
 
 | Study | Page | What it covers | Milestone |
 | --- | --- | --- | --- |
@@ -172,6 +173,7 @@ showcase-select.js   the tool options row (filters, create variants, select othe
 showcase-select-model.js  the model-mode selection scene
 showcase-3d.js       isometric helpers + body ops + transforms + extrude + section
 INTERACTION.md       the interaction contract (popover, actions, foot)
+MODES.md             the input contract (modes × Enter / Escape / background / timeline)
 TIMELINE.md          the timeline contract (steps, bodies, groups, insert)
 BACKLOG.md           the gap decisions (keep / drop / defer) and their homes
 README.md            this file

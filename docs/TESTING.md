@@ -28,7 +28,8 @@ e2e/
   example.spec.ts      the example document, region selection, timeline basics
   support.spec.ts      face/plane/datum sketches, projections, support loss
   blends.spec.ts       fillet/chamfer create, edit, fail, recover
-  model-picking.spec.ts filters, Select Other, box/lasso
+  model-picking.spec.ts filters, Select Other, box/lasso, shared-face-pair edges
+  measure.spec.ts      body/face/edge/two-target measurements
   extrude.spec.ts      extrude create/edit/cancel, symmetric, through-all
   shell.spec.ts        face multi-selection, box/lasso faces, shell create/edit/fail
   sketch.spec.ts       sketch tools, constraints, dimensions, region gestures
@@ -44,6 +45,7 @@ typical dev machine with four workers (including the Vite + WASM startup):
 | `blends` | ~10 s | `documents` | ~13 s |
 | `example` | ~15 s | `sketch` | ~21 s |
 | `shell` | ~13 s | `support` | ~25 s |
+| `measure` | ~5 s | | |
 
 ```bash
 npx playwright test e2e/blends.spec.ts

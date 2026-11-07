@@ -212,6 +212,31 @@ export interface FeatureBuildStatus {
 /** File formats the worker can derive from a cached prefix solid. */
 export type ExportFormat = "stl" | "step";
 
+/** A face or edge the measure tool can consume. */
+export type MeasureTarget =
+  | { kind: "face"; ref: TopoRef }
+  | { kind: "edge"; ref: EdgeRef };
+
+/** Exact measurements from the kernel. Absent fields do not apply. */
+export interface MeasureResult {
+  /** Face area, or the body's surface area, in mm². */
+  area?: number;
+  /** Face boundary length (all wires), in mm. */
+  perimeter?: number;
+  /** Edge length, in mm. */
+  length?: number;
+  /** Radius of a circular edge or arc, in mm. */
+  radius?: number;
+  /** Minimum distance between two targets, in mm. */
+  distance?: number;
+  /** Acute angle between two planar faces or two straight edges, in degrees. */
+  angle?: number;
+  /** Body volume, in mm³. */
+  volume?: number;
+  /** Centre of mass of the measured shape. */
+  centerOfMass?: Vec3;
+}
+
 export type KernelRequest =
   | { type: "init" }
   | { type: "rebuild"; gen: number; features: KernelFeature[] }
@@ -227,6 +252,13 @@ export type KernelRequest =
       format: ExportFormat;
       /** The final prefix solid of the rendered rebuild. */
       cacheKey: string;
+    }
+  | {
+      type: "measure";
+      requestId: number;
+      cacheKey: string;
+      /** Zero (body), one (shape), or two (distance/angle) targets. */
+      targets: MeasureTarget[];
     };
 
 export type KernelResponse =
@@ -259,4 +291,11 @@ export type KernelResponse =
       format: ExportFormat;
       data: ArrayBuffer;
     }
-  | { type: "exportError"; requestId: number; message: string };
+  | { type: "exportError"; requestId: number; message: string }
+  | {
+      type: "measured";
+      requestId: number;
+      ok: true;
+      result: MeasureResult;
+    }
+  | { type: "measured"; requestId: number; ok: false; message: string };

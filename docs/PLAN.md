@@ -834,8 +834,12 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       selecting the gusset extrude washes the gusset, not the whole body). Extrude
       steps wash the faces whose `TopoRef.source` is that feature; a join/cut therefore
       shows only the faces it added.
-- [ ] Measure tool (distance, angle, radius, area, perimeter, centre of mass); overall
-      dimensions can sit on the model like drawing annotations (mockup 03)
+- [x] Measure tool (distance, angle, radius, area, perimeter, centre of mass). `m` or the
+      model tool row opens a mode; up to two face/edge targets are measured exactly in the
+      worker by the rendered prefix's cacheKey (body properties with no target, face
+      area/perimeter, edge length/circular radius, two-target minimum distance and face/
+      line angle). The popover is the readout; drawing the measurements *on* the model as
+      annotations (mockup 03) is still open.
 - [x] Body health line: 1 body · 1 shell · N faces · watertight, alongside volume and
       bounds (mockup 03/05). The worker reports `bodies`, `shells` and BRepCheck `valid`;
       the foot's `body-health` readout exposes them. No raw open-edge count: seam edges

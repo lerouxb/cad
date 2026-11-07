@@ -264,4 +264,6 @@ Point the app session at this list:
 - Should the popover collapse to just its header when dragged out of the way?
 - On touch, is "tap outside cancels" for the inline editor discoverable enough,
   or does it need a visible done affordance?
-- Do `cancel` and `Esc` do the same thing everywhere?
+- ~~Do `cancel` and `Esc` do the same thing everywhere?~~ Yes: see
+  [`MODES.md`](MODES.md), rules R1 and R9. They do not yet; the audit in that
+  file lists the current divergences.

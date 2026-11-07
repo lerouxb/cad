@@ -2,6 +2,8 @@ import type {
   BodyMesh,
   ExportFormat,
   FeatureBuildStatus,
+  MeasureResult,
+  MeasureTarget,
   KernelFeature,
   KernelRequest,
   KernelResponse,
@@ -55,6 +57,14 @@ export class KernelClient {
     }
   >();
   private nextExportId = 1;
+  private measureRequests = new Map<
+    number,
+    {
+      resolve: (result: MeasureResult) => void;
+      reject: (error: Error) => void;
+    }
+  >();
+  private nextMeasureId = 1;
 
   constructor(handlers: KernelClientHandlers = {}) {
     this.handlers = handlers;
@@ -116,11 +126,32 @@ export class KernelClient {
     });
   }
 
+  /** Exact measurements of up to two faces/edges on the rendered prefix. */
+  measure(
+    cacheKey: string,
+    targets: readonly MeasureTarget[],
+  ): Promise<MeasureResult> {
+    const requestId = this.nextMeasureId++;
+    return new Promise((resolve, reject) => {
+      this.measureRequests.set(requestId, { resolve, reject });
+      this.post({
+        type: "measure",
+        requestId,
+        cacheKey,
+        targets: [...targets],
+      });
+    });
+  }
+
   dispose(): void {
     for (const pending of this.exportRequests.values()) {
       pending.reject(new Error("The geometry worker was disposed."));
     }
     this.exportRequests.clear();
+    for (const pending of this.measureRequests.values()) {
+      pending.reject(new Error("The geometry worker was disposed."));
+    }
+    this.measureRequests.clear();
     this.worker.terminate();
   }
 
@@ -187,6 +218,14 @@ export class KernelClient {
         if (!pending) break;
         this.exportRequests.delete(message.requestId);
         pending.reject(new Error(message.message));
+        break;
+      }
+      case "measured": {
+        const pending = this.measureRequests.get(message.requestId);
+        if (!pending) break;
+        this.measureRequests.delete(message.requestId);
+        if (message.ok) pending.resolve(message.result);
+        else pending.reject(new Error(message.message));
         break;
       }
     }

@@ -98,6 +98,8 @@ import type {
   EdgeRef,
   FeatureBuildStatus,
   KernelFeature,
+  MeasureResult,
+  MeasureTarget,
   TopoRef,
 } from "../core/kernel/protocol";
 import { edgeRefKey } from "../core/kernel/protocol";
@@ -191,6 +193,7 @@ import {
 import { SelectionPopover } from "./SelectionPopover";
 import { BodySelectionPopover } from "./BodySelectionPopover";
 import { ExportPopover } from "./ExportPopover";
+import { MeasurePopover } from "./MeasurePopover";
 import { FaceSelectionPopover } from "./FaceSelectionPopover";
 import { ShellPopover } from "./ShellPopover";
 import { SolidBlendPopover } from "./SolidBlendPopover";
@@ -350,6 +353,14 @@ function edgeBodyPick(edge: EdgeRef): BodyPick {
     id: `edge-${edgeRefKey(edge)}`,
     edgeRef: edge,
   };
+}
+
+function measureTargetKey(pick: BodyPick): string {
+  if (pick.kind === "face" && pick.ref) return `face:${faceRefKey(pick.ref)}`;
+  if (pick.kind === "edge" && pick.edgeRef) {
+    return `edge:${edgeRefKey(pick.edgeRef)}`;
+  }
+  return pick.id;
 }
 
 function faceBodyPick(ref: TopoRef): BodyPick {
@@ -523,6 +534,15 @@ export function App() {
     x: 22,
     y: 96,
   });
+  const [measureOpen, setMeasureOpen] = useState(false);
+  const [measureTargets, setMeasureTargets] = useState<BodyPick[]>([]);
+  const [measurement, setMeasurement] = useState<MeasureResult | null>(null);
+  const [measureBusy, setMeasureBusy] = useState(false);
+  const [measureError, setMeasureError] = useState<string | null>(null);
+  const [measurePosition, setMeasurePosition] = useState<PopoverPosition>({
+    x: 22,
+    y: 138,
+  });
   const [docRename, setDocRename] = useState<string | null>(null);
   const [fileIndex, setFileIndex] = useState<LocalFileEntry[]>(() =>
     loadFileIndex(),
@@ -548,6 +568,10 @@ export function App() {
   const shellDraftOpenRef = useRef(false);
   const cancelShellRef = useRef<() => void>(() => {});
   const exportOpenRef = useRef(false);
+  const measureOpenRef = useRef(false);
+  const toggleMeasureRef = useRef<() => void>(() => {});
+  const endMeasureRef = useRef<() => void>(() => {});
+  const cancelOpenOperationRef = useRef<() => void>(() => {});
   const faceBoundaryCache = useRef(
     new Map<string, { frame: PlaneFrame; loops: Vec3[][] }>(),
   );
@@ -921,7 +945,7 @@ export function App() {
   }, [rebuild, fallbackParams, activeExtrude, blendDraft, shellDraft]);
   // The final solid in the rendered prefix, for export. Drafts are not in the
   // document, so they are excluded: export is always the applied body.
-  const exportCacheKey = useMemo(() => {
+  const activeCacheKey = useMemo(() => {
     if (!rebuild) return null;
     for (let index = rebuild.features.length - 1; index >= 0; index -= 1) {
       const feature = rebuild.features[index]!;
@@ -1265,6 +1289,40 @@ export function App() {
     setSelectOther(null);
   };
 
+  /** Leave the measure mode and drop its targets/overlays. */
+  const endMeasure = (): void => {
+    setMeasureOpen(false);
+    setMeasureTargets([]);
+    setMeasurement(null);
+    setMeasureError(null);
+    setMeasureBusy(false);
+    viewportRef.current?.setEdgeSelection([]);
+    viewportRef.current?.setFaceSelection([]);
+  };
+
+  /** Enter measure mode: it is page-level, so editors/drafts and the
+   * selection close first (their edits are already committed). */
+  const toggleMeasure = (): void => {
+    if (measureOpen) {
+      endMeasure();
+      return;
+    }
+    cancelOpenOperationRef.current();
+    setSupportOpen(false);
+    setExportOpen(false);
+    setBodyPick(null);
+    setEdgeSelection([]);
+    setFaceSelection([]);
+    setSelectOther(null);
+    viewportRef.current?.clearPick();
+    viewportRef.current?.setFaceSelection([]);
+    setModelTool("select");
+    setMeasureError(null);
+    setMeasurement(null);
+    setMeasureTargets([]);
+    setMeasureOpen(true);
+  };
+
   const openBlendEditor = (feature: EdgeBlendFeature): void => {
     dismissEditor();
     setDatumDraft(null);
@@ -1571,6 +1629,28 @@ export function App() {
   ): void => {
     // A filtered-out hit is not a background click: keep the selection.
     if (info?.blocked) return;
+    if (measureOpen) {
+      // Measure mode consumes face/edge picks; clicking a target toggles it
+      // and a third target replaces the oldest.
+      setSelectOther(null);
+      if (!pick) return;
+      if (!(pick.kind === "face" && pick.ref) && !(pick.kind === "edge" && pick.edgeRef)) {
+        return;
+      }
+      const key = measureTargetKey(pick);
+      const selected = measureTargets.some(
+        (target) => measureTargetKey(target) === key,
+      );
+      setMeasureTargets(
+        selected
+          ? measureTargets.filter(
+              (target) => measureTargetKey(target) !== key,
+            )
+          : [...measureTargets, pick].slice(-2),
+      );
+      setBodyPick(null);
+      return;
+    }
     setSelectOther(
       info && info.candidates.length > 1 && !blendDraft && !shellDraft
         ? info
@@ -1802,6 +1882,9 @@ export function App() {
     cancelShellRef.current = cancelShellEditor;
     shellDraftOpenRef.current = shellDraft !== null;
     exportOpenRef.current = exportOpen;
+    measureOpenRef.current = measureOpen;
+    toggleMeasureRef.current = toggleMeasure;
+    endMeasureRef.current = endMeasure;
   });
 
   const applyBlendDraft = (): void => {
@@ -2004,6 +2087,7 @@ export function App() {
 
   const activateFeature = (feature: Feature): void => {
     clearTransientSolve();
+    endMeasure();
     dismissEditor();
     setDatumDraft(null);
     setSupportOpen(false);
@@ -2484,6 +2568,33 @@ export function App() {
     // The draft was started from a sketch step; cancelling returns to that sketch.
   };
 
+  // Opening a page-level surface (measure/export) leaves the current operation
+  // exactly as its cancel would (MODES.md R9/D5). Assigned here, after every
+  // cancel callback exists, and read through a ref by the openers above.
+  useEffect(() => {
+    cancelOpenOperationRef.current = () => {
+      if (blendDraft) {
+        cancelBlendEditor();
+        return;
+      }
+      if (shellDraft) {
+        cancelShellEditor();
+        return;
+      }
+      if (extrudeDraft) {
+        cancelExtrudeDraft();
+        return;
+      }
+      if (editorOpen) {
+        cancelFeatureEditor();
+        return;
+      }
+      if (datumDraft) {
+        cancelDatumDraft();
+      }
+    };
+  });
+
   const beginRename = (feature: Feature): void => {
     setRenaming({ id: feature.id, value: feature.name });
   };
@@ -2901,6 +3012,58 @@ export function App() {
     viewportRef.current?.setFaceSelection(faceSelection);
   }, [faceSelection]);
 
+  // Measure is a mode: its targets drive the same overlays but never the
+  // document selection, and the kernel answers exact properties.
+  useEffect(() => {
+    if (!measureOpen) return;
+    viewportRef.current?.setEdgeSelection(
+      measureTargets.filter((pick) => pick.kind === "edge"),
+    );
+    viewportRef.current?.setFaceSelection(
+      measureTargets.filter((pick) => pick.kind === "face"),
+    );
+  }, [measureOpen, measureTargets]);
+
+  useEffect(() => {
+    if (!measureOpen) return;
+    const client = clientRef.current;
+    if (!activeCacheKey || !client) {
+      setMeasurement(null);
+      setMeasureError("There is no body at this step to measure.");
+      return;
+    }
+    const targets: MeasureTarget[] = [];
+    for (const pick of measureTargets) {
+      if (pick.kind === "face" && pick.ref) {
+        targets.push({ kind: "face", ref: pick.ref });
+      } else if (pick.kind === "edge" && pick.edgeRef) {
+        targets.push({ kind: "edge", ref: pick.edgeRef });
+      }
+    }
+    let cancelled = false;
+    setMeasureBusy(true);
+    client
+      .measure(activeCacheKey, targets)
+      .then((result) => {
+        if (cancelled) return;
+        setMeasurement(result);
+        setMeasureError(null);
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setMeasurement(null);
+        setMeasureError(
+          error instanceof Error ? error.message : String(error),
+        );
+      })
+      .finally(() => {
+        if (!cancelled) setMeasureBusy(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [measureOpen, measureTargets, activeCacheKey]);
+
   useEffect(() => {
     viewportRef.current?.setPickFilter(modelFilter);
   }, [modelFilter]);
@@ -3078,6 +3241,10 @@ export function App() {
         return;
       }
       if (event.key === "Escape") {
+        if (measureOpenRef.current) {
+          endMeasureRef.current();
+          return;
+        }
         if (exportOpenRef.current) {
           setExportOpen(false);
           return;
@@ -3113,6 +3280,12 @@ export function App() {
       }
       if (meta || event.altKey) return;
 
+      if (mode === "model" && event.key.toLowerCase() === "m") {
+        event.preventDefault();
+        toggleMeasureRef.current();
+        return;
+      }
+
       switch (event.key.toLowerCase()) {
         case "v":
         case "b":
@@ -3124,6 +3297,7 @@ export function App() {
           const key = event.key.toLowerCase();
           const selectionTool =
             key === "v" ? "select" : key === "b" ? "box" : "lasso";
+          if (measureOpenRef.current) endMeasureRef.current();
           if (mode === "sketch") {
             setTool(selectionTool as "select" | "box" | "lasso");
             setSelection([]);
@@ -3549,6 +3723,7 @@ export function App() {
 
   /** Development reset: keep the file identity, remove every history step. */
   const clearDocument = (): void => {
+    endMeasure();
     const current = getState();
     const next: Doc = { ...current.doc, features: [] };
     rebuildCache.clear();
@@ -3577,6 +3752,7 @@ export function App() {
   };
 
   const loadExample = (): void => {
+    endMeasure();
     // "Load the example" is a full reset, not an edit of the current sketch:
     // created features and document names must not survive it.
     const fresh = createExampleDocument();
@@ -3629,6 +3805,7 @@ export function App() {
   };
 
   const openDocument = (next: Doc): void => {
+    endMeasure();
     rebuildCache.clear();
     faceBoundaryCache.current.clear();
     faceBoundaryPending.current.clear();
@@ -3712,7 +3889,7 @@ export function App() {
 
   /** Export the rendered prefix solid, derived from the worker's cache. */
   const exportModel = async (format: "stl" | "step"): Promise<void> => {
-    const cacheKey = exportCacheKey;
+    const cacheKey = activeCacheKey;
     const client = clientRef.current;
     if (!cacheKey || !client || exporting) return;
     setExporting(format);
@@ -4042,8 +4219,8 @@ export function App() {
                   // The page is a document-level surface: close live editors
                   // and drafts (their edits are already committed) and the
                   // stage selection so they do not peek out behind it.
-                  dismissEditor();
-                  setDatumDraft(null);
+                  endMeasure();
+                  cancelOpenOperationRef.current();
                   setSupportOpen(false);
                   setBodyPick(null);
                   setEdgeSelection([]);
@@ -4055,9 +4232,9 @@ export function App() {
                   setExportError(null);
                   setExportOpen(true);
                 }}
-                disabled={!exportCacheKey}
+                disabled={!activeCacheKey}
                 title={
-                  exportCacheKey
+                  activeCacheKey
                     ? "Inspect and export the current body"
                     : "There is no body at this step to export"
                 }
@@ -4282,11 +4459,12 @@ export function App() {
                 <ToolButton
                   label="select"
                   shortcut="v"
-                  active={modelTool === "select"}
+                  active={modelTool === "select" && !measureOpen}
                   // Switching tools never touches the selection: a box can be
                   // refined by a Shift-click (even without switching), and the
                   // old clear-on-select lost the whole set.
                   onClick={() => {
+                    endMeasure();
                     setModelTool("select");
                     setSelectOther(null);
                   }}
@@ -4296,15 +4474,28 @@ export function App() {
                   label="box"
                   shortcut="b"
                   active={modelTool === "box"}
-                  onClick={() => setModelTool("box")}
+                  onClick={() => {
+                    endMeasure();
+                    setModelTool("box");
+                  }}
                   testId="model-tool-box"
                 />
                 <ToolButton
                   label="lasso"
                   shortcut="g"
                   active={modelTool === "lasso"}
-                  onClick={() => setModelTool("lasso")}
+                  onClick={() => {
+                    endMeasure();
+                    setModelTool("lasso");
+                  }}
                   testId="model-tool-lasso"
+                />
+                <ToolButton
+                  label="measure"
+                  shortcut="m"
+                  active={measureOpen}
+                  onClick={toggleMeasure}
+                  testId="model-tool-measure"
                 />
               </div>
               <ToolOptionsRow
@@ -4323,7 +4514,8 @@ export function App() {
             {selectOther &&
             selectOther.candidates.length > 1 &&
             !blendDraft &&
-            !shellDraft ? (
+            !shellDraft &&
+            !measureOpen ? (
               <div
                 className="select-other"
                 role="status"
@@ -5080,7 +5272,7 @@ export function App() {
             />
           ) : null}
 
-          {exportOpen && shownMesh && exportCacheKey ? (
+          {exportOpen && shownMesh && activeCacheKey ? (
             <ExportPopover
               stats={shownMesh.stats}
               fileName={`${doc.name || "part"}.stl`}
@@ -5090,6 +5282,19 @@ export function App() {
               onMove={setExportPosition}
               onExport={(format) => void exportModel(format)}
               onClose={() => setExportOpen(false)}
+            />
+          ) : null}
+
+          {measureOpen ? (
+            <MeasurePopover
+              targets={measureTargets}
+              result={measurement}
+              busy={measureBusy}
+              error={measureError}
+              position={measurePosition}
+              onMove={setMeasurePosition}
+              onClear={() => setMeasureTargets([])}
+              onClose={endMeasure}
             />
           ) : null}
         </section>
