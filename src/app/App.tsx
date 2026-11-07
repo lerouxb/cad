@@ -113,11 +113,17 @@ import {
 } from "../core/rebuild/types";
 import {
   addArc,
+  addCenterArc,
+  addCenterRectangle,
   addCircle,
+  addCircleByDiameter,
+  addCircleThroughPoints,
   addFillet,
+  addOrientedRectangle,
   addPoint,
   addPolyline,
   addRectangle,
+  addTangentArc,
   emptySketch,
   type DraftVertex,
 } from "../core/sketch/create";
@@ -164,6 +170,12 @@ import { findSketchPoint, type Sketch } from "../core/sketch/types";
 import type { PlaneFrame, ProfileLoop, Vec2, Vec3 } from "../core/types";
 import {
   SketchCanvas,
+  type ArcSpec,
+  type ArcVariant,
+  type CircleSpec,
+  type CircleVariant,
+  type RectangleSpec,
+  type RectangleVariant,
   type SketchTool,
   type SketchTone,
 } from "../sketch/SketchCanvas";
@@ -493,6 +505,9 @@ export function App() {
   const [modelTool, setModelTool] = useState<ModelPickTool>("select");
   const [sketchFilter, setSketchFilter] =
     useState<SketchSelectionFilter>("all");
+  const [rectVariant, setRectVariant] = useState<RectangleVariant>("corner");
+  const [circleVariant, setCircleVariant] = useState<CircleVariant>("center");
+  const [arcVariant, setArcVariant] = useState<ArcVariant>("3-point");
   const [selectOther, setSelectOther] = useState<PickInfo | null>(null);
   const [bodyPopoverPosition, setBodyPopoverPosition] =
     useState<PopoverPosition>({ x: 22, y: 138 });
@@ -3335,31 +3350,47 @@ export function App() {
     setSelection([]);
   };
 
-  const handleRectangle = (a: Vec2, b: Vec2): void => {
+  const handleRectangle = (spec: RectangleSpec): void => {
     const base = currentSketch();
-    drawAndCommit(base, addRectangle(base, a, b));
+    const next =
+      spec.kind === "center"
+        ? addCenterRectangle(base, spec.a, spec.b)
+        : spec.kind === "3-point"
+          ? addOrientedRectangle(base, spec.a, spec.b, spec.c)
+          : addRectangle(base, spec.a, spec.b);
+    drawAndCommit(base, next);
   };
 
-  const handleCircle = (center: DraftVertex, radius: number): void => {
+  const handleCircle = (spec: CircleSpec): void => {
     const base = currentSketch();
-    const valid = center.existingPointId
+    if (spec.kind === "2-point") {
+      drawAndCommit(base, addCircleByDiameter(base, spec.a, spec.b));
+      return;
+    }
+    if (spec.kind === "3-point") {
+      drawAndCommit(base, addCircleThroughPoints(base, spec.a, spec.b, spec.c));
+      return;
+    }
+    const valid = spec.center.existingPointId
       ? {
-          ...center,
-          existingPointId: findSketchPoint(base, center.existingPointId)
-            ? center.existingPointId
+          ...spec.center,
+          existingPointId: findSketchPoint(base, spec.center.existingPointId)
+            ? spec.center.existingPointId
             : undefined,
         }
-      : center;
-    drawAndCommit(base, addCircle(base, valid, radius));
+      : spec.center;
+    drawAndCommit(base, addCircle(base, valid, spec.radius));
   };
 
-  const handleArc = (
-    start: DraftVertex,
-    end: DraftVertex,
-    through: Vec2,
-  ): void => {
+  const handleArc = (spec: ArcSpec): void => {
     const base = currentSketch();
-    drawAndCommit(base, addArc(base, start, end, through));
+    const next =
+      spec.kind === "center"
+        ? addCenterArc(base, spec.center, spec.start, spec.end)
+        : spec.kind === "tangent"
+          ? addTangentArc(base, spec.start, spec.end, spec.lineId)
+          : addArc(base, spec.start, spec.end, spec.through);
+    drawAndCommit(base, next);
   };
 
   const handleFillet = (): void => {
@@ -4950,6 +4981,37 @@ export function App() {
                   note={selectionFilterNote(sketchFilter)}
                   testPrefix="sketch-filter"
                 />
+              ) : tool === "rect" ? (
+                <ToolOptionsRow
+                  kicker="rectangle"
+                  options={["corner", "center", "3-point"]}
+                  value={rectVariant}
+                  onChange={(value) =>
+                    setRectVariant(value as RectangleVariant)
+                  }
+                  note="corner drags two opposite corners; center starts at the middle; 3-point sets a side then the height"
+                  testPrefix="rect-variant"
+                />
+              ) : tool === "circle" ? (
+                <ToolOptionsRow
+                  kicker="circle"
+                  options={["center", "2-point", "3-point"]}
+                  value={circleVariant}
+                  onChange={(value) =>
+                    setCircleVariant(value as CircleVariant)
+                  }
+                  note="center then radius; two diameter ends; three points on the circle"
+                  testPrefix="circle-variant"
+                />
+              ) : tool === "arc" ? (
+                <ToolOptionsRow
+                  kicker="arc"
+                  options={["3-point", "center", "tangent"]}
+                  value={arcVariant}
+                  onChange={(value) => setArcVariant(value as ArcVariant)}
+                  note="3-point: start, end, then the curve; center: centre, start, end; tangent: start on a line endpoint"
+                  testPrefix="arc-variant"
+                />
               ) : tool === "dimension" ? (
                 <div
                   className="tool-options"
@@ -5032,6 +5094,9 @@ export function App() {
                   onCreateRectangle={handleRectangle}
                   onCreateCircle={handleCircle}
                   onCreateArc={handleArc}
+                  rectVariant={rectVariant}
+                  circleVariant={circleVariant}
+                  arcVariant={arcVariant}
                   onCreatePoint={handlePoint}
                   onTrimCurve={handleTrimCurve}
                   onCreateDimension={handleCreateDimension}

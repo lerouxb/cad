@@ -772,11 +772,16 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
 
 ### Sketch refinements (from gap backlog)
 
-- [ ] Collinear constraint (one `drag.ts` row, small)
-- [ ] Sketch-create variants: center / 3-point rectangle, center-point / tangent arc,
-      2-point / 3-point circle; polygon is low priority. These variants live in the tool
-      options row under the tool line (the same row as the select filters), not in a
-      second toolbar or a popover.
+- [x] Collinear constraint. SolveSpace has no collinear primitive, so it maps to
+      parallel + point-on-line (a shared endpoint needs only parallel); it is one
+      document constraint/chip with solver and drag rows. Covered by unit tests
+      (solver, DOF and drag) and the collinear e2e case.
+- [x] Sketch-create variants in the tool options row under the tool line (the same row
+      as the select filters): corner / center / 3-point rectangle, center / 2-point /
+      3-point circle, and 3-point / center / tangent arc. The 3-point rectangle uses
+      parallel/perpendicular (it can rotate); the centre arc is CCW from start to end;
+      a tangent arc starts at a line endpoint because `slvs` tangency needs a shared
+      endpoint. Polygon remains low priority.
 
 ### Model refinement
 
@@ -815,13 +820,15 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
 - [x] **Tool options row** (design: `docs/showcase/select.html` and `select-model.html`;
       `TIMELINE.md`): a second row under the tool line that follows the *tool*, not the
       mode. One filter at a time (no multi-select), and the row collapses for tools with
-      no options. Sketch select gets `all / points / curves / dimensions` (hit-testing is
-      gated; region/profile hit targets only answer under `all`). Model select gets
+      no options. Sketch create tools use the same row for their variants (corner/center/
+      3-point rectangle, center/2-/3-point circle, 3-point/centre/tangent arc). Sketch
+      select gets `all / points / curves / dimensions` (hit-testing is gated;
+      region/profile hit targets only answer under `all`). Model select gets
       `all / edges / faces`; a filtered-out hit is blocked rather than clearing the
       selection. Select Other shows the overlapping edge/face candidates at the cursor
-      and cycles them on click. **Bodies wait for multi-body**; sketch create variants
-      (`rect`/`circle`/`arc`) are still to be added to this same row. Do not bolt filters
-      into the selection popover.
+      and cycles them on click. **Bodies wait for multi-body**. Sketch create variants
+      (`rect`/`circle`/`arc`) are in this same row. Do not bolt filters into the
+      selection popover.
 - [x] **Browser test architecture** (`docs/TESTING.md`): area-split specs with shared
       helpers in `e2e/support/`, one `resetExample` setup per test, fail-fast default,
       4 local workers (~1.2 min for the whole suite), the example's metrics in one
@@ -1177,8 +1184,8 @@ Keep at M5/M6 (11 real uses, all tolerance/fit work).
   visibility toggles and isolate?
 - **Move / Copy:** materialised one-shot transform or persistent feature? Sketch geometry
   should use the M6.0 persistent grammar; bodies are closer to a feature.
-- **Sketch-create variants:** one tool with modes or separate tool-line entries?
-  Fusion uses press-and-hold flyouts.
+- **Sketch-create variants:** resolved — one tool plus a variant in the tool options
+  row (same surface as the select filters), not a second toolbar or flyout.
 - **Visibility toggles:** show/hide sketches, bodies, constraints, construction,
   dimensions, isolate/opacity — design as a coherent surface before implementation.
 - **Assemblies:** what is a component/occurrence in the plain-JSON document? How do

@@ -37,9 +37,11 @@ is an editable sketcher driving an exact solid:
   selection highlights, dimensions (point-point, point-line,
   angle, diameter, radius, driving or reference, inline edit/delete and draggable labels),
   a floating constraint bar
-  (horizontal/vertical, parallel, perpendicular, equal, point-on-line, point-on-circle,
-  tangent, symmetric, midpoint, coincident, fix) with construction geometry, a selectable
-  fixed origin + X/Y axis reference frame, exact X/Y editing for a selected point,
+  (horizontal/vertical, parallel, perpendicular, collinear, equal, point-on-line,
+  point-on-circle, tangent, symmetric, midpoint, coincident, fix) with construction
+  geometry, create variants in the tool options row (corner/center/3-point rectangle,
+  center/2-/3-point circle, 3-point/centre/tangent arc), a selectable fixed origin +
+  X/Y axis reference frame, exact X/Y editing for a selected point,
   undo/redo, DOF/diagnostics, worker protocol, three.js viewport, exact volume/face counts,
   unit + e2e tests. The part is a plain-JSON `Doc` with
   sketch/extrude/datum/fillet/chamfer/shell features, schemaVersion + migrations, autosave to
@@ -280,7 +282,13 @@ docs/
 - **`slvs` tangency is only arc↔line sharing an endpoint** (and cubic↔line). Use
   `addConstraint(C_ARC_LINE_TANGENT, …, arc, line, …, other)` — `s.tangent()` aborts the
   WASM instance when its endpoint-equality check fails. `other` is true when the shared
-  endpoint is `arc.end`.
+  endpoint is `arc.end`. A tangent-arc creation therefore has to start on a line
+  endpoint; a click on the line's interior has no shared endpoint to constrain.
+- **Collinear has no `slvs` primitive.** One `collinear` document constraint maps to
+  `parallel` plus a point-on-line from the movable line's first endpoint to the other
+  line; when the lines already share an endpoint, `parallel` alone is exact. Both
+  handles map back to the one constraint id, the drag projection adds both rows, and the
+  chip releases the pair as one action. Do not add a second chip for the point-on-line.
 - **Symmetric accepts two edges plus an axis.** Besides the original two points + axis,
   selecting three lines adds two point-pair `symmetric` constraints in one action. The
   axis is the selected reference line if there is one, otherwise the **last selected**
@@ -560,7 +568,10 @@ docs/
   a filtered-out hit is *blocked* and keeps the selection instead of clearing it. The
   current filter's consequence is a tooltip on the `FILTER` kicker, not inline prose (the
   row said "everything can be picked", which is self-evident and read like a status line).
-  Bodies wait for multi-body. Do not put filters in the selection popover.
+  Create tools reuse the same row for their variants (`corner/center/3-point` rect,
+  `center/2-/3-point` circle, `3-point/centre/tangent` arc); a variant change cancels
+  the in-progress gesture. Bodies wait for multi-body. Do not put filters in the selection
+  popover.
 - **Box and lasso run on the model too, and they select edges.** The model tool row is
   `select / box / lasso` (`v/b/g` follow the active mode); box is a window selection
   (every projected vertex inside), lasso is crossing (any vertex inside or a segment

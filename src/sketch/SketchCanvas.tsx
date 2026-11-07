@@ -19,12 +19,13 @@ import type { SketchPalette } from "../app/theme";
 import type { DraftVertex } from "../core/sketch/create";
 import type { DimensionPlacement, DimensionTarget } from "../core/sketch/dimensions";
 import type { DragTarget } from "../core/sketch/solver";
-import type {
-  Sketch,
-  SketchArc,
-  SketchCircle,
-  SketchConstraint,
-  SketchCurve,
+import {
+  allCurves,
+  type Sketch,
+  type SketchArc,
+  type SketchCircle,
+  type SketchConstraint,
+  type SketchCurve,
 } from "../core/sketch/types";
 import {
   arcGeometry,
@@ -32,11 +33,30 @@ import {
   clampAngleToArc,
   circumcenter,
   curveRadius,
+  tangentArcThroughPoint,
   loopBounds,
   normalizeAngle,
 } from "../core/sketch/geometry";
 import { niceGridStep, type GridStep } from "../core/sketch/grid";
 import { useElementSize } from "../ui/useElementSize";
+
+export type RectangleVariant = "corner" | "center" | "3-point";
+export type CircleVariant = "center" | "2-point" | "3-point";
+export type ArcVariant = "3-point" | "center" | "tangent";
+
+export type RectangleSpec =
+  | { kind: "corner" | "center"; a: Vec2; b: Vec2 }
+  | { kind: "3-point"; a: Vec2; b: Vec2; c: Vec2 };
+
+export type CircleSpec =
+  | { kind: "center"; center: DraftVertex; radius: number }
+  | { kind: "2-point"; a: DraftVertex; b: DraftVertex }
+  | { kind: "3-point"; a: DraftVertex; b: DraftVertex; c: DraftVertex };
+
+export type ArcSpec =
+  | { kind: "3-point"; start: DraftVertex; end: DraftVertex; through: Vec2 }
+  | { kind: "center"; center: DraftVertex; start: DraftVertex; end: DraftVertex }
+  | { kind: "tangent"; start: DraftVertex; end: DraftVertex; lineId: string };
 
 export type SketchTool =
   | "select"
@@ -103,9 +123,13 @@ export interface SketchCanvasProps {
   onDragLine: (lineId: string, targets: DragTarget[]) => void;
   onDragEnd: () => void;
   onCreatePolyline: (vertices: DraftVertex[], closed: boolean) => void;
-  onCreateRectangle: (a: Vec2, b: Vec2) => void;
-  onCreateCircle: (center: DraftVertex, radius: number) => void;
-  onCreateArc: (start: DraftVertex, end: DraftVertex, through: Vec2) => void;
+  onCreateRectangle: (spec: RectangleSpec) => void;
+  onCreateCircle: (spec: CircleSpec) => void;
+  onCreateArc: (spec: ArcSpec) => void;
+  /** Create-tool variants, from the tool options row. */
+  rectVariant?: RectangleVariant;
+  circleVariant?: CircleVariant;
+  arcVariant?: ArcVariant;
   onCreatePoint: (vertex: DraftVertex) => void;
   onTrimCurve: (curveId: string, point: Vec2) => void;
   onCreateDimension: (target: DimensionTarget, placement: DimensionPlacement) => void;
@@ -175,6 +199,9 @@ export function SketchCanvas({
   onCreateRectangle,
   onCreateCircle,
   onCreateArc,
+  rectVariant = "corner",
+  circleVariant = "center",
+  arcVariant = "3-point",
   onCreatePoint,
   onTrimCurve,
   onCreateDimension,
@@ -218,6 +245,7 @@ export function SketchCanvas({
   } | null>(null);
   const panRef = useRef<{ clientX: number; clientY: number; box: ViewBox } | null>(null);
   const [rectStart, setRectStart] = useState<Vec2 | null>(null);
+  const [rectSecond, setRectSecond] = useState<Vec2 | null>(null);
   const [boxStart, setBoxStart] = useState<Vec2 | null>(null);
   const [boxEnd, setBoxEnd] = useState<Vec2 | null>(null);
   const lassoRef = useRef<Vec2[]>([]);
@@ -233,6 +261,11 @@ export function SketchCanvas({
   const [hover, setHover] = useState<Snap | null>(null);
   const [rect, setRect] = useState<{ a: Vec2; b: Vec2 } | null>(null);
   const [circleCenter, setCircleCenter] = useState<DraftVertex | null>(null);
+  const [circleSecond, setCircleSecond] = useState<DraftVertex | null>(null);
+  const [arcTangent, setArcTangent] = useState<{
+    lineId: string;
+    point: DraftVertex;
+  } | null>(null);
   const [arcStart, setArcStart] = useState<DraftVertex | null>(null);
   const [arcEnd, setArcEnd] = useState<DraftVertex | null>(null);
   const [dimPoint, setDimPoint] = useState<string | null>(null);
@@ -340,7 +373,7 @@ export function SketchCanvas({
   // Any tool change or explicit cancel abandons the current draft. This is a
   // deliberate render-time reset (the React "adjust state on prop change"
   // pattern), not an effect: an effect would render the stale draft once.
-  const interactionKey = `${tool}:${cancelToken}`;
+  const interactionKey = `${tool}:${rectVariant}:${circleVariant}:${arcVariant}:${cancelToken}`;
   const [lastInteractionKey, setLastInteractionKey] = useState(interactionKey);
   if (lastInteractionKey !== interactionKey) {
     setLastInteractionKey(interactionKey);
@@ -350,9 +383,12 @@ export function SketchCanvas({
     setBoxEnd(null);
     setRect(null);
     setRectStart(null);
+    setRectSecond(null);
     setCircleCenter(null);
+    setCircleSecond(null);
     setArcStart(null);
     setArcEnd(null);
+    setArcTangent(null);
     setHover(null);
     setDimPoint(null);
     setDimLine(null);
@@ -444,6 +480,9 @@ export function SketchCanvas({
   const gestureActive =
     draft.length > 0 ||
     rectStart !== null ||
+    rectSecond !== null ||
+    circleSecond !== null ||
+    arcTangent !== null ||
     boxStart !== null ||
     lassoPoints.length > 0 ||
     circleCenter !== null ||
@@ -590,6 +629,18 @@ export function SketchCanvas({
       }
     }
     return { point: [x, y], kind };
+  };
+
+  /** The line whose endpoint is `pointId`, for a tangent arc's first click. */
+  const tangentLineAt = (
+    pointId?: string,
+  ): Extract<SketchCurve, { type: "line" }> | null => {
+    if (!pointId) return null;
+    const lines = allCurves(sketch).filter(
+      (curve): curve is Extract<SketchCurve, { type: "line" }> =>
+        curve.type === "line" && (curve.a === pointId || curve.b === pointId),
+    );
+    return lines.find((line) => !line.reference) ?? lines[0] ?? null;
   };
 
   const snapGrid = (raw: Vec2): Vec2 =>
@@ -1111,6 +1162,30 @@ export function SketchCanvas({
       return;
     }
     if (tool === "rect") {
+      if (rectVariant === "3-point") {
+        const snap = snapGrid(raw);
+        if (!rectStart) {
+          setRectStart(snap);
+          setHover({ point: snap, kind: "grid" });
+          return;
+        }
+        if (!rectSecond) {
+          if (Math.hypot(snap[0] - rectStart[0], snap[1] - rectStart[1]) >= 1) {
+            setRectSecond(snap);
+          }
+          return;
+        }
+        onCreateRectangle({
+          kind: "3-point",
+          a: rectStart,
+          b: rectSecond,
+          c: snap,
+        });
+        setRectStart(null);
+        setRectSecond(null);
+        setHover(null);
+        return;
+      }
       const start = snapGrid(raw);
       setRectStart(start);
       setRect({ a: start, b: start });
@@ -1118,34 +1193,93 @@ export function SketchCanvas({
       return;
     }
     if (tool === "circle") {
-      if (!circleCenter) {
-        const snap = snapPoint(raw);
-        setCircleCenter({
-          point: snap.point,
-          existingPointId: snap.existingPointId,
-          referenceLineId: snap.referenceLineId,
-          referenceLineIds: snap.referenceLineIds,
-        });
-      } else {
-        const snap = snapPoint(raw);
+      const snap = snapPoint(raw);
+      if (circleVariant === "center") {
+        if (!circleCenter) {
+          setCircleCenter(snap);
+          return;
+        }
         const radius = Math.hypot(
           snap.point[0] - circleCenter.point[0],
           snap.point[1] - circleCenter.point[1],
         );
-        if (radius >= 0.5) onCreateCircle(circleCenter, roundTo(radius, 1));
+        if (radius >= 0.5) {
+          onCreateCircle({
+            kind: "center",
+            center: circleCenter,
+            radius: roundTo(radius, 1),
+          });
+        }
         setCircleCenter(null);
+        setHover(null);
+        return;
       }
+      if (circleVariant === "2-point") {
+        if (!circleCenter) {
+          setCircleCenter(snap);
+          return;
+        }
+        if (
+          Math.hypot(
+            snap.point[0] - circleCenter.point[0],
+            snap.point[1] - circleCenter.point[1],
+          ) >= 1
+        ) {
+          onCreateCircle({ kind: "2-point", a: circleCenter, b: snap });
+        }
+        setCircleCenter(null);
+        setHover(null);
+        return;
+      }
+      if (!circleCenter) {
+        setCircleCenter(snap);
+        return;
+      }
+      if (!circleSecond) {
+        if (
+          Math.hypot(
+            snap.point[0] - circleCenter.point[0],
+            snap.point[1] - circleCenter.point[1],
+          ) >= 1
+        ) {
+          setCircleSecond(snap);
+        }
+        return;
+      }
+      onCreateCircle({
+        kind: "3-point",
+        a: circleCenter,
+        b: circleSecond,
+        c: snap,
+      });
+      setCircleCenter(null);
+      setCircleSecond(null);
+      setHover(null);
       return;
     }
     if (tool === "arc") {
       const snap = snapPoint(raw);
-      if (!arcStart) {
-        setArcStart({
-          point: snap.point,
-          existingPointId: snap.existingPointId,
-          referenceLineId: snap.referenceLineId,
-          referenceLineIds: snap.referenceLineIds,
+      if (arcVariant === "tangent") {
+        if (!arcTangent) {
+          const line = tangentLineAt(snap.existingPointId);
+          if (!line) return;
+          setArcStart(snap);
+          setArcTangent({ lineId: line.id, point: snap });
+          return;
+        }
+        onCreateArc({
+          kind: "tangent",
+          start: arcTangent.point,
+          end: snap,
+          lineId: arcTangent.lineId,
         });
+        setArcStart(null);
+        setArcTangent(null);
+        setHover(null);
+        return;
+      }
+      if (!arcStart) {
+        setArcStart(snap);
         return;
       }
       if (!arcEnd) {
@@ -1155,16 +1289,15 @@ export function SketchCanvas({
             snap.point[1] - arcStart.point[1],
           ) >= 1
         ) {
-          setArcEnd({
-            point: snap.point,
-            existingPointId: snap.existingPointId,
-            referenceLineId: snap.referenceLineId,
-            referenceLineIds: snap.referenceLineIds,
-          });
+          setArcEnd(snap);
         }
         return;
       }
-      onCreateArc(arcStart, arcEnd, snap.point);
+      onCreateArc(
+        arcVariant === "center"
+          ? { kind: "center", center: arcStart, start: arcEnd, end: snap }
+          : { kind: "3-point", start: arcStart, end: arcEnd, through: snap.point },
+      );
       setArcStart(null);
       setArcEnd(null);
       setHover(null);
@@ -1288,7 +1421,7 @@ export function SketchCanvas({
         : snapPoint(raw, axisFrom);
     setHover(snap);
 
-    if (rectStart) {
+    if (rectStart && rectVariant !== "3-point") {
       setRect({ a: rectStart, b: snap.point });
     }
   };
@@ -1324,13 +1457,17 @@ export function SketchCanvas({
       onMarqueeSelectRegions(ids, event.shiftKey);
     }
 
-    if (rectStart) {
+    if (rectVariant !== "3-point" && rectStart) {
       const start = rectStart;
       setRectStart(null);
       const end = tool === "rect" ? snapGrid(toSketch(event)) : start;
       setRect(null);
       if (Math.abs(end[0] - start[0]) >= 1 && Math.abs(end[1] - start[1]) >= 1) {
-        onCreateRectangle(start, end);
+        onCreateRectangle({
+          kind: rectVariant === "center" ? "center" : "corner",
+          a: start,
+          b: end,
+        });
       }
     }
 
@@ -1511,7 +1648,14 @@ export function SketchCanvas({
   const originSelected = sketch.references
     ? selected.has(sketch.references.origin.id)
     : false;
-  const rectGeometry = rect ? normalizeRect(rect.a, rect.b) : null;
+  const rectGeometry = rect
+    ? rectVariant === "center" && tool === "rect"
+      ? normalizeRect(
+          [2 * rect.a[0] - rect.b[0], 2 * rect.a[1] - rect.b[1]],
+          rect.b,
+        )
+      : normalizeRect(rect.a, rect.b)
+    : null;
   const circleRadius =
     circleCenter && hover
       ? Math.hypot(
@@ -1519,6 +1663,34 @@ export function SketchCanvas({
           hover.point[1] - circleCenter.point[1],
         )
       : 0;
+  const circlePreview = (() => {
+    if (!circleCenter || !hover) return null;
+    if (circleVariant === "2-point") {
+      const center: Vec2 = [
+        (circleCenter.point[0] + hover.point[0]) / 2,
+        (circleCenter.point[1] + hover.point[1]) / 2,
+      ];
+      const radius = circleRadius / 2;
+      return radius >= 0.5 ? { center, radius } : null;
+    }
+    if (circleVariant === "3-point") {
+      if (!circleSecond) return null;
+      const center = circumcenter(
+        circleCenter.point,
+        circleSecond.point,
+        hover.point,
+      );
+      if (!center) return null;
+      return {
+        center,
+        radius: Math.hypot(
+          circleCenter.point[0] - center[0],
+          circleCenter.point[1] - center[1],
+        ),
+      };
+    }
+    return { center: circleCenter.point, radius: circleRadius };
+  })();
   const soleSelectedId = selected.size === 1 ? [...selected][0] : null;
   const pointForEditor =
     soleSelectedId !== null
@@ -2303,7 +2475,7 @@ export function SketchCanvas({
         </g>
       ) : null}
 
-      {tool === "rect" && rectGeometry ? (
+      {tool === "rect" && rectVariant !== "3-point" && rectGeometry ? (
         <rect
           x={rectGeometry.x}
           y={rectGeometry.y}
@@ -2317,34 +2489,119 @@ export function SketchCanvas({
         />
       ) : null}
 
+      {tool === "rect" && rectVariant === "3-point" && rectStart ? (
+        (() => {
+          if (!rectSecond) {
+            if (!hover) return null;
+            return (
+              <line
+                x1={rectStart[0]}
+                y1={rectStart[1]}
+                x2={hover.point[0]}
+                y2={hover.point[1]}
+                stroke={color}
+                strokeWidth={1.2}
+                strokeDasharray="4 4"
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="none"
+              />
+            );
+          }
+          if (!hover) return null;
+          const corners = orientedRectCorners(rectStart, rectSecond, hover.point);
+          if (!corners) return null;
+          return (
+            <polygon
+              points={corners.map((point) => `${point[0]},${point[1]}`).join(" ")}
+              fill={palette.grid}
+              stroke={color}
+              strokeWidth={1.4}
+              strokeDasharray="6 4"
+              vectorEffect="non-scaling-stroke"
+              pointerEvents="none"
+            />
+          );
+        })()
+      ) : null}
+
       {tool === "circle" && circleCenter && hover ? (
         <g>
           <circle
             cx={circleCenter.point[0]}
             cy={circleCenter.point[1]}
-            r={circleRadius}
-            fill="none"
-            stroke={color}
-            strokeWidth={1.4}
-            strokeDasharray="6 4"
-            vectorEffect="non-scaling-stroke"
+            r={pointRadius}
+            fill={color}
+            pointerEvents="none"
           />
+          {circleSecond ? (
+            <circle
+              cx={circleSecond.point[0]}
+              cy={circleSecond.point[1]}
+              r={pointRadius}
+              fill={color}
+              pointerEvents="none"
+            />
+          ) : null}
+          {circlePreview ? (
+            <circle
+              cx={circlePreview.center[0]}
+              cy={circlePreview.center[1]}
+              r={circlePreview.radius}
+              fill="none"
+              stroke={color}
+              strokeWidth={1.4}
+              strokeDasharray="6 4"
+              vectorEffect="non-scaling-stroke"
+              pointerEvents="none"
+            />
+          ) : null}
           <line
             x1={circleCenter.point[0]}
             y1={circleCenter.point[1]}
-            x2={hover.point[0]}
-            y2={hover.point[1]}
+            x2={
+              circleVariant === "3-point" && circleSecond
+                ? circleSecond.point[0]
+                : hover.point[0]
+            }
+            y2={
+              circleVariant === "3-point" && circleSecond
+                ? circleSecond.point[1]
+                : hover.point[1]
+            }
             stroke={color}
             strokeWidth={1}
             strokeDasharray="3 3"
             vectorEffect="non-scaling-stroke"
+            pointerEvents="none"
           />
+          {circleVariant === "3-point" && circleSecond ? (
+            <line
+              x1={circleSecond.point[0]}
+              y1={circleSecond.point[1]}
+              x2={hover.point[0]}
+              y2={hover.point[1]}
+              stroke={color}
+              strokeWidth={1}
+              strokeDasharray="3 3"
+              vectorEffect="non-scaling-stroke"
+              pointerEvents="none"
+            />
+          ) : null}
         </g>
       ) : null}
 
       {tool === "arc" && arcStart && arcEnd && hover ? (
         (() => {
-          const preview = arcThroughPath(arcStart.point, arcEnd.point, hover.point);
+          const centered = arcVariant === "center";
+          const through = centered
+            ? centerArcThroughPoint(arcStart.point, arcEnd.point, hover.point)
+            : hover.point;
+          if (!through) return null;
+          const preview = arcThroughPath(
+            centered ? arcEnd.point : arcStart.point,
+            centered ? hover.point : arcEnd.point,
+            through,
+          );
           if (!preview) return null;
           return (
             <path
@@ -2360,7 +2617,7 @@ export function SketchCanvas({
         })()
       ) : null}
 
-      {tool === "arc" && arcStart && !arcEnd && hover ? (
+      {tool === "arc" && arcStart && !arcEnd && hover && arcVariant !== "tangent" ? (
         <line
           x1={arcStart.point[0]}
           y1={arcStart.point[1]}
@@ -2373,6 +2630,37 @@ export function SketchCanvas({
           pointerEvents="none"
         />
       ) : null}
+
+      {tool === "arc" && arcVariant === "tangent" && arcStart && arcTangent && hover
+        ? (() => {
+            const line = allCurves(sketch).find(
+              (curve) => curve.id === arcTangent.lineId && curve.type === "line",
+            );
+            if (!line || line.type !== "line") return null;
+            const otherId = line.a === arcStart.existingPointId ? line.b : line.a;
+            const other = points[otherId];
+            if (!other) return null;
+            const through = tangentArcThroughPoint(
+              arcStart.point,
+              hover.point,
+              [other[0] - arcStart.point[0], other[1] - arcStart.point[1]],
+            );
+            if (!through) return null;
+            const preview = arcThroughPath(arcStart.point, hover.point, through);
+            if (!preview) return null;
+            return (
+              <path
+                d={preview.d}
+                fill="none"
+                stroke={color}
+                strokeWidth={1.5}
+                strokeDasharray="6 4"
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="none"
+              />
+            );
+          })()
+        : null}
 
       {tool === "arc" && arcStart ? (
         <circle
@@ -3016,6 +3304,10 @@ function ConstraintBadges({
         place(constraint.id, constraint.type, constraint.b, label);
         break;
       }
+      case "collinear":
+        place(constraint.id, "collinear", constraint.a, "≡");
+        place(constraint.id, "collinear", constraint.b, "≡");
+        break;
       case "pointOnLine":
         place(constraint.id, "pointOnLine", constraint.point, "∈");
         break;
@@ -3198,6 +3490,41 @@ function withCanvasAspect(
   }
   const h = box.w / aspect;
   return { ...box, y: box.y - (h - box.h) / 2, h };
+}
+
+function orientedRectCorners(a: Vec2, b: Vec2, c: Vec2): Vec2[] | null {
+  const ux = b[0] - a[0];
+  const uy = b[1] - a[1];
+  const length = Math.hypot(ux, uy);
+  if (length < 1e-6) return null;
+  const nx = -uy / length;
+  const ny = ux / length;
+  const height = (c[0] - b[0]) * nx + (c[1] - b[1]) * ny;
+  if (Math.abs(height) < 1e-6) return null;
+  return [
+    a,
+    b,
+    [b[0] + nx * height, b[1] + ny * height],
+    [a[0] + nx * height, a[1] + ny * height],
+  ];
+}
+
+function centerArcThroughPoint(
+  center: Vec2,
+  start: Vec2,
+  end: Vec2,
+): Vec2 | null {
+  const radius = Math.hypot(start[0] - center[0], start[1] - center[1]);
+  if (radius < 0.5) return null;
+  const startAngle = Math.atan2(start[1] - center[1], start[0] - center[0]);
+  const endAngle = Math.atan2(end[1] - center[1], end[0] - center[0]);
+  const sweep = normalizeAngle(endAngle - startAngle);
+  if (sweep < 1e-9) return null;
+  const middle = startAngle + sweep / 2;
+  return [
+    center[0] + radius * Math.cos(middle),
+    center[1] + radius * Math.sin(middle),
+  ];
 }
 
 function normalizeRect(a: Vec2, b: Vec2) {

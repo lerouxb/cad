@@ -34,6 +34,7 @@ e2e/
   extrude.spec.ts      extrude create/edit/cancel, symmetric, through-all
   shell.spec.ts        face multi-selection, box/lasso faces, shell create/edit/fail
   sketch.spec.ts       sketch tools, constraints, dimensions, region gestures
+  variants.spec.ts     collinear, rectangle/circle/arc create variants
   documents.spec.ts    autosave, files, download/open, export page + STL/STEP, boot from a saved doc
 ```
 
@@ -47,6 +48,7 @@ typical dev machine with four workers (including the Vite + WASM startup):
 | `example` | ~15 s | `sketch` | ~21 s |
 | `shell` | ~13 s | `support` | ~25 s |
 | `measure` | ~5 s | `modes` | ~10 s |
+| `variants` | ~13 s | | |
 
 ```bash
 npx playwright test e2e/blends.spec.ts

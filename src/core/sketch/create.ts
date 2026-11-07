@@ -1,5 +1,10 @@
 import type { Vec2 } from "../types";
-import { circumcenter, normalizeAngle, updateConstraintValue } from "./geometry";
+import {
+  circumcenter,
+  normalizeAngle,
+  tangentArcThroughPoint,
+  updateConstraintValue,
+} from "./geometry";
 import { allCurves, allPoints, type Sketch, type SketchConstraint, type SketchCurve, type SketchPoint, type SketchReferences } from "./types";
 
 /**
@@ -188,6 +193,75 @@ export function addRectangle(sketch: Sketch, a: Vec2, b: Vec2): Sketch {
   return { ...sketch, points, curves, constraints };
 }
 
+/** A rectangle drawn from its centre to one corner. */
+export function addCenterRectangle(
+  sketch: Sketch,
+  center: Vec2,
+  corner: Vec2,
+): Sketch {
+  const dx = Math.abs(corner[0] - center[0]);
+  const dy = Math.abs(corner[1] - center[1]);
+  return addRectangle(
+    sketch,
+    [center[0] - dx, center[1] - dy],
+    [center[0] + dx, center[1] + dy],
+  );
+}
+
+/**
+ * A rectangle from three clicks: one side A-B and a point C that defines the
+ * perpendicular height. The result is free to rotate (parallel/perpendicular),
+ * unlike the axis-aligned corner rectangle.
+ */
+export function addOrientedRectangle(
+  sketch: Sketch,
+  a: Vec2,
+  b: Vec2,
+  c: Vec2,
+): Sketch {
+  const ux = b[0] - a[0];
+  const uy = b[1] - a[1];
+  const length = Math.hypot(ux, uy);
+  if (length < 1) return sketch;
+  const nx = -uy / length;
+  const ny = ux / length;
+  const height = (c[0] - b[0]) * nx + (c[1] - b[1]) * ny;
+  if (Math.abs(height) < 1) return sketch;
+
+  const corners: Vec2[] = [
+    a,
+    b,
+    [b[0] + nx * height, b[1] + ny * height],
+    [a[0] + nx * height, a[1] + ny * height],
+  ];
+  const ids = corners.map(() => newId("p"));
+  const points = [
+    ...sketch.points,
+    ...corners.map((point, index) => ({
+      id: ids[index]!,
+      x: point[0],
+      y: point[1],
+    })),
+  ];
+  const lineIds = Array.from({ length: 4 }, () => newId("l"));
+  const curves = [
+    ...sketch.curves,
+    { id: lineIds[0]!, type: "line" as const, a: ids[0]!, b: ids[1]! },
+    { id: lineIds[1]!, type: "line" as const, a: ids[1]!, b: ids[2]! },
+    { id: lineIds[2]!, type: "line" as const, a: ids[2]!, b: ids[3]! },
+    { id: lineIds[3]!, type: "line" as const, a: ids[3]!, b: ids[0]! },
+  ];
+  // Opposite sides parallel, adjacent sides perpendicular: a rectangle has
+  // three shape constraints (position, angle, width, height stay free).
+  const constraints: SketchConstraint[] = [
+    ...sketch.constraints,
+    { id: newId("c"), type: "parallel", a: lineIds[0]!, b: lineIds[2]! },
+    { id: newId("c"), type: "parallel", a: lineIds[1]!, b: lineIds[3]! },
+    { id: newId("c"), type: "perpendicular", a: lineIds[0]!, b: lineIds[1]! },
+  ];
+  return { ...sketch, points, curves, constraints };
+}
+
 /**
  * Create a circular arc through `start`, `through` and `end`. The stored
  * direction is always counter-clockwise from start to end; the endpoints are
@@ -243,6 +317,116 @@ export function addArc(
       { id: newId("a"), type: "arc", center: centerId, start: from, end: to },
     ],
     constraints,
+  };
+}
+
+/**
+ * A centre-point arc: centre, then start (which sets the radius), then end.
+ * The stored arc is always CCW from start to end; the end click is projected
+ * onto the circle so the radius stays exact.
+ */
+export function addCenterArc(
+  sketch: Sketch,
+  centerVertex: DraftVertex,
+  startVertex: DraftVertex,
+  endVertex: DraftVertex,
+): Sketch {
+  const points = [...sketch.points];
+  const constraints = [...sketch.constraints];
+  const centerId = resolveDraftPoint(sketch, points, constraints, centerVertex);
+  const startId = resolveDraftPoint(sketch, points, constraints, startVertex);
+  if (centerId === startId) return sketch;
+  const byId = new Map(
+    [...allPoints(sketch), ...points].map((point) => [point.id, point]),
+  );
+  const center = byId.get(centerId);
+  const start = byId.get(startId);
+  if (!center || !start) return sketch;
+  const radius = Math.hypot(start!.x - center!.x, start!.y - center!.y);
+  if (radius < 0.5) return sketch;
+
+  const existingEnd = endVertex.existingPointId
+    ? byId.get(endVertex.existingPointId)
+    : undefined;
+  let endId: string;
+  if (
+    existingEnd &&
+    Math.abs(
+      Math.hypot(existingEnd.x - center.x, existingEnd.y - center.y) - radius,
+    ) < 1e-6
+  ) {
+    endId = existingEnd.id;
+  } else {
+    const angle = Math.atan2(
+      endVertex.point[1] - center.y,
+      endVertex.point[0] - center.x,
+    );
+    const startAngle = Math.atan2(start.y - center.y, start.x - center.x);
+    if (Math.abs(normalizeAngle(angle - startAngle)) < 1e-9) return sketch;
+    endId = newId("p");
+    points.push({
+      id: endId,
+      x: center.x + radius * Math.cos(angle),
+      y: center.y + radius * Math.sin(angle),
+    });
+  }
+  if (endId === startId) return sketch;
+  return {
+    ...sketch,
+    points,
+    curves: [
+      ...sketch.curves,
+      { id: newId("a"), type: "arc", center: centerId, start: startId, end: endId },
+    ],
+    constraints,
+  };
+}
+
+/**
+ * A tangent arc: it starts at a line endpoint and leaves along that line, then
+ * passes through the next click. The start point must be the line's endpoint so
+ * the solver's arc-line tangency (which requires a shared endpoint) applies.
+ */
+export function addTangentArc(
+  sketch: Sketch,
+  startVertex: DraftVertex,
+  endVertex: DraftVertex,
+  lineId: string,
+): Sketch {
+  const line = allCurves(sketch).find(
+    (curve) => curve.id === lineId && curve.type === "line",
+  );
+  if (!line || line.type !== "line") return sketch;
+  const startId = startVertex.existingPointId;
+  if (!startId || (startId !== line.a && startId !== line.b)) return sketch;
+  const points = new Map(allPoints(sketch).map((point) => [point.id, point]));
+  const start = points.get(startId);
+  const other = points.get(startId === line.a ? line.b : line.a);
+  if (!start || !other) return sketch;
+  const tangent: Vec2 = [other.x - start.x, other.y - start.y];
+  const through = tangentArcThroughPoint(
+    [start.x, start.y],
+    endVertex.point,
+    tangent,
+  );
+  if (!through) return sketch;
+
+  const next = addArc(
+    sketch,
+    { point: [start.x, start.y], existingPointId: startId },
+    endVertex,
+    through,
+  );
+  const arc = next.curves[next.curves.length - 1];
+  if (next.curves.length === sketch.curves.length || arc?.type !== "arc") {
+    return sketch;
+  }
+  return {
+    ...next,
+    constraints: [
+      ...next.constraints,
+      { id: newId("c"), type: "tangent", a: arc.id, b: line.id },
+    ],
   };
 }
 
@@ -478,6 +662,37 @@ export function addCircle(
     ],
     constraints,
   };
+}
+
+/** A circle from two clicks on a diameter. */
+export function addCircleByDiameter(
+  sketch: Sketch,
+  a: DraftVertex,
+  b: DraftVertex,
+): Sketch {
+  const radius = Math.hypot(b.point[0] - a.point[0], b.point[1] - a.point[1]) / 2;
+  if (radius < 0.5) return sketch;
+  return addCircle(
+    sketch,
+    {
+      point: [(a.point[0] + b.point[0]) / 2, (a.point[1] + b.point[1]) / 2],
+    },
+    radius,
+  );
+}
+
+/** A circle through three clicks (the circumcircle). */
+export function addCircleThroughPoints(
+  sketch: Sketch,
+  a: DraftVertex,
+  b: DraftVertex,
+  c: DraftVertex,
+): Sketch {
+  const center = circumcenter(a.point, b.point, c.point);
+  if (!center) return sketch;
+  const radius = Math.hypot(a.point[0] - center[0], a.point[1] - center[1]);
+  if (radius < 0.5) return sketch;
+  return addCircle(sketch, { point: center }, radius);
 }
 
 /**

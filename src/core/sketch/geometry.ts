@@ -162,6 +162,48 @@ export function clampAngleToArc(
   return normalizeAngle(toStart <= toEnd ? start : start + sweep);
 }
 
+/**
+ * A point on the circular arc that starts at `start` with the given tangent
+ * direction and passes through `end`. Returned as a through point so the
+ * ordinary three-point arc builder can construct and orient it.
+ */
+export function tangentArcThroughPoint(
+  start: Vec2,
+  end: Vec2,
+  tangent: Vec2,
+): Vec2 | null {
+  const tangentLength = Math.hypot(tangent[0], tangent[1]);
+  if (tangentLength < 1e-9) return null;
+  const tx = tangent[0] / tangentLength;
+  const ty = tangent[1] / tangentLength;
+  const nx = -ty;
+  const ny = tx;
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  const denominator = 2 * (nx * dx + ny * dy);
+  if (Math.abs(denominator) < 1e-9) return null;
+  const offset = (dx * dx + dy * dy) / denominator;
+  const radius = Math.abs(offset);
+  if (radius < 0.5) return null;
+  const center: Vec2 = [start[0] + offset * nx, start[1] + offset * ny];
+  const startAngle = Math.atan2(start[1] - center[1], start[0] - center[0]);
+  const endAngle = Math.atan2(end[1] - center[1], end[0] - center[0]);
+  const ccw = normalizeAngle(endAngle - startAngle);
+  if (ccw < 1e-9) return null;
+  // The CCW arc's tangent at its start; the complementary arc leaves in the
+  // other direction. Pick the one that matches the line's tangent.
+  const tangentAtStart: Vec2 = [-Math.sin(startAngle), Math.cos(startAngle)];
+  const aligned = tangentAtStart[0] * tx + tangentAtStart[1] * ty >= 0;
+  const from = aligned ? startAngle : endAngle;
+  const sweep = aligned ? ccw : Math.PI * 2 - ccw;
+  if (sweep < 1e-9) return null;
+  const middle = from + sweep / 2;
+  return [
+    center[0] + radius * Math.cos(middle),
+    center[1] + radius * Math.sin(middle),
+  ];
+}
+
 export function normalizeAngle(angle: number): number {
   const twoPi = Math.PI * 2;
   const wrapped = angle % twoPi;
