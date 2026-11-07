@@ -114,8 +114,10 @@ export interface SketchCanvasProps {
   onChangeDimension: (id: string, value: number, driving: boolean) => void;
   onMoveDimension: (id: string, placement: DimensionPlacement) => void;
   onDeleteDimension: (id: string) => void;
-  /** Enter with no draft open finishes the sketch (Fusion-style). */
-  onFinishSketch: () => void;
+  /** This is the visible stage; draft/Enter handling is inert otherwise. */
+  stageActive?: boolean;
+  /** Reports whether a draft, marquee or dimension target is in progress. */
+  onGestureChange?: (active: boolean) => void;
 }
 
 interface ViewBox {
@@ -180,7 +182,8 @@ export function SketchCanvas({
   onChangeDimension,
   onMoveDimension,
   onDeleteDimension,
-  onFinishSketch,
+  stageActive = true,
+  onGestureChange,
 }: SketchCanvasProps) {
   const [svgRef, size] = useElementSize<SVGSVGElement>();
   const [viewBox, setViewBox] = useState<ViewBox>(() =>
@@ -403,36 +406,56 @@ export function SketchCanvas({
     return () => svg.removeEventListener("wheel", onWheel);
   }, [svgRef]);
 
+  // Enter belongs to the global precedence table (MODES.md R2): this listener
+  // only commits a line draft that already has two points. It must not finish
+  // the sketch, and it is inert while the sketch stage is hidden. App's global
+  // handler sees preventDefault() and does nothing for the same press.
   useEffect(() => {
-    const finish = (event: KeyboardEvent) => {
+    const onEnter = (event: KeyboardEvent) => {
+      if (!stageActive || event.key !== "Enter" || event.defaultPrevented) {
+        return;
+      }
       const target = event.target as HTMLElement | null;
       if (
         target &&
         (target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.tagName === "BUTTON" ||
           target.isContentEditable)
       ) {
         return;
       }
-      if (event.key !== "Enter") return;
       const current = draftRef.current;
-      if (current.length >= 2) {
-        event.preventDefault();
-        onCreatePolyline(current, false);
-        draftRef.current = [];
-        setDraft([]);
-        setHover(null);
-        return;
-      }
-      // A half-finished line keeps Enter for itself; a clean sketch finishes.
-      if (current.length === 0) {
-        event.preventDefault();
-        onFinishSketch();
-      }
+      if (current.length < 2) return;
+      event.preventDefault();
+      onCreatePolyline(current, false);
+      draftRef.current = [];
+      setDraft([]);
+      setHover(null);
     };
-    window.addEventListener("keydown", finish);
-    return () => window.removeEventListener("keydown", finish);
-  }, [onCreatePolyline, onFinishSketch]);
+    window.addEventListener("keydown", onEnter);
+    return () => window.removeEventListener("keydown", onEnter);
+  }, [onCreatePolyline, stageActive]);
+
+  // Whether a gesture owns the canvas right now. Escape pops the gesture before
+  // the armed tool (MODES R1), so the parent needs to know without a second
+  // key listener here.
+  const gestureActive =
+    draft.length > 0 ||
+    rectStart !== null ||
+    boxStart !== null ||
+    lassoPoints.length > 0 ||
+    circleCenter !== null ||
+    arcStart !== null ||
+    arcEnd !== null ||
+    dimPoint !== null ||
+    dimLine !== null ||
+    dimTarget !== null ||
+    activeDimTarget !== null;
+  useEffect(() => {
+    onGestureChange?.(gestureActive);
+  }, [gestureActive, onGestureChange]);
 
   const toSketch = (event: ReactPointerEvent): Vec2 => {
     const svg = svgRef.current;
@@ -649,19 +672,20 @@ export function SketchCanvas({
     }
   };
 
-  // The canvas calls preventDefault on its own pointerdown, which can keep
-  // focus in the dimension input. Commit on an outside pointerdown as well, so
-  // clicking out works even when focus never leaves the editor.
+  // An outside click cancels an inline editor (MODES D4), matching Escape.
+  // The canvas calls preventDefault on its own pointerdown, which can keep focus
+  // in the field, so a capture-phase pointerdown is the reliable exit.
   useEffect(() => {
     if (!editor) return;
     const onPointerDown = (event: PointerEvent): void => {
       const target = event.target as Element | null;
       if (target?.closest(".dim-editor")) return;
-      commitEditor();
+      dimensionCommittedRef.current = true;
+      setEditor(null);
     };
     window.addEventListener("pointerdown", onPointerDown, true);
     return () => window.removeEventListener("pointerdown", onPointerDown, true);
-  }, [editor, commitEditor]);
+  }, [editor, setEditor]);
 
   useEffect(() => {
     if (!editor) return;

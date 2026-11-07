@@ -543,6 +543,8 @@ export function App() {
     x: 22,
     y: 138,
   });
+  /** A sketch draft/marquee/dimension target owns the canvas (MODES R1). */
+  const [sketchGesture, setSketchGesture] = useState(false);
   const [docRename, setDocRename] = useState<string | null>(null);
   const [fileIndex, setFileIndex] = useState<LocalFileEntry[]>(() =>
     loadFileIndex(),
@@ -571,7 +573,9 @@ export function App() {
   const measureOpenRef = useRef(false);
   const toggleMeasureRef = useRef<() => void>(() => {});
   const endMeasureRef = useRef<() => void>(() => {});
-  const cancelOpenOperationRef = useRef<() => void>(() => {});
+  const cancelOpenOperationRef = useRef<
+    (options?: { history?: boolean }) => void
+  >(() => {});
   const faceBoundaryCache = useRef(
     new Map<string, { frame: PlaneFrame; loops: Vec3[][] }>(),
   );
@@ -1228,7 +1232,20 @@ export function App() {
     return true;
   };
 
-  const changeTool = (next: SketchTool): void => {
+  const changeTool = (
+    next: SketchTool,
+    options?: { cancelOperation?: boolean },
+  ): void => {
+    // D6: a tool button/key while a form is open cancels the form, then arms.
+    // The shortcut path cancels explicitly so it can choose the stage after
+    // the cancel (the cancel restores its own baseline mode). Profile
+    // selection is the exception: the sketch tools are inputs to the open
+    // extrude form (box/lasso pick regions), so they never cancel it.
+    const selectingProfiles =
+      mode === "sketch" && (editorOpen || extrudeDraft !== null);
+    if (options?.cancelOperation !== false && !selectingProfiles) {
+      cancelOpenOperationRef.current();
+    }
     clearTransientSolve();
     setTool(next);
     setDimensionRequest(null);
@@ -1349,7 +1366,7 @@ export function App() {
    * opened. Suppression and the name are timeline actions, not form fields, so
    * they are left as the user set them.
    */
-  const cancelBlendEditor = (): void => {
+  const cancelBlendEditor = (history = true): void => {
     const baseline = blendBaseline;
     dismissEditor();
     if (baseline) {
@@ -1376,11 +1393,13 @@ export function App() {
         },
       );
       if (next !== current.doc) {
-        commit({
+        const state = {
           doc: next,
           solved: current.solved,
           solvedFor: current.solvedFor,
-        });
+        };
+        if (history) commit(state);
+        else replace(state);
       }
       setActiveFeatureId(baseline.id);
     }
@@ -1479,7 +1498,7 @@ export function App() {
   };
 
   /** Cancel restores the shell's open faces and thickness, never suppression. */
-  const cancelShellEditor = (): void => {
+  const cancelShellEditor = (history = true): void => {
     const baseline = shellBaseline;
     setShellDraft(null);
     setShellBaseline(null);
@@ -1491,11 +1510,13 @@ export function App() {
         thickness: baseline.thickness,
       }));
       if (next !== current.doc) {
-        commit({
+        const state = {
           doc: next,
           solved: current.solved,
           solvedFor: current.solvedFor,
-        });
+        };
+        if (history) commit(state);
+        else replace(state);
       }
       setActiveFeatureId(baseline.id);
     }
@@ -1933,7 +1954,7 @@ export function App() {
    * part of the form and must survive: restoring the whole feature re-suppressed
    * a step that the user had just unsuppressed from the same timeline detail.
    */
-  const cancelFeatureEditor = (): void => {
+  const cancelFeatureEditor = (history = true): void => {
     const baseline = editorBaseline;
     setEditorOpen(false);
     setEditorBaseline(null);
@@ -1954,7 +1975,15 @@ export function App() {
       }),
     );
     if (next !== current.doc) {
-      commit({ doc: next, solved: current.solved, solvedFor: current.solvedFor });
+      const state = {
+        doc: next,
+        solved: current.solved,
+        solvedFor: current.solvedFor,
+      };
+      // Undo/redo cancel first and must not make the cancel itself the entry
+      // that the undo then pops (D9/F13).
+      if (history) commit(state);
+      else replace(state);
     }
     setMode(baseline.returnMode);
     setSelection([]);
@@ -2069,29 +2098,49 @@ export function App() {
   /** Clear the history cursor: keep the whole document, select no step. */
   const clearActiveFeature = (): void => {
     clearTransientSolve();
-    dismissEditor();
+    cancelOpenOperationRef.current();
+    endMeasure();
+    setExportOpen(false);
+    setInsertMenu(null);
+    setFileMenuOpen(false);
     setDatumDraft(null);
     setSupportOpen(false);
-    setInsertMenu(null);
+    setSupportDatumId(null);
+    setSupportFaceFlipped(false);
     setCreationAnchorId(null);
     setCreationAtStart(false);
+    setFilletOpen(false);
+    setFilletRadiusBefore(null);
     setActiveFeatureId(null);
     setMode("model");
     setSelection([]);
     setTrimNotice(null);
     setBodyPick(null);
     setEdgeSelection([]);
+    setFaceSelection([]);
     setSelectOther(null);
     viewportRef.current?.clearPick();
+    viewportRef.current?.setFaceSelection([]);
+    // Abort any hidden sketch gesture (MODES F4/R6).
+    setCancelToken((token) => token + 1);
   };
 
   const activateFeature = (feature: Feature): void => {
     clearTransientSolve();
+    // Timeline navigation leaves the current operation exactly as its cancel
+    // would (MODES D5/R9) and never keeps a hidden draft (F4/R6).
+    cancelOpenOperationRef.current();
     endMeasure();
-    dismissEditor();
+    setExportOpen(false);
+    setInsertMenu(null);
+    setFileMenuOpen(false);
     setDatumDraft(null);
     setSupportOpen(false);
+    setSupportDatumId(null);
+    setSupportFaceFlipped(false);
     setCreationAtStart(false);
+    setFilletOpen(false);
+    setFilletRadiusBefore(null);
     setActiveFeatureId(feature.id);
     setMode(feature.type === "sketch" ? "sketch" : "model");
     setSelection([]);
@@ -2102,6 +2151,7 @@ export function App() {
     setSelectOther(null);
     viewportRef.current?.clearPick();
     viewportRef.current?.setFaceSelection([]);
+    setCancelToken((token) => token + 1);
     if (feature.type === "sketch") {
       setTool("select");
       setCancelToken((token) => token + 1);
@@ -2132,6 +2182,12 @@ export function App() {
     // With multiple, staying on the sketch avoids editing a random extrude.
     if (consumers.length === 1) setActiveFeatureId(consumers[0]!.id);
     dismissEditor();
+    // Leaving the sketch stage aborts any gesture and disarms the tool (R6);
+    // the sketch canvas stays mounted but must not keep a hidden draft.
+    setCancelToken((token) => token + 1);
+    setTool("select");
+    setDimensionRequest(null);
+    setTrimNotice(null);
     setMode("model");
     setSelection([]);
   };
@@ -2145,6 +2201,8 @@ export function App() {
     }
     if (activeFeature?.type === "extrude") {
       dismissEditor();
+      setCancelToken((token) => token + 1);
+      setTool("select");
       setMode("model");
       setSelection([]);
       return;
@@ -2265,6 +2323,10 @@ export function App() {
   };
 
   const openInsertMenu = (feature: Feature, target: HTMLElement): void => {
+    cancelOpenOperationRef.current();
+    endMeasure();
+    setExportOpen(false);
+    setCancelToken((token) => token + 1);
     moveCursor(feature);
     setInsertMenu({
       anchorId: feature.id,
@@ -2276,6 +2338,10 @@ export function App() {
   const openStartInsertMenu = (target: HTMLElement): void => {
     // The start gap has no step before it: keep the cursor where it is, but
     // leave the sketch canvas so the support picker is visible.
+    cancelOpenOperationRef.current();
+    endMeasure();
+    setExportOpen(false);
+    setCancelToken((token) => token + 1);
     dismissEditor();
     setDatumDraft(null);
     setSupportOpen(false);
@@ -2421,18 +2487,18 @@ export function App() {
     setHistoryNotice(null);
   };
 
-  const handleNewSketch = (): void => {
+  const handleNewSketch = (): boolean => {
     const current = getState();
     const faceRef =
       bodyPick?.kind === "face" ? (bodyPick.ref ?? null) : null;
     if (bodyPick?.kind === "face" && !faceRef) {
       setHistoryNotice("This face has no stable reference; choose a world plane.");
-      return;
+      return false;
     }
     const hintFrame = faceRef ? frameFromHint(faceRef.hint) : null;
     if (faceRef && !hintFrame) {
       setHistoryNotice("Only planar faces can support a sketch.");
-      return;
+      return false;
     }
     const frame =
       hintFrame && supportFaceFlipped ? flipFrame(hintFrame) : hintFrame;
@@ -2442,7 +2508,7 @@ export function App() {
         : null;
     if (supportDatumId && (!datumFeature || !isDatumPlaneFeature(datumFeature))) {
       setHistoryNotice("The selected datum plane no longer exists.");
-      return;
+      return false;
     }
     const datumFrame =
       datumFeature && isDatumPlaneFeature(datumFeature)
@@ -2450,7 +2516,7 @@ export function App() {
         : null;
     if (datumFeature && !datumFrame) {
       setHistoryNotice("The selected datum plane could not be resolved.");
-      return;
+      return false;
     }
     const support =
       faceRef && frame
@@ -2489,15 +2555,21 @@ export function App() {
     setFitToken((token) => token + 1);
     setBodyPick(null);
     setEdgeSelection([]);
+    setFaceSelection([]);
     setSelectOther(null);
     viewportRef.current?.clearPick();
+    viewportRef.current?.setFaceSelection([]);
+    return true;
   };
 
   const beginExtrudeDraft = (regions: readonly string[] = []): void => {
     const { current, sketchFeature: source } = resolveCurrent();
     if (!source) return;
-    dismissEditor();
+    cancelOpenOperationRef.current();
+    setDatumDraft(null);
     setSupportOpen(false);
+    setFilletOpen(false);
+    setFilletRadiusBefore(null);
     setActiveFeatureId(source.id);
     // Default to join when the document already has a body. A join with
     // nothing to join would be a silent fallback; the draft says "new"
@@ -2568,33 +2640,6 @@ export function App() {
     // The draft was started from a sketch step; cancelling returns to that sketch.
   };
 
-  // Opening a page-level surface (measure/export) leaves the current operation
-  // exactly as its cancel would (MODES.md R9/D5). Assigned here, after every
-  // cancel callback exists, and read through a ref by the openers above.
-  useEffect(() => {
-    cancelOpenOperationRef.current = () => {
-      if (blendDraft) {
-        cancelBlendEditor();
-        return;
-      }
-      if (shellDraft) {
-        cancelShellEditor();
-        return;
-      }
-      if (extrudeDraft) {
-        cancelExtrudeDraft();
-        return;
-      }
-      if (editorOpen) {
-        cancelFeatureEditor();
-        return;
-      }
-      if (datumDraft) {
-        cancelDatumDraft();
-      }
-    };
-  });
-
   const beginRename = (feature: Feature): void => {
     setRenaming({ id: feature.id, value: feature.name });
   };
@@ -2619,8 +2664,12 @@ export function App() {
       setFilletRadiusBefore(null);
     }
     if (entityId === null) {
+      // D7: an empty click during profile selection clears the regions and
+      // keeps the draft; its own footer is the only cancel.
       if (extrudeDraft) {
-        cancelExtrudeDraft();
+        updateExtrudeDraft((draft) =>
+          draft && draft.regions.length > 0 ? { ...draft, regions: [] } : draft,
+        );
         return;
       }
       setSelection((current) => (current.length === 0 ? current : []));
@@ -3150,15 +3199,8 @@ export function App() {
       if (target?.closest(gapSelector)) return;
       setInsertMenu(null);
     };
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") setInsertMenu(null);
-    };
     window.addEventListener("pointerdown", onPointerDown, true);
-    window.addEventListener("keydown", onKeyDown);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown, true);
-      window.removeEventListener("keydown", onKeyDown);
-    };
+    return () => window.removeEventListener("pointerdown", onPointerDown, true);
   }, [insertMenu]);
 
   useEffect(() => {
@@ -3210,143 +3252,7 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [doc, fileMenuOpen]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable)
-      ) {
-        return;
-      }
 
-      const meta = event.metaKey || event.ctrlKey;
-      if (meta && event.key.toLowerCase() === "z") {
-        event.preventDefault();
-        setPendingConstraint(null);
-        setSolveError(null);
-        if (event.shiftKey) redo();
-        else undo();
-        setFitToken((token) => token + 1);
-        return;
-      }
-      if (meta && event.key.toLowerCase() === "y") {
-        event.preventDefault();
-        setPendingConstraint(null);
-        setSolveError(null);
-        redo();
-        setFitToken((token) => token + 1);
-        return;
-      }
-      if (event.key === "Escape") {
-        if (measureOpenRef.current) {
-          endMeasureRef.current();
-          return;
-        }
-        if (exportOpenRef.current) {
-          setExportOpen(false);
-          return;
-        }
-        if (blendDraftOpenRef.current) {
-          cancelBlendRef.current();
-          return;
-        }
-        if (shellDraftOpenRef.current) {
-          cancelShellRef.current();
-          return;
-        }
-        setPendingConstraint(null);
-        setSolveError(null);
-        setTool("select");
-        setDimensionRequest(null);
-        setFilletOpen(false);
-        setFilletRadiusBefore(null);
-        setSelection([]);
-        setCancelToken((token) => token + 1);
-        setBodyPick(null);
-        setEdgeSelection([]);
-        setFaceSelection([]);
-        setSelectOther(null);
-        viewportRef.current?.clearPick();
-        viewportRef.current?.setFaceSelection([]);
-        return;
-      }
-      if (event.key === "Delete" || event.key === "Backspace") {
-        event.preventDefault();
-        deleteKey();
-        return;
-      }
-      if (meta || event.altKey) return;
-
-      if (mode === "model" && event.key.toLowerCase() === "m") {
-        event.preventDefault();
-        toggleMeasureRef.current();
-        return;
-      }
-
-      switch (event.key.toLowerCase()) {
-        case "v":
-        case "b":
-        case "g": {
-          // The shortcut letters are not the tool names: v/b/g map to
-          // select/box/lasso. Passing the raw key through left the model tool
-          // as "v" (no button active, and the viewport treated it as a marquee
-          // tool) and made b/g draw the wrong marquee.
-          const key = event.key.toLowerCase();
-          const selectionTool =
-            key === "v" ? "select" : key === "b" ? "box" : "lasso";
-          if (measureOpenRef.current) endMeasureRef.current();
-          if (mode === "sketch") {
-            setTool(selectionTool as "select" | "box" | "lasso");
-            setSelection([]);
-          } else {
-            setModelTool(selectionTool as ModelPickTool);
-          }
-          break;
-        }
-        case "l":
-          enterSketchMode();
-          setTool("line");
-          setSelection([]);
-          break;
-        case "p":
-          enterSketchMode();
-          setTool("point");
-          setSelection([]);
-          break;
-        case "r":
-          enterSketchMode();
-          setTool("rect");
-          setSelection([]);
-          break;
-        case "c":
-          enterSketchMode();
-          setTool("circle");
-          setSelection([]);
-          break;
-        case "a":
-          enterSketchMode();
-          setTool("arc");
-          setSelection([]);
-          break;
-        case "d":
-          enterSketchMode();
-          setTool("dimension");
-          setSelection([]);
-          break;
-        case "t":
-          enterSketchMode();
-          setTool("trim");
-          setSelection([]);
-          break;
-      }
-    };
-
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [undo, redo, mode]);
 
   const handleSetPointPosition = (pointId: string, x: number, y: number): void => {
     if (!isSolverReady()) return;
@@ -3845,7 +3751,15 @@ export function App() {
   };
 
   const toggleFileMenu = (): void => {
-    if (!fileMenuOpen) setFileIndex(loadFileIndex());
+    if (!fileMenuOpen) {
+      // A page-level header surface leaves the open operation the same way its
+      // cancel would (MODES D5/F17), so a form never lingers behind the menu.
+      cancelOpenOperationRef.current();
+      setCancelToken((token) => token + 1);
+      endMeasure();
+      setExportOpen(false);
+      setFileIndex(loadFileIndex());
+    }
     setFileDeleteId(null);
     setFileMenuOpen((open) => !open);
   };
@@ -3947,15 +3861,308 @@ export function App() {
 
   const goBack = (): void => {
     clearTransientSolve();
+    // Cancel without adding a history entry: the undo below must act on the
+    // document change the user means, not on the cancellation itself (D9).
+    cancelOpenOperationRef.current({ history: false });
+    endMeasure();
+    setExportOpen(false);
     undo();
     setFitToken((token) => token + 1);
   };
 
   const goForward = (): void => {
     clearTransientSolve();
+    cancelOpenOperationRef.current({ history: false });
+    endMeasure();
+    setExportOpen(false);
     redo();
     setFitToken((token) => token + 1);
   };
+
+  // Opening a page-level surface (measure/export) or leaving an operation
+  // (timeline, undo) cancels it exactly as its footer cancel would (MODES R9,
+  // D5, D9). Assigned after every cancel callback exists; read through a ref by
+  // the openers above so the ordering does not create a use-before-declare.
+  useEffect(() => {
+    cancelOpenOperationRef.current = (options) => {
+      const history = options?.history !== false;
+      if (filletOpen) {
+        cancelFillet();
+        return;
+      }
+      if (supportOpen) {
+        setSupportOpen(false);
+        setCreationAnchorId(null);
+        setCreationAtStart(false);
+        setSupportFaceFlipped(false);
+        setSupportDatumId(null);
+        return;
+      }
+      if (blendDraft) {
+        cancelBlendEditor(history);
+        return;
+      }
+      if (shellDraft) {
+        cancelShellEditor(history);
+        return;
+      }
+      if (extrudeDraft) {
+        cancelExtrudeDraft();
+        return;
+      }
+      if (editorOpen) {
+        cancelFeatureEditor(history);
+        return;
+      }
+      if (datumDraft) {
+        cancelDatumDraft();
+      }
+    };
+  });
+
+  // The one keydown precedence table (MODES.md R1/R2/R7/R8, §3.3). Re-registered
+  // each render so every branch sees the current operation/gesture; local
+  // listeners only handle the line draft and the two inline editors.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      const target = event.target as HTMLElement | null;
+      const tag = target?.tagName;
+      const textField = Boolean(
+        target &&
+          (tag === "INPUT" ||
+            tag === "TEXTAREA" ||
+            tag === "SELECT" ||
+            target.isContentEditable),
+      );
+      if (event.key === "Escape") {
+        if (textField || event.defaultPrevented) return;
+        // R1: one press pops one layer: menu, operation, gesture, tool, selection.
+        if (insertMenu) {
+          setInsertMenu(null);
+          return;
+        }
+        if (fileMenuOpen) {
+          setFileMenuOpen(false);
+          return;
+        }
+        if (filletOpen) {
+          cancelFillet();
+          return;
+        }
+        if (supportOpen) {
+          setSupportOpen(false);
+          setCreationAnchorId(null);
+          setCreationAtStart(false);
+          setSupportFaceFlipped(false);
+          setSupportDatumId(null);
+          return;
+        }
+        if (measureOpen) {
+          endMeasure();
+          return;
+        }
+        if (exportOpen) {
+          setExportOpen(false);
+          return;
+        }
+        if (blendDraft) {
+          cancelBlendEditor();
+          return;
+        }
+        if (shellDraft) {
+          cancelShellEditor();
+          return;
+        }
+        if (extrudeDraft) {
+          cancelExtrudeDraft();
+          return;
+        }
+        if (editorOpen) {
+          cancelFeatureEditor();
+          return;
+        }
+        if (datumDraft) {
+          cancelDatumDraft();
+          return;
+        }
+        if (mode === "sketch" && sketchGesture) {
+          // Drop the draft/marquee/target, keep the armed tool (R1 step 4).
+          setCancelToken((token) => token + 1);
+          return;
+        }
+        if (mode === "sketch" && tool !== "select") {
+          changeTool("select");
+          return;
+        }
+        if (mode === "model" && modelTool !== "select") {
+          setModelTool("select");
+          return;
+        }
+        // R1 step 6: clear the selection/picks but stay in the stage.
+        setPendingConstraint(null);
+        setSolveError(null);
+        setDimensionRequest(null);
+        setFilletOpen(false);
+        setFilletRadiusBefore(null);
+        setSelection([]);
+        setBodyPick(null);
+        setEdgeSelection([]);
+        setFaceSelection([]);
+        setSelectOther(null);
+        viewportRef.current?.clearPick();
+        viewportRef.current?.setFaceSelection([]);
+        return;
+      }
+
+      // R7: text fields own every key. A focused button or link still activates
+      // natively on Enter (R2 step 1) but must not block the letter shortcuts.
+      if (textField || event.defaultPrevented) return;
+      if (event.key === "Enter" && (tag === "BUTTON" || tag === "A")) return;
+      // Menus own their content; Enter activates a focused menu item natively.
+      if (insertMenu || fileMenuOpen) return;
+
+      const meta = event.metaKey || event.ctrlKey;
+      if (meta && event.key.toLowerCase() === "z") {
+        event.preventDefault();
+        setPendingConstraint(null);
+        setSolveError(null);
+        if (event.shiftKey) goForward();
+        else goBack();
+        return;
+      }
+      if (meta && event.key.toLowerCase() === "y") {
+        event.preventDefault();
+        setPendingConstraint(null);
+        setSolveError(null);
+        goForward();
+        return;
+      }
+
+      if (event.key === "Enter") {
+        event.preventDefault();
+        // M11/M15: the export page and measure have no Enter primary.
+        if (measureOpen || exportOpen) return;
+        if (supportOpen) {
+          if (handleNewSketch()) setSupportOpen(false);
+          return;
+        }
+        if (filletOpen) {
+          if (filletSelection) applyFillet();
+          return;
+        }
+        if (blendDraft) {
+          if (blendDraft.edges.length > 0 && blendDraft.value > 0) {
+            applyBlendDraft();
+          }
+          return;
+        }
+        if (shellDraft) {
+          if (shellDraft.faces.length > 0 && shellDraft.thickness > 0) {
+            applyShellDraft();
+          }
+          return;
+        }
+        if (extrudeDraft) {
+          commitExtrudeDraft();
+          return;
+        }
+        if (editorOpen) {
+          finishActiveMode();
+          return;
+        }
+        if (datumDraft) {
+          commitDatumDraft();
+          return;
+        }
+        if (mode === "sketch") {
+          // A rect/circle/arc/marquee/target owns Enter as a visible no-op.
+          if (sketchGesture) return;
+          if (tool !== "select") {
+            changeTool("select");
+            return;
+          }
+          if (selection.length > 0) return;
+          finishActiveMode();
+        }
+        return;
+      }
+
+      if (event.key === "Delete" || event.key === "Backspace") {
+        if (
+          mode !== "sketch" ||
+          sketchGesture ||
+          filletOpen ||
+          supportOpen ||
+          measureOpen ||
+          exportOpen ||
+          blendDraft ||
+          shellDraft ||
+          extrudeDraft ||
+          editorOpen ||
+          datumDraft
+        ) {
+          return;
+        }
+        event.preventDefault();
+        deleteKey();
+        return;
+      }
+
+      if (meta || event.altKey) return;
+      const key = event.key.toLowerCase();
+      if (mode === "model" && key === "m") {
+        event.preventDefault();
+        toggleMeasure();
+        return;
+      }
+      switch (key) {
+        case "v":
+        case "b":
+        case "g": {
+          const selectionTool =
+            key === "v" ? "select" : key === "b" ? "box" : "lasso";
+          if (mode === "sketch") {
+            changeTool(selectionTool as SketchTool);
+          } else {
+            cancelOpenOperationRef.current();
+            setModelTool(selectionTool as ModelPickTool);
+          }
+          break;
+        }
+        case "l":
+        case "p":
+        case "r":
+        case "c":
+        case "a":
+        case "d":
+        case "t": {
+          const nextTool: SketchTool =
+            key === "l"
+              ? "line"
+              : key === "p"
+                ? "point"
+                : key === "r"
+                  ? "rect"
+                  : key === "c"
+                    ? "circle"
+                    : key === "a"
+                      ? "arc"
+                      : key === "d"
+                        ? "dimension"
+                        : "trim";
+          // D6: cancel the open form, then arm the tool; do not change the
+          // stage behind a form. The cancel restores its baseline mode, so the
+          // sketch stage is entered after it.
+          cancelOpenOperationRef.current();
+          enterSketchMode();
+          changeTool(nextTool, { cancelOperation: false });
+          break;
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  });
 
   const shownMesh = solidFeatures.length > 0 ? mesh : null;
   const shownRoundTrip = solidFeatures.length > 0 ? roundTripMs : null;
@@ -4409,26 +4616,66 @@ export function App() {
       <main className="workspace">
         <section
           className="stage"
+          // Capture phase: geometry hit targets stop propagation, but a canvas
+          // click must still take keyboard focus away from a toolbar/timeline
+          // control so the next Enter belongs to the stage (R2).
+          onPointerDownCapture={(event) => {
+            const target = event.target as Element | null;
+            if (
+              !target?.closest(".viewport-canvas") &&
+              !target?.closest("svg.sketch-canvas")
+            ) {
+              return;
+            }
+            const active = document.activeElement as HTMLElement | null;
+            if (
+              active &&
+              active !== document.body &&
+              active.tagName !== "INPUT" &&
+              active.tagName !== "TEXTAREA" &&
+              !active.isContentEditable
+            ) {
+              active.blur();
+            }
+          }}
           onPointerDown={(event) => {
-            // A click on the model background cancels the open feature/datum
-            // editor, exactly like its footer cancel. Popovers, the sketch
-            // tools and the stage-foot view controls keep their own clicks.
-            if (mode !== "model") return;
+            // A background click dismisses an operation with the same restore
+            // as its footer cancel (MODES R4/R9); it never also selects through
+            // it. Popovers, tool rows, the chip and the view controls are exempt.
             const target = event.target as Element | null;
             if (!target) return;
             if (target.closest(".stage-popover")) return;
             if (target.closest(".tool-line")) return;
+            if (target.closest(".tool-options")) return;
             if (target.closest(".model-tools")) return;
             if (target.closest(".select-other")) return;
             if (target.closest(".stage-foot")) return;
-            // The export page is page-level, not a feature editor: any click
-            // outside its own chrome closes it (the timeline click still runs).
-            if (exportOpen) setExportOpen(false);
-            // While a fillet editor is open the canvas is the pick surface:
-            // an edge click must not cancel it, and an empty click is handled
-            // by the viewport's null pick. Other editors still cancel here.
-            if (target.closest(".viewport-canvas") && blendDraft) return;
-            if (target.closest(".viewport-canvas") && shellDraft) return;
+            const canvas = Boolean(target.closest(".viewport-canvas"));
+            // Page-level surfaces exist over either stage and close first.
+            if (exportOpen) {
+              setExportOpen(false);
+              if (canvas) viewportRef.current?.suppressNextClick();
+              return;
+            }
+            if (measureOpen) {
+              // The canvas is the measure pick surface; elsewhere closes it.
+              if (!canvas) endMeasure();
+              return;
+            }
+            if (mode === "sketch") {
+              // The drawing surface owns background clicks (S3–S7); the only
+              // sketch-stage operation that a background click dismisses is
+              // the corner fillet (S12).
+              if (filletOpen) cancelFillet();
+              return;
+            }
+            if (mode !== "model") return;
+            // Pick surfaces: clicks feed the operation, they never cancel it.
+            if (canvas && (blendDraft || shellDraft || supportOpen)) return;
+            if (supportOpen) {
+              cancelOpenOperationRef.current();
+              return;
+            }
             if (blendDraft) {
               cancelBlendEditor();
               return;
@@ -4439,14 +4686,17 @@ export function App() {
             }
             if (extrudeDraft) {
               cancelExtrudeDraft();
+              if (canvas) viewportRef.current?.suppressNextClick();
               return;
             }
             if (editorOpen) {
               cancelFeatureEditor();
+              if (canvas) viewportRef.current?.suppressNextClick();
               return;
             }
             if (datumDraft) {
               cancelDatumDraft();
+              if (canvas) viewportRef.current?.suppressNextClick();
             }
           }}
         >
@@ -4464,6 +4714,7 @@ export function App() {
                   // refined by a Shift-click (even without switching), and the
                   // old clear-on-select lost the whole set.
                   onClick={() => {
+                    cancelOpenOperationRef.current();
                     endMeasure();
                     setModelTool("select");
                     setSelectOther(null);
@@ -4475,6 +4726,7 @@ export function App() {
                   shortcut="b"
                   active={modelTool === "box"}
                   onClick={() => {
+                    cancelOpenOperationRef.current();
                     endMeasure();
                     setModelTool("box");
                   }}
@@ -4485,6 +4737,7 @@ export function App() {
                   shortcut="g"
                   active={modelTool === "lasso"}
                   onClick={() => {
+                    cancelOpenOperationRef.current();
                     endMeasure();
                     setModelTool("lasso");
                   }}
@@ -4516,14 +4769,16 @@ export function App() {
             !blendDraft &&
             !shellDraft &&
             !measureOpen ? (
-              <div
+              <button
+                type="button"
                 className="select-other"
-                role="status"
                 style={{
                   left: selectOther.x + 14,
                   top: selectOther.y + 16,
                 }}
                 data-testid="select-other"
+                aria-label={`Select other: ${selectOther.candidates[selectOther.index]?.kind ?? "pick"} ${selectOther.index + 1} of ${selectOther.candidates.length}`}
+                onClick={() => viewportRef.current?.cyclePick()}
               >
                 <span className="select-other-kind">
                   {selectOther.candidates[selectOther.index]?.kind ?? "pick"}
@@ -4531,8 +4786,8 @@ export function App() {
                 <span className="select-other-count">
                   {selectOther.index + 1} of {selectOther.candidates.length}
                 </span>
-                <span>click geometry to cycle</span>
-              </div>
+                <span>click to cycle</span>
+              </button>
             ) : null}
 
             {bodyPick ? (
@@ -4783,7 +5038,8 @@ export function App() {
                   onChangeDimension={handleChangeDimension}
                   onMoveDimension={handleMoveDimension}
                   onDeleteDimension={handleDeleteDimension}
-                  onFinishSketch={finishActiveMode}
+                  stageActive={mode === "sketch"}
+                  onGestureChange={setSketchGesture}
                 />
               </div>
             </div>
@@ -5068,8 +5324,7 @@ export function App() {
                 setCreationAnchorId(null);
               }}
               onApply={() => {
-                handleNewSketch();
-                setSupportOpen(false);
+                if (handleNewSketch()) setSupportOpen(false);
               }}
               faceLabel={supportFace?.role}
               faceSupported={supportFaceSupported}
@@ -5391,6 +5646,21 @@ export function App() {
                     aria-pressed={feature.id === activeFeature?.id}
                     onClick={() => activateFeature(feature)}
                     onDoubleClick={() => beginRename(feature)}
+                    onMouseDown={(event) => {
+                      // A pointer selection should not leave keyboard focus on
+                      // the step: Enter then belongs to the stage it opened.
+                      // Keyboard users still Tab here and activate with Enter;
+                      // the grip and the eye keep their own pointer behaviour.
+                      const target = event.target as Element;
+                      if (
+                        target.closest(
+                          "button, input, select, textarea, a, .step-grip",
+                        )
+                      ) {
+                        return;
+                      }
+                      event.preventDefault();
+                    }}
                     onDragOver={(event) => {
                       event.preventDefault();
                       event.dataTransfer.dropEffect = "move";
@@ -5408,6 +5678,9 @@ export function App() {
                       if (event.target !== event.currentTarget) return;
                       if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
+                        // A focused step owns the key; never let the same Enter
+                        // reach the global sketch-finish handler (F3).
+                        event.stopPropagation();
                         activateFeature(feature);
                       }
                     }}
@@ -5868,6 +6141,13 @@ function ToolButton({
       title={title}
       aria-label={title}
       aria-pressed={active}
+      // Pointer clicks should not leave focus on the toolbar (or on a timeline
+      // step clicked earlier), so Enter keeps meaning "end the armed tool".
+      onMouseDown={(event) => {
+        event.preventDefault();
+        const active = document.activeElement as HTMLElement | null;
+        if (active && active !== document.body) active.blur();
+      }}
       onClick={onClick}
       data-testid={testId}
     >

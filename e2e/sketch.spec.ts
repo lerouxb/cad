@@ -169,7 +169,7 @@ test("creates, edits and deletes parametric dimensions", async ({ app: page }) =
 });
 
 
-test("commits a dimension kind change on blur and locks reference values", async ({
+test("commits a dimension kind change with Enter and locks reference values", async ({
   app: page,
 }) => {
   const errors = collectErrors(page);
@@ -191,8 +191,8 @@ test("commits a dimension kind change on blur and locks reference values", async
     "true",
   );
 
-  // There is no apply button: clicking outside commits the kind.
-  await page.mouse.click(200, 200);
+  // There is no apply button. Enter commits; an outside click cancels (D4).
+  await page.keyboard.press("Enter");
   const reference = page
     .locator("[data-dimension-id]")
     .filter({ hasText: "(60)" });
@@ -208,7 +208,7 @@ test("commits a dimension kind change on blur and locks reference values", async
   await expect(page.getByTestId("dimension-readout")).toHaveText("(60)");
   await expect(page.getByTestId("dimension-input")).toHaveCount(0);
   await page.getByTestId("dimension-kind-driving").click();
-  await page.mouse.click(200, 200);
+  await page.keyboard.press("Enter");
   await expect(
     page.locator("[data-dimension-id]").filter({ hasText: /^60$/ }),
   ).toHaveCount(1);
@@ -927,8 +927,12 @@ test("clicking outside a selection clears it before starting a draft", async ({
   await clickSketch(page, 20, -10);
   await expect(page.getByTestId("extrude-draft-popover")).toHaveCount(1);
 
-  // Clicking the empty grid cancels the draft and leaves the sketch open.
+  // An empty grid click clears the profile but keeps the draft (D7); only its
+  // own footer cancel leaves the operation.
   await clickSketch(page, 40, 10);
+  await expect(page.getByTestId("extrude-draft-popover")).toHaveCount(1);
+  await expect(page.getByTestId("extrude-apply")).toBeDisabled();
+  await page.getByTestId("extrude-cancel").click();
   await expect(page.getByTestId("extrude-draft-popover")).toHaveCount(0);
   await expect(page.getByTestId("tool-select")).toBeVisible();
 

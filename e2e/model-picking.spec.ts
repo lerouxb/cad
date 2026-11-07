@@ -85,10 +85,13 @@ test("the model filter row limits picks and Select Other cycles", async ({
   const other = page.getByTestId("select-other");
   await expect(other).toBeVisible();
   await expect(other).toContainText("1 of 2");
-  // The chip is an indicator: clicking the same geometry cycles the pick.
-  await page.mouse.click(edgeFacePoint!.x, edgeFacePoint!.y);
+  // The chip is a real button: it cycles without clicking the geometry again.
+  await other.click();
   await expect(pick).toHaveAttribute("data-kind", "face");
   await expect(other).toContainText("2 of 2");
+  await other.click();
+  await expect(pick).toHaveAttribute("data-kind", "edge");
+  await expect(other).toContainText("1 of 2");
 
   await page.keyboard.press("Escape");
   await expect(pick).toHaveCount(0);

@@ -71,10 +71,13 @@ export async function resetExample(page: Page): Promise<void> {
       .querySelector<HTMLElement>('[data-testid="load-example"]')
       ?.click();
   });
-  // Selecting the extrude both moves the history cursor and opens its form,
-  // which is the state most tests edit from.
+  // Selecting the extrude moves the history cursor so the body is rendered.
+  // Close its form: a test that edits the extrude opts in explicitly, and a
+  // background click on the canvas is a dismissal (MODES R4), not a pick.
   await page.getByTestId("timeline-extrude").click();
   await expect.poll(() => volume(page)).toBeCloseTo(examplePlateVolume(), -1);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("feature-popover")).toHaveCount(0);
 }
 
 /** Set a range input the way a user would, through React's onChange. */

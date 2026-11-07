@@ -1,9 +1,10 @@
 # Interaction modes and input rules
 
-> Status: **accepted contract**, 2026-11-07. Decisions D1–D12 are accepted
-> (see §5); the app does not implement them yet. The tables in §3 are the target
-> rule set. `⚠ F#` marks a cell where the app currently does something different
-> (see §4).
+> Status: **implemented contract**, 2026-11-07. Decisions D1–D12 are accepted
+> (see §5) and the app implements the tables in §3. §4 records the outcome of
+> the original audit: every divergence is fixed or explicitly deferred. Keep the
+> `⚠` markers out of §3 — a cell that disagrees with the code is a bug in one of
+> them, not an annotation.
 >
 > Companion docs: [`INTERACTION.md`](INTERACTION.md) (surfaces, actions,
 > popovers) and [`TIMELINE.md`](TIMELINE.md) (steps, bodies, insertion).
@@ -181,18 +182,18 @@ quietly close, apply a default, or fall through to "finish sketch".
 | ID | State | Enter | Escape | Stage background | Timeline | Delete |
 | --- | --- | --- | --- | --- | --- | --- |
 | S0 | Idle · `select` · nothing selected | finish sketch → model D2 | — | — | `nav` | — |
-| S1 | Sketch geometry selected (`selection-panel`) | — ⚠F2 | clear selection / close popover | `clear` | `nav` | delete selection |
-| S2 | Tool armed, no gesture (`line`/`rect`/`circle`/`arc`/`dimension`/`trim`/`box`/`lasso`) | end tool → `select` D3 ⚠F2 | → `select` | `input` (see S3–S6) | `nav` · abort ⚠F4 | — |
-| S3 | Line draft · 1 point | — | drop draft, stay in `line` D1 | `input` · add vertex | `nav` · drop draft ⚠F4 | — D11 |
-| S4 | Line draft · ≥ 2 points | commit open polyline, stay in `line` | drop draft, stay in `line` D1 | `input` · add vertex / close on first point | `nav` · drop draft ⚠F4 | — D11 |
-| S5 | Rect / circle / arc mid-gesture | — ⚠F2 | abort gesture, stay in tool D1 | `input` · continue gesture | `nav` · abort ⚠F4 | — |
-| S6 | Box / lasso marquee in progress | — ⚠F2 | abort marquee, stay in tool D1 | `input` · start marquee | `nav` · abort ⚠F4 | — |
+| S1 | Sketch geometry selected (`selection-panel`) | | clear selection / close popover | `clear` | `nav` | delete selection |
+| S2 | Tool armed, no gesture (`line`/`rect`/`circle`/`arc`/`dimension`/`trim`/`box`/`lasso`) | end tool → `select` D3 | → `select` | `input` (see S3–S6) | `nav` · abort | — |
+| S3 | Line draft · 1 point | — | drop draft, stay in `line` D1 | `input` · add vertex | `nav` · drop draft | — D11 |
+| S4 | Line draft · ≥ 2 points | commit open polyline, stay in `line` | drop draft, stay in `line` D1 | `input` · add vertex / close on first point | `nav` · drop draft | — D11 |
+| S5 | Rect / circle / arc mid-gesture | | abort gesture, stay in tool D1 | `input` · continue gesture | `nav` · abort | — |
+| S6 | Box / lasso marquee in progress | | abort marquee, stay in tool D1 | `input` · start marquee | `nav` · abort | — |
 | S7 | Dimension tool · choosing a target | — | drop the target, stay in the dimension tool D1 | `input` · place the dimension if a target is chosen | `nav` · drop target | — |
 | S8 | Inline dimension editor | commit | cancel | cancel D4 (today: commits) | cancel, then `nav` D5 (today: commits first) | text edit |
 | S9 | Point X/Y inline editor | commit | cancel | cancel D4 | cancel, then `nav` D5 | text edit |
-| S10 | Profile selection · **new extrude draft** | apply if ≥ 1 region; else visible no-op ⚠F15 | cancel the draft, stay on the source sketch step ⚠F1 | empty click: clear the region selection, keep the draft D7 (today: cancels the draft) | `nav` · cancel draft | — |
-| S11 | Profile selection · **existing extrude** | done → model (close editor) | cancel editor (revert) → model ⚠F1 | empty click: clear region selection, stay | `nav` · cancel editor D5 (today: keeps live edits) ⚠F14 | — |
-| S12 | Sketch corner fillet `[popover]` | apply if the radius is valid ⚠F2 | cancel, restore the radius ⚠F9 | cancel | `nav` · cancel ⚠F5 | — |
+| S10 | Profile selection · **new extrude draft** | apply if ≥ 1 region; else visible no-op (footer explains) | cancel the draft, stay on the source sketch step | empty click: clear the region selection, keep the draft D7 | `nav` · cancel draft | — |
+| S11 | Profile selection · **existing extrude** | done → model (close editor) | cancel editor (revert) → model | empty click: clear region selection, stay | `nav` · cancel editor D5 | — |
+| S12 | Sketch corner fillet `[popover]` | apply if the radius is valid | cancel, restore the radius | cancel | `nav` · cancel | — |
 
 Notes:
 
@@ -206,20 +207,20 @@ Notes:
 
 | ID | State | Enter | Escape | Stage background | Timeline | Delete |
 | --- | --- | --- | --- | --- | --- | --- |
-| M0 | Idle · `select` · nothing picked | — ⚠F2 | — | — | `nav` | — D10 |
+| M0 | Idle · `select` · nothing picked | | — | — | `nav` | — D10 |
 | M1 | Single pick (body / datum / edge readout) | — | `clear` | `clear` | `nav` · `clear` | — |
 | M2 | Edge set (`body-selection-popover`) | — | `clear` edges, close | `clear` (empty click) | `nav` · `clear` | — |
-| M3 | Face set (`face-selection-popover`) | — | `clear` faces, close | `clear` | `nav` · `clear` ⚠F5 | — |
-| M4 | Extrude editor `[popover]` | apply / close | cancel (revert), close ⚠F1 | cancel (revert) ⚠F6 | `nav` · cancel (revert) D5 ⚠F14 | — |
-| M5 | New datum draft `[popover]` | apply if the frame resolves ⚠F1 | cancel ⚠F1 | cancel | `nav` · cancel | — |
-| M6 | Datum editor `[popover]` | apply / close | cancel (revert) ⚠F1 | cancel (revert) | `nav` · cancel (revert) D5 | — |
+| M3 | Face set (`face-selection-popover`) | — | `clear` faces, close | `clear` | `nav` · `clear` | — |
+| M4 | Extrude editor `[popover]` | apply / close | cancel (revert), close | cancel (revert) | `nav` · cancel (revert) D5 | — |
+| M5 | New datum draft `[popover]` | apply if the frame resolves | cancel | cancel | `nav` · cancel | — |
+| M6 | Datum editor `[popover]` | apply / close | cancel (revert) | cancel (revert) | `nav` · cancel (revert) D5 | — |
 | M7 | New fillet / chamfer draft `[popover]` | apply if ≥ 1 edge | cancel (current) | cancel; the canvas is the pick surface | `nav` · cancel | — |
 | M8 | Fillet / chamfer editor `[popover]` | apply / close | cancel (revert) | cancel (revert) | `nav` · cancel (revert) D5 | — |
 | M9 | New / edited shell `[popover]` | apply if ≥ 1 face | cancel (revert) | cancel (revert) | `nav` · cancel (revert) D5 | — |
-| M10 | New-sketch support picker `[popover]` | create the sketch if the support is valid ⚠F1 | cancel ⚠F1 | canvas: `input` (pick a face/datum); empty canvas: clear the face pick, keep the picker; outside the canvas: cancel D8 | `nav` · cancel | — |
-| M11 | Export page | — | close | close | close, then `nav` ⚠F8 | — |
-| M12 | Insert menu | activate the focused item (native) | close the menu only ⚠F3 | close | close, then `nav` | — |
-| M13 | File menu | activate the focused item (native) | close the menu ⚠F1 | close | close | — |
+| M10 | New-sketch support picker `[popover]` | create the sketch if the support is valid | cancel | canvas: `input` (pick a face/datum); empty canvas: clear the face pick, keep the picker; outside the canvas: cancel D8 | `nav` · cancel | — |
+| M11 | Export page | — | close | close | close, then `nav` | — |
+| M12 | Insert menu | activate the focused item (native) | close the menu only | close | close, then `nav` | — |
+| M13 | File menu | activate the focused item (native) | close the menu | close | close | — |
 | M14 | Rename input (document / feature) | commit | cancel | commit on blur (text field) | blur commits, then `nav` | text edit |
 | M15 | Measure mode `[popover]` (0–2 targets) | — | close, drop the targets | canvas: `input` (add/remove a target); elsewhere close | close, then `nav` | — |
 
@@ -259,33 +260,33 @@ Notes:
 | Theme / highlighter | View only. |
 | Wheel scroll on the timeline | Scrolls the track; it is not a gesture and never cancels. |
 
-## 4. Audit: where the app diverges today
+## 4. Audit: outcomes
 
-These are current behaviour, verified against the code. Fixing them is a
-separate task; this section is the work list.
+These were the divergences found against the code before the contract was
+implemented. The status is the outcome of that work.
 
-| # | Today | Where | Target |
-| --- | --- | --- | --- |
-| F1 | Escape handles export, blend and shell, then resets the stage. It **does not** cancel the extrude draft, an existing feature editor (extrude/datum), the datum draft, the support picker, the file menu, or restore the sketch-fillet radius. | `App.tsx:3080-3108` | R1, R9 |
-| F2 | `SketchCanvas` has a window Enter listener with **no stage or layer guard**. With no line draft it calls `finishActiveMode`, so Enter inside the selection popover, mid-rect/circle/arc, mid-marquee, or while the sketch-fillet form is open **finishes the sketch**. It is live in model mode too (the layer is only `display:none`), where it can close an editor or call `finishSketch`. | `SketchCanvas.tsx:406-435`, `App.tsx:2057-2069`, `App.tsx:4408` | R2 |
-| F3 | A focused timeline step handles Enter (activate step) and does not stop propagation, so the same Enter also reaches the window listener above. The step can activate and the sketch can finish in the same press. The insert-menu Escape listener has the same double-action bug. | `App.tsx:5203-5209`, `App.tsx:2990-2994` | R1, R2 |
-| F4 | Only **sketch** step activation resets `tool` and bumps `cancelToken`. A non-sketch step, an insert gap, the empty tail or the start gap switches to model while a hidden line/circle/arc draft survives in the mounted canvas; a later Enter can commit it. | `App.tsx:1987-2038`, `App.tsx:2160-2205`, `SketchCanvas.tsx:337-368` | R5, R6 |
-| F5 | Transitions omit some ephemeral state: `clearActiveFeature` and `handleNewSketch` do not clear `faceSelection`; `activateFeature` does not clear `filletOpen`; `beginExtrudeDraft` does not clear `datumDraft`/`filletOpen` and relies on callers. A stale face set or fillet form can reappear. | `App.tsx:1987-2003`, `App.tsx:2340-2410`, `App.tsx:2412-2442` | I4, R6 |
-| F6 | A model-click while the extrude/datum editor is open is processed by the viewport **first** (pick) and then cancels the editor. Only blend/shell exempt the canvas, so one click both selects and discards the form. | `App.tsx:4234-4276`, `Viewport.ts:642-759` | R4, R9 |
-| F7 | The support picker is not cancelled by Escape or a background click. Escape clears `bodyPick` (the chosen face) but leaves the picker open on the world-plane fallback. | `App.tsx:3080-3108`, `App.tsx:1572-1601` | R1, M10 |
-| F8 | The export page is not closed by timeline navigation. `activateFeature`/`clearActiveFeature` do not touch `exportOpen`, so the page stays over the stage while the cursor changes behind it. | `App.tsx:1987-2038`, `App.tsx:5084` | R5, M11 |
-| F9 | Escape on the sketch corner-fillet form closes it **without** restoring `filletRadius`; the footer `cancel` restores it. Escape and cancel differ. | `App.tsx:3097-3098` vs `App.tsx:3305-3309` | R9 |
-| F10 | Inline editors disagree on outside-click: the dimension editor **commits**; the point X/Y editor **resets**. `INTERACTION.md` says an inline editor is cancelled by tapping outside. | `SketchCanvas.tsx:655-664`, `SketchCanvas.tsx:3229-3232`, `INTERACTION.md:164` | R1, S8–S9 |
-| F11 | Clicking the timeline while a dimension editor is open commits the value first: the editor's capture-phase outside-pointer handler runs before the timeline click. | `SketchCanvas.tsx:655-664` | R5 |
-| F12 | Global shortcuts only exclude `INPUT`/`TEXTAREA`/`contentEditable`. They fire while a `<select>` or button is focused and while menus/forms are open; `l p r c a d t` force the sketch stage, leaving the open form behind. That path also bypasses `changeTool`, so it does not clear `dimensionRequest`/`trimNotice` the way the toolbar does. | `App.tsx:3051-3174`, `App.tsx:3136-3170` | R7, R8 |
-| F13 | Undo/redo do not close or rebase an open editor. The editor baseline can refer to a feature state the undo just removed; the next `cancel` may write stale parameters back. | `App.tsx:3063-3080`, `App.tsx:1839-1879` | R9, D9 |
-| F14 | Navigation (timeline step, opening export) calls `dismissEditor`, which **keeps** live edits; footer `cancel` reverts them. The same form therefore has two different "leave" outcomes depending on how you leave. | `App.tsx:1250-1258`, `App.tsx:4044-4057` | R9, D5 |
-| F15 | Enter with an extrude draft that has no profile does nothing, because `commitExtrudeDraft` returns early. The footer primary is disabled and explains nothing; Enter looks broken rather than disabled. | `App.tsx:2457-2479` | R11 |
-| F16 | An empty click in the sketch while an extrude draft is open cancels the whole draft (via `handleSelect(null)`), not just the current region selection. A user trying to deselect one profile loses the draft. | `App.tsx:2504-2516` | S10, D7 |
-| F17 | Header actions do not share the dismissal rule: opening export explicitly dismisses editors; opening the file menu or undoing does not. A form can stay open behind a menu. | `App.tsx:4044-4057`, `App.tsx:3030-3038` | R1, R8 |
-| F18 | Escape/blend/shell flags are refreshed in a post-render effect, so Escape in the first tick after opening one of them can miss it and fall through to the stage reset. | `App.tsx:1797-1805`, `App.tsx:3081-3092` | R1 |
-| F19 | The Select Other chip is `pointer-events:none`, and `Viewport.cyclePick()` is never called. The chip looks like a control but the only way to cycle is to click the geometry again. | `App.tsx:4324-4345`, `Viewport.ts:787-798` | L5 / UI affordance |
-| F20 | Delete in model mode is a no-op even with a feature step selected or an edge/face set. Deletion lives in the timeline detail, so the key is inconsistent with sketch mode. | `App.tsx:3110-3114`, `App.tsx:2528-2543` | D10 (deferred) |
+| # | Divergence | Status |
+| --- | --- | --- |
+| F1 | Escape skipped the extrude draft, feature/datum editors, datum draft, support picker, file menu and sketch-fillet restore. | **Fixed.** One keydown table walks menus → operations → gesture → tool → selection; the sketch fillet uses its footer `cancel`. |
+| F2 | `SketchCanvas` had an unguarded window Enter listener that could finish the sketch from any layer, including model mode. | **Fixed.** The local listener only commits a line draft with ≥ 2 points, only while the sketch stage is visible, and never finishes the sketch. The global table owns every other Enter. |
+| F3 | A focused timeline step did not stop propagation, and the insert menu had its own Escape listener. | **Fixed.** The step stops propagation after activating; the insert menu listener is gone and the shared stack closes menus. |
+| F4 | Only sketch-step activation reset the tool/cancelled the gesture, so a hidden draft survived a stage change. | **Fixed.** Every stage/cursor change bumps `cancelToken`; `finishSketch` disarms the tool and clears the dimension target/notice. |
+| F5 | Transitions omitted some ephemeral state (face set, fillet form, datum draft). | **Fixed.** `activateFeature`, `clearActiveFeature`, `beginExtrudeDraft` and `handleNewSketch` clear the state they leave behind. |
+| F6 | A model click while an editor was open was processed as a pick *and* cancelled the form. | **Fixed.** The background click cancels first and `Viewport.suppressNextClick()` swallows the pick. Pick surfaces (blend/shell/support) are exempt. |
+| F7 | The support picker was not cancelled by Escape or a background click. | **Fixed.** Escape closes it; the canvas click is input (clears the face pick) and a click outside the canvas cancels (D8). |
+| F8 | The export page survived timeline navigation. | **Fixed.** Step, gap, tail, undo/redo and the file menu all close it before moving. |
+| F9 | Escape closed the sketch fillet without restoring the radius. | **Fixed.** Escape calls `cancelFillet`, the same restore as the footer. |
+| F10 | The dimension editor committed on outside click; point X/Y reset. | **Fixed.** A capture-phase outside pointerdown cancels both (D4). |
+| F11 | A timeline click while the dimension editor was open committed the value first. | **Fixed.** The capture-phase outside handler cancels before the timeline click runs. |
+| F12 | Shortcuts fired with a `<select>`/button focused or a menu/form open, and the tool keys bypassed `changeTool`. | **Fixed.** Text fields own all keys, Enter on a focused button/link is native, menus block letters, and tool keys cancel the form then go through `changeTool`. |
+| F13 | Undo/redo left an editor open on a stale baseline. | **Fixed.** Both cancel the open operation before applying history (D9). |
+| F14 | Navigation kept live edits while footer `cancel` reverted them. | **Fixed.** Timeline/export/file menu/undo share `cancelOpenOperationRef`, so "leave" restores (D5/R9). |
+| F15 | Enter on an extrude draft with no profile looked broken and the footer did not explain. | **Fixed.** Enter is a visible no-op; the hint and summary say a profile is required. |
+| F16 | An empty sketch click during profile selection cancelled the whole draft. | **Fixed.** It clears the regions and keeps the draft (D7). |
+| F17 | Header actions did not share the dismissal rule. | **Fixed.** Opening the file menu, export, measure or undo cancels the open form; a form never stays behind a menu. |
+| F18 | Escape flags were refreshed after render, so the first tick could miss them. | **Fixed.** The keydown effect re-registers every render and reads current state. |
+| F19 | The Select Other chip looked like a control but was `pointer-events:none` and never called `cyclePick()`. | **Fixed.** The chip is a real button that cycles the overlapping candidates. |
+| F20 | Delete is a no-op in model mode. | **Deferred** (D10). The timeline detail remains the only feature-delete path until a model selection owns deletion. |
 
 ## 5. Decisions
 
@@ -301,7 +302,7 @@ log below.
 | D3 | **Enter with an armed creation tool and no gesture ends the tool** (→ `select`). | Two Enter presses finish the sketch; one Enter must not abandon the stage. |
 | D4 | **An outside click cancels an inline editor** (dimension and point X/Y alike). | Matches `INTERACTION.md` and Escape. Committing on a stray click is the more dangerous mistake. |
 | D5 | **Navigating away cancels and reverts an open editor** (timeline, opening export, anything else that leaves it). | One meaning of "leave"; also removes the stale-baseline risk (F14). |
-| D6 | **A tool key or tool button while a form is open cancels the form, then arms the tool.** | The toolbar is visible and looks usable; a greyed-out toolbar is a bigger change. |
+| D6 | **A tool key or tool button while a form is open cancels the form, then arms the tool.** Except during profile selection, where the sketch tools are inputs to the open extrude form and must not cancel it. | The toolbar is visible and looks usable; a greyed-out toolbar is a bigger change. Profile selection is the form's pick surface. |
 | D7 | **An empty sketch click during profile selection clears the regions and keeps the draft.** | The draft still has a visible `cancel`; losing the whole draft to a deselect click is surprising. |
 | D8 | **An empty click in a picker follows validity.** Fillet/chamfer/shell have nothing to apply with no input → cancel. Support has a valid world-plane fallback → clear the face pick and keep the picker. | Do not keep an operation that cannot apply; do not throw away one that can. |
 | D9 | **Undo/redo cancels an open form first, then acts.** | A form baseline must never survive a document change. |
@@ -314,6 +315,8 @@ log below.
 | Date | Decision | Change |
 | --- | --- | --- |
 | 2026-11-07 | D1–D12 | Initial acceptance of the recommendations in the audit. |
+| 2026-11-07 | D5 | Clarified that "navigating away" includes the header file menu and undo/redo, not only the timeline and export (F17). |
+| 2026-11-07 | D6 | Added the profile-selection carve-out: box/lasso/tool buttons are form input while an extrude form is choosing regions. |
 
 ## 6. Adding a new mode or input: checklist
 

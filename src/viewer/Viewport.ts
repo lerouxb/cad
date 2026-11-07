@@ -169,6 +169,9 @@ export class Viewport {
   private pickCandidates: BodyPick[] = [];
   private pickCandidateIndex = 0;
   private pickCursor = { x: 0, y: 0 };
+  /** Swallow the pick for the current click (a background click dismisses an
+   * operation instead of selecting through it). */
+  private suppressClick = false;
 
   constructor(canvas: HTMLCanvasElement, options: ViewportOptions = {}) {
     this.canvas = canvas;
@@ -570,6 +573,11 @@ export class Viewport {
     this.dirty = true;
   }
 
+  /** The next pointer-up is a dismissal, not a pick. */
+  suppressNextClick(): void {
+    this.suppressClick = true;
+  }
+
   clearPick(): void {
     this.selectedPick = null;
     this.edgePicks = [];
@@ -719,6 +727,11 @@ export class Viewport {
 
   private onPointerUp = (event: PointerEvent): void => {
     if (!this.active || this.disposed) return;
+    if (this.suppressClick) {
+      this.suppressClick = false;
+      this.pointerStart = null;
+      return;
+    }
     if (this.marquee) {
       const marquee = this.marquee;
       if (marquee.pointerId !== event.pointerId) return;
@@ -788,6 +801,7 @@ export class Viewport {
 
   private onPointerCancel = (): void => {
     this.pointerStart = null;
+    this.suppressClick = false;
     this.cancelMarquee();
     this.setHover(null);
   };
@@ -795,6 +809,7 @@ export class Viewport {
   private onPointerLeave = (): void => {
     if (this.marquee) return;
     this.pointerStart = null;
+    this.suppressClick = false;
     this.setHover(null);
   };
 
