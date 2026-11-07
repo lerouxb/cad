@@ -2,12 +2,15 @@ import { expect } from "@playwright/test";
 import { resetExample, test } from "./support/app";
 import {
   collectErrors,
+  volume,
 } from "./support/app";
 import {
   fitView,
   scanVisibleEdges,
   findHoverNear,
   selectedEdgeRefs,
+  shiftClick,
+  type EdgeRefLike,
 } from "./support/model";
 import {
   openInsert,
@@ -225,6 +228,69 @@ test("v, b and g select model tools by name", async ({ app: page }) => {
     "data-kind",
     "face",
   );
+  expect(errors).toEqual([]);
+});
+
+
+test("edges that share a face pair are hovered and picked separately", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await page.getByTestId("file-menu").click();
+  await page.getByTestId("file-open-input").setInputFiles(
+    "e2e/fixtures/cat-face.cad.json",
+  );
+  await expect.poll(() => volume(page)).toBeGreaterThan(1000);
+  await fitView(page);
+
+  const canvas = page.locator("canvas.viewport-canvas");
+  const faceKey = (ref: EdgeRefLike) =>
+    (ref.faces ?? [])
+      .map((face) => `${face.source}:${face.role}`)
+      .sort()
+      .join("|");
+  type EdgeHover = Awaited<ReturnType<typeof scanVisibleEdges>>[number];
+  const groups = new Map<string, EdgeHover[]>();
+  const edges = await scanVisibleEdges(page);
+  for (const edge of edges) {
+    const key = faceKey(edge.ref);
+    groups.set(key, [...(groups.get(key) ?? []), edge]);
+  }
+  const pair = [...groups.values()].find((group) => {
+    const midpoints = new Set(
+      group.map((edge) => JSON.stringify(edge.ref.hint?.midpoint)),
+    );
+    return group.length >= 2 && midpoints.size >= 2;
+  });
+  expect(
+    pair,
+    "the cat body has edges with the same face pair at different places",
+  ).toBeDefined();
+  const [first, second] = pair!;
+  expect(faceKey(first!.ref)).toBe(faceKey(second!.ref));
+
+  // Hovering the second edge must report its own ref. With a face-pair-only
+  // id, setHover saw the same id and left the first edge's hover in place.
+  await page.mouse.move(first!.x, first!.y);
+  const firstHover = await canvas.getAttribute("data-hover-edge-ref");
+  await page.mouse.move(second!.x, second!.y);
+  const secondHover = await canvas.getAttribute("data-hover-edge-ref");
+  expect(firstHover).toBeTruthy();
+  expect(secondHover).toBeTruthy();
+  expect(secondHover).not.toBe(firstHover);
+
+  // Both are distinct selections; the old key collapsed them into one.
+  await shiftClick(page, first!.x, first!.y);
+  await shiftClick(page, second!.x, second!.y);
+  await expect(page.getByTestId("body-selection-popover")).toHaveAttribute(
+    "data-count",
+    "2",
+  );
+  const selected = await selectedEdgeRefs(page);
+  expect(selected).toHaveLength(2);
+  expect(
+    new Set(selected.map((ref) => JSON.stringify(ref.hint?.midpoint))).size,
+  ).toBe(2);
   expect(errors).toEqual([]);
 });
 

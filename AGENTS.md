@@ -374,6 +374,14 @@ docs/
   `sharedEdges`; the length/midpoint hint breaks a tie. Edge picks carry it from the
   worker's `edgeGroups`; the mesh edge `edgeId` is `getHashCode(edge)`, and the edge ref is
   captured from the same BREP edges. Never persist an edge hash or a mesh group index.
+  **UI identity includes the hint:** `edgeRefKey` is the face pair plus the captured
+  length/midpoint. Two distinct edges can bound the same face pair (a role can map to
+  several faces after a boolean, or two tangent/coincident arcs); a face-pair-only key made
+  `setHover` skip the second edge and collapsed both into one selection. On the cat-face
+  regression body the bottom-left arc and the long top arc are both `face_4|face_1`.
+  `edgeFaceKey` is the pair-only fallback the viewer uses to reattach a selection after a
+  rebuild moved the hints (nearest midpoint wins). Never compare edges for picking or
+  multi-selection with the face pair alone.
 - **A new fillet is a UI-only preview.** App appends a synthetic `fillet-draft`
   `KernelFeature` to the kernel list while the draft is open; cancelling drops it, applying
   inserts a real `FilletFeature`. Edge picks whose face source is `fillet-draft` or the

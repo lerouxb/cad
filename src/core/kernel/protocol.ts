@@ -66,13 +66,37 @@ export function faceRefKey(ref: TopoRef): string {
   return `${ref.source}|${ref.role}`;
 }
 
-/** Stable, rebuild-independent identity for a picked edge. */
-export function edgeRefKey(ref: EdgeRef): string {
+/**
+ * Face-pair identity: stable across geometry edits, but not unique in a mesh.
+ * A face role can map to several faces after a boolean, and two coincident or
+ * tangent edges can bound the same pair, so distinct edges can share this.
+ */
+export function edgeFaceKey(ref: EdgeRef): string {
   const faces = ref.faces
     .map((face) => `${face.source}:${face.role}`)
     .sort()
     .join("|");
   return `edge:${faces}`;
+}
+
+function edgeHintKey(ref: EdgeRef): string {
+  const midpoint = ref.hint.midpoint
+    ? ref.hint.midpoint.map((value) => value.toFixed(3)).join(",")
+    : "";
+  const length =
+    ref.hint.length !== undefined ? ref.hint.length.toFixed(3) : "";
+  return `${length}@${midpoint}`;
+}
+
+/**
+ * Identity for picking and selection. The geometric hint is part of the key:
+ * on the cat-face body the bottom-left arc and the long top arc both bound
+ * `face_4|face_1`, and a face-pair-only key made hover skip the second edge and
+ * selection treat both as one. Use `edgeFaceKey` when a reference must survive
+ * a geometry edit (the viewer falls back to it when hints have moved).
+ */
+export function edgeRefKey(ref: EdgeRef): string {
+  return `${edgeFaceKey(ref)}#${edgeHintKey(ref)}`;
 }
 
 export function edgeRefsEqual(a: EdgeRef, b: EdgeRef): boolean {

@@ -6,7 +6,13 @@ import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
 import type { BodyMesh } from "../core/kernel/protocol";
-import { edgeRefKey, faceRefKey } from "../core/kernel/protocol";
+import {
+  edgeFaceKey,
+  edgeRefKey,
+  faceRefKey,
+  type EdgeGroup,
+  type EdgeRef,
+} from "../core/kernel/protocol";
 import type { PlaneFrame } from "../core/types";
 import {
   boxBetween,
@@ -515,12 +521,46 @@ export class Viewport {
     if (pick.kind === "edge") {
       const ref = pick.edgeRef;
       if (!ref) return false;
-      const key = edgeRefKey(ref);
-      return this.mesh.edgeGroups.some(
-        (group) => group.ref !== undefined && edgeRefKey(group.ref) === key,
-      );
+      return this.edgeGroupForRef(ref) !== null;
     }
     return true;
+  }
+
+  /**
+   * The edge group a ref names. The exact hint identity wins; after a rebuild
+   * the hints may have moved, so fall back to the face pair and take the twin
+   * whose midpoint is nearest the stored one.
+   */
+  private edgeGroupForRef(ref: EdgeRef): EdgeGroup | null {
+    if (!this.mesh) return null;
+    const key = edgeRefKey(ref);
+    const exact = this.mesh.edgeGroups.find(
+      (group) => group.ref !== undefined && edgeRefKey(group.ref) === key,
+    );
+    if (exact) return exact;
+    const faceKey = edgeFaceKey(ref);
+    const candidates = this.mesh.edgeGroups.filter(
+      (group) => group.ref !== undefined && edgeFaceKey(group.ref) === faceKey,
+    );
+    if (candidates.length <= 1) return candidates[0] ?? null;
+    const target = ref.hint.midpoint;
+    if (!target) return candidates[0] ?? null;
+    let best: EdgeGroup | null = null;
+    let bestDistance = Infinity;
+    for (const candidate of candidates) {
+      const midpoint = candidate.ref?.hint.midpoint;
+      if (!midpoint) continue;
+      const distance = Math.hypot(
+        midpoint[0] - target[0],
+        midpoint[1] - target[1],
+        midpoint[2] - target[2],
+      );
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = candidate;
+      }
+    }
+    return best ?? candidates[0] ?? null;
   }
 
   clearMesh(): void {
@@ -1250,11 +1290,11 @@ export class Viewport {
       return;
     }
 
-    const edge = this.mesh.edgeGroups.find((candidate) =>
-      pick.edgeRef && candidate.ref
-        ? edgeRefKey(candidate.ref) === edgeRefKey(pick.edgeRef)
-        : candidate.edgeId === pick.edgeId,
-    );
+    const edge = pick.edgeRef
+      ? this.edgeGroupForRef(pick.edgeRef)
+      : this.mesh.edgeGroups.find(
+          (candidate) => candidate.edgeId === pick.edgeId,
+        );
     if (!edge) return;
     const positions = edgePositionsForGroup(this.mesh, edge, this.edgeUnit);
     if (positions.length < 6) return;

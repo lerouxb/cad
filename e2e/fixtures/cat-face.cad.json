@@ -1,0 +1,425 @@
+{
+  "schemaVersion": 11,
+  "id": "doc-example",
+  "name": "Example",
+  "features": [
+    {
+      "id": "feat-4eseg1m",
+      "type": "sketch",
+      "name": "Sketch 1",
+      "support": {
+        "kind": "world",
+        "plane": "XY"
+      },
+      "sketch": {
+        "points": [
+          {
+            "id": "p-4eseg21",
+            "x": -11.9713033,
+            "y": -21.9473893
+          },
+          {
+            "id": "p-4eseg22",
+            "x": -36,
+            "y": -40
+          },
+          {
+            "id": "p-4eseg23",
+            "x": -24.2535625,
+            "y": -6.0633906
+          },
+          {
+            "id": "p-4eseg2e",
+            "x": 24.5145169,
+            "y": -4.9029034
+          },
+          {
+            "id": "p-4eseg2f",
+            "x": 40,
+            "y": -40
+          },
+          {
+            "id": "p-4eseg2h",
+            "x": 15,
+            "y": -20
+          },
+          {
+            "id": "p-4eseg2j",
+            "x": -10,
+            "y": -24.5145169
+          },
+          {
+            "id": "p-4eseg2l",
+            "x": -4.9029034,
+            "y": -24.5145169
+          },
+          {
+            "id": "p-4eseg2o",
+            "x": 15,
+            "y": -23.2119173
+          },
+          {
+            "id": "p-4eseg2p",
+            "x": 9.2847669,
+            "y": -23.2119173
+          },
+          {
+            "id": "p-4eseg2z",
+            "x": -4.2159689,
+            "y": 0
+          },
+          {
+            "id": "p-4eseg31",
+            "x": 4.3792707,
+            "y": 0
+          },
+          {
+            "id": "p-4eseg33",
+            "x": 0,
+            "y": 2.2692862
+          },
+          {
+            "id": "p-4eseg39",
+            "x": 0,
+            "y": 9.7684234
+          },
+          {
+            "id": "p-4eseg3l",
+            "x": -11.6938604,
+            "y": -7.9375346
+          },
+          {
+            "id": "p-4eseg3o",
+            "x": 11.6938604,
+            "y": -7.9375346
+          }
+        ],
+        "curves": [
+          {
+            "id": "l-4eseg1n",
+            "type": "circle",
+            "center": "origin",
+            "radius": 25
+          },
+          {
+            "id": "l-4eseg24",
+            "type": "line",
+            "a": "p-4eseg21",
+            "b": "p-4eseg22"
+          },
+          {
+            "id": "l-4eseg25",
+            "type": "line",
+            "a": "p-4eseg22",
+            "b": "p-4eseg23"
+          },
+          {
+            "id": "l-4eseg2g",
+            "type": "line",
+            "a": "p-4eseg2e",
+            "b": "p-4eseg2f"
+          },
+          {
+            "id": "l-4eseg2i",
+            "type": "line",
+            "a": "p-4eseg2f",
+            "b": "p-4eseg2h"
+          },
+          {
+            "id": "l-4eseg2k",
+            "type": "line",
+            "a": "p-4eseg22",
+            "b": "p-4eseg2j"
+          },
+          {
+            "id": "l-4eseg2m",
+            "type": "line",
+            "a": "p-4eseg2j",
+            "b": "p-4eseg2l"
+          },
+          {
+            "id": "l-4eseg2q",
+            "type": "line",
+            "a": "p-4eseg2f",
+            "b": "p-4eseg2o"
+          },
+          {
+            "id": "l-4eseg2r",
+            "type": "line",
+            "a": "p-4eseg2o",
+            "b": "p-4eseg2p"
+          },
+          {
+            "id": "l-4eseg35",
+            "type": "line",
+            "a": "p-4eseg2z",
+            "b": "p-4eseg31"
+          },
+          {
+            "id": "l-4eseg37",
+            "type": "line",
+            "a": "p-4eseg31",
+            "b": "p-4eseg33"
+          },
+          {
+            "id": "l-4eseg38",
+            "type": "line",
+            "a": "p-4eseg33",
+            "b": "p-4eseg2z"
+          },
+          {
+            "id": "l-4eseg3b",
+            "type": "line",
+            "a": "p-4eseg33",
+            "b": "p-4eseg39"
+          },
+          {
+            "id": "l-4eseg3m",
+            "type": "circle",
+            "center": "p-4eseg3l",
+            "radius": 5
+          },
+          {
+            "id": "l-4eseg3p",
+            "type": "circle",
+            "center": "p-4eseg3o",
+            "radius": 5
+          }
+        ],
+        "constraints": [
+          {
+            "id": "c-4eseg1o",
+            "type": "diameter",
+            "circle": "l-4eseg1n",
+            "value": 50
+          },
+          {
+            "id": "c-4eseg2n",
+            "type": "horizontal",
+            "line": "l-4eseg2m"
+          },
+          {
+            "id": "c-4eseg2s",
+            "type": "horizontal",
+            "line": "l-4eseg2r"
+          },
+          {
+            "id": "c-4eseg30",
+            "type": "pointOnLine",
+            "point": "p-4eseg2z",
+            "line": "axis-x"
+          },
+          {
+            "id": "c-4eseg32",
+            "type": "pointOnLine",
+            "point": "p-4eseg31",
+            "line": "axis-x"
+          },
+          {
+            "id": "c-4eseg34",
+            "type": "pointOnLine",
+            "point": "p-4eseg33",
+            "line": "axis-y"
+          },
+          {
+            "id": "c-4eseg36",
+            "type": "horizontal",
+            "line": "l-4eseg35"
+          },
+          {
+            "id": "c-4eseg3a",
+            "type": "pointOnLine",
+            "point": "p-4eseg39",
+            "line": "axis-y"
+          },
+          {
+            "id": "c-4eseg3c",
+            "type": "vertical",
+            "line": "l-4eseg3b"
+          },
+          {
+            "id": "c-4eseg3n",
+            "type": "diameter",
+            "circle": "l-4eseg3m",
+            "value": 10
+          },
+          {
+            "id": "c-4eseg3q",
+            "type": "diameter",
+            "circle": "l-4eseg3p",
+            "value": 10
+          },
+          {
+            "id": "c-4eseg3r",
+            "type": "pointOnCircle",
+            "point": "p-4eseg23",
+            "circle": "l-4eseg1n"
+          },
+          {
+            "id": "c-4eseg3s",
+            "type": "pointOnCircle",
+            "point": "p-4eseg2l",
+            "circle": "l-4eseg1n"
+          },
+          {
+            "id": "c-4eseg3t",
+            "type": "pointOnCircle",
+            "point": "p-4eseg2p",
+            "circle": "l-4eseg1n"
+          },
+          {
+            "id": "c-4eseg3u",
+            "type": "pointOnCircle",
+            "point": "p-4eseg2e",
+            "circle": "l-4eseg1n"
+          },
+          {
+            "id": "c-4eseg3w",
+            "type": "pointOnCircle",
+            "point": "p-4eseg21",
+            "circle": "l-4eseg1n"
+          },
+          {
+            "id": "c-4eseg3x",
+            "type": "pointOnCircle",
+            "point": "p-4eseg2h",
+            "circle": "l-4eseg1n"
+          },
+          {
+            "id": "c-4eseg42",
+            "type": "symmetric",
+            "a": "p-4eseg3l",
+            "b": "p-4eseg3o",
+            "about": "axis-y"
+          }
+        ],
+        "references": {
+          "origin": {
+            "id": "origin",
+            "x": 0,
+            "y": 0,
+            "fixed": true,
+            "reference": true
+          },
+          "points": [
+            {
+              "id": "origin",
+              "x": 0,
+              "y": 0,
+              "fixed": true,
+              "reference": true
+            },
+            {
+              "id": "axis-x-min",
+              "x": -1000,
+              "y": 0,
+              "fixed": true,
+              "reference": true
+            },
+            {
+              "id": "axis-x-max",
+              "x": 1000,
+              "y": 0,
+              "fixed": true,
+              "reference": true
+            },
+            {
+              "id": "axis-y-min",
+              "x": 0,
+              "y": -1000,
+              "fixed": true,
+              "reference": true
+            },
+            {
+              "id": "axis-y-max",
+              "x": 0,
+              "y": 1000,
+              "fixed": true,
+              "reference": true
+            }
+          ],
+          "lines": [
+            {
+              "id": "axis-x",
+              "type": "line",
+              "a": "axis-x-min",
+              "b": "axis-x-max",
+              "construction": true,
+              "reference": true
+            },
+            {
+              "id": "axis-y",
+              "type": "line",
+              "a": "axis-y-min",
+              "b": "axis-y-max",
+              "construction": true,
+              "reference": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "feat-4eseg3v",
+      "type": "extrude",
+      "name": "Extrude 1",
+      "sketchId": "feat-4eseg1m",
+      "regions": [
+        "reg-d099c8",
+        "reg-zb485v",
+        "reg-1pissx8",
+        "reg-7no5lg",
+        "reg-1qgmg9j",
+        "reg-fh8p8l",
+        "reg-i2fwmf",
+        "reg-l2utw9"
+      ],
+      "height": 12,
+      "operation": "new",
+      "symmetric": false,
+      "end": "blind"
+    },
+    {
+      "id": "feat-4eseg3y",
+      "type": "extrude",
+      "name": "Extrude 2",
+      "sketchId": "feat-4eseg1m",
+      "regions": [
+        "reg-rj2b5u",
+        "reg-toqpzt"
+      ],
+      "height": 10,
+      "operation": "join",
+      "symmetric": false,
+      "end": "blind"
+    },
+    {
+      "id": "feat-4eseg3z",
+      "type": "extrude",
+      "name": "Extrude 3",
+      "sketchId": "feat-4eseg1m",
+      "regions": [
+        "reg-7p80za",
+        "reg-6v97wd",
+        "reg-x145b7"
+      ],
+      "height": 15,
+      "operation": "join",
+      "symmetric": false,
+      "end": "blind"
+    },
+    {
+      "id": "feat-4eseg4d",
+      "type": "extrude",
+      "name": "Extrude 4",
+      "sketchId": "feat-4eseg1m",
+      "regions": [
+        "reg-x145b7"
+      ],
+      "height": 33.6,
+      "operation": "join",
+      "symmetric": false,
+      "end": "blind"
+    }
+  ]
+}
