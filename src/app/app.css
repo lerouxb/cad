@@ -2257,6 +2257,10 @@ body {
   cursor: pointer;
 }
 
+.highlight-dot:hover {
+  box-shadow: 0 0 0 2px var(--marker-soft);
+}
+
 .highlight-dot.is-active {
   box-shadow: 0 0 0 2px var(--bg), 0 0 0 3px var(--ink);
 }
@@ -2348,7 +2352,10 @@ body {
   cursor: pointer;
 }
 
+/* Every chrome action hovers with the dim highlighter (INTERACTION.md §6):
+   header nav, the stage-foot view actions, the timeline detail actions. */
 .text-action:hover:not(:disabled) {
+  background: var(--marker-soft);
   color: var(--ink);
 }
 
@@ -2387,7 +2394,7 @@ body {
 }
 
 .appearance-theme:hover {
-  background: transparent;
+  background: var(--marker-soft);
 }
 
 .appearance-theme.is-active {
@@ -2695,7 +2702,7 @@ body {
 }
 
 .tool-option:hover {
-  background: none;
+  background: var(--marker-soft);
   color: var(--ink);
 }
 
@@ -2756,7 +2763,9 @@ body {
   font-size: var(--type-micro);
   letter-spacing: var(--tracking-value);
   white-space: nowrap;
-  pointer-events: none;
+  cursor: pointer;
+  pointer-events: auto;
+  font: inherit;
 }
 
 .select-other-count,
@@ -3045,6 +3054,10 @@ body {
   border: 0;
   background: transparent;
   cursor: pointer;
+}
+
+.doc-file:hover {
+  background: var(--marker-soft);
 }
 
 .doc-caret {

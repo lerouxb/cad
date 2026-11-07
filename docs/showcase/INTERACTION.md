@@ -75,6 +75,21 @@ The one thing that stays anchored to its annotation rather than becoming a popov
 box is the **inline editor**: a single dimension value, edited where the dimension
 is. Everything else that a selection can do lives in the popover.
 
+### 6. Hover is the dim highlighter
+
+Every *action* in the app chrome hovers with the same mark: the highlighter's
+dim wash (`--marker-soft`) and full ink. That covers the tool line, the tool
+options/filter row, the global header nav (file menu, undo/redo/example/clear,
+appearance and highlighter swatches), the stage foot's view actions (`fit`,
+grid/snap/zoom) and the
+status bar below the timeline (`suppress`, `delete`, …). The active or pressed
+state is the full marker (`--marker`); hover is never a neutral grey.
+
+Readouts, health spans and autosave notes are not actions and keep their
+existing quiet styling. A new control that looks clickable must follow the
+hover rule, and the rule lives in one place (`src/app/app.css`) rather than in
+component-local styles.
+
 ## Action vocabulary
 
 Keep the set small. Every action is one of these:
