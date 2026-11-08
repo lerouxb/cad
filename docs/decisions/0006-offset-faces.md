@@ -101,6 +101,13 @@ before the merge), the side offset keeps **7**, and the vertically filleted plat
 20 → **12**. A cube stays six. The raw unify bug is still worth reporting upstream; the
 BREP copy costs one serialise/deserialise per offset result but is invisible at this size.
 
+The bug reproduces through the **raw `occt-wasm` API alone** (box, one vertical fillet,
+`unifySameDomain`, then a second `fuse` from the same base returns `isValid === false`).
+It is therefore not in `brepjs`, and `opencascade.js` is a different OCCT-to-WASM project
+that this repo does not use. File it against `occt-wasm`; only an upstream C++/OCCT test can
+say whether the binding's handle ownership or OCCT's `ShapeUpgrade_UnifySameDomain` is at
+fault.
+
 ## Alternatives considered
 
 1. **Whole-solid `offset()`.** Moves every face; returns a shell in this kernel. Rejected.
