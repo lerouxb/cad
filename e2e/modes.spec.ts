@@ -211,4 +211,13 @@ test("an empty sketch click keeps a new extrude draft", async ({ app: page }) =>
   await page.mouse.click(1000, 520);
   await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
   await expect(page.getByTestId("extrude-apply")).toBeDisabled();
+
+  // Backspace is the same kind of removal: it clears the selected profiles,
+  // not the sketch geometry the draft is being built from.
+  await clickSketch(page, -22, 5);
+  await expect(page.getByTestId("extrude-apply")).toBeEnabled();
+  await page.keyboard.press("Backspace");
+  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
+  await expect(page.getByTestId("extrude-apply")).toBeDisabled();
+  await expect(page.locator("[data-geometry-id]").first()).toBeAttached();
 });

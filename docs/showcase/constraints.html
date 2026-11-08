@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — constraints &amp; measurements</title>
+    <link rel="stylesheet" href="../mockups/mockup.css" />
+    <link rel="stylesheet" href="showcase.css" />
+    <script src="../mockups/theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="../mockups/index.html">
+        cad <span class="tag">tool showcase</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Showcase">
+        <a href="index.html">sketch layout</a>
+        <a href="sketch-edit.html">sketch edit</a>
+        <a href="dimension.html">dimension</a>
+        <a class="is-active" href="constraints.html">constraints</a>
+        <a href="sketch-create.html">sketch create</a>
+        <a href="select.html">select</a>
+        <a href="select-model.html">model select</a>
+        <a href="body-ops.html">body ops</a>
+        <a href="bodies.html">bodies</a>
+        <a href="transform.html">transform</a>
+        <a href="extrude.html">extrude</a>
+        <a href="inspect.html">inspect</a>
+        <a href="BACKLOG.md">backlog</a>
+      </nav>
+      <div class="mockbar-right">
+        <a class="mockbar-btn" href="../mockups/index.html">studies</a>
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" title="File menu">
+            <span class="doc-name">constraints</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-center">
+          <span>sketch</span>
+          <span class="mode">study</span>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage is-study" id="stage">
+          <div class="study-scroll">
+            <header class="study-head">
+              <div class="notes-kicker">design study · sketch constraints</div>
+              <h1>Every mark on the paper</h1>
+              <p>
+                A sketch has two annotation layers: the relationships that hold it
+                together, and the measurements that give it numbers. This study draws
+                both, from H/V to symmetric about a vertical axis, and from a linear
+                dimension to the inline editor. Click any card to see its selected
+                state; in the finder, hover a mark to light its companions and
+                geometry, then click and press Backspace.
+              </p>
+              <div class="study-controls">
+                <span>click a card · selected state</span>
+                <a class="text-action" href="CONSTRAINTS.md">open the contract</a>
+                <span>the marks are screen-space, never document state</span>
+              </div>
+            </header>
+
+            <section class="study-section" id="grammar">
+              <h2>The grammar</h2>
+              <p class="study-lede">
+                The geometry is the drawing. A <b>glyph</b> is a mark attached to it
+                (a tick, a ring, a square, a chevron); a <b>badge</b> is a small label
+                for a relationship that has no readable geometric mark; a
+                <b>connector</b> is a quiet dashed tie between participants. Marks
+                stay <b>--ink-3</b> until you touch them. Only the current thing gets
+                the highlighter.
+              </p>
+              <div class="con-legend" style="margin-top: 14px">
+                <span><span class="con-swatch"></span>quiet</span>
+                <span><span class="con-swatch is-strong"></span>hover</span>
+                <span><span class="con-swatch is-marker"></span>selected</span>
+                <span><span class="con-swatch is-dim"></span>dimension</span>
+                <span>one relationship = one mark per participant</span>
+                <span>stack along the entity, not in a tower</span>
+              </div>
+            </section>
+
+            <section class="study-section" id="constraints">
+              <h2>Constraints</h2>
+              <p class="study-lede">
+                Every constraint in the solver has one mark, one placement rule and one
+                orientation rule. A vertical line does not rotate its <b>V</b> badge;
+                a vertical <i>axis</i> does rotate the symmetric chevrons. Equal ticks
+                and the symmetric connector are the two places where direction matters
+                most.
+              </p>
+              <div class="con-grid" id="con-grid"></div>
+            </section>
+
+            <section class="study-section" id="symmetric">
+              <h2>Symmetric, in any direction</h2>
+              <p class="study-lede">
+                The mark is a connector perpendicular to the axis, with two chevrons
+                pointing toward it. Because the chevrons lie on the connector, they
+                rotate with the axis: a vertical axis gives left/right chevrons, a
+                horizontal axis gives up/down chevrons. A static <b>⇄</b> is wrong.
+                The axis is a dash-dot centreline only while the constraint is active.
+              </p>
+              <div class="con-grid" id="con-symmetric"></div>
+            </section>
+
+            <section class="study-section" id="measurements">
+              <h2>Measurements</h2>
+              <p class="study-lede">
+                A dimension is extension lines, a dimension line and one upright value.
+                Linear spans use slash ticks; angular and radial leaders use an open
+                arrowhead. The unit lives in the editor, never in the label. Reference
+                dimensions are parentheses and italic: they read the geometry, they do
+                not drive it.
+              </p>
+              <div class="con-grid" id="con-measure-grid"></div>
+            </section>
+
+            <section class="study-section" id="states">
+              <h2>States</h2>
+              <p class="study-lede">
+                The same mark moves from quiet to hover to selected. A conflict is a
+                dashed ghost plus a checked chip; the geometry does not move, and
+                nothing is written until the user confirms.
+              </p>
+              <div class="con-grid" id="con-states"></div>
+            </section>
+
+            <section class="study-section" id="find">
+              <h2>Finding a constraint</h2>
+              <p class="study-lede">
+                Hover a mark to light the whole constraint: every companion mark and
+                the sketch geometry it relates. Click one to select it; Backspace
+                removes it. The tooltip names the mark, and the popover is the same
+                shape as every other selection. Try it in the sample below.
+              </p>
+              <div class="con-finder" id="con-finder">
+                <div class="con-finder-head">
+                  <span>sample sketch · seven constraints</span>
+                  <span>hover · click · Backspace</span>
+                  <button class="text-action is-quiet" type="button" data-finder-reset>reset demo</button>
+                </div>
+                <div class="con-finder-body" id="con-finder-body"></div>
+                <div class="con-tooltip" id="con-tooltip" hidden></div>
+                <div class="con-constraint-pop" id="con-constraint-pop" hidden></div>
+                <div class="con-finder-status" id="con-finder-status" role="status"></div>
+              </div>
+            </section>
+
+            <section class="study-section" id="collisions">
+              <h2>When they meet</h2>
+              <p class="study-lede">
+                Auto-position owns the first attempt: a mark gets a slot on its
+                entity, then moves outward, then clusters. A cluster expands into a
+                fan; overlapping hit targets open a chooser; a dragged mark pins and
+                keeps a leader. Marks draw above the sketch, below dimension labels,
+                and always carry a paper halo.
+              </p>
+              <div class="con-grid" id="con-collision-grid"></div>
+            </section>
+
+            <section class="study-section" id="rules">
+              <h2>The rules in one place</h2>
+              <ul class="con-rules">
+                <li><b>Geometry first.</b> Constraint marks are quiet; dimensions are one step louder; the highlighter is only “current”.</li>
+                <li><b>One mark per participant.</b> Parallel puts a badge on each line; symmetric puts one connector between them.</li>
+                <li><b>Hover is a preview, click is a selection.</b> Hover lights every companion mark and the participants; click selects the whole constraint; Backspace deletes it.</li>
+                <li><b>A hovered mark explains itself.</b> A small tooltip names the constraint and its participant count; touch uses the selection popover instead.</li>
+                <li><b>Collision order is auto → cluster → chooser → drag.</b> Position automatically, collapse into a count, choose when hits overlap, and pin only when the first three cannot resolve it.</li>
+                <li><b>Orientation follows the geometry.</b> Equal ticks are perpendicular to the line; the perpendicular square turns with the corner; symmetric chevrons are perpendicular to the axis.</li>
+                <li><b>Badges stay upright.</b> A vertical line still says <b>V</b>, not a rotated V.</li>
+                <li><b>Marks are screen-space.</b> They never scale with zoom; short entities collapse to a cluster.</li>
+                <li><b>Slot, don’t stack.</b> 30 / 50 / 70 % along a line; a ring on a point; a radial tick on a circle.</li>
+                <li><b>Clicking a constraint is not the removal path.</b> The applied chip in the selection popover is.</li>
+                <li><b>A shared point is the coincident mark.</b> Only two distinct point ids need a dot and a ring.</li>
+                <li><b>Linear dimensions use slashes.</b> Angular and radial leaders use an open arrow.</li>
+                <li><b>Labels are upright and unit-free.</b> The editor carries the unit; reference values sit in parentheses.</li>
+                <li><b>Conflict is a ghost.</b> A checked chip and a dashed mark; the geometry does not move.</li>
+                <li><b>DOF is a readout.</b> The foot says the count; it does not colour individual constraints.</li>
+              </ul>
+            </section>
+
+            <section class="study-section" id="future">
+              <h2>Not in v1</h2>
+              <p class="study-lede">
+                Concentric, arc–arc tangency, symmetric about a point and fixing a line
+                are not in the solver today. When they land they use this grammar: a
+                concentric ring at the shared centre, a tangent diamond at the contact,
+                a connector through the centre point, a pin at the midpoint.
+              </p>
+            </section>
+          </div>
+        </section>
+
+        <footer class="stage-foot">
+          <div class="stage-foot-left">
+            <span class="con-legend">
+              <span><span class="con-swatch"></span>quiet</span>
+              <span><span class="con-swatch is-strong"></span>hover</span>
+              <span><span class="con-swatch is-marker"></span>selected</span>
+              <span><span class="con-swatch is-dim"></span>dimension / reference</span>
+            </span>
+          </div>
+          <div class="stage-foot-right">
+            <span>screen-space marks</span>
+            <span>paper · ink</span>
+          </div>
+        </footer>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · constraints</div>
+          <h2>The mark belongs to the geometry</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        The old sketch drew constraints as letters at the midpoint of a line. A
+        line with H + equal + parallel got three letters in a column. Symmetric
+        was a fixed <b>⇄</b> on both lines, even when the axis was vertical. This
+        study replaces the column with marks that belong to the thing they
+        constrain.
+      </p>
+      <h3>What this study settles</h3>
+      <ul>
+        <li><b>Hover links the whole constraint.</b> Every companion mark and the participants highlight together; the tooltip names the mark. A parallel is one object, not two independent icons.</li>
+        <li><b>Click selects; Backspace deletes.</b> A constraint mark is a handle. The selection popover shows its name, participants and delete; the applied chip remains the fast remove.</li>
+        <li><b>Symmetric rotates with the axis.</b> A connector perpendicular to the axis, with two inward chevrons. Vertical axis → left/right; horizontal axis → up/down.</li>
+        <li><b>Equal is a tick, not an equals sign.</b> One tick per group; two ticks for a second group. On a circle the tick is radial.</li>
+        <li><b>H/V stay upright.</b> The line can be vertical; the badge is a label, not a picture of the line.</li>
+        <li><b>Point-on-line and point-on-circle are rings.</b> A shared endpoint is coincident; it does not need a second ring.</li>
+        <li><b>Fix is a pin.</b> F reads like a label; a pin reads like a lock.</li>
+        <li><b>Linear spans use slashes; angular and radial leaders use arrows.</b> The arrow says “this line points at the thing it measures”.</li>
+        <li><b>Reference is punctuation, not colour.</b> Parentheses and italic, so it still reads in a screenshot.</li>
+        <li><b>The editor carries the unit.</b> Labels are values; the inline editor is where <span class="mono">mm</span> / <span class="mono">°</span> and driving/reference live.</li>
+        <li><b>Collision order is auto → cluster → chooser → drag.</b> A dragged mark pins, keeps a dotted leader, and can be reset. Marks stay above geometry and below dimension labels.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Are glyphs always visible, or only on hover/selection? The study proposes always-on glyphs, names on hover, LOD clusters when dense.</li>
+        <li>Do dragged mark offsets persist in the document, or are they UI-only first?</li>
+        <li>How should equal groups renumber when one is deleted?</li>
+        <li>Which angle is measured, and can the label flip to the supplementary one?</li>
+        <li>Through-line or leader for a diameter when the circle is small?</li>
+        <li>Does a vertical dimension’s label rotate? The study keeps it upright.</li>
+        <li>Do constraints on projected/reference geometry need a different mark? Not now; the reference line is already dashed.</li>
+      </ul>
+      <div class="mini-note">
+        The contract, including the constraint atlas and every open question, is in
+        <a href="CONSTRAINTS.md">CONSTRAINTS.md</a>. The HTML is the picture; the
+        markdown is the decision.
+      </div>
+    </aside>
+
+    <script src="../mockups/mockups.js"></script>
+    <script src="showcase-constraints.js"></script>
+  </body>
+</html>

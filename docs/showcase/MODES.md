@@ -91,8 +91,9 @@ Enter never navigates the history and never applies a form that is not ready.
 
 ### R3 — Delete deletes the selection, nowhere else
 
-Delete/Backspace deletes sketch geometry or constraints only when the top
-layer is the sketch selection. It is a no-op in model mode for now (delete a
+Delete/Backspace deletes the selected sketch geometry, dimension or constraint
+only when the top layer is the sketch selection. Removing a constraint changes
+no geometry and is one undo entry. It is a no-op in model mode for now (delete a
 step from its timeline detail). In a text field it is text editing.
 
 ### R4 — A background click cancels or clears; it never commits
@@ -182,7 +183,8 @@ quietly close, apply a default, or fall through to "finish sketch".
 | ID | State | Enter | Escape | Stage background | Timeline | Delete |
 | --- | --- | --- | --- | --- | --- | --- |
 | S0 | Idle · `select` · nothing selected | finish sketch → model D2 | — | — | `nav` | — |
-| S1 | Sketch geometry selected (`selection-panel`) | | clear selection / close popover | `clear` | `nav` | delete selection |
+| S1 | Sketch geometry selected (`selection-panel`) | — | clear selection / close popover | `clear` | `nav` | delete selection |
+| S1b | **Constraint mark selected** (all companion marks + participants highlit; constraint popover) | — | clear selection / close popover | `clear` | `nav` · clear | remove the constraint (one undo; no geometry change) |
 | S2 | Tool armed, no gesture (`line`/`rect`/`circle`/`arc`/`dimension`/`trim`/`box`/`lasso`) | end tool → `select` D3 | → `select` | `input` (see S3–S6) | `nav` · abort | — |
 | S3 | Line draft · 1 point | — | drop draft, stay in `line` D1 | `input` · add vertex | `nav` · drop draft | — D11 |
 | S4 | Line draft · ≥ 2 points | commit open polyline, stay in `line` | drop draft, stay in `line` D1 | `input` · add vertex / close on first point | `nav` · drop draft | — D11 |
@@ -191,7 +193,7 @@ quietly close, apply a default, or fall through to "finish sketch".
 | S7 | Dimension tool · choosing a target | — | drop the target, stay in the dimension tool D1 | `input` · place the dimension if a target is chosen | `nav` · drop target | — |
 | S8 | Inline dimension editor | commit | cancel | cancel D4 (today: commits) | cancel, then `nav` D5 (today: commits first) | text edit |
 | S9 | Point X/Y inline editor | commit | cancel | cancel D4 | cancel, then `nav` D5 | text edit |
-| S10 | Profile selection · **new extrude draft** | apply if ≥ 1 region; else visible no-op (footer explains) | cancel the draft, stay on the source sketch step | empty click: clear the region selection, keep the draft D7 | `nav` · cancel draft | — |
+| S10 | Profile selection · **new extrude draft** | apply if ≥ 1 region; else visible no-op (footer explains) | cancel the draft, stay on the source sketch step | empty click: clear the region selection, keep the draft D7 | `nav` · cancel draft | clear the selected profiles D7 |
 | S11 | Profile selection · **existing extrude** | done → model (close editor) | cancel editor (revert) → model | empty click: clear region selection, stay | `nav` · cancel editor D5 | — |
 | S12 | Sketch corner fillet `[popover]` | apply if the radius is valid | cancel, restore the radius | cancel | `nav` · cancel | — |
 
@@ -202,6 +204,11 @@ Notes:
 - In profile-selection mode, a region click is the input; in normal sketch mode
   a click on a filled region with nothing else selected starts an extrude draft.
 - Double-click a line draft commits it; double-click a dimension label edits it.
+- A **constraint mark** is a selectable annotation: hover previews the companions
+  and participants, click selects the whole constraint, Backspace/Delete removes
+  it. It is mutually exclusive with a geometry/dimension selection. A constraint
+  chooser or cluster list is a transient overlay above the selection; Escape
+  closes it before it clears the selection.
 
 ### 3.2 Model stage
 
@@ -244,7 +251,7 @@ Notes:
 | `l p r c a d t` | force sketch stage, arm the tool, clear selection | same | cancel form, then arm D6 | ignored |
 | `Enter` | finish sketch (idle) / commit draft / end tool | — | apply if enabled, else no-op | commit field |
 | `Escape` | pop one layer (R1) | pop one layer (R1) | cancel | cancel field |
-| `Delete` / `Backspace` | delete sketch selection | — | — | text edit |
+| `Delete` / `Backspace` | delete the selected geometry / dimension / constraint; in a new extrude draft, clear the selected profiles | — | — | text edit |
 | `Cmd/Ctrl+Z`, `Shift+Z` | undo / redo | undo / redo | cancel form first D9 | field undo |
 | `Cmd/Ctrl+Y` | redo | redo | cancel form first D9 | field redo |
 | `Space` / `Tab` | focused control only (native) | focused control only | focused control only | text |
@@ -303,7 +310,7 @@ log below.
 | D4 | **An outside click cancels an inline editor** (dimension and point X/Y alike). | Matches `INTERACTION.md` and Escape. Committing on a stray click is the more dangerous mistake. |
 | D5 | **Navigating away cancels and reverts an open editor** (timeline, opening export, anything else that leaves it). | One meaning of "leave"; also removes the stale-baseline risk (F14). |
 | D6 | **A tool key or tool button while a form is open cancels the form, then arms the tool.** Except during profile selection, where the sketch tools are inputs to the open extrude form and must not cancel it. | The toolbar is visible and looks usable; a greyed-out toolbar is a bigger change. Profile selection is the form's pick surface. |
-| D7 | **An empty sketch click during profile selection clears the regions and keeps the draft.** | The draft still has a visible `cancel`; losing the whole draft to a deselect click is surprising. |
+| D7 | **An empty sketch click during profile selection clears the regions and keeps the draft.** Delete/Backspace does the same; deleting sketch geometry requires leaving profile selection. | The draft still has a visible `cancel`; losing the whole draft to a deselect click is surprising. Profile regions are not geometry, so the delete key removes them from the operation, not the sketch. |
 | D8 | **An empty click in a picker follows validity.** Fillet/chamfer/shell have nothing to apply with no input → cancel. Support has a valid world-plane fallback → clear the face pick and keep the picker. | Do not keep an operation that cannot apply; do not throw away one that can. |
 | D9 | **Undo/redo cancels an open form first, then acts.** | A form baseline must never survive a document change. |
 | D10 | **Delete does not delete a feature in model mode** for now; the timeline detail stays the only path. Deferred to the multi-body/step work. | Keeps Delete scoped to sketch selection until a model selection owns deletion. |
@@ -317,6 +324,7 @@ log below.
 | 2026-11-07 | D1–D12 | Initial acceptance of the recommendations in the audit. |
 | 2026-11-07 | D5 | Clarified that "navigating away" includes the header file menu and undo/redo, not only the timeline and export (F17). |
 | 2026-11-07 | D6 | Added the profile-selection carve-out: box/lasso/tool buttons are form input while an extrude form is choosing regions. |
+| 2026-11-08 | D7 | Delete/Backspace now clears the selected profiles of a new extrude draft, matching the empty click; it never deletes sketch geometry from profile selection. |
 
 ## 6. Adding a new mode or input: checklist
 

@@ -1564,3 +1564,627 @@
   stroke: none;
   pointer-events: none;
 }
+
+/* ==========================================================================
+   constraints + measurements study (constraints.html)
+   The atlas and the measurement gallery. Design target only; not imported
+   by src/. See CONSTRAINTS.md for the contract.
+   ========================================================================== */
+
+.stage.is-study {
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.stage.is-study::before {
+  display: none;
+}
+
+.study-scroll {
+  max-width: 1180px;
+  margin: 0 auto;
+  padding: 34px 28px 90px;
+}
+
+.study-head {
+  max-width: 760px;
+}
+
+.study-head h1 {
+  margin: 6px 0 10px;
+  font-family: var(--font-serif);
+  font-size: var(--type-display);
+  font-weight: 400;
+  letter-spacing: var(--tracking-display);
+}
+
+.study-head p {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: var(--type-prose);
+  line-height: var(--leading-prose);
+}
+
+.study-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+  margin-top: 18px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+}
+
+.study-controls .text-action.is-on {
+  background: var(--marker);
+  color: var(--marker-ink);
+}
+
+.study-section {
+  margin-top: 48px;
+}
+
+.study-section > h2 {
+  margin: 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--rule-strong);
+  font-family: var(--font-serif);
+  font-size: var(--type-name);
+  font-weight: 400;
+  letter-spacing: var(--tracking-row);
+}
+
+.study-section > .study-lede {
+  max-width: 72ch;
+  margin: 8px 0 0;
+  color: var(--ink-2);
+  font-size: var(--type-prose);
+  line-height: var(--leading-prose);
+}
+
+.con-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.con-card {
+  min-width: 0;
+  margin: 0;
+  padding: 8px 8px 10px;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+}
+
+.con-card.is-wide {
+  grid-column: span 2;
+}
+
+.con-card svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.con-card figcaption {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 7px;
+}
+
+.con-title {
+  font-family: var(--font-serif);
+  font-size: var(--type-row);
+  letter-spacing: var(--tracking-row);
+}
+
+.con-note {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+  text-align: right;
+}
+
+.con-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.con-chip {
+  padding: 1px 6px;
+  border: 1px solid var(--rule-strong);
+  background: var(--bg);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+}
+
+.con-chip.is-on {
+  border-color: var(--marker);
+  background: var(--marker);
+  color: var(--marker-ink);
+}
+
+.con-chip.is-preview {
+  border-style: dashed;
+}
+
+/* the mark grammar ------------------------------------------------------- */
+
+.con-mark {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.con-mark.is-strong {
+  stroke: var(--ink-2);
+  stroke-width: 1.4;
+}
+
+.con-mark.is-preview {
+  stroke-dasharray: 3 3;
+}
+
+.con-fill {
+  fill: var(--ink-3);
+  stroke: none;
+  pointer-events: none;
+}
+
+.con-axis {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 0.9;
+  stroke-dasharray: 12 3 2 3;
+  pointer-events: none;
+}
+
+.con-connector {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 0.8;
+  stroke-dasharray: 3 3;
+  opacity: 0.8;
+  pointer-events: none;
+}
+
+.con-connector.is-strong {
+  stroke: var(--ink-2);
+  opacity: 1;
+}
+
+.con-badge {
+  pointer-events: none;
+}
+
+.con-badge-box {
+  fill: var(--bg);
+  stroke: var(--rule-strong);
+  stroke-width: 1;
+}
+
+.con-badge-text {
+  fill: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-label);
+  letter-spacing: var(--tracking-prose);
+}
+
+.con-badge.is-strong .con-badge-box {
+  stroke: var(--ink);
+}
+
+.con-badge.is-selected .con-badge-box {
+  fill: var(--marker);
+  stroke: var(--marker);
+}
+
+.con-badge.is-selected .con-badge-text {
+  fill: var(--marker-ink);
+}
+
+.con-badge.is-preview .con-badge-box {
+  stroke-dasharray: 2 2;
+}
+
+.con-name {
+  fill: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+  paint-order: stroke;
+  stroke: var(--bg);
+  stroke-width: 2.6px;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.con-name.is-quiet {
+  display: none;
+}
+
+.con-card.is-selected .con-mark {
+  stroke: var(--ink);
+  stroke-width: 1.6;
+}
+
+.con-card.is-selected .con-badge-box {
+  fill: var(--marker);
+  stroke: var(--marker);
+}
+
+.con-card.is-selected .con-badge-text {
+  fill: var(--marker-ink);
+}
+
+.con-card.is-selected .con-name {
+  display: block;
+}
+
+.con-card.is-selected .con-wash {
+  display: block;
+}
+
+.con-wash {
+  display: none;
+  fill: none;
+  stroke: var(--marker);
+  stroke-width: 8;
+  stroke-linecap: round;
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.con-wash.is-fill {
+  fill: var(--marker-fill);
+  stroke: none;
+}
+
+.con-cross {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 0.9;
+  pointer-events: none;
+}
+
+.con-future {
+  opacity: 0.55;
+}
+
+.con-future .con-title::after {
+  content: " · future";
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+}
+
+/* the study board is a reading surface, not an app stage */
+.stage.is-study .stage-foot {
+  border-top: 1px solid var(--rule-strong);
+}
+
+.con-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  align-items: baseline;
+}
+
+.con-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 2px;
+  margin-right: 5px;
+  background: var(--ink-3);
+  vertical-align: middle;
+}
+
+.con-swatch.is-strong {
+  height: 3px;
+  background: var(--ink-2);
+}
+
+.con-swatch.is-marker {
+  height: 6px;
+  background: var(--marker);
+}
+
+.con-swatch.is-dim {
+  background: var(--ink-3);
+}
+
+@media (max-width: 720px) {
+  .con-card.is-wide {
+    grid-column: span 1;
+  }
+
+  .study-scroll {
+    padding: 24px 16px 64px;
+  }
+}
+
+.con-rules {
+  margin: 18px 0 0;
+  padding-left: 1.1em;
+  columns: 2;
+  column-gap: 36px;
+  color: var(--ink-2);
+  font-size: var(--type-prose);
+  line-height: var(--leading-prose);
+}
+
+.con-rules li {
+  break-inside: avoid;
+  margin: 0 0 9px;
+}
+
+.con-rules b {
+  color: var(--ink);
+  font-weight: 500;
+}
+
+@media (max-width: 720px) {
+  .con-rules {
+    columns: 1;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   constraint finder: hover companions, select, delete
+   -------------------------------------------------------------------------- */
+
+.con-finder {
+  position: relative;
+  margin-top: 20px;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+}
+
+.con-finder-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px 16px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--rule);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+}
+
+.con-finder-head .text-action {
+  margin-left: auto;
+}
+
+.con-finder-body svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.con-finder-status {
+  min-height: 16px;
+  padding: 6px 14px 9px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+}
+
+.con-hit {
+  fill: transparent;
+  stroke: none;
+  cursor: pointer;
+}
+
+.con-finder [data-constraint] {
+  cursor: pointer;
+}
+
+.con-finder [data-constraint] .con-mark,
+.con-finder [data-constraint] .con-badge {
+  pointer-events: none;
+}
+
+.con-finder [data-constraint].is-hover .con-mark {
+  stroke: var(--ink-2);
+  stroke-width: 1.5;
+}
+
+.con-finder [data-constraint].is-selected .con-mark {
+  stroke: var(--ink);
+  stroke-width: 1.7;
+}
+
+.con-finder [data-constraint].is-hover .con-badge-box {
+  stroke: var(--ink);
+}
+
+.con-finder [data-constraint].is-selected .con-badge-box {
+  fill: var(--marker);
+  stroke: var(--marker);
+}
+
+.con-finder [data-constraint].is-selected .con-badge-text {
+  fill: var(--marker-ink);
+}
+
+.con-link-wash {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s ease;
+}
+
+.con-link-wash.is-related {
+  opacity: 0.35;
+}
+
+.con-link-wash.is-selected {
+  opacity: 0.55;
+}
+
+.con-tooltip {
+  position: absolute;
+  z-index: 8;
+  transform: translate(-50%, -100%);
+  padding: 2px 6px;
+  border: 1px solid var(--rule-strong);
+  background: var(--bg);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.con-constraint-pop {
+  position: absolute;
+  z-index: 9;
+  width: 208px;
+  transform: translate(-50%, -100%);
+  padding: 9px 11px 8px;
+  border: 1px solid var(--rule-strong);
+  background: var(--bg);
+  box-shadow: 0 6px 18px rgba(20, 20, 18, 0.08);
+}
+
+.con-constraint-pop .con-pop-kicker {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-control);
+  text-transform: uppercase;
+}
+
+.con-constraint-pop .con-pop-title {
+  margin: 2px 0 5px;
+  font-family: var(--font-serif);
+  font-size: var(--type-row);
+}
+
+.con-constraint-pop .con-pop-rows {
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  line-height: var(--leading-prose);
+}
+
+.con-constraint-pop .con-pop-foot {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--rule);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+}
+
+/* --------------------------------------------------------------------------
+   collision examples
+   -------------------------------------------------------------------------- */
+
+.con-cluster-dot {
+  fill: var(--ink-2);
+  stroke: var(--bg);
+  stroke-width: 1.5;
+  cursor: pointer;
+}
+
+.con-cluster-count {
+  fill: var(--bg);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  pointer-events: none;
+}
+
+.con-leader {
+  fill: none;
+  stroke: var(--ink-3);
+  stroke-width: 0.8;
+  stroke-dasharray: 2 2;
+  pointer-events: none;
+}
+
+.con-pin-mark {
+  fill: none;
+  stroke: var(--ink-2);
+  stroke-width: 1.1;
+  stroke-linecap: round;
+  pointer-events: none;
+}
+
+.con-chooser-mini {
+  position: absolute;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 112px;
+  padding: 4px 6px;
+  border: 1px solid var(--rule-strong);
+  background: var(--bg);
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+}
+
+.con-chooser-mini span {
+  padding: 1px 3px;
+}
+
+.con-chooser-mini span:first-child {
+  background: var(--marker-soft);
+}
+
+line.con-link-wash {
+  fill: none;
+  stroke: var(--marker);
+  stroke-width: 8;
+  stroke-linecap: round;
+}
+
+circle.con-link-wash {
+  fill: none;
+  stroke: var(--marker);
+  stroke-width: 8;
+}
+
+.con-hit {
+  pointer-events: all;
+}
+
+.con-finder [data-constraint].is-hover .con-axis,
+.con-finder [data-constraint].is-hover .con-connector {
+  stroke: var(--ink-2);
+}
+
+.con-finder [data-constraint].is-selected .con-axis,
+.con-finder [data-constraint].is-selected .con-connector {
+  stroke: var(--ink);
+}
+
+.con-tooltip.is-below,
+.con-constraint-pop.is-below {
+  transform: translate(-50%, 0);
+}

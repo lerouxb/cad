@@ -130,6 +130,7 @@ import {
 import {
   applicableConstraints,
   applyConstraint,
+  constraintLabel,
   constructionState,
   toggleConstruction,
   type ConstraintAction,
@@ -168,6 +169,7 @@ import {
 import { trimCurveAt } from "../core/sketch/trim";
 import { findSketchPoint, type Sketch } from "../core/sketch/types";
 import type { PlaneFrame, ProfileLoop, Vec2, Vec3 } from "../core/types";
+import { constraintParticipants } from "../sketch/constraintMarks";
 import {
   SketchCanvas,
   type ArcSpec,
@@ -454,6 +456,10 @@ export function App() {
     null,
   );
   const [selection, setSelection] = useState<string[]>([]);
+  /** A constraint selected through its mark; ephemeral, like geometry selection. */
+  const [selectedConstraintId, setSelectedConstraintId] = useState<
+    string | null
+  >(null);
   const [cancelToken, setCancelToken] = useState(0);
   const [fitToken, setFitToken] = useState(0);
   const [referenceDimensions, setReferenceDimensions] = useState(false);
@@ -1145,6 +1151,43 @@ export function App() {
     [sketch, geometry, selection],
   );
 
+  const selectedConstraint = useMemo(
+    () =>
+      selectedConstraintId
+        ? sketch.constraints.find(
+            (constraint) => constraint.id === selectedConstraintId,
+          ) ?? null
+        : null,
+    [sketch.constraints, selectedConstraintId],
+  );
+  const constraintSelectionInfo = useMemo(() => {
+    if (!selectedConstraint) return [];
+    const participants = constraintParticipants(
+      sketch,
+      selectedConstraint.id,
+    );
+    const curveIds = new Set([
+      ...sketch.curves.map((curve) => curve.id),
+      ...(sketch.references?.lines.map((line) => line.id) ?? []),
+    ]);
+    const curves = participants.filter((id) => curveIds.has(id)).length;
+    const points = participants.length - curves;
+    const parts: string[] = [];
+    if (curves > 0) parts.push(`${curves} curve${curves === 1 ? "" : "s"}`);
+    if (points > 0) parts.push(`${points} point${points === 1 ? "" : "s"}`);
+    return [
+      {
+        id: selectedConstraint.id,
+        kind: "constraint",
+        label: constraintLabel(selectedConstraint.type),
+        detail: parts.join(" + ") || "constraint",
+      },
+    ];
+  }, [selectedConstraint, sketch]);
+  const constraintSelected = constraintSelectionInfo.length > 0;
+  const popoverInfo = constraintSelected
+    ? constraintSelectionInfo
+    : selectedInfo;
   const selectedSet = useMemo(() => new Set(selectedInfo.map((info) => info.id)), [selectedInfo]);
   const constraintActions = useMemo(() => {
     const actions = applicableConstraints(sketch, selection);
@@ -1251,6 +1294,7 @@ export function App() {
     next: SketchTool,
     options?: { cancelOperation?: boolean },
   ): void => {
+    setSelectedConstraintId(null);
     // D6: a tool button/key while a form is open cancels the form, then arms.
     // The shortcut path cancels explicitly so it can choose the stage after
     // the cancel (the cancel restores its own baseline mode). Profile
@@ -1319,6 +1363,7 @@ export function App() {
     setModelTool("select");
     setSketchFilter("all");
     setSelectOther(null);
+    setSelectedConstraintId(null);
   };
 
   /** Leave the measure mode and drop its targets/overlays. */
@@ -2113,6 +2158,7 @@ export function App() {
   /** Clear the history cursor: keep the whole document, select no step. */
   const clearActiveFeature = (): void => {
     clearTransientSolve();
+    setSelectedConstraintId(null);
     cancelOpenOperationRef.current();
     endMeasure();
     setExportOpen(false);
@@ -2142,6 +2188,7 @@ export function App() {
 
   const activateFeature = (feature: Feature): void => {
     clearTransientSolve();
+    setSelectedConstraintId(null);
     // Timeline navigation leaves the current operation exactly as its cancel
     // would (MODES D5/R9) and never keeps a hidden draft (F4/R6).
     cancelOpenOperationRef.current();
@@ -2187,6 +2234,7 @@ export function App() {
   };
 
   const finishSketch = (): void => {
+    setSelectedConstraintId(null);
     const { current, sketchFeature: currentSketchFeatureValue } = resolveCurrent();
     const consumers = currentSketchFeatureValue
       ? extrudesForSketch(current.doc, currentSketchFeatureValue.id).filter(
@@ -2210,6 +2258,7 @@ export function App() {
   /** Enter/Done while an extrude is active returns to the model without
    * switching the active feature to a different consuming extrude. */
   const finishActiveMode = (): void => {
+    setSelectedConstraintId(null);
     if (extrudeDraft) {
       commitExtrudeDraft();
       return;
@@ -2226,6 +2275,7 @@ export function App() {
   };
 
   const selectExtrudeProfiles = (): void => {
+    setSelectedConstraintId(null);
     if (extrudeDraft) {
       setMode("sketch");
       setTool("select");
@@ -2316,6 +2366,7 @@ export function App() {
   /** Move the history cursor without opening an editor; used by insert gaps. */
   const moveCursor = (feature: Feature): void => {
     clearTransientSolve();
+    setSelectedConstraintId(null);
     dismissEditor();
     setDatumDraft(null);
     setSupportOpen(false);
@@ -2578,6 +2629,7 @@ export function App() {
   };
 
   const beginExtrudeDraft = (regions: readonly string[] = []): void => {
+    setSelectedConstraintId(null);
     const { current, sketchFeature: source } = resolveCurrent();
     if (!source) return;
     cancelOpenOperationRef.current();
@@ -2674,6 +2726,7 @@ export function App() {
 
   const handleSelect = (entityId: string | null, additive: boolean): void => {
     clearTransientSolve();
+    setSelectedConstraintId(null);
     if (filletOpen) {
       setFilletOpen(false);
       setFilletRadiusBefore(null);
@@ -2700,7 +2753,29 @@ export function App() {
     });
   };
 
+  const selectConstraint = (id: string | null): void => {
+    clearTransientSolve();
+    setSelectedConstraintId(id);
+    setSelection([]);
+    setDimensionRequest(null);
+    setPendingConstraint(null);
+    setTrimNotice(null);
+  };
+
   const deleteSelection = (): void => {
+    if (selectedConstraintId) {
+      const constraint = sketch.constraints.find(
+        (candidate) => candidate.id === selectedConstraintId,
+      );
+      setSelectedConstraintId(null);
+      setSelection([]);
+      if (!constraint) return;
+      const base = currentSketch();
+      const next = removeConstraint(base, constraint.id);
+      if (next === base) return;
+      solveAndCommit(next);
+      return;
+    }
     if (filletOpen) {
       setFilletOpen(false);
       setFilletRadiusBefore(null);
@@ -3466,6 +3541,7 @@ export function App() {
   };
 
   const handleSelectRegion = (regionId: string, additive: boolean): void => {
+    setSelectedConstraintId(null);
     // In ordinary sketch editing a click outside the selected geometry clears
     // the selection. Do not start a draft until the user clicks a profile with
     // nothing else selected.
@@ -3896,6 +3972,7 @@ export function App() {
 
   const goBack = (): void => {
     clearTransientSolve();
+    setSelectedConstraintId(null);
     // Cancel without adding a history entry: the undo below must act on the
     // document change the user means, not on the cancellation itself (D9).
     cancelOpenOperationRef.current({ history: false });
@@ -3907,6 +3984,7 @@ export function App() {
 
   const goForward = (): void => {
     clearTransientSolve();
+    setSelectedConstraintId(null);
     cancelOpenOperationRef.current({ history: false });
     endMeasure();
     setExportOpen(false);
@@ -4040,6 +4118,7 @@ export function App() {
         setFilletOpen(false);
         setFilletRadiusBefore(null);
         setSelection([]);
+        setSelectedConstraintId(null);
         setBodyPick(null);
         setEdgeSelection([]);
         setFaceSelection([]);
@@ -4123,6 +4202,11 @@ export function App() {
       }
 
       if (event.key === "Delete" || event.key === "Backspace") {
+        if (mode === "sketch" && selectedConstraintId && !sketchGesture) {
+          event.preventDefault();
+          deleteKey();
+          return;
+        }
         if (
           mode !== "sketch" ||
           sketchGesture ||
@@ -4132,13 +4216,25 @@ export function App() {
           exportOpen ||
           blendDraft ||
           shellDraft ||
-          extrudeDraft ||
           editorOpen ||
           datumDraft
         ) {
           return;
         }
         event.preventDefault();
+        if (extrudeDraft) {
+          // The selected things are extrusion profiles, not sketch geometry.
+          // Backspace removes them from the draft (the same result as an empty
+          // click, D7); geometry deletion lives in plain sketch selection.
+          if (selection.length > 0) deleteKey();
+          updateExtrudeDraft((draft) =>
+            draft && draft.regions.length > 0
+              ? { ...draft, regions: [] }
+              : draft,
+          );
+          setSelection([]);
+          return;
+        }
         deleteKey();
         return;
       }
@@ -5098,6 +5194,8 @@ export function App() {
                   onCreateRectangle={handleRectangle}
                   onCreateCircle={handleCircle}
                   onCreateArc={handleArc}
+                  selectedConstraintId={selectedConstraintId}
+                  onSelectConstraint={selectConstraint}
                   rectVariant={rectVariant}
                   circleVariant={circleVariant}
                   arcVariant={arcVariant}
@@ -5119,8 +5217,8 @@ export function App() {
               </div>
             ) : null}
 
-            {selectedInfo.length > 0 ? (
-              filletOpen && filletSelection ? (
+            {popoverInfo.length > 0 ? (
+              !constraintSelected && filletOpen && filletSelection ? (
                 <FilletPopover
                   radius={filletRadius}
                   maxRadius={filletRadiusMax}
@@ -5132,18 +5230,25 @@ export function App() {
                 />
               ) : (
                 <SelectionPopover
-                  info={selectedInfo}
-                  actions={constraintActions}
-                  construction={construction}
+                  info={popoverInfo}
+                  actions={constraintSelected ? [] : constraintActions}
+                  construction={constraintSelected ? null : construction}
                   onConstraint={handleConstraintAction}
                   onConstruction={handleConstruction}
                   onDelete={deleteSelection}
-                  deletable={selectedInfo.some(
-                    (info) => info.kind !== "reference",
-                  )}
-                  onOpenFillet={filletSelection ? openFillet : undefined}
+                  deletable={
+                    constraintSelected ||
+                    selectedInfo.some((info) => info.kind !== "reference")
+                  }
+                  onOpenFillet={
+                    constraintSelected
+                      ? undefined
+                      : filletSelection
+                        ? openFillet
+                        : undefined
+                  }
                   dimension={
-                    dimensionTarget
+                    !constraintSelected && dimensionTarget
                       ? {
                           label:
                             dimensionTarget.kind === "angle"
@@ -5161,7 +5266,11 @@ export function App() {
                         }
                       : undefined
                   }
-                  trim={trimCurve ? { onClick: startTrim } : undefined}
+                  trim={
+                    !constraintSelected && trimCurve
+                      ? { onClick: startTrim }
+                      : undefined
+                  }
                   position={popoverPosition}
                   onMove={setPopoverPosition}
                 />
@@ -5717,9 +5826,10 @@ export function App() {
                     onDoubleClick={() => beginRename(feature)}
                     onMouseDown={(event) => {
                       // A pointer selection should not leave keyboard focus on
-                      // the step: Enter then belongs to the stage it opened.
-                      // Keyboard users still Tab here and activate with Enter;
-                      // the grip and the eye keep their own pointer behaviour.
+                      // the step or on a control from the previous stage: Enter
+                      // then belongs to the stage it opened. Keyboard users
+                      // still Tab here and activate with Enter; the grip and
+                      // the eye keep their own pointer behaviour.
                       const target = event.target as Element;
                       if (
                         target.closest(
@@ -5728,6 +5838,8 @@ export function App() {
                       ) {
                         return;
                       }
+                      const active = document.activeElement as HTMLElement | null;
+                      if (active && active !== document.body) active.blur();
                       event.preventDefault();
                     }}
                     onDragOver={(event) => {

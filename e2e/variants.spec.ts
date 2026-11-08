@@ -35,17 +35,28 @@ test("collinear joins two lines' supporting line", async ({ app: page }) => {
   );
   await page.getByTestId("constraint-collinear").click();
 
-  // One document constraint, drawn on both lines.
+  // One document constraint, one mark group (badge plus tie).
   await expect(
     page.locator('[data-constraint-type="collinear"]'),
-  ).toHaveCount(2);
+  ).toHaveCount(1);
   await expect(page.getByTestId("constraint-collinear")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
 
-  // Clicking the active chip releases it.
-  await page.getByTestId("constraint-collinear").click();
+  // The mark is the handle: hover links the pair, click selects the
+  // constraint, Backspace removes it.
+  const mark = page.locator(
+    '[data-constraint-type="collinear"] [data-mark-hit]',
+  ).last();
+  const group = page.locator('[data-constraint-type="collinear"]');
+  await mark.hover();
+  await expect(group).toHaveAttribute("data-hovered", "true");
+  await expect(page.getByTestId("constraint-tooltip")).toHaveText("Collinear");
+  await mark.click();
+  await expect(group).toHaveAttribute("data-selected", "true");
+  await expect(page.getByTestId("selection-panel")).toContainText("Collinear");
+  await page.keyboard.press("Backspace");
   await expect(
     page.locator('[data-constraint-type="collinear"]'),
   ).toHaveCount(0);
@@ -156,6 +167,6 @@ test("draws a tangent arc from a line endpoint", async ({ app: page }) => {
   await expect(page.locator("[data-geometry-id]")).toHaveCount(2);
   await expect(
     page.locator('[data-constraint-type="tangent"]'),
-  ).toHaveCount(2);
+  ).toHaveCount(1);
   expect(errors).toEqual([]);
 });

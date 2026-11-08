@@ -36,9 +36,10 @@ is an editable sketcher driving an exact solid:
   multiple selected regions are extruded and fused), 3D face/edge picking with hover and
   selection highlights, dimensions (point-point, point-line,
   angle, diameter, radius, driving or reference, inline edit/delete and draggable labels),
-  a floating constraint bar
+  selection-popover constraint chips
   (horizontal/vertical, parallel, perpendicular, collinear, equal, point-on-line,
-  point-on-circle, tangent, symmetric, midpoint, coincident, fix) with construction
+  point-on-circle, tangent, symmetric, midpoint, coincident, fix) whose derived marks
+  follow `docs/showcase/CONSTRAINTS.md`, with construction
   geometry, create variants in the tool options row (corner/center/3-point rectangle,
   center/2-/3-point circle, 3-point/centre/tangent arc), a selectable fixed origin +
   X/Y axis reference frame, exact X/Y editing for a selected point,
@@ -220,6 +221,12 @@ docs/
   what Enter, Escape, a background click, a timeline click and Delete do in every mode.
   A new mode must fill in those five cells and join the Escape stack; do not add a
   component-local key listener that races the global one.
+- **Sketch annotation rules are in `docs/showcase/CONSTRAINTS.md`.** It is the source of
+  truth for constraint marks, dimensions, states and placement; `constraints.html` is the
+  visual atlas. A new constraint or measurement updates both, and the marks stay a derived
+  UI layer — never document state. A mark is the handle for its constraint: hover links the
+  companions and participants, click selects the whole constraint, Backspace/Delete removes
+  it. Constraint selection is ephemeral UI state.
 - The worker protocol is a discriminated union in `core/kernel/protocol.ts`. Both
   sides import the same types.
 - Prefer small, explicit functions over clever abstractions. This domain is already

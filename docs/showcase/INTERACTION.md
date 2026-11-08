@@ -71,6 +71,13 @@ The selection popover is a **palette** when the actions are immediate (constrain
 `construction`, `fix`) — no commit pair, each chip acts at once — and a small
 **form** when there is a value (a point's X/Y). It is draggable like the rest.
 
+A constraint's **mark is a handle for its selection**. Hovering the H/V badge,
+the equal tick, the parallel mark or the symmetric connector previews every
+companion mark and the sketch geometry it applies to; clicking selects the whole
+constraint and opens the same popover with its name, participants and delete;
+Backspace removes it. The applied chips on a geometry selection remain the
+immediate-remove shortcut. See [`CONSTRAINTS.md`](CONSTRAINTS.md) §7.
+
 The one thing that stays anchored to its annotation rather than becoming a popover
 box is the **inline editor**: a single dimension value, edited where the dimension
 is. Everything else that a selection can do lives in the popover.

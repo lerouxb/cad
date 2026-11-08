@@ -12,7 +12,9 @@ These are one half of the design system. The other half is
 (pattern, mirror, offset, move/copy, combine, split, transforms, extrude,
 inspect, and the sketch selection inputs). The
 [study index](index.html) lists both, and the rules the two folders share are in
-[`../showcase/INTERACTION.md`](../showcase/INTERACTION.md).
+[`../showcase/INTERACTION.md`](../showcase/INTERACTION.md). The sketch
+constraint and measurement marks are in
+[`../showcase/CONSTRAINTS.md`](../showcase/CONSTRAINTS.md).
 
 ## The eight studies
 

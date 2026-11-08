@@ -332,9 +332,10 @@ the full constraint set.
       place the dimension; inline edit/delete and draggable labels; driving vs reference.
 - [x] Reposition an existing dimension label (drag; one undo entry per gesture)
 - [x] Angular, point-to-line, radius and point-to-point dimensions
-- [x] **Constraint bar**: parallel, perpendicular, equal, point-on-line, point-on-circle,
+- [x] **Constraint chips**: parallel, perpendicular, equal, point-on-line, point-on-circle,
       tangent, symmetric, midpoint, coincident, fix, horizontal/vertical, plus construction
-      geometry, applied from the floating selection card and shown as badges
+      geometry, applied from the selection popover and drawn with the mark grammar in
+      `CONSTRAINTS.md` (glyphs, badges, connectors and axes, not a floating constraint bar)
 - [x] Angle, tangent and symmetric constraints; radius as a dimension. Two-edge
       symmetry selects two opposite edges plus an axis (a reference line wins, otherwise
       the last selected line) and adds both endpoint-pair symmetric constraints in one
@@ -413,7 +414,7 @@ exports or file screens before their models exist.
 - [x] Restyle the timeline as the primary structure, but keep only the two real steps
       (Sketch 1 → Extrude 1); no fake feature cards or rollback states
 - [x] Sketch canvas palette: ink geometry, highlighter selection/current state, themed
-      grid, dimensions, constraint badges, snap/hover, construction/reference styling
+      grid, dimensions, constraint marks, snap/hover, construction/reference styling
 - [x] Panels and controls: tool strip, selection/dimension inspector, DOF/status line,
       region panel, dimension editor, viewport stats/messages — thin rules over boxes
 - [x] Viewer theme: background, grid, lights, body material and B-rep edges for day/night
@@ -782,6 +783,21 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       parallel/perpendicular (it can rotate); the centre arc is CCW from start to end;
       a tangent arc starts at a line endpoint because `slvs` tangency needs a shared
       endpoint. Polygon remains low priority.
+- [x] **Constraint mark grammar, Phase 1** (`docs/showcase/CONSTRAINTS.md`): a pure
+      `src/sketch/constraintMarks.ts` layer draws equal ticks/group order, point-on-object
+      rings and normal/radial ticks, the symmetric connector + inward chevrons + active
+      axis, coincident ring/dot, midpoint half-dot, fix pin, the perpendicular square
+      (falling back to badges + tie), the collinear tie/badge and the tangent diamond/tick.
+      H/V/∥/⊥/≡ stay as badges; marks are screen-space and styled quiet / hover /
+      selected. A mark is its constraint's handle: hover links the companions and
+      participants, click selects the constraint, Backspace/Delete removes it
+      (constraint selection is ephemeral). The angle inline editor now shows `°`
+      instead of `mm`.
+- [ ] **Constraint marks, Phase 2**: conflict ghost + `!`, stacking slots/LOD clusters,
+      coarse-pointer hit targets, and the remaining perpendicular/tangent fallback cases.
+- [ ] **Measurements, Phase 3**: open arrowheads on angle/radius leaders, the diameter
+      through-line/leader choice, witness-line gaps, label collision defaults, and the
+      0° angle behaviour.
 
 ### Model refinement
 

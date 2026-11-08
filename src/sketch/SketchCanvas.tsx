@@ -29,7 +29,6 @@ import {
 } from "../core/sketch/types";
 import {
   arcGeometry,
-  arcPointAt,
   clampAngleToArc,
   circumcenter,
   curveRadius,
@@ -38,6 +37,12 @@ import {
   normalizeAngle,
 } from "../core/sketch/geometry";
 import { niceGridStep, type GridStep } from "../core/sketch/grid";
+import { constraintLabel } from "../core/sketch/constraints";
+import {
+  constraintMarks,
+  constraintParticipants,
+  type ConstraintMark,
+} from "./constraintMarks";
 import { useElementSize } from "../ui/useElementSize";
 
 export type RectangleVariant = "corner" | "center" | "3-point";
@@ -115,6 +120,9 @@ export interface SketchCanvasProps {
   zoomRequest?: { seq: number; value: "fit" | number } | null;
   /** Ids of the selected curves/points (ephemeral UI state, not the document). */
   selected: ReadonlySet<string>;
+  /** The constraint selected by clicking its mark, if any. */
+  selectedConstraintId?: string | null;
+  onSelectConstraint?: (id: string | null) => void;
   /** Select one entity, clear the selection, or add/toggle with `additive`. */
   onSelect: (entityId: string | null, additive: boolean) => void;
   /** Commit an exact point position from the inline X/Y editor. */
@@ -191,6 +199,8 @@ export function SketchCanvas({
   onZoomChange,
   zoomRequest,
   selected,
+  selectedConstraintId = null,
+  onSelectConstraint,
   onSelect,
   onSetPointPosition,
   onDragPoint,
@@ -267,6 +277,9 @@ export function SketchCanvas({
     lineId: string;
     point: DraftVertex;
   } | null>(null);
+  const [hoveredConstraintId, setHoveredConstraintId] = useState<string | null>(
+    null,
+  );
   const [arcStart, setArcStart] = useState<DraftVertex | null>(null);
   const [arcEnd, setArcEnd] = useState<DraftVertex | null>(null);
   const [dimPoint, setDimPoint] = useState<string | null>(null);
@@ -284,6 +297,8 @@ export function SketchCanvas({
     measured: number;
     reference: boolean;
     asRadius?: boolean;
+    /** Length or angle: the editor unit must match the dimension. */
+    unit: "mm" | "°";
     x: number;
     y: number;
   } | null>(null);
@@ -321,6 +336,30 @@ export function SketchCanvas({
     tool === "select" && hover?.kind === "point"
       ? (hover.existingPointId ?? null)
       : null;
+  const selectedConstraintParticipants = useMemo(
+    () =>
+      new Set(
+        selectedConstraintId
+          ? constraintParticipants(sketch, selectedConstraintId)
+          : [],
+      ),
+    [sketch, selectedConstraintId],
+  );
+  const hoveredConstraintParticipants = useMemo(
+    () =>
+      new Set(
+        hoveredConstraintId
+          ? constraintParticipants(sketch, hoveredConstraintId)
+          : [],
+      ),
+    [sketch, hoveredConstraintId],
+  );
+  const selectedNow = (id: string): boolean =>
+    selected.has(id) || selectedConstraintParticipants.has(id);
+  const hoveredNow = (id: string): boolean =>
+    hoveredCurveId === id ||
+    hoveredPointId === id ||
+    hoveredConstraintParticipants.has(id);
   const snapTolerance = 11 * px;
   // The initial origin-centred view is wider than the geometry fit. Keep the
   // grid/snap step tied to the fitted sketch scale so opening a sketch does not
@@ -391,6 +430,7 @@ export function SketchCanvas({
     setArcEnd(null);
     setArcTangent(null);
     setHover(null);
+    setHoveredConstraintId(null);
     setDimPoint(null);
     setDimLine(null);
     setDimTarget(null);
@@ -695,6 +735,9 @@ export function SketchCanvas({
       y = screen.y - rect.top;
     }
     const measured = asRadius ? value / 2 : value;
+    const constraint = sketch.constraints.find(
+      (candidate) => candidate.id === id,
+    );
     dimensionCommittedRef.current = false;
     setEditor({
       id,
@@ -702,6 +745,7 @@ export function SketchCanvas({
       measured,
       reference,
       asRadius,
+      unit: constraint?.type === "angle" ? "°" : "mm",
       x,
       y,
     });
@@ -1766,8 +1810,8 @@ export function SketchCanvas({
         const a = points[axis.a];
         const b = points[axis.b];
         if (!a || !b) return null;
-        const isSelected = selected.has(axis.id);
-        const isHovered = hoveredCurveId === axis.id;
+        const isSelected = selectedNow(axis.id);
+        const isHovered = hoveredNow(axis.id);
         const projected = Boolean(axis.projectionId);
         return (
           <g key={axis.id}>
@@ -1884,8 +1928,8 @@ export function SketchCanvas({
       {circles.map((circle) => {
         const center = points[circle.center];
         if (!center) return null;
-        const isSelected = selected.has(circle.id);
-        const isHovered = hoveredCurveId === circle.id;
+        const isSelected = selectedNow(circle.id);
+        const isHovered = hoveredNow(circle.id);
         const radius = radii[circle.id] ?? circle.radius;
         return (
           <g key={circle.id}>
@@ -1933,8 +1977,8 @@ export function SketchCanvas({
         const a = points[curve.a];
         const b = points[curve.b];
         if (!a || !b) return null;
-        const isSelected = selected.has(curve.id);
-        const isHovered = hoveredCurveId === curve.id;
+        const isSelected = selectedNow(curve.id);
+        const isHovered = hoveredNow(curve.id);
         return (
           <g key={curve.id}>
             {isHovered ? (
@@ -1984,8 +2028,8 @@ export function SketchCanvas({
         if (curve.type !== "arc") return null;
         const d = arcPathData(curve, points);
         if (!d) return null;
-        const isSelected = selected.has(curve.id);
-        const isHovered = hoveredCurveId === curve.id;
+        const isSelected = selectedNow(curve.id);
+        const isHovered = hoveredNow(curve.id);
         return (
           <g key={curve.id}>
             {isHovered ? (
@@ -2382,7 +2426,20 @@ export function SketchCanvas({
         </g>
       ) : null}
 
-      <ConstraintBadges sketch={sketch} points={points} palette={palette} px={px} />
+      <ConstraintMarks
+        sketch={sketch}
+        points={points}
+        palette={palette}
+        px={px}
+        selected={selected}
+        hoveredCurveId={hoveredCurveId}
+        hoveredPointId={hoveredPointId}
+        viewBox={viewBox}
+        selectedConstraintId={selectedConstraintId}
+        hoveredConstraintId={hoveredConstraintId}
+        onHoverConstraint={setHoveredConstraintId}
+        onSelectConstraint={onSelectConstraint}
+      />
 
       <g pointerEvents="none">
           <line
@@ -2417,8 +2474,8 @@ export function SketchCanvas({
         const position = points[point.id];
         if (!position) return null;
         const active = dragging === point.id;
-        const isSelected = selected.has(point.id);
-        const isHovered = hoveredPointId === point.id;
+        const isSelected = selectedNow(point.id);
+        const isHovered = hoveredNow(point.id);
         return (
           <g key={point.id}>
             {(tool === "select" || tool === "dimension") && pointsSelectable ? (
@@ -2774,7 +2831,7 @@ export function SketchCanvas({
                 >
                   ({formatLength(editor.measured)})
                 </span>
-                <span className="dim-unit">mm</span>
+                <span className="dim-unit">{editor.unit}</span>
               </>
             ) : (
               <>
@@ -2788,7 +2845,7 @@ export function SketchCanvas({
                     setEditor({ ...editor, value: event.target.value })
                   }
                 />
-                <span className="dim-unit">mm</span>
+                <span className="dim-unit">{editor.unit}</span>
               </>
             )}
           </span>
@@ -3233,129 +3290,369 @@ function angleBetweenVectors(vertex: Vec2, a: Vec2, b: Vec2): number {
   return (sweep * 180) / Math.PI;
 }
 
-function ConstraintBadges({
+function ConstraintMarks({
   sketch,
   points,
   palette,
   px,
+  selected,
+  hoveredCurveId,
+  hoveredPointId,
+  viewBox,
+  selectedConstraintId,
+  hoveredConstraintId,
+  onHoverConstraint,
+  onSelectConstraint,
 }: {
   sketch: Sketch;
   points: Record<string, Vec2>;
   palette: SketchPalette;
   px: number;
+  selected: ReadonlySet<string>;
+  hoveredCurveId: string | null;
+  hoveredPointId: string | null;
+  viewBox: ViewBox;
+  selectedConstraintId: string | null;
+  hoveredConstraintId: string | null;
+  onHoverConstraint?: (id: string | null) => void;
+  onSelectConstraint?: (id: string | null) => void;
 }) {
-  const curves = new Map(sketch.curves.map((curve) => [curve.id, curve]));
-  const stacks = new Map<string, number>();
-  const badges: {
-    key: string;
-    id: string;
-    type: string;
-    x: number;
-    y: number;
-    label: string;
-  }[] = [];
-
-  const baseFor = (id: string): { x: number; y: number } | null => {
-    const curve = curves.get(id);
-    if (!curve) {
-      const point = points[id];
-      return point ? { x: point[0], y: point[1] } : null;
-    }
-    if (curve.type === "line") {
-      const a = points[curve.a];
-      const b = points[curve.b];
-      return a && b ? { x: (a[0] + b[0]) / 2, y: (a[1] + b[1]) / 2 } : null;
-    }
-    if (curve.type === "arc") {
-      const geometry = arcGeometry(curve, points);
-      if (!geometry) return null;
-      const [x, y] = arcPointAt(geometry, 0.5);
-      return { x, y };
-    }
-    const center = points[curve.center];
-    const radius = curveRadius(curve, points, {});
-    return center && radius !== null
-      ? { x: center[0], y: center[1] - radius }
-      : null;
-  };
-
-  const place = (constraintId: string, type: string, id: string, label: string) => {
-    const base = baseFor(id);
-    if (!base) return;
-    const index = stacks.get(id) ?? 0;
-    stacks.set(id, index + 1);
-    badges.push({
-      key: `${constraintId}:${id}`,
-      id: constraintId,
-      type,
-      x: base.x,
-      y: base.y - 5 * px - index * 9 * px,
-      label,
-    });
-  };
-
-  for (const constraint of sketch.constraints) {
-    switch (constraint.type) {
-      case "horizontal":
-        place(constraint.id, "horizontal", constraint.line, "H");
-        break;
-      case "vertical":
-        place(constraint.id, "vertical", constraint.line, "V");
-        break;
-      case "parallel":
-      case "perpendicular":
-      case "equal": {
-        const label =
-          constraint.type === "parallel" ? "∥" : constraint.type === "perpendicular" ? "⊥" : "=";
-        place(constraint.id, constraint.type, constraint.a, label);
-        place(constraint.id, constraint.type, constraint.b, label);
-        break;
-      }
-      case "collinear":
-        place(constraint.id, "collinear", constraint.a, "≡");
-        place(constraint.id, "collinear", constraint.b, "≡");
-        break;
-      case "pointOnLine":
-        place(constraint.id, "pointOnLine", constraint.point, "∈");
-        break;
-      case "pointOnCircle":
-        place(constraint.id, "pointOnCircle", constraint.point, "○");
-        break;
-      case "midpoint":
-        place(constraint.id, "midpoint", constraint.point, "M");
-        break;
-      case "fix":
-        place(constraint.id, "fix", constraint.point, "F");
-        break;
-      case "symmetric":
-        place(constraint.id, "symmetric", constraint.a, "⇄");
-        place(constraint.id, "symmetric", constraint.b, "⇄");
-        break;
-      case "tangent":
-        place(constraint.id, "tangent", constraint.a, "T");
-        place(constraint.id, "tangent", constraint.b, "T");
-        break;
-      default:
-        break;
-    }
+  const marks = constraintMarks(sketch, {
+    points,
+    selected,
+    hoveredCurveId,
+    hoveredPointId,
+    selectedConstraintId,
+    hoveredConstraintId,
+    px,
+  });
+  const groups = new Map<
+    string,
+    { type: ConstraintMark["type"]; marks: ConstraintMark[] }
+  >();
+  for (const mark of marks) {
+    const group = groups.get(mark.id);
+    if (group) group.marks.push(mark);
+    else groups.set(mark.id, { type: mark.type, marks: [mark] });
   }
 
+  const badgeWidth = (label: string): number =>
+    (label.length * 5.2 + 7) * px;
+
+  const markAnchor = (mark: ConstraintMark): Vec2 | null => {
+    switch (mark.kind) {
+      case "segment":
+        return [(mark.x1 + mark.x2) / 2, (mark.y1 + mark.y2) / 2];
+      case "path": {
+        if (mark.points.length === 0) return null;
+        const sum = mark.points.reduce(
+          (total, point) => [total[0] + point[0], total[1] + point[1]] as Vec2,
+          [0, 0] as Vec2,
+        );
+        return [sum[0] / mark.points.length, sum[1] / mark.points.length];
+      }
+      case "axis":
+        return [(mark.x1 + mark.x2) / 2, (mark.y1 + mark.y2) / 2];
+      default:
+        return [mark.x, mark.y];
+    }
+  };
+
+  const renderMark = (mark: ConstraintMark, index: number) => {
+    const color =
+      mark.style === "active"
+        ? palette.marker
+        : mark.style === "hover"
+          ? palette.hover
+          : palette.badge;
+    const stroke = {
+      stroke: color,
+      fill: "none",
+      vectorEffect: "non-scaling-stroke" as const,
+    };
+    switch (mark.kind) {
+      case "badge": {
+        const width = badgeWidth(mark.label);
+        const height = 12 * px;
+        return (
+          <g key={index}>
+            <rect
+              x={mark.x - width / 2}
+              y={mark.y - height / 2}
+              width={width}
+              height={height}
+              rx={2 * px}
+              fill={mark.style === "active" ? palette.markerSoft : palette.halo}
+              stroke={color}
+              strokeWidth={1}
+              vectorEffect="non-scaling-stroke"
+            />
+            <text
+              x={mark.x}
+              y={mark.y + 3 * px}
+              fill={mark.style === "active" ? palette.markerInk : color}
+              fontSize={8 * px}
+              textAnchor="middle"
+              pointerEvents="none"
+            >
+              {mark.label}
+            </text>
+          </g>
+        );
+      }
+      case "tick": {
+        const ux = Math.cos(mark.angle);
+        const uy = Math.sin(mark.angle);
+        const nx = -uy;
+        const ny = ux;
+        return (
+          <g key={index} {...stroke} strokeWidth={1.2}>
+            {Array.from({ length: Math.max(1, mark.count) }, (_, slot) => {
+              const offset = (slot - (mark.count - 1) / 2) * 3.6 * px;
+              const cx = mark.x + nx * offset;
+              const cy = mark.y + ny * offset;
+              return (
+                <line
+                  key={slot}
+                  x1={cx - ux * 4 * px}
+                  y1={cy - uy * 4 * px}
+                  x2={cx + ux * 4 * px}
+                  y2={cy + uy * 4 * px}
+                />
+              );
+            })}
+          </g>
+        );
+      }
+      case "ring":
+        return (
+          <circle
+            key={index}
+            cx={mark.x}
+            cy={mark.y}
+            r={mark.r}
+            {...stroke}
+            strokeWidth={1.2}
+          />
+        );
+      case "dot":
+        return (
+          <circle
+            key={index}
+            cx={mark.x}
+            cy={mark.y}
+            r={mark.r}
+            fill={color}
+          />
+        );
+      case "halfDot":
+        return (
+          <g key={index} {...stroke} strokeWidth={1.1}>
+            <circle cx={mark.x} cy={mark.y} r={mark.r} />
+            <path
+              d={`M ${mark.x} ${mark.y - mark.r} A ${mark.r} ${mark.r} 0 0 1 ${mark.x} ${mark.y + mark.r} Z`}
+              fill={color}
+              stroke="none"
+            />
+          </g>
+        );
+      case "segment":
+        return (
+          <line
+            key={index}
+            x1={mark.x1}
+            y1={mark.y1}
+            x2={mark.x2}
+            y2={mark.y2}
+            {...stroke}
+            strokeWidth={1}
+            strokeDasharray={mark.dashed ? `${3 * px} ${3 * px}` : undefined}
+          />
+        );
+      case "path":
+        return mark.closed ? (
+          <polygon
+            key={index}
+            points={mark.points.map((point) => `${point[0]},${point[1]}`).join(" ")}
+            {...stroke}
+            strokeWidth={1.2}
+          />
+        ) : (
+          <polyline
+            key={index}
+            points={mark.points.map((point) => `${point[0]},${point[1]}`).join(" ")}
+            {...stroke}
+            strokeWidth={1.2}
+          />
+        );
+      case "pin":
+        return (
+          <g key={index} {...stroke} strokeWidth={1.1}>
+            <rect
+              x={mark.x - 3.4 * px}
+              y={mark.y - 1 * px}
+              width={6.8 * px}
+              height={5.2 * px}
+              rx={1 * px}
+            />
+            <path
+              d={`M ${mark.x - 2 * px} ${mark.y - 1 * px} V ${mark.y - 3.4 * px} A ${2 * px} ${2 * px} 0 0 1 ${mark.x + 2 * px} ${mark.y - 3.4 * px} V ${mark.y - 1 * px}`}
+            />
+          </g>
+        );
+      case "chevron": {
+        const ux = Math.cos(mark.angle);
+        const uy = Math.sin(mark.angle);
+        const nx = -uy;
+        const ny = ux;
+        const backX = mark.x - ux * 5 * px;
+        const backY = mark.y - uy * 5 * px;
+        return (
+          <g key={index} {...stroke} strokeWidth={1.2}>
+            <line
+              x1={backX + nx * 3 * px}
+              y1={backY + ny * 3 * px}
+              x2={mark.x}
+              y2={mark.y}
+            />
+            <line
+              x1={backX - nx * 3 * px}
+              y1={backY - ny * 3 * px}
+              x2={mark.x}
+              y2={mark.y}
+            />
+          </g>
+        );
+      }
+      case "diamond": {
+        const r = mark.r;
+        return (
+          <polygon
+            key={index}
+            points={`${mark.x},${mark.y - r} ${mark.x + r},${mark.y} ${mark.x},${mark.y + r} ${mark.x - r},${mark.y}`}
+            {...stroke}
+            strokeWidth={1.2}
+          />
+        );
+      }
+      case "axis":
+        return (
+          <line
+            key={index}
+            x1={mark.x1}
+            y1={mark.y1}
+            x2={mark.x2}
+            y2={mark.y2}
+            {...stroke}
+            strokeWidth={1}
+            strokeDasharray={`${6 * px} ${3 * px} ${1 * px} ${3 * px}`}
+          />
+        );
+    }
+  };
+
+  const hoveredGroup = hoveredConstraintId
+    ? groups.get(hoveredConstraintId)
+    : null;
+  const hoveredAnchor = (() => {
+    if (!hoveredGroup) return null;
+    for (const mark of hoveredGroup.marks) {
+      const anchor = markAnchor(mark);
+      if (anchor) return anchor;
+    }
+    return null;
+  })();
+  const hoveredLabel = hoveredGroup
+    ? constraintLabel(hoveredGroup.type)
+    : "";
+
   return (
-    <g fontSize={8 * px} fill={palette.badge} textAnchor="middle" pointerEvents="none">
-      {badges.map((badge) => (
-        <text
-          key={badge.key}
-          x={badge.x}
-          y={badge.y}
-          stroke={palette.halo}
-          strokeWidth={2.5 * px}
-          paintOrder="stroke"
-          data-constraint-id={badge.id}
-          data-constraint-type={badge.type}
+    <g pointerEvents="none">
+      {[...groups.entries()].map(([id, group]) => (
+        <g
+          key={id}
+          data-constraint-id={id}
+          data-constraint-type={group.type}
+          data-selected={selectedConstraintId === id ? "true" : undefined}
+          data-hovered={hoveredConstraintId === id ? "true" : undefined}
+          style={{ cursor: "pointer" }}
+          onPointerEnter={() => onHoverConstraint?.(id)}
+          onPointerLeave={() => onHoverConstraint?.(null)}
+          onPointerDown={(event) => {
+            event.stopPropagation();
+            event.preventDefault();
+            onSelectConstraint?.(id);
+          }}
         >
-          {badge.label}
-        </text>
+          {group.marks.map((mark, index) => {
+            const anchor = markAnchor(mark);
+            return (
+              <g key={index}>
+                {renderMark(mark, index)}
+                {anchor ? (
+                  mark.kind === "badge" ? (
+                    <rect
+                      x={anchor[0] - badgeWidth(mark.label) / 2}
+                      y={anchor[1] - 6 * px}
+                      width={badgeWidth(mark.label)}
+                      height={12 * px}
+                      fill="transparent"
+                      pointerEvents="all"
+                      data-mark-hit=""
+                    />
+                  ) : (
+                    <circle
+                      cx={anchor[0]}
+                      cy={anchor[1]}
+                      r={6 * px}
+                      fill="transparent"
+                      pointerEvents="all"
+                      data-mark-hit=""
+                    />
+                  )
+                ) : null}
+              </g>
+            );
+          })}
+        </g>
       ))}
+      {hoveredAnchor && hoveredLabel ? (
+        (() => {
+          const width = (hoveredLabel.length * 5 + 9) * px;
+          const height = 14 * px;
+          let x = hoveredAnchor[0] + 12 * px;
+          if (x + width > viewBox.x + viewBox.w) {
+            x = hoveredAnchor[0] - 12 * px - width;
+          }
+          let y = hoveredAnchor[1] - 18 * px;
+          if (y < viewBox.y) y = hoveredAnchor[1] + 10 * px;
+          return (
+            <g pointerEvents="none">
+              <rect
+                x={x}
+                y={y}
+                width={width}
+                height={height}
+                rx={2 * px}
+                fill={palette.halo}
+                stroke={palette.badge}
+                strokeWidth={1}
+                vectorEffect="non-scaling-stroke"
+              />
+              <text
+                x={x + width / 2}
+                y={y + height / 2 + 3 * px}
+                fill={palette.badge}
+                fontSize={8 * px}
+                textAnchor="middle"
+                data-testid="constraint-tooltip"
+              >
+                {hoveredLabel}
+              </text>
+            </g>
+          );
+        })()
+      ) : null}
     </g>
   );
 }

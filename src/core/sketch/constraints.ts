@@ -26,6 +26,18 @@ export interface ConstraintAction {
 
 export type ConstructionState = "none" | "mixed" | "all" | null;
 
+const DIMENSION_LABELS: Record<string, string> = {
+  distance: "Distance",
+  pointLineDistance: "Point-line distance",
+  diameter: "Diameter",
+  angle: "Angle",
+};
+
+/** Human label for an applied constraint, shared by chips and mark selection. */
+export function constraintLabel(type: SketchConstraint["type"]): string {
+  return DIMENSION_LABELS[type] ?? LABELS[type as ConstraintType] ?? type;
+}
+
 const LABELS: Record<ConstraintType, string> = {
   horizontal: "Horizontal",
   vertical: "Vertical",

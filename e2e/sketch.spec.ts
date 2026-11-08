@@ -287,7 +287,8 @@ test("applies constraints and construction from the floating bar", async ({ app:
 
   await page.getByTestId("constraint-perpendicular").click();
   await expect(page.getByTestId("dof")).toContainText("7 DOF");
-  await expect(page.locator('[data-constraint-type="perpendicular"]')).toHaveCount(2);
+  // One constraint, one mark group (a right-angle square or a badge pair).
+  await expect(page.locator('[data-constraint-type="perpendicular"]')).toHaveCount(1);
 
   await page.keyboard.press("Control+z");
   await expect(page.getByTestId("dof")).toContainText("8 DOF");
@@ -410,7 +411,7 @@ test("rounds a rectangle corner with a parametric fillet", async ({ app: page })
   await page.getByTestId("constraint-fillet").click();
 
   await expect(page.locator("[data-geometry-id]")).toHaveCount(5);
-  await expect(page.locator('[data-constraint-type="tangent"]')).toHaveCount(4);
+  await expect(page.locator('[data-constraint-type="tangent"]')).toHaveCount(2);
 
   await page.getByTestId("timeline-extrude").click();
   const cut = 10 * 10 - Math.PI * 10 * 10 / 4;
@@ -444,6 +445,7 @@ test("drives an angle dimension and a radius dimension", async ({ app: page }) =
   const angleLabel = page.locator("[data-dimension-id]").filter({ hasText: "°" });
   await expect(angleLabel).toHaveCount(1);
   await angleLabel.dblclick();
+  await expect(page.locator(".dim-editor .dim-unit")).toHaveText("°");
   await page.getByTestId("dimension-input").fill("45");
   await page.getByTestId("dimension-input").press("Enter");
   await expect(page.locator("[data-dimension-id]").filter({ hasText: "45°" })).toHaveCount(1);
