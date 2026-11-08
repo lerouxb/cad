@@ -191,6 +191,13 @@ export interface KernelShellFeature extends KernelFeatureBase {
   thickness: number;
 }
 
+/** Move planar faces along their normals; the sign picks out or in. */
+export interface KernelOffsetFaceFeature extends KernelFeatureBase {
+  kind: "offsetFace";
+  faces: TopoRef[];
+  distance: number;
+}
+
 export type KernelEdgeBlendFeature =
   | KernelFilletFeature
   | KernelChamferFeature;
@@ -199,7 +206,8 @@ export type KernelFeature =
   | KernelExtrudeFeature
   | KernelFilletFeature
   | KernelChamferFeature
-  | KernelShellFeature;
+  | KernelShellFeature
+  | KernelOffsetFaceFeature;
 
 export interface FeatureBuildStatus {
   featureId: string;

@@ -3,6 +3,7 @@ import {
   isDatumPlaneFeature,
   isExtrudeFeature,
   isFilletFeature,
+  isOffsetFaceFeature,
   isShellFeature,
   isSketchFeature,
   type ChamferFeature,
@@ -12,6 +13,7 @@ import {
   type EdgeBlendFeature,
   type Feature,
   type FilletFeature,
+  type OffsetFaceFeature,
   type PlaneRef,
   type ShellFeature,
   type SketchFeature,
@@ -36,6 +38,7 @@ import {
   type ExtrudeRebuildOutput,
   type FeatureResult,
   type FilletRebuildOutput,
+  type OffsetFaceRebuildOutput,
   type RebuildDeps,
   type RebuildDiagnostic,
   type RebuildInputs,
@@ -184,6 +187,9 @@ function evaluateFeature(
     }
     if (isShellFeature(feature)) {
       return evaluateShell(feature, base, byId);
+    }
+    if (isOffsetFaceFeature(feature)) {
+      return evaluateOffsetFace(feature, base, byId);
     }
     return {
       ...base,
@@ -579,7 +585,9 @@ function evaluateEdgeBlend(
       result.status === "ok" &&
       (result.output?.kind === "extrude" ||
         result.output?.kind === "fillet" ||
-        result.output?.kind === "chamfer"),
+        result.output?.kind === "chamfer" ||
+        result.output?.kind === "shell" ||
+        result.output?.kind === "offsetFace"),
   );
   if (!hasBody) {
     return {
@@ -657,6 +665,119 @@ function evaluateEdgeBlend(
   return { ...base, status: "ok", output, diagnostics: [] };
 }
 
+function evaluateOffsetFace(
+  feature: OffsetFaceFeature,
+  base: Omit<FeatureResult, "status" | "output" | "diagnostics">,
+  byId: Map<string, FeatureResult>,
+): FeatureResult {
+  if (!Number.isFinite(feature.distance) || feature.distance === 0) {
+    return {
+      ...base,
+      status: "error",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "invalid-distance",
+          message: "Offset distance must be greater than zero.",
+        },
+      ],
+    };
+  }
+  if (feature.faces.length === 0) {
+    return {
+      ...base,
+      status: "error",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "no-faces",
+          message: "Select at least one face to offset.",
+        },
+      ],
+    };
+  }
+
+  const solidKinds = new Set([
+    "extrude",
+    "fillet",
+    "chamfer",
+    "shell",
+    "offsetFace",
+  ]);
+  const hasBody = [...byId.values()].some(
+    (result) => result.status === "ok" && result.output && solidKinds.has(result.output.kind),
+  );
+  if (!hasBody) {
+    return {
+      ...base,
+      status: "error",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "nothing-to-offset",
+          message: "Nothing exists to offset.",
+        },
+      ],
+    };
+  }
+
+  for (const face of feature.faces) {
+    const source = byId.get(face.source);
+    if (!source) {
+      return {
+        ...base,
+        status: "error",
+        output: null,
+        diagnostics: [
+          {
+            severity: "error",
+            code: "missing-face-source",
+            message: `The face's source "${face.source}" does not exist earlier in the history.`,
+          },
+        ],
+      };
+    }
+    if (source.status !== "ok") {
+      return {
+        ...base,
+        status: "skipped",
+        output: null,
+        diagnostics: [
+          {
+            severity: "error",
+            code: "upstream-error",
+            message: `Skipped because ${source.name} could not be evaluated.`,
+          },
+        ],
+      };
+    }
+    if (!source.output || !solidKinds.has(source.output.kind)) {
+      return {
+        ...base,
+        status: "error",
+        output: null,
+        diagnostics: [
+          {
+            severity: "error",
+            code: "invalid-face-source",
+            message: `The face's source "${source.name}" is not a solid feature.`,
+          },
+        ],
+      };
+    }
+  }
+
+  const output: OffsetFaceRebuildOutput = {
+    kind: "offsetFace",
+    faces: feature.faces,
+    distance: feature.distance,
+  };
+  return { ...base, status: "ok", output, diagnostics: [] };
+}
+
 function evaluateShell(
   feature: ShellFeature,
   base: Omit<FeatureResult, "status" | "output" | "diagnostics">,
@@ -697,7 +818,8 @@ function evaluateShell(
       (result.output?.kind === "extrude" ||
         result.output?.kind === "fillet" ||
         result.output?.kind === "chamfer" ||
-        result.output?.kind === "shell"),
+        result.output?.kind === "shell" ||
+        result.output?.kind === "offsetFace"),
   );
   if (!hasBody) {
     return {
@@ -748,7 +870,8 @@ function evaluateShell(
       source.output?.kind !== "extrude" &&
       source.output?.kind !== "fillet" &&
       source.output?.kind !== "chamfer" &&
-      source.output?.kind !== "shell"
+      source.output?.kind !== "shell" &&
+      source.output?.kind !== "offsetFace"
     ) {
       return {
         ...base,
@@ -822,6 +945,17 @@ export function extractKernelFeatures(result: RebuildResult): KernelFeature[] {
           cacheKey: feature.cacheKey,
           faces: feature.output.faces,
           thickness: feature.output.thickness,
+        },
+      ];
+    }
+    if (feature.output.kind === "offsetFace") {
+      return [
+        {
+          kind: "offsetFace",
+          featureId: feature.featureId,
+          cacheKey: feature.cacheKey,
+          faces: feature.output.faces,
+          distance: feature.output.distance,
         },
       ];
     }

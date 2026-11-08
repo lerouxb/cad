@@ -235,6 +235,14 @@ docs/
   face offers `new sketch`/`shell`, edges offer `fillet`/`chamfer`). No click starts a
   feature. One family at a time; sketch geometry + dimensions is the only allowed mix.
   Box/lasso follows the filter and Backspace deletes the resulting sketch selection.
+- **Offset faces v1 is planar and prismatic.** `docs/showcase/OFFSET_FACES.md` is the
+  contract. `OffsetFaceFeature` (schema v12) stores face refs and a signed distance; the
+  worker sweeps a planar face and fuses/cuts it. It only accepts parallel face sets and
+  neighbours the sweep preserves (perpendicular planes, coaxial cylinders); curved faces,
+  tangent top-edge fillets, slanted walls and non-parallel sets are visible errors, never
+  a silent step. Do not replace it with a whole-body `offset`, a shell or a scale.
+  Cylindrical walls, the tangent-chain expansion and the preview ghost/arrow are still
+  open; do not claim them.
 - The worker protocol is a discriminated union in `core/kernel/protocol.ts`. Both
   sides import the same types.
 - Prefer small, explicit functions over clever abstractions. This domain is already

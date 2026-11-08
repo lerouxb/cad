@@ -5,6 +5,7 @@ import { StagePopover, type PopoverPosition } from "./StagePopover";
 interface FaceSelectionPopoverProps {
   faces: readonly TopoRef[];
   onShell: () => void;
+  onOffset: () => void;
   /** One planar face can start a sketch; a face is a support, not a profile. */
   onNewSketch?: () => void;
   canNewSketch?: boolean;
@@ -29,6 +30,7 @@ function faceDetail(face: TopoRef): string {
 export function FaceSelectionPopover({
   faces,
   onShell,
+  onOffset,
   onNewSketch,
   canNewSketch = false,
   onClear,
@@ -78,6 +80,14 @@ export function FaceSelectionPopover({
             new sketch
           </button>
         ) : null}
+        <button
+          className="sc-chip"
+          type="button"
+          onClick={onOffset}
+          data-testid="start-offset-face"
+        >
+          offset face
+        </button>
         <button
           className="sc-chip"
           type="button"

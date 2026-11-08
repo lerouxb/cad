@@ -38,7 +38,8 @@ export function migrateDoc(raw: unknown): Doc | null {
   // v7 → v8 adds the datum-plane `hidden` presentation flag;
   // v8 → v9 adds fillet features;
   // v9 → v10 adds chamfer features (older documents simply have none);
-  // v10 → v11 adds shell features (older documents simply have none).
+  // v10 → v11 adds shell features (older documents simply have none);
+  // v11 → v12 adds offset-face features (older documents simply have none).
   if (
     version === 1 ||
     version === 2 ||
@@ -49,7 +50,8 @@ export function migrateDoc(raw: unknown): Doc | null {
     version === 7 ||
     version === 8 ||
     version === 9 ||
-    version === 10
+    version === 10 ||
+    version === 11
   ) {
     return validateDoc(raw);
   }
@@ -146,8 +148,9 @@ export function validateDoc(raw: unknown): Doc | null {
         }
       }
     }
-    if (feature.type === "shell") {
-      // Shell open faces come from earlier solid features for the same reason.
+    if (feature.type === "shell" || feature.type === "offset") {
+      // Shell open faces and offset faces come from earlier solid features
+      // for the same reason.
       for (const face of feature.faces) {
         if (ids.has(face.source) && !before(face.source, feature.id)) {
           return null;
@@ -237,6 +240,27 @@ function validateFeature(raw: unknown): Feature | null {
       name,
       faces,
       thickness,
+      ...(raw.suppressed === true ? { suppressed: true } : {}),
+    };
+  }
+
+  if (raw.type === "offset") {
+    const distance = raw.distance;
+    if (
+      typeof distance !== "number" ||
+      !Number.isFinite(distance) ||
+      distance === 0
+    ) {
+      return null;
+    }
+    const faces = validateTopoRefs(raw.faces);
+    if (!faces || faces.length === 0) return null;
+    return {
+      id,
+      type: "offset",
+      name,
+      faces,
+      distance,
       ...(raw.suppressed === true ? { suppressed: true } : {}),
     };
   }

@@ -819,12 +819,18 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       visible error (OCCT silently returns a larger solid), and the unchanged body stays
       visible. New shells preview through the kernel; editing commits live; cancel
       restores faces and thickness. The example does not ship a shell step.
-- [ ] **Offset Faces** — move selected faces by a distance; tolerance/fit and wall
-      adjustments. The design audit shows 11 uses (third most-used modelling feature),
-      so this is Keep at M5/M6 rather than Drop. The selected-face-on-a-solid kernel
-      path is the blocking open question. A face-extrusion boolean is not a face offset
-      (it leaves L-steps/undercuts and cannot move cylindrical walls); see
+- [x] **Offset Faces v1 (planar/prismatic)** — schema v12 `OffsetFaceFeature` with
+      face refs and a signed distance. The face popover's `offset face` chip opens a
+      UI-only draft with distance, out/in and live preview; apply inserts a history step,
+      edit commits live and cancel restores the baseline. The worker accepts planar faces
+      with parallel normals and neighbours the sweep preserves (perpendicular planes,
+      coaxial cylinders), carries the moved face's role and rejects curved faces, tangent
+      top-edge fillets, slanted walls, non-parallel sets and empty/no-op results visibly.
+      Design: `docs/showcase/OFFSET_FACES.md` + `offset-faces.html`; decision:
       [ADR-0006](decisions/0006-offset-faces.md)
+- [ ] **Offset Faces v2** — cylindrical hole/boss walls (the main tolerance/fit use:
+      `Ø old → new`, enlarge/shrink), adjacent non-parallel faces with a rebuilt corner,
+      the tangent-chain toggle, and the preview ghost/normal arrow
 - [x] Selection UX: box and lasso select model edges, hover prehighlight, selection
       filters, and Select Other for cycling overlapping picks. Box = every projected
       vertex inside (window), lasso = touched/crossed; both select through the body,

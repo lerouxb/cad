@@ -7,6 +7,7 @@ import {
   createDatumPlaneFeature,
   createExtrudeFeature,
   createFilletFeature,
+  createOffsetFaceFeature,
   createShellFeature,
   createSketchFeature,
 } from "./create";
@@ -16,6 +17,7 @@ import {
   isEdgeBlendFeature,
   isExtrudeFeature,
   isFilletFeature,
+  isOffsetFaceFeature,
   isShellFeature,
   isSketchFeature,
   type ChamferFeature,
@@ -28,6 +30,7 @@ import {
   type FaceProjection,
   type Feature,
   type FilletFeature,
+  type OffsetFaceFeature,
   type PlaneRef,
   type ShellFeature,
   type SketchFeature,
@@ -164,6 +167,16 @@ export function updateShellFeature(
   );
 }
 
+export function updateOffsetFaceFeature(
+  doc: Doc,
+  featureId: string,
+  update: (feature: OffsetFaceFeature) => OffsetFaceFeature,
+): Doc {
+  return updateFeature(doc, featureId, (feature) =>
+    isOffsetFaceFeature(feature) ? update(feature) : feature,
+  );
+}
+
 export function updateChamferFeature(
   doc: Doc,
   featureId: string,
@@ -232,7 +245,9 @@ export function nextFeatureName(doc: Doc, type: Feature["type"]): string {
             ? "Chamfer"
             : type === "shell"
               ? "Shell"
-              : "Extrude";
+              : type === "offset"
+                ? "Offset"
+                : "Extrude";
   const count = doc.features.filter((feature) => feature.type === type).length;
   return `${prefix} ${count + 1}`;
 }
@@ -444,6 +459,34 @@ export function addShellFeature(
   };
 }
 
+/** Insert an offset of planar faces after the selected step. */
+export function addOffsetFaceFeature(
+  doc: Doc,
+  faces: readonly TopoRef[],
+  distance: number,
+  options: {
+    name?: string;
+    id?: string;
+    afterFeatureId?: string | null;
+    atStart?: boolean;
+  } = {},
+): { doc: Doc; feature: OffsetFaceFeature } {
+  const feature = createOffsetFaceFeature(faces, distance, {
+    name: options.name ?? nextFeatureName(doc, "offset"),
+    ...(options.id ? { id: options.id } : {}),
+  });
+  return {
+    doc: insertFeature(
+      doc,
+      feature,
+      options.afterFeatureId,
+      faceSourceIds(faces),
+      options.atStart,
+    ),
+    feature,
+  };
+}
+
 /** Insert a constant-distance chamfer after the selected step. */
 export function addChamferFeature(
   doc: Doc,
@@ -555,7 +598,7 @@ export function deleteFeature(
           feature.edges.some((edge) =>
             edge.faces.some((face) => removed.has(face.source)),
           )) ||
-        (isShellFeature(feature) &&
+        ((isShellFeature(feature) || isOffsetFaceFeature(feature)) &&
           feature.faces.some((face) => removed.has(face.source)));
       if (dependsOnRemoved) {
         removed.add(feature.id);
@@ -612,7 +655,7 @@ function hasValidOrder(features: readonly Feature[]): boolean {
         ),
       );
     }
-    if (isShellFeature(feature)) {
+    if (isShellFeature(feature) || isOffsetFaceFeature(feature)) {
       return feature.faces.every(
         (face) => !index.has(face.source) || before(face.source, feature.id),
       );

@@ -3,6 +3,8 @@ import {
   addHoles,
   adjacentFaces,
   assignRoles,
+  cut,
+  faceAxis,
   applyMatrix,
   captureHint,
   chamferWithEvolution,
@@ -19,8 +21,10 @@ import {
   extrude,
   face,
   faceCenter,
+  faceGeomType,
   facesOfEdge,
   filletWithEvolution,
+  fuse,
   fuseAll,
   fuseWithEvolution,
   getBounds,
@@ -31,6 +35,7 @@ import {
   getShells,
   getSolids,
   innerWires,
+  isEmpty,
   isValid,
   line,
   measureDistance,
@@ -39,6 +44,7 @@ import {
   measureSurfaceProps,
   measureVolume,
   measureVolumeProps,
+  normalAt,
   outerWire,
   registerKernel,
   projectPointOnFace,
@@ -74,6 +80,7 @@ import type {
   FeatureBuildStatus,
   KernelEdgeBlendFeature,
   KernelFeature,
+  KernelOffsetFaceFeature,
   KernelShellFeature,
   KernelRequest,
   MeasureResult,
@@ -407,7 +414,8 @@ function buildFeatures(features: KernelFeature[]): {
     if (
       feature.kind === "fillet" ||
       feature.kind === "chamfer" ||
-      feature.kind === "shell"
+      feature.kind === "shell" ||
+      feature.kind === "offsetFace"
     ) {
       if (!base) {
         cacheInvalid = true;
@@ -423,7 +431,9 @@ function buildFeatures(features: KernelFeature[]): {
         const result: { solid: Solid; roles: RoleTable } =
           feature.kind === "shell"
             ? buildShellFeature(feature, base, baseRoles)
-            : buildEdgeBlendFeature(feature, base, baseRoles);
+            : feature.kind === "offsetFace"
+              ? buildOffsetFaceFeature(feature, base, baseRoles)
+              : buildEdgeBlendFeature(feature, base, baseRoles);
         base = result.solid;
         baseRoles = result.roles;
         baseKey = feature.cacheKey;
@@ -1014,6 +1024,238 @@ interface ResolvedEdge {
 }
 
 /**
+ * Move planar faces along their normals. A face is swept by the signed
+ * distance and fused (outward) or cut (inward). This is exact only when every
+ * neighbouring surface is preserved by the sweep: planar neighbours must
+ * contain the sweep direction and cylindrical neighbours must have their axis
+ * parallel to it. A tangent top-edge fillet or a slanted wall would leave an
+ * undercut/step, so it is rejected instead of producing silent wrong geometry.
+ */
+function buildOffsetFaceFeature(
+  feature: KernelOffsetFaceFeature,
+  base: Solid,
+  baseRoles: RoleTable,
+): { solid: Solid; roles: RoleTable } {
+  const distance = feature.distance;
+  if (!Number.isFinite(distance) || distance === 0) {
+    throw new Error("Offset distance must be greater than zero.");
+  }
+  if (feature.faces.length === 0) {
+    throw new Error("Select at least one face to offset.");
+  }
+
+  type Face3D = Parameters<typeof captureHint>[0];
+  const selected: Array<{
+    face: Face3D;
+    normal: Vec3;
+    center: Vec3;
+    hash: number;
+  }> = [];
+
+  for (const ref of feature.faces) {
+    const resolved = resolveFaceOnSolid(base, baseRoles, ref);
+    if ("broken" in resolved) {
+      throw new Error(
+        "The selected face no longer exists on the current body; reselect it or remove the offset.",
+      );
+    }
+    const face = resolved.face as Face3D;
+    const type = String(faceGeomType(face as Face)).toUpperCase();
+    if (!type.includes("PLANE")) {
+      throw new Error("Offset faces supports planar faces only.");
+    }
+    const center = faceCenter(face as Face);
+    const normal = unit(normalAt(face as Face, center));
+    selected.push({ face, normal, center, hash: getHashCode(face) });
+  }
+
+  const first = selected[0]!;
+  for (const entry of selected.slice(1)) {
+    if (Math.abs(dot(entry.normal, first.normal)) < 0.999) {
+      throw new Error(
+        "Select parallel faces to offset; adjacent non-parallel faces are not supported yet.",
+      );
+    }
+  }
+
+  const sweep: Vec3 = scale(first.normal, distance > 0 ? 1 : -1);
+  for (const entry of selected) {
+    for (const neighbour of adjacentFaces(base, entry.face as Face)) {
+      const type = String(faceGeomType(neighbour)).toUpperCase();
+      if (type.includes("PLANE")) {
+        const normal = unit(normalAt(neighbour, faceCenter(neighbour)));
+        if (Math.abs(dot(normal, sweep)) > 0.01) {
+          throw new Error(
+            "The offset would leave a step because a neighbouring face is not perpendicular to the move.",
+          );
+        }
+        continue;
+      }
+      if (type.includes("CYL")) {
+        const axis = faceAxis(neighbour);
+        if (!axis || Math.abs(dot(unit(axis.direction), sweep)) < 0.99) {
+          throw new Error(
+            "The offset would leave an undercut because a neighbouring curved face is not parallel to the move.",
+          );
+        }
+        continue;
+      }
+      throw new Error(
+        "Offset faces supports faces bounded by straight walls or parallel cylinders.",
+      );
+    }
+  }
+
+  let solid = base;
+  try {
+    for (const entry of selected) {
+      const tool = unwrap(
+        extrude(
+          entry.face as unknown as Parameters<typeof extrude>[0],
+          scale(entry.normal, distance),
+        ),
+      );
+      try {
+        const next = unwrap(distance > 0 ? fuse(solid, tool) : cut(solid, tool));
+        if (solid !== base) solid.delete();
+        solid = next;
+      } finally {
+        tool.delete();
+      }
+    }
+
+    if (isEmpty(solid)) {
+      throw new Error("The offset removes the whole body.");
+    }
+    if (getSolids(solid).length !== 1) {
+      throw new Error("The offset did not produce a single body.");
+    }
+    if (!isValid(solid)) {
+      throw new Error("The offset did not produce a valid closed body.");
+    }
+    const before = unwrap(measureVolume(base));
+    const after = unwrap(measureVolume(solid));
+    if (Math.abs(after - before) < 1e-6) {
+      throw new Error("The offset did not change the body.");
+    }
+
+    const remap = remapRolesByGeometry(base, solid, baseRoles);
+    const roles = transferOffsetRoles(
+      solid,
+      remap,
+      baseRoles,
+      selected,
+      distance,
+      feature.featureId,
+    );
+    return { solid, roles };
+  } catch (error) {
+    if (solid !== base) solid.delete();
+    throw error;
+  }
+}
+
+/** Carry a moved face's role onto the face the boolean created at its new plane. */
+type MutableRoleTable = Map<string, Map<string, number[]>>;
+
+function transferOffsetRoles(
+  post: Solid,
+  remap: RoleRemap,
+  baseRoles: RoleTable,
+  selected: ReadonlyArray<{ face: Parameters<typeof captureHint>[0]; normal: Vec3; center: Vec3; hash: number }>,
+  distance: number,
+  featureId: string,
+): RoleTable {
+  const next: MutableRoleTable = new Map();
+  for (const [origin, roleMap] of remap.roles) {
+    const copy = new Map<string, number[]>();
+    for (const [role, hashes] of roleMap) copy.set(role, [...hashes]);
+    next.set(origin, copy);
+  }
+  const claimed = new Set(remap.claimed);
+  const postFaces = getFaces(post) as Array<Parameters<typeof captureHint>[0]>;
+
+  for (const entry of selected) {
+    const owners: Array<{ origin: string; role: string }> = [];
+    for (const [origin, roleMap] of baseRoles) {
+      for (const [role, hashes] of roleMap) {
+        if (hashes.includes(entry.hash)) owners.push({ origin, role });
+      }
+    }
+    if (owners.length === 0) continue;
+
+    const predicted = add(entry.center, scale(entry.normal, distance));
+    let best: { hash: number; score: number } | null = null;
+    const preHint = captureHint(entry.face);
+    for (const candidate of postFaces) {
+      const hash = getHashCode(candidate);
+      if (claimed.has(hash)) continue;
+      const type = String(faceGeomType(candidate as Face)).toUpperCase();
+      if (!type.includes("PLANE")) continue;
+      const center = faceCenter(candidate as Face);
+      if (Math.abs(dot(unit(normalAt(candidate as Face, center)), entry.normal)) < 0.999) {
+        continue;
+      }
+      const hint = captureHint(candidate);
+      if (
+        preHint.area !== undefined &&
+        hint.area !== undefined &&
+        Math.abs(hint.area - preHint.area) > Math.max(0.01, preHint.area * 0.01)
+      ) {
+        continue;
+      }
+      let projection;
+      try {
+        projection = projectPointOnFace(candidate as Face, predicted);
+      } catch {
+        continue;
+      }
+      if (!projection.ok || projection.value.distance > 0.1) continue;
+      if (classifyPointOnFace(candidate as Face, predicted, 0.1) === "out") continue;
+      const score = projection.value.distance;
+      if (!best || score < best.score) best = { hash, score };
+    }
+    if (!best) continue;
+    for (const owner of owners) {
+      const roleMap = next.get(owner.origin) ?? new Map<string, number[]>();
+      const hashes = roleMap.get(owner.role) ?? [];
+      if (!hashes.includes(best.hash)) hashes.push(best.hash);
+      roleMap.set(owner.role, hashes);
+      next.set(owner.origin, roleMap);
+    }
+    claimed.add(best.hash);
+  }
+
+  const featureRoles = new Map<string, number[]>();
+  let anonymous = 0;
+  for (const face of postFaces) {
+    const hash = getHashCode(face);
+    if (claimed.has(hash)) continue;
+    featureRoles.set(`offset:face_${anonymous++}`, [hash]);
+    claimed.add(hash);
+  }
+  if (featureRoles.size > 0) next.set(featureId, featureRoles);
+  return next;
+}
+
+function unit(value: Vec3): Vec3 {
+  const length = Math.hypot(value[0], value[1], value[2]);
+  return length > 0 ? [value[0] / length, value[1] / length, value[2] / length] : [0, 0, 1];
+}
+
+function dot(a: Vec3, b: Vec3): number {
+  return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+
+function scale(value: Vec3, factor: number): Vec3 {
+  return [value[0] * factor, value[1] * factor, value[2] * factor];
+}
+
+function add(a: Vec3, b: Vec3): Vec3 {
+  return [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
+}
+
+/**
  * Hollow the current body, removing `faces` as openings. OCCT offsets the
  * remaining faces inward by `thickness`; the outer faces keep their roles, and
  * the new inner/rim faces are named under the feature so the step highlight and
@@ -1241,9 +1483,9 @@ function pickEdgeByHint(edges: readonly Edge[], ref: EdgeRef): Edge | null {
 interface RoleRemap {
   roles: RoleTable;
   /** Pre-fillet face hash -> the result face that geometrically continues it. */
-  faceMap: ReadonlyMap<number, Face | null>;
+  faceMap: Map<number, Face | null>;
   /** Result face hashes already accounted for by a carried-over role. */
-  claimed: ReadonlySet<number>;
+  claimed: Set<number>;
 }
 
 /**

@@ -5,7 +5,7 @@
 A Fusion-like parametric modeler in the browser:
 
 - 2D sketches with real geometric + dimensional constraints.
-- Feature history: extrude, revolve, fillet, chamfer, shell, boolean-ish operations.
+- Feature history: extrude, revolve, fillet, chamfer, shell, offset faces, boolean-ish operations.
 - Sketches that live on faces of solids and follow those faces when history changes.
 - Exact B-rep geometry (STEP export, real fillets), not tessellation.
 - Fast enough that dragging a dimension feels live.
@@ -112,7 +112,8 @@ type Feature =
   | RevolveFeature
   | FilletFeature
   | ChamferFeature
-  | ShellFeature;
+  | ShellFeature
+  | OffsetFaceFeature;
 
 /** A construction/datum plane. A history step, but it has no body. */
 interface DatumPlaneFeature extends FeatureBase {

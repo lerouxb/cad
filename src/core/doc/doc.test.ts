@@ -11,6 +11,7 @@ import {
   addDatumPlaneFeature,
   addExtrudeFeature,
   addFilletFeature,
+  addOffsetFaceFeature,
   addShellFeature,
   addSketchFeature,
   deleteFeature,
@@ -29,6 +30,7 @@ import {
   updateChamferFeature,
   updateExtrudeRegions,
   updateFilletFeature,
+  updateOffsetFaceFeature,
   updateShellFeature,
   updatePrimarySketch,
   updateSketchFeature,
@@ -461,6 +463,83 @@ describe("document schema", () => {
     ).toBeNull();
   });
 
+  it("adds an offset face with stable face references", () => {
+    const doc = exampleDoc();
+    const face: TopoRef = {
+      source: "extrude-1",
+      kind: "face",
+      role: "extrude:face_6",
+      hint: {
+        entityType: "face",
+        surfaceType: "PLANE",
+        normal: [0, 0, 1],
+        centroid: [30, 20, 12],
+        area: 60 * 40,
+      },
+    };
+
+    const added = addOffsetFaceFeature(doc, [face], 3);
+    expect(added.feature.name).toBe("Offset 1");
+    expect(added.feature.faces[0]).toEqual(face);
+    expect(added.doc.features.map((feature) => feature.type)).toEqual([
+      "sketch",
+      "extrude",
+      "offset",
+    ]);
+
+    const parsed = validateDoc(JSON.parse(JSON.stringify(added.doc)));
+    const migrated = parsed?.features.find(
+      (feature) => feature.id === added.feature.id,
+    );
+    expect(migrated?.type).toBe("offset");
+    expect(
+      migrated?.type === "offset" ? migrated.faces[0]?.role : null,
+    ).toBe("extrude:face_6");
+    expect(migrated?.type === "offset" ? migrated.distance : null).toBe(3);
+
+    // An offset can never move before the feature that named its faces.
+    expect("error" in moveFeature(added.doc, added.feature.id, 1)).toBe(true);
+
+    const edited = updateOffsetFaceFeature(
+      added.doc,
+      added.feature.id,
+      (feature) => ({ ...feature, distance: -2 }),
+    );
+    expect(
+      edited.features.find((feature) => feature.type === "offset")?.type ===
+        "offset"
+        ? (
+            edited.features.find(
+              (feature) => feature.type === "offset",
+            ) as { distance: number }
+          ).distance
+        : null,
+    ).toBe(-2);
+
+    const deleted = deleteFeature(added.doc, "extrude-1");
+    expect(deleted.removedIds).toContain(added.feature.id);
+
+    // Malformed offsets must not open.
+    expect(
+      validateDoc({
+        ...added.doc,
+        features: [
+          ...added.doc.features.slice(0, 2),
+          { ...added.feature, distance: 0 },
+        ],
+      }),
+    ).toBeNull();
+    expect(
+      validateDoc({
+        ...added.doc,
+        features: [
+          ...added.doc.features.slice(0, 2),
+          { ...added.feature, faces: [] },
+        ],
+      }),
+    ).toBeNull();
+  });
+
   it("adds a chamfer with the same edge identity rules", () => {
     const doc = exampleDoc();
     const edge: EdgeRef = {
@@ -694,6 +773,16 @@ describe("document migrations", () => {
         ),
       }),
     ).toBeNull();
+  });
+
+  it("opens a v11 document without offset features and bumps the schema", () => {
+    const doc = exampleDoc();
+    const migrated = migrateDoc({ ...doc, schemaVersion: 11 });
+    expect(migrated?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated?.features.map((feature) => feature.type)).toEqual([
+      "sketch",
+      "extrude",
+    ]);
   });
 
   it("opens a v10 document without shell features and bumps the schema", () => {

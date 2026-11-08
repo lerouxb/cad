@@ -11,6 +11,7 @@ import {
   type ExtrudeFeature,
   type FaceProjection,
   type FilletFeature,
+  type OffsetFaceFeature,
   type PlaneRef,
   type ShellFeature,
   type SketchFeature,
@@ -119,6 +120,21 @@ export function createShellFeature(
     name: options.name ?? "Shell 1",
     faces: [...faces],
     thickness,
+  };
+}
+
+/** Move planar faces along their normal; the sign picks out or in. */
+export function createOffsetFaceFeature(
+  faces: readonly TopoRef[],
+  distance: number,
+  options: { name?: string; id?: string } = {},
+): OffsetFaceFeature {
+  return {
+    id: options.id ?? newId("feat"),
+    type: "offset",
+    name: options.name ?? "Offset 1",
+    faces: [...faces],
+    distance,
   };
 }
 

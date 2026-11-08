@@ -3,7 +3,7 @@ import type { PlaneFrame, Vec2 } from "../types";
 import type { EdgeRef, TopoRef } from "../kernel/protocol";
 
 /** The document schema version. Bump this on every shape change. */
-export const CURRENT_SCHEMA_VERSION = 11;
+export const CURRENT_SCHEMA_VERSION = 12;
 
 export type WorldPlane = "XY" | "XZ" | "YZ";
 
@@ -120,13 +120,29 @@ export interface ShellFeature {
   suppressed?: boolean;
 }
 
+/**
+ * Move planar faces along their normal. A positive distance pushes outward;
+ * a negative distance cuts inward. Faces are stable refs and must all be
+ * parallel; the worker rejects non-prismatic neighbours instead of producing a
+ * step.
+ */
+export interface OffsetFaceFeature {
+  id: string;
+  type: "offset";
+  name: string;
+  faces: TopoRef[];
+  distance: number;
+  suppressed?: boolean;
+}
+
 export type Feature =
   | SketchFeature
   | ExtrudeFeature
   | DatumPlaneFeature
   | FilletFeature
   | ChamferFeature
-  | ShellFeature;
+  | ShellFeature
+  | OffsetFaceFeature;
 
 /**
  * The whole persisted part. Plain JSON only: no kernel handles, no solver
@@ -163,6 +179,12 @@ export function isChamferFeature(feature: Feature): feature is ChamferFeature {
 
 export function isShellFeature(feature: Feature): feature is ShellFeature {
   return feature.type === "shell";
+}
+
+export function isOffsetFaceFeature(
+  feature: Feature,
+): feature is OffsetFaceFeature {
+  return feature.type === "offset";
 }
 
 /** A fillet or chamfer: both consume the current body along selected edges. */

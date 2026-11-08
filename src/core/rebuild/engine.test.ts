@@ -4,6 +4,7 @@ import {
   addChamferFeature,
   addDatumPlaneFeature,
   addFilletFeature,
+  addOffsetFaceFeature,
   addShellFeature,
   addSketchFeature,
   setDatumPlaneHidden,
@@ -603,6 +604,88 @@ describe("ordered rebuild", () => {
     expect(suppressedResult.features[2]?.status).toBe("error");
     expect(suppressedResult.features[2]?.diagnostics[0]?.code).toBe(
       "nothing-to-shell",
+    );
+  });
+
+  it("evaluates and extracts an offset face after its body", () => {
+    const doc = exampleDoc();
+    const added = addOffsetFaceFeature(doc, [faceRef("extrude")], 3);
+    const result = rebuildDocument(added.doc, {}, countingDeps().deps);
+
+    expect(result.status).toBe("ok");
+    expect(result.features.map((feature) => feature.type)).toEqual([
+      "sketch",
+      "extrude",
+      "offset",
+    ]);
+    expect(result.features[2]?.output?.kind).toBe("offsetFace");
+    const kernel = extractKernelFeatures(result);
+    expect(kernel.map((feature) => feature.kind)).toEqual([
+      "extrude",
+      "offsetFace",
+    ]);
+    expect(
+      kernel[1]?.kind === "offsetFace" ? kernel[1].distance : null,
+    ).toBe(3);
+    expect(
+      kernel[1]?.kind === "offsetFace" ? kernel[1].faces : [],
+    ).toHaveLength(1);
+  });
+
+  it("makes offset failures visible instead of silently skipping them", () => {
+    const doc = exampleDoc();
+    const deps = countingDeps().deps;
+    const noBody = rebuildDocument(
+      {
+        ...doc,
+        features: [
+          doc.features[0]!,
+          ...addOffsetFaceFeature(doc, [faceRef("extrude")], 2).doc.features.slice(2),
+        ],
+      },
+      {},
+      deps,
+    );
+    expect(noBody.features[1]?.status).toBe("error");
+    expect(noBody.features[1]?.diagnostics[0]?.code).toBe("nothing-to-offset");
+
+    const badDistance = rebuildDocument(
+      addOffsetFaceFeature(doc, [faceRef("extrude")], 0).doc,
+      {},
+      deps,
+    );
+    expect(badDistance.features[2]?.diagnostics[0]?.code).toBe(
+      "invalid-distance",
+    );
+
+    const noFaces = rebuildDocument(
+      addOffsetFaceFeature(doc, [], 2).doc,
+      {},
+      deps,
+    );
+    expect(noFaces.features[2]?.diagnostics[0]?.code).toBe("no-faces");
+
+    const lost = rebuildDocument(
+      addOffsetFaceFeature(doc, [faceRef("missing")], 2).doc,
+      {},
+      deps,
+    );
+    expect(lost.features[2]?.diagnostics[0]?.code).toBe("missing-face-source");
+
+    const suppressed = addOffsetFaceFeature(
+      {
+        ...doc,
+        features: doc.features.map((feature) =>
+          feature.type === "extrude" ? { ...feature, suppressed: true } : feature,
+        ),
+      },
+      [faceRef("extrude")],
+      2,
+    );
+    const suppressedResult = rebuildDocument(suppressed.doc, {}, deps);
+    expect(suppressedResult.features[2]?.status).toBe("error");
+    expect(suppressedResult.features[2]?.diagnostics[0]?.code).toBe(
+      "nothing-to-offset",
     );
   });
 

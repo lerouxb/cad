@@ -48,6 +48,7 @@ import {
   addDatumPlaneFeature,
   addExtrudeFeature,
   addFilletFeature,
+  addOffsetFaceFeature,
   addSketchFeature,
   datumPlaneFeatures,
   deleteFeature,
@@ -69,6 +70,7 @@ import {
   updateExtrudeFeature,
   updateFeature,
   updateFilletFeature,
+  updateOffsetFaceFeature,
   updateShellFeature,
   updateSketchFeature,
 } from "../core/doc/selectors";
@@ -78,6 +80,7 @@ import {
   isEdgeBlendFeature,
   isExtrudeFeature,
   isFilletFeature,
+  isOffsetFaceFeature,
   isShellFeature,
   isSketchFeature,
   type DatumPlaneDefinition,
@@ -86,6 +89,7 @@ import {
   type EdgeBlendFeature,
   type ExtrudeFeature,
   type Feature,
+  type OffsetFaceFeature,
   type PlaneRef,
   type ShellFeature,
   type SketchFeature,
@@ -211,6 +215,7 @@ import { ExportPopover } from "./ExportPopover";
 import { MeasurePopover } from "./MeasurePopover";
 import { FaceSelectionPopover } from "./FaceSelectionPopover";
 import { ShellPopover } from "./ShellPopover";
+import { OffsetFacePopover } from "./OffsetFacePopover";
 import { SolidBlendPopover } from "./SolidBlendPopover";
 import { FilletPopover } from "./FilletPopover";
 import type { PopoverPosition } from "./StagePopover";
@@ -269,7 +274,11 @@ function featureTimelineOutput(feature: Feature): TimelineOutput {
   if (isDatumPlaneFeature(feature)) {
     return { op: "+", kind: "plane", name: feature.name };
   }
-  if (isEdgeBlendFeature(feature) || isShellFeature(feature)) {
+  if (
+    isEdgeBlendFeature(feature) ||
+    isShellFeature(feature) ||
+    isOffsetFaceFeature(feature)
+  ) {
     return { op: "→", kind: "body", name: "body" };
   }
   return {
@@ -349,6 +358,14 @@ function defaultBlendValue(
 }
 
 /** A plausible starting wall: 10% of the body's shortest dimension. */
+function defaultOffsetDistance(mesh: BodyMesh | null): number {
+  const bounds = mesh?.stats.bounds;
+  const shortest = bounds
+    ? Math.min(bounds[3] - bounds[0], bounds[4] - bounds[1], bounds[5] - bounds[2])
+    : 12;
+  return Math.max(0.5, Math.min(5, Math.round(shortest * 0.1 * 10) / 10));
+}
+
 function defaultShellThickness(mesh: BodyMesh | null): number {
   const bounds = mesh?.stats.bounds;
   const shortest = bounds
@@ -386,6 +403,15 @@ interface ShellDraft {
   featureId: string | null;
   faces: TopoRef[];
   thickness: number;
+  anchorId: string | null;
+}
+
+interface OffsetDraft {
+  mode: "new" | "edit";
+  featureId: string | null;
+  faces: TopoRef[];
+  /** Signed: positive is out along each face normal. */
+  distance: number;
   anchorId: string | null;
 }
 
@@ -526,6 +552,9 @@ export function App() {
   );
   const [shellDraft, setShellDraft] = useState<ShellDraft | null>(null);
   const [shellBaseline, setShellBaseline] = useState<ShellFeature | null>(null);
+  const [offsetDraft, setOffsetDraft] = useState<OffsetDraft | null>(null);
+  const [offsetBaseline, setOffsetBaseline] =
+    useState<OffsetFaceFeature | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportPlane, setSupportPlane] = useState<WorldPlane>("XY");
@@ -605,7 +634,9 @@ export function App() {
   const cancelBlendRef = useRef<() => void>(() => {});
   const blendDraftOpenRef = useRef(false);
   const shellDraftOpenRef = useRef(false);
+  const offsetDraftOpenRef = useRef(false);
   const cancelShellRef = useRef<() => void>(() => {});
+  const cancelOffsetRef = useRef<() => void>(() => {});
   const exportOpenRef = useRef(false);
   const measureOpenRef = useRef(false);
   const toggleMeasureRef = useRef<() => void>(() => {});
@@ -898,6 +929,30 @@ export function App() {
     const ceiling = Math.min(shortest, minBody) * 0.5;
     return Math.max(1, Math.round(ceiling * 10) / 10);
   }, [blendDraft, mesh]);
+  // The offset quick-adjust ceiling: half the body's shortest dimension.
+  const offsetDistanceMax = useMemo(() => {
+    const bounds = mesh?.stats.bounds;
+    const shortest = bounds
+      ? Math.min(
+          bounds[3] - bounds[0],
+          bounds[4] - bounds[1],
+          bounds[5] - bounds[2],
+        )
+      : 12;
+    return Math.max(1, Math.round(shortest * 0.5 * 10) / 10);
+  }, [mesh]);
+  const offsetPreviewError = useMemo(() => {
+    if (!offsetDraft) return null;
+    const featureId =
+      offsetDraft.mode === "new" ? "offset-draft" : offsetDraft.featureId;
+    if (!featureId) return null;
+    const status = workerStatuses.find(
+      (candidate) => candidate.featureId === featureId,
+    );
+    return status && status.status !== "ok"
+      ? (status.message ?? "Solid build failed.")
+      : null;
+  }, [offsetDraft, workerStatuses]);
   // The shell quick-adjust ceiling: half the body's shortest dimension.
   const shellThicknessMax = useMemo(() => {
     const bounds = mesh?.stats.bounds;
@@ -984,8 +1039,40 @@ export function App() {
         },
       ];
     }
+    // A new offset face previews through the kernel too.
+    if (
+      offsetDraft?.mode === "new" &&
+      offsetDraft.faces.length > 0 &&
+      offsetDraft.distance !== 0 &&
+      features.length > 0
+    ) {
+      const draft = offsetDraft;
+      features = [
+        ...features,
+        {
+          kind: "offsetFace",
+          featureId: "offset-draft",
+          cacheKey: `offset-draft-${stableHash(
+            canonicalJson({
+              faces: draft.faces,
+              distance: draft.distance,
+              upstream: features.map((feature) => feature.cacheKey),
+            }),
+          )}`,
+          faces: draft.faces,
+          distance: draft.distance,
+        },
+      ];
+    }
     return features;
-  }, [rebuild, fallbackParams, activeExtrude, blendDraft, shellDraft]);
+  }, [
+    rebuild,
+    fallbackParams,
+    activeExtrude,
+    blendDraft,
+    shellDraft,
+    offsetDraft,
+  ]);
   // The final solid in the rendered prefix, for export. Drafts are not in the
   // document, so they are excluded: export is always the applied body.
   const activeCacheKey = useMemo(() => {
@@ -997,7 +1084,8 @@ export function App() {
         feature.output.kind === "extrude" ||
         feature.output.kind === "fillet" ||
         feature.output.kind === "chamfer" ||
-        feature.output.kind === "shell"
+        feature.output.kind === "shell" ||
+        feature.output.kind === "offsetFace"
       ) {
         return feature.cacheKey;
       }
@@ -1365,6 +1453,8 @@ export function App() {
     setBlendBaseline(null);
     setShellDraft(null);
     setShellBaseline(null);
+    setOffsetDraft(null);
+    setOffsetBaseline(null);
   };
 
   /** Filters and Select Other are ephemeral; a new/loaded document starts clean. */
@@ -1695,6 +1785,184 @@ export function App() {
     setModelFilter("all");
   };
 
+  /** Open the offset-face form; edits commit live like the shell form. */
+  const openOffsetEditor = (feature: OffsetFaceFeature): void => {
+    dismissEditor();
+    setDatumDraft(null);
+    setSupportOpen(false);
+    setOffsetBaseline(feature);
+    setOffsetDraft({
+      mode: "edit",
+      featureId: feature.id,
+      faces: [...feature.faces],
+      distance: feature.distance,
+      anchorId: null,
+    });
+    const picks = feature.faces.map(faceBodyPick);
+    setFaceSelection(picks);
+    viewportRef.current?.setFaceSelection(picks);
+    setModelFilter("faces");
+    setMode("model");
+    setSelection([]);
+    setBodyPick(null);
+  };
+
+  /** Cancel restores the offset's faces and distance, never suppression. */
+  const cancelOffsetEditor = (history = true): void => {
+    const baseline = offsetBaseline;
+    setOffsetDraft(null);
+    setOffsetBaseline(null);
+    if (baseline) {
+      const current = getState();
+      const next = updateOffsetFaceFeature(
+        current.doc,
+        baseline.id,
+        (feature) => ({
+          ...feature,
+          faces: baseline.faces,
+          distance: baseline.distance,
+        }),
+      );
+      if (next !== current.doc) {
+        const state = {
+          doc: next,
+          solved: current.solved,
+          solvedFor: current.solvedFor,
+        };
+        if (history) commit(state);
+        else replace(state);
+      }
+      setActiveFeatureId(baseline.id);
+    }
+    setFaceSelection([]);
+    viewportRef.current?.setFaceSelection([]);
+    setBodyPick(null);
+    setSelectOther(null);
+    viewportRef.current?.clearPick();
+    setSelection([]);
+    setModelFilter("all");
+  };
+
+  /** Start a UI-only offset-face draft from the selected faces. */
+  const beginOffsetDraft = (): void => {
+    const faces = selectedFaceRefs;
+    if (faces.length === 0) return;
+    dismissEditor();
+    setDatumDraft(null);
+    setSupportOpen(false);
+    setHistoryNotice(null);
+    setOffsetDraft({
+      mode: "new",
+      featureId: null,
+      faces: [...faces],
+      distance: defaultOffsetDistance(mesh),
+      anchorId: activeFeatureId,
+    });
+    setModelFilter("faces");
+    setMode("model");
+    setSelection([]);
+    setBodyPick(null);
+  };
+
+  const updateOffsetValue = (value: number): void => {
+    if (!offsetDraft || !Number.isFinite(value) || value <= 0) return;
+    const signed = offsetDraft.distance < 0 ? -value : value;
+    setOffsetDraft({ ...offsetDraft, distance: signed });
+    if (offsetDraft.mode === "edit" && offsetDraft.featureId) {
+      const current = getState();
+      const next = updateOffsetFaceFeature(
+        current.doc,
+        offsetDraft.featureId,
+        (feature) => ({ ...feature, distance: signed }),
+      );
+      if (next !== current.doc) {
+        commit(
+          { doc: next, solved: current.solved, solvedFor: current.solvedFor },
+          "offset-distance",
+        );
+      }
+    }
+  };
+
+  const updateOffsetDirection = (direction: "out" | "in"): void => {
+    if (!offsetDraft) return;
+    const magnitude = Math.abs(offsetDraft.distance);
+    if (magnitude === 0) return;
+    const signed = direction === "in" ? -magnitude : magnitude;
+    if (signed === offsetDraft.distance) return;
+    setOffsetDraft({ ...offsetDraft, distance: signed });
+    if (offsetDraft.mode === "edit" && offsetDraft.featureId) {
+      const current = getState();
+      const next = updateOffsetFaceFeature(
+        current.doc,
+        offsetDraft.featureId,
+        (feature) => ({ ...feature, distance: signed }),
+      );
+      if (next !== current.doc) {
+        commit({
+          doc: next,
+          solved: current.solved,
+          solvedFor: current.solvedFor,
+        });
+      }
+    }
+  };
+
+  const updateOffsetFaces = (faces: TopoRef[]): void => {
+    if (!offsetDraft) return;
+    setOffsetDraft({ ...offsetDraft, faces });
+    const picks = faces.map(faceBodyPick);
+    setFaceSelection(picks);
+    viewportRef.current?.setFaceSelection(picks);
+    if (offsetDraft.mode === "edit" && offsetDraft.featureId) {
+      const current = getState();
+      const next = updateOffsetFaceFeature(
+        current.doc,
+        offsetDraft.featureId,
+        (feature) => ({ ...feature, faces }),
+      );
+      if (next !== current.doc) {
+        commit({
+          doc: next,
+          solved: current.solved,
+          solvedFor: current.solvedFor,
+        });
+      }
+    }
+  };
+
+  const applyOffsetDraft = (): void => {
+    const draft = offsetDraft;
+    if (!draft || draft.faces.length === 0 || draft.distance === 0) return;
+    const current = getState();
+    if (draft.mode === "new") {
+      const result = addOffsetFaceFeature(
+        current.doc,
+        draft.faces,
+        draft.distance,
+        { afterFeatureId: draft.anchorId },
+      );
+      commit({
+        doc: result.doc,
+        solved: current.solved,
+        solvedFor: current.solvedFor,
+      });
+      setActiveFeatureId(result.feature.id);
+    } else if (draft.featureId) {
+      setActiveFeatureId(draft.featureId);
+    }
+    dismissEditor();
+    setFaceSelection([]);
+    viewportRef.current?.setFaceSelection([]);
+    setBodyPick(null);
+    setSelectOther(null);
+    viewportRef.current?.clearPick();
+    setMode("model");
+    setSelection([]);
+    setHistoryNotice(null);
+    setModelFilter("all");
+  };
+
   /**
    * Which feature sources may be inputs right now? Edges/faces from a draft's
    * generated geometry, or from the feature being edited, would reference
@@ -1702,9 +1970,10 @@ export function App() {
    */
   const sourceKnown = (source: string): boolean => {
     if (source === "fillet-draft" || source === "chamfer-draft") return false;
-    if (source === "shell-draft") return false;
+    if (source === "shell-draft" || source === "offset-draft") return false;
     if (blendDraft?.featureId === source) return false;
     if (shellDraft?.featureId === source) return false;
+    if (offsetDraft?.featureId === source) return false;
     return doc.features.some((feature) => feature.id === source);
   };
 
@@ -1744,7 +2013,11 @@ export function App() {
       return;
     }
     setSelectOther(
-      info && info.candidates.length > 1 && !blendDraft && !shellDraft
+      info &&
+      info.candidates.length > 1 &&
+      !blendDraft &&
+      !shellDraft &&
+      !offsetDraft
         ? info
         : null,
     );
@@ -1758,6 +2031,10 @@ export function App() {
       }
       if (shellDraft) {
         cancelShellEditor();
+        return;
+      }
+      if (offsetDraft) {
+        cancelOffsetEditor();
         return;
       }
       // A Shift-click on empty space is additive too: it must not throw away
@@ -1840,7 +2117,7 @@ export function App() {
       const selected = faceSelection.some(
         (item) => item.ref !== undefined && faceRefKey(item.ref) === key,
       );
-      const toggle = additive || shellDraft !== null;
+      const toggle = additive || shellDraft !== null || offsetDraft !== null;
       let next: BodyPick[];
       if (toggle && selected) {
         next = faceSelection.filter(
@@ -1859,16 +2136,24 @@ export function App() {
         : (next[next.length - 1] ?? null);
       // The single overlay mirrors the face set's anchor; leaving the clicked
       // (now removed) face there kept it washed until the next click.
-      setBodyPick(!shellDraft && anchor ? anchor : null);
+      setBodyPick(!shellDraft && !offsetDraft && anchor ? anchor : null);
       setFaceSelection(next);
       viewportRef.current?.setFaceSelection(next);
-      viewportRef.current?.setPickedFace(shellDraft ? null : anchor);
+      viewportRef.current?.setPickedFace(
+        shellDraft || offsetDraft ? null : anchor,
+      );
       if (!toggle) {
         setEdgeSelection([]);
         viewportRef.current?.setEdgeSelection([]);
       }
       if (shellDraft) {
         updateShellFaces(
+          next
+            .map((item) => item.ref)
+            .filter((item): item is TopoRef => item !== undefined),
+        );
+      } else if (offsetDraft) {
+        updateOffsetFaces(
           next
             .map((item) => item.ref)
             .filter((item): item is TopoRef => item !== undefined),
@@ -1904,7 +2189,7 @@ export function App() {
       );
       if (usable.length === 0) return;
       const merged = new Map<string, BodyPick>();
-      if (additive || shellDraft) {
+      if (additive || shellDraft || offsetDraft) {
         for (const item of faceSelection) {
           if (item.ref) merged.set(faceRefKey(item.ref), item);
         }
@@ -1915,14 +2200,22 @@ export function App() {
       const next = [...merged.values()];
       const anchor = next[next.length - 1] ?? null;
       setSelectOther(null);
-      setBodyPick(shellDraft ? null : anchor);
+      setBodyPick(shellDraft || offsetDraft ? null : anchor);
       setFaceSelection(next);
       viewportRef.current?.setFaceSelection(next);
-      viewportRef.current?.setPickedFace(shellDraft ? null : anchor);
+      viewportRef.current?.setPickedFace(
+        shellDraft || offsetDraft ? null : anchor,
+      );
       setEdgeSelection([]);
       viewportRef.current?.setEdgeSelection([]);
       if (shellDraft) {
         updateShellFaces(
+          next
+            .map((item) => item.ref)
+            .filter((item): item is TopoRef => item !== undefined),
+        );
+      } else if (offsetDraft) {
+        updateOffsetFaces(
           next
             .map((item) => item.ref)
             .filter((item): item is TopoRef => item !== undefined),
@@ -1973,6 +2266,8 @@ export function App() {
     blendDraftOpenRef.current = blendDraft !== null;
     cancelShellRef.current = cancelShellEditor;
     shellDraftOpenRef.current = shellDraft !== null;
+    cancelOffsetRef.current = cancelOffsetEditor;
+    offsetDraftOpenRef.current = offsetDraft !== null;
     exportOpenRef.current = exportOpen;
     measureOpenRef.current = measureOpen;
     toggleMeasureRef.current = toggleMeasure;
@@ -2242,6 +2537,8 @@ export function App() {
       openBlendEditor(feature);
     } else if (isShellFeature(feature)) {
       openShellEditor(feature);
+    } else if (isOffsetFaceFeature(feature)) {
+      openOffsetEditor(feature);
     } else {
       openDatumEditor(feature);
     }
@@ -3273,10 +3570,12 @@ export function App() {
     // previews.
     if (blendDraft?.mode === "new") return `${blendDraft.kind}-draft`;
     if (shellDraft?.mode === "new") return "shell-draft";
+    if (offsetDraft?.mode === "new") return "offset-draft";
     return activeFeature &&
       (isExtrudeFeature(activeFeature) ||
         isEdgeBlendFeature(activeFeature) ||
-        isShellFeature(activeFeature)) &&
+        isShellFeature(activeFeature) ||
+        isOffsetFaceFeature(activeFeature)) &&
       !activeFeature.suppressed
       ? activeFeature.id
       : null;
@@ -3287,6 +3586,7 @@ export function App() {
     extrudeDraft,
     blendDraft,
     shellDraft,
+    offsetDraft,
     activeFeature,
   ]);
 
@@ -4140,6 +4440,10 @@ export function App() {
         cancelShellEditor(history);
         return;
       }
+      if (offsetDraft) {
+        cancelOffsetEditor(history);
+        return;
+      }
       if (extrudeDraft) {
         cancelExtrudeDraft();
         return;
@@ -4205,6 +4509,10 @@ export function App() {
         }
         if (shellDraft) {
           cancelShellEditor();
+          return;
+        }
+        if (offsetDraft) {
+          cancelOffsetEditor();
           return;
         }
         if (extrudeDraft) {
@@ -4312,6 +4620,16 @@ export function App() {
           }
           return;
         }
+        if (offsetDraft) {
+          if (
+            offsetDraft.faces.length > 0 &&
+            offsetDraft.distance !== 0 &&
+            !offsetPreviewError
+          ) {
+            applyOffsetDraft();
+          }
+          return;
+        }
         if (extrudeDraft) {
           commitExtrudeDraft();
           return;
@@ -4362,6 +4680,7 @@ export function App() {
           exportOpen ||
           blendDraft ||
           shellDraft ||
+          offsetDraft ||
           editorOpen ||
           datumDraft
         ) {
@@ -4948,7 +5267,8 @@ export function App() {
             }
             if (mode !== "model") return;
             // Pick surfaces: clicks feed the operation, they never cancel it.
-            if (canvas && (blendDraft || shellDraft || supportOpen)) return;
+            if (canvas && (blendDraft || shellDraft || offsetDraft || supportOpen))
+              return;
             if (supportOpen) {
               cancelOpenOperationRef.current();
               return;
@@ -4959,6 +5279,10 @@ export function App() {
             }
             if (shellDraft) {
               cancelShellEditor();
+              return;
+            }
+            if (offsetDraft) {
+              cancelOffsetEditor();
               return;
             }
             if (extrudeDraft) {
@@ -5821,6 +6145,26 @@ export function App() {
               onFillet={() => beginBlendDraft("fillet")}
               onChamfer={() => beginBlendDraft("chamfer")}
             />
+          ) : offsetDraft ? (
+            <OffsetFacePopover
+              distance={offsetDraft.distance}
+              max={offsetDistanceMax}
+              faces={offsetDraft.faces}
+              isDraft={offsetDraft.mode === "new"}
+              error={offsetPreviewError}
+              position={popoverPosition}
+              onMove={setPopoverPosition}
+              onValue={updateOffsetValue}
+              onValueEnd={endMerge}
+              onDirection={updateOffsetDirection}
+              onRemoveFace={(index) =>
+                updateOffsetFaces(
+                  offsetDraft.faces.filter((_, at) => at !== index),
+                )
+              }
+              onApply={applyOffsetDraft}
+              onCancel={cancelOffsetEditor}
+            />
           ) : shellDraft ? (
             <ShellPopover
               thickness={shellDraft.thickness}
@@ -5864,6 +6208,7 @@ export function App() {
                 viewportRef.current?.clearPick();
               }}
               onShell={beginShellDraft}
+              onOffset={beginOffsetDraft}
             />
           ) : null}
 
@@ -5954,7 +6299,9 @@ export function App() {
                       ? "chamfer"
                       : isShellFeature(feature)
                         ? "shell"
-                        : "extrude";
+                        : isOffsetFaceFeature(feature)
+                          ? "offset"
+                          : "extrude";
               const meta = isSketchFeature(feature)
                 ? `${supportLabel(feature.support)} · ${feature.sketch.curves.length} curves`
                 : isDatumPlaneFeature(feature)
@@ -5965,7 +6312,9 @@ export function App() {
                       ? `${feature.distance} mm · ${feature.edges.length} edge${feature.edges.length === 1 ? "" : "s"}`
                       : isShellFeature(feature)
                         ? `${feature.thickness} mm · ${feature.faces.length} open face${feature.faces.length === 1 ? "" : "s"}`
-                        : `${
+                        : isOffsetFaceFeature(feature)
+                          ? `${Math.abs(feature.distance)} mm · ${feature.distance < 0 ? "in" : "out"} · ${feature.faces.length} face${feature.faces.length === 1 ? "" : "s"}`
+                          : `${
                           feature.end === "throughAll"
                             ? "through all"
                             : `${feature.height} mm`

@@ -2355,3 +2355,61 @@ circle.con-link-wash {
     columns: 1;
   }
 }
+
+/* --------------------------------------------------------------------------
+   offset faces study (offset-faces.html)
+   -------------------------------------------------------------------------- */
+
+.off-step-wrap {
+  display: flex;
+  align-items: center;
+  min-height: 84px;
+  padding: 8px 0;
+}
+
+.off-step-wrap .steps {
+  width: 100%;
+}
+
+.off-error {
+  margin-top: 10px;
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+}
+
+.off-error b {
+  font-weight: var(--weight-medium);
+}
+
+.sel-card .tool-panel .text-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.sel-card .tool-panel .text-action:disabled:hover {
+  background: none;
+  color: inherit;
+}
+
+/* --------------------------------------------------------------------------
+   revolve study (revolve.html)
+   -------------------------------------------------------------------------- */
+
+.rev-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  align-items: center;
+}
+
+.rev-pair svg {
+  display: block;
+  width: 100%;
+  height: 112px;
+}
+
+.rev-pair svg:only-child {
+  grid-column: span 2;
+}

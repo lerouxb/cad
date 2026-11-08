@@ -1,7 +1,7 @@
-# ADR-0006: Offset Faces does not use a face-extrusion boolean
+# ADR-0006: Offset Faces v1 is a checked planar/prismatic push/pull
 
-- Status: **rejected / superseded** by [`docs/showcase/OFFSET_FACES.md`](../showcase/OFFSET_FACES.md)
-- Date: 2026-11-08
+- Status: **accepted** (v1 scope), 2026-11-08
+- Contract: [`docs/showcase/OFFSET_FACES.md`](../showcase/OFFSET_FACES.md)
 
 ## Context
 
@@ -19,9 +19,10 @@ The kernel has no local face offset:
   `boss`/`pocket` take a single wire and therefore lose holes.
 - `extrude(face, vector)` accepts a planar face with inner wires, so it preserves holes.
 
-The obvious candidate was therefore: sweep the selected planar face along its normal and
-fuse (outward) or cut (inward). This ADR records the spike, why that candidate was
-rejected, and what a real implementation needs.
+The design study prioritises planar and cylindrical faces, then adjacent/disjoint sets,
+then the tangent chain and general curves. A general local offset would need an upstream
+OCCT operation or a full face-replacement/sewing rebuild. That is not available, so v1
+takes the slice where a face sweep is exact.
 
 ## Spike results
 
@@ -35,55 +36,64 @@ A 40 × 30 × 12 plate with a Ø12 through hole (the example plate's topology), 
 | +X face +5 (fuse) | 14842.831974 (+1800) | x −20…25 | valid, 11 faces |
 | Bottom face −5 (outward fuse) | 18477.345296 | z −5…0 | valid |
 | Top + +X, both +5 | 20277.345296 | x −20…25, z 0…17 | valid, 16 faces |
-| Top −20 (cut through all) | empty shape | throws on bounds | — |
+| Top −20 (cut through all) | empty/multi-body | — | rejected |
 
-A single planar face on a prismatic body is exact, including faces with holes. Two limits
-make it unusable as "Offset Faces":
+The single-face cases are exact, including a face with a hole. Two limits make the
+unchecked prism unusable:
 
 1. **Adjacent selected faces leave an L-shaped step.** Top + +X +5 gives
    `base + topArea×5 + sideArea×5`, missing the 5 × 5 × 30 corner (750 mm³) that a true
-   two-face offset contains. The solid is valid, but it is two bosses meeting at a
-   corner, not a uniformly offset body.
+   two-face offset contains.
 2. **Non-prismatic adjacency leaves an undercut.** Filleting the four *top* edges
    (radius 4) and then offsetting the top face +5 keeps the old fillet where it was and
    adds a narrower straight cap: the cylindrical faces stay centred near z ≈ 10.44
    instead of moving up with the face. The result is valid and has the same volume as a
    taller rounded box, so a volume assertion alone cannot catch it.
 
-It cannot offset a cylindrical hole/boss wall at all: only planar faces can be extruded,
-while the design study's tolerance/fit cases explicitly include those.
-
 ## Decision
 
-**Rejected.** Do not implement Offset Faces as a face-extrusion boolean, even with an
-adjacency check that restricts it to the cases where the prism happens to be exact. The
-result is a boss/pocket, not a face offset; it fails cylindrical faces and silently changes
-the meaning of the feature. This matches the design contract: the kernel path is an open
-feasibility question, and the feature must not be faked with a whole-body offset, a shell,
-a scale or a degenerate extrude.
+Implement **Offset Faces v1** as a checked planar/prismatic push/pull:
 
-The spike numbers remain useful as regression data for the real operation: a valid offset
-of the plate's top face must keep `valid === true` and the hole, and must not produce the
-L-step or the undercut above.
+- `OffsetFaceFeature` (schema v12) stores `faces: TopoRef[]` and a signed `distance`.
+- Resolve each face on the source prefix and require it to be **planar**.
+- Require all selected normals to be **parallel**. This makes independent prisms exact
+  for top + bottom, opposite walls and coplanar sets. Non-parallel sets are refused.
+- Require the sweep to preserve every adjacent surface: a planar neighbour's normal must
+  be perpendicular to the move; a cylindrical neighbour's axis must be parallel to it.
+  This accepts plain walls and vertical-edge fillets, and rejects top-edge fillets,
+  slanted/drafted walls and other free-form neighbours.
+- Sweep the face by the signed distance and fuse (out) or cut (in). The face's inner
+  wires are part of the swept profile, so holes survive.
+- Reject an empty result, a result that is not a single solid, an invalid solid, and a
+  no-op. The last good preview stays visible.
+- Re-derive roles geometrically, carry the moved face's role to the face at its new
+  plane, and name any new faces under the feature so the step highlight and downstream
+  refs work.
 
-## What a real implementation needs
-
-One of:
-
-1. an upstream `occt-wasm` operation for selected-face offset (a new `BRepOffsetAPI`-level
-   entry point); or
-2. a rebuild strategy: offset the selected face's surface, rebuild/extend the adjacent
-   faces, close and validate the solid (the design study's suggested path).
-
-The selected-face-on-solid kernel path is **blocking** (OFFSET_FACES.md O1). Until it is
-decided, the UI/selection contract can land first: the face popover's `offset face…` chip
-and the FEATURE action table, without a fake preview. Use the design study's failure and
-readout rules for whatever the kernel can do.
+The UI follows the design study: select faces, `offset face` chip, a UI-only draft with
+the face list, `MeasureField` distance, out/in direction, live preview, `apply` as a
+history step, live edit and baseline-restoring `cancel`. The preview error is inline and
+disables `apply`.
 
 ## Alternatives considered
 
 1. **Whole-solid `offset()`.** Moves every face; returns a shell in this kernel. Rejected.
 2. **`boss`/`pocket` compound helpers.** Single wire, so a face with holes loses its
    hole. Rejected.
-3. **Ship the prism anyway with a restricted scope.** Rejected by the design contract:
-   the feature name promises a face offset, and the prism is a different operation.
+3. **An unchecked face prism.** Rejected: it silently makes a boss/cut instead of an
+   offset at adjacent faces and tangent fillets.
+4. **A general local offset.** The correct full solution, but it needs an upstream
+   `occt-wasm` API or a face-replacement/sewing rebuild. Deferred until the cylindrical
+   and multi-face cases justify it.
+
+## Consequences
+
+- v1 supports planar faces with prismatic neighbours. Curved faces, tangent top-edge
+  fillets, slanted walls and non-parallel sets are visible errors.
+- Cylindrical hole/boss walls (the tolerance/fit case) are **not** done yet; they need a
+  separate rebuild (for example a concentric-tube boolean) and remain the next kernel
+  slice.
+- The tangent-chain toggle and the preview ghost/normal arrow are not implemented.
+- Tests assert volume, bounds, validity and the hole, and failure tests cover a curved
+  face and an inward collapse. The multi-face L-step and undercut are rejected by the
+  adjacency checks.

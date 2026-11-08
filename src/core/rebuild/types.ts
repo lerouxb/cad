@@ -68,13 +68,21 @@ export interface ShellRebuildOutput {
   thickness: number;
 }
 
+export interface OffsetFaceRebuildOutput {
+  kind: "offsetFace";
+  faces: TopoRef[];
+  /** Signed: positive pushes along each face normal, negative cuts in. */
+  distance: number;
+}
+
 export type FeatureOutput =
   | SketchRebuildOutput
   | ExtrudeRebuildOutput
   | DatumRebuildOutput
   | FilletRebuildOutput
   | ChamferRebuildOutput
-  | ShellRebuildOutput;
+  | ShellRebuildOutput
+  | OffsetFaceRebuildOutput;
 
 export interface FeatureResult {
   featureId: string;
