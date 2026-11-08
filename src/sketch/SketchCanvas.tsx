@@ -3851,8 +3851,11 @@ function ConstraintMarks({
             <text
               x={mark.x}
               y={mark.y + 3 * px}
-              fill={mark.style === "active" ? palette.markerInk : color}
-              fontSize={8 * px}
+              fill={
+                mark.style === "active" ? palette.markerInk : palette.muted
+              }
+              fontFamily="var(--font-mono)"
+              fontSize={9 * px}
               textAnchor="middle"
               pointerEvents="none"
             >
@@ -3869,16 +3872,17 @@ function ConstraintMarks({
         return (
           <g key={index} {...stroke} strokeWidth={1.2}>
             {Array.from({ length: Math.max(1, mark.count) }, (_, slot) => {
+              const half = (mark.size ?? 4) * px;
               const offset = (slot - (mark.count - 1) / 2) * 3.6 * px;
               const cx = mark.x + nx * offset;
               const cy = mark.y + ny * offset;
               return (
                 <line
                   key={slot}
-                  x1={cx - ux * 4 * px}
-                  y1={cy - uy * 4 * px}
-                  x2={cx + ux * 4 * px}
-                  y2={cy + uy * 4 * px}
+                  x1={cx - ux * half}
+                  y1={cy - uy * half}
+                  x2={cx + ux * half}
+                  y2={cy + uy * half}
                 />
               );
             })}
@@ -3928,6 +3932,7 @@ function ConstraintMarks({
             {...stroke}
             strokeWidth={1}
             strokeDasharray={mark.dashed ? `${3 * px} ${3 * px}` : undefined}
+            pointerEvents="none"
           />
         );
       case "path":
@@ -4007,6 +4012,7 @@ function ConstraintMarks({
             {...stroke}
             strokeWidth={1}
             strokeDasharray={`${6 * px} ${3 * px} ${1 * px} ${3 * px}`}
+            pointerEvents="none"
           />
         );
     }
@@ -4069,7 +4075,10 @@ function ConstraintMarks({
             return (
               <g key={index}>
                 {renderMark(mark, index)}
-                {interactive && anchor ? (
+                {interactive &&
+                anchor &&
+                mark.kind !== "segment" &&
+                mark.kind !== "axis" ? (
                   mark.kind === "badge" ? (
                     <rect
                       x={anchor[0] - badgeWidth(mark.label) / 2}
@@ -4084,7 +4093,10 @@ function ConstraintMarks({
                     <circle
                       cx={anchor[0]}
                       cy={anchor[1]}
-                      r={7 * px}
+                      // A symmetric pair's chevrons sit close to the axis;
+                      // a 7 px halo would cover the axis crossing and steal a
+                      // click meant for the geometry there.
+                      r={(mark.kind === "chevron" ? 4 : 7) * px}
                       fill="transparent"
                       pointerEvents="all"
                       data-mark-hit=""

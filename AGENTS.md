@@ -229,7 +229,12 @@ docs/
   companions and participants, click selects the whole constraint, Backspace/Delete removes
   it. Constraint selection is ephemeral UI state. Selecting a constraint highlights its
   own mark (badge background/glyph) and participants; selecting geometry washes only the
-  geometry and leaves its constraints quiet.
+  geometry and leaves its constraints quiet. Connector segments and the active symmetric
+  axis are visual only (`pointerEvents:none`); badges/glyphs are the hit targets. A
+  symmetric tie is dashed and its chevrons sit on the connector either side of the axis,
+  not out at the participants; a fix pin is lifted above the point on a stem. The
+  perpendicular mark is an offset L, not a closed square. The badge text uses the mono
+  token at 9 px, and point-on-line/midpoint/tangent ticks are longer than equal ticks.
 - **Selection families and actions are in `docs/showcase/SELECTION.md`.** A click selects;
   feature actions are chips in the same selection popover (a profile offers
   `extrude`/`revolve`, a face offers `new sketch`/`offset face`/`shell`, edges offer

@@ -6,6 +6,7 @@ import {
   perpendicularCorner,
   symmetricChevrons,
   tangentContact,
+  type ConstraintMark,
 } from "./constraintMarks";
 
 function line(
@@ -53,11 +54,18 @@ describe("constraint mark geometry", () => {
   it("points symmetric chevrons toward a vertical and horizontal axis", () => {
     const vertical = symmetricChevrons([-10, 5], [10, 5], [0, -20], [0, 20]);
     expect(vertical.a.angle).toBeCloseTo(0, 6);
-    expect(vertical.b.angle).toBeCloseTo(Math.PI, 6);
+    expect(Math.abs(vertical.b.angle)).toBeCloseTo(Math.PI, 6);
+    // The chevrons sit on the connector either side of the axis, not on the
+    // participants.
+    expect(vertical.a.x).toBeLessThan(0);
+    expect(vertical.b.x).toBeGreaterThan(0);
+    expect(vertical.a.y).toBeCloseTo(5, 6);
 
     const horizontal = symmetricChevrons([-10, 5], [-10, -5], [-20, 0], [20, 0]);
     expect(Math.sin(horizontal.a.angle)).toBeCloseTo(-1, 6);
     expect(Math.sin(horizontal.b.angle)).toBeCloseTo(1, 6);
+    expect(horizontal.a.y).toBeGreaterThan(0);
+    expect(horizontal.b.y).toBeLessThan(0);
   });
 
   it("draws a perpendicular square only where the segments meet", () => {
@@ -76,9 +84,14 @@ describe("constraint mark geometry", () => {
       8,
     );
     expect(corner).not.toBeNull();
-    expect(corner![0]![0]).toBeCloseTo(5, 6);
-    expect(corner![0]![1]).toBeCloseTo(0, 6);
-    expect(corner).toHaveLength(4);
+    expect(corner).toHaveLength(3);
+    const [p1, p2, p3] = corner!;
+    expect(Math.hypot(p2![0] - p1![0], p2![1] - p1![1])).toBeCloseTo(8, 6);
+    expect(Math.hypot(p3![0] - p2![0], p3![1] - p2![1])).toBeCloseTo(8, 6);
+    expect(
+      (p2![0] - p1![0]) * (p3![0] - p2![0]) +
+        (p2![1] - p1![1]) * (p3![1] - p2![1]),
+    ).toBeCloseTo(0, 6);
 
     const away = line("c", [20, -5], [20, 5]);
     const outside = perpendicularCorner(
@@ -172,6 +185,80 @@ describe("constraint mark geometry", () => {
     expect(
       marks.filter((mark) => mark.type === "symmetric").every((mark) => mark.style === "active"),
     ).toBe(true);
+  });
+
+  it("draws the symmetric connector dashed with chevrons around the axis", () => {
+    const sketch: Sketch = {
+      points: [
+        { id: "a", x: -10, y: 5 },
+        { id: "b", x: 10, y: 5 },
+      ],
+      curves: [],
+      constraints: [
+        { id: "sym", type: "symmetric", a: "a", b: "b", about: "axis-y" },
+      ],
+      references: {
+        origin: { id: "origin", x: 0, y: 0, fixed: true, reference: true },
+        points: [
+          { id: "origin", x: 0, y: 0, fixed: true, reference: true },
+          { id: "axis-y-min", x: 0, y: -20, fixed: true, reference: true },
+          { id: "axis-y-max", x: 0, y: 20, fixed: true, reference: true },
+        ],
+        lines: [
+          {
+            id: "axis-y",
+            type: "line",
+            a: "axis-y-min",
+            b: "axis-y-max",
+            construction: true,
+            reference: true,
+          },
+        ],
+        circles: [],
+      },
+    };
+    const marks = constraintMarks(sketch, {
+      points: { a: [-10, 5], b: [10, 5], "axis-y-min": [0, -20], "axis-y-max": [0, 20] },
+      selected: new Set(),
+      hoveredCurveId: null,
+      hoveredPointId: null,
+      px: 0.1,
+    });
+    const connector = marks.find(
+      (mark) => mark.type === "symmetric" && mark.kind === "segment",
+    );
+    expect(connector).toMatchObject({ dashed: true });
+    const chevrons = marks.filter(
+      (mark): mark is Extract<ConstraintMark, { kind: "chevron" }> =>
+        mark.type === "symmetric" && mark.kind === "chevron",
+    );
+    expect(chevrons).toHaveLength(2);
+    // Near the axis crossing, not out at the two points.
+    expect(Math.abs(chevrons[0]!.x)).toBeLessThan(2);
+    expect(Math.abs(chevrons[1]!.x)).toBeLessThan(2);
+    expect(Math.sign(chevrons[0]!.x)).toBe(-Math.sign(chevrons[1]!.x));
+  });
+
+  it("lifts the fix pin above the point on a stem", () => {
+    const sketch: Sketch = {
+      points: [{ id: "p", x: 0, y: 0 }],
+      curves: [],
+      constraints: [{ id: "fix", type: "fix", point: "p" }],
+    };
+    const marks = constraintMarks(sketch, {
+      points: { p: [0, 0] },
+      selected: new Set(),
+      hoveredCurveId: null,
+      hoveredPointId: null,
+      px: 0.1,
+    });
+    const pin = marks.find((mark) => mark.kind === "pin");
+    expect(pin).toBeDefined();
+    expect(pin!.y).toBeLessThan(-0.5);
+    const stem = marks.find(
+      (mark) => mark.kind === "segment" && mark.type === "fix",
+    );
+    expect(stem).toMatchObject({ x1: 0, y1: 0, x2: 0 });
   });
 
   it("marks constraints attached to projected reference geometry", () => {

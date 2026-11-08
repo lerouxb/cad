@@ -1,8 +1,9 @@
 import type { Vec2 } from "../core/types";
-import type {
-  Sketch,
-  SketchConstraint,
-  SketchCurve,
+import {
+  allCurves,
+  type Sketch,
+  type SketchConstraint,
+  type SketchCurve,
 } from "../core/sketch/types";
 
 /**
@@ -35,6 +36,8 @@ export type ConstraintMark =
       /** Direction of the tick line, radians. */
       angle: number;
       count: number;
+      /** Half-length in screen pixels; defaults to 4. */
+      size?: number;
     })
   | (MarkBase & { kind: "ring"; x: number; y: number; r: number })
   | (MarkBase & { kind: "dot"; x: number; y: number; r: number })
@@ -137,28 +140,55 @@ export function equalGroupIndexes(sketch: Sketch): Map<string, number> {
 }
 
 /**
- * Chevron tips for a symmetric pair, pointing from each point toward its
- * projection on the axis. Exported for orientation tests.
+ * Chevron tips for a symmetric pair. The connector runs between the two
+ * participants; the chevrons sit on it, either side of where it crosses the
+ * axis, and point back toward the axis. That is why a vertical axis gives
+ * left/right chevrons and a horizontal axis gives up/down chevrons.
+ *
+ * Exported for orientation tests. `offset` is in sketch units.
  */
 export function symmetricChevrons(
   a: Vec2,
   b: Vec2,
   axisA: Vec2,
   axisB: Vec2,
+  offset = 6,
 ): { a: { x: number; y: number; angle: number }; b: { x: number; y: number; angle: number } } {
-  const dx = axisB[0] - axisA[0];
-  const dy = axisB[1] - axisA[1];
-  const lengthSq = dx * dx + dy * dy;
-  const foot = (point: Vec2): Vec2 => {
-    if (lengthSq < 1e-12) return axisA;
-    const t = ((point[0] - axisA[0]) * dx + (point[1] - axisA[1]) * dy) / lengthSq;
-    return [axisA[0] + dx * t, axisA[1] + dy * t];
-  };
-  const fa = foot(a);
-  const fb = foot(b);
+  const direction = unit(b[0] - a[0], b[1] - a[1]);
+  const span = length(a, b);
+  if (span < 1e-9) {
+    return {
+      a: { x: a[0], y: a[1], angle: 0 },
+      b: { x: b[0], y: b[1], angle: Math.PI },
+    };
+  }
+  const adx = axisB[0] - axisA[0];
+  const ady = axisB[1] - axisA[1];
+  // Cross the connector with the infinite axis. When they are parallel the
+  // chevrons fall back to the connector midpoint.
+  const denominator = direction[0] * ady - direction[1] * adx;
+  let pivot = span / 2;
+  if (Math.abs(denominator) > 1e-9) {
+    const t =
+      ((axisA[0] - a[0]) * ady - (axisA[1] - a[1]) * adx) / denominator;
+    if (t > 0 && t < span) pivot = t;
+  }
+  const step = Math.min(offset, Math.max(1, span / 2 - 1));
+  const from = Math.max(0.5, pivot - step);
+  const to = Math.min(span - 0.5, pivot + step);
   return {
-    a: { x: a[0], y: a[1], angle: Math.atan2(fa[1] - a[1], fa[0] - a[0]) },
-    b: { x: b[0], y: b[1], angle: Math.atan2(fb[1] - b[1], fb[0] - b[0]) },
+    a: {
+      x: a[0] + direction[0] * from,
+      y: a[1] + direction[1] * from,
+      // Point toward the axis crossing (the +direction side).
+      angle: Math.atan2(direction[1], direction[0]),
+    },
+    b: {
+      x: a[0] + direction[0] * to,
+      y: a[1] + direction[1] * to,
+      // Point toward the axis crossing (the -direction side).
+      angle: Math.atan2(-direction[1], -direction[0]),
+    },
   };
 }
 
@@ -195,8 +225,9 @@ export function perpendicularCorner(
   };
   const ua = arm(corner, a1, a2);
   const ub = arm(corner, b1, b2);
+  // The study draws an L-shaped right-angle mark offset from the corner, not a
+  // closed square: the corner itself is the geometry, the mark sits inside it.
   return [
-    corner,
     [corner[0] + ua[0] * size, corner[1] + ua[1] * size],
     [
       corner[0] + (ua[0] + ub[0]) * size,
@@ -283,19 +314,10 @@ export function constraintMarks(
     hoveredConstraintId,
     px,
   } = context;
-  // Include projected references, but not the fixed X/Y axes: axis marks are
-  // drawn at the same midpoints as ordinary geometry and would steal its click.
-  const curves = new Map(
-    [
-      ...sketch.curves,
-      ...(sketch.references?.lines.filter(
-        (line) => line.projectionId !== undefined,
-      ) ?? []),
-      ...(sketch.references?.circles?.filter(
-        (circle) => circle.projectionId !== undefined,
-      ) ?? []),
-    ].map((curve) => [curve.id, curve]),
-  );
+  // Reference axes participate in constraints (symmetric about X/Y,
+  // point-on-line to an axis). Connector marks are non-interactive in the
+  // renderer so an axis/symmetric tie cannot steal a geometry click.
+  const curves = new Map(allCurves(sketch).map((curve) => [curve.id, curve]));
   const marks: ConstraintMark[] = [];
   type MarkDraft = ConstraintMark extends infer T
     ? T extends ConstraintMark
@@ -598,6 +620,7 @@ export function constraintMarks(
           y: p[1],
           angle: Math.atan2(base.normal[1], base.normal[0]),
           count: 1,
+          size: 7,
         });
         break;
       }
@@ -661,6 +684,7 @@ export function constraintMarks(
             y: contact[1],
             angle: Math.atan2(base.direction[1], base.direction[0]),
             count: 1,
+            size: 6,
           });
           break;
         }
@@ -689,8 +713,15 @@ export function constraintMarks(
           y1: a[1],
           x2: b[0],
           y2: b[1],
+          dashed: true,
         });
-        const chevrons = symmetricChevrons(a, b, axisBase.a, axisBase.b);
+        const chevrons = symmetricChevrons(
+          a,
+          b,
+          axisBase.a,
+          axisBase.b,
+          6 * px,
+        );
         push({
           kind: "chevron",
           id: constraint.id,
@@ -734,6 +765,7 @@ export function constraintMarks(
           y: p[1],
           angle: Math.atan2(base.normal[1], base.normal[0]),
           count: 1,
+          size: 6,
         });
         push({
           kind: "halfDot",
@@ -773,13 +805,26 @@ export function constraintMarks(
       case "fix": {
         const p = statedPoint(constraint.point);
         if (!p) break;
+        const style = styleFor([constraint.point]);
+        // The pin sits above the point on a short stem, so the point stays the
+        // visible evidence and the lock does not read as a filled dot.
+        push({
+          kind: "segment",
+          id: constraint.id,
+          type: constraint.type,
+          style,
+          x1: p[0],
+          y1: p[1],
+          x2: p[0],
+          y2: p[1] - 9 * px,
+        });
         push({
           kind: "pin",
           id: constraint.id,
           type: constraint.type,
-          style: styleFor([constraint.point]),
+          style,
           x: p[0],
-          y: p[1],
+          y: p[1] - 13 * px,
         });
         break;
       }
