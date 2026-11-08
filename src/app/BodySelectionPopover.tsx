@@ -1,3 +1,4 @@
+import { formatLength } from "../core/format";
 import { edgeRefKey, type EdgeRef } from "../core/kernel/protocol";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
 
@@ -16,7 +17,7 @@ function edgeLabel(index: number): string {
 
 function edgeDetail(edge: EdgeRef): string {
   if (edge.hint.length === undefined) return "—";
-  return `${edge.hint.length.toFixed(1)} mm`;
+  return `${formatLength(edge.hint.length)} mm`;
 }
 
 /**

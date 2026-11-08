@@ -28,8 +28,9 @@ test("revolves a rectangle around Y into a tube", async ({ app: page }) => {
   await expect(page.getByTestId("revolve-axis")).toContainText("pick one");
   await expect(page.getByTestId("revolve-apply")).toBeDisabled();
 
-  // Clicking the Y reference in the sketch picks it without stacking the
-  // selection popover over the revolve form.
+  // The axis row enters a candidate pick; clicking the Y reference sets it
+  // without stacking a selection popover over the revolve form.
+  await page.getByTestId("revolve-axis-pick").click();
   await clickSketch(page, 0, 5);
   await expect(page.getByTestId("revolve-axis")).toContainText("Y axis");
   await expect(page.getByTestId("selection-panel")).toHaveCount(0);
@@ -66,7 +67,8 @@ test("rejects a profile that crosses the axis", async ({ app: page }) => {
 
   await clickSketch(page, 5, 5);
   await page.getByTestId("profile-revolve").click();
-  await page.getByTestId("revolve-axis-y").click();
+  await page.getByTestId("revolve-axis-pick").click();
+  await clickSketch(page, 0, 5);
   await expect(page.getByTestId("revolve-error")).toContainText(
     "crosses the axis",
   );
@@ -86,7 +88,8 @@ test("uses a sketch line as the axis", async ({ app: page }) => {
 
   await clickSketch(page, 15, 5);
   await page.getByTestId("profile-revolve").click();
-  await page.getByTestId("revolve-axis-line-3").click();
+  await page.getByTestId("revolve-axis-pick").click();
+  await clickSketch(page, 10, 5);
   await expect(page.getByTestId("revolve-axis")).toContainText("line 4");
   const full = 2000 * Math.PI;
   await expect.poll(() => volume(page)).toBeCloseTo(full, -1);

@@ -1,3 +1,4 @@
+import { formatArea } from "../core/format";
 import type { SketchRegion } from "../core/sketch/loops";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
 
@@ -36,14 +37,14 @@ export function ProfilePopover({
   return (
     <StagePopover
       kicker="selection"
-      title={`${count} region${count === 1 ? "" : "s"}`}
+      title={`${count} profile${count === 1 ? "" : "s"}`}
       testId="profile-popover"
       dataCount={count}
       className="selection-popover"
       position={position}
       onMove={onMove}
       hint="select profiles first; the feature chips start the draft"
-      summary={`${count} region${count === 1 ? "" : "s"}`}
+      summary={`${count} profile${count === 1 ? "" : "s"}`}
       cancel={{ label: "clear", onClick: onClear, testId: "profile-clear" }}
     >
       <div className="selection-list">
@@ -53,8 +54,10 @@ export function ProfilePopover({
             key={region.id}
             data-profile-region={region.id}
           >
-            <span>Region {index + 1}</span>
-            <span className="mono">{region.kind}</span>
+            <span>Profile {index + 1}</span>
+            <span className="mono">
+              {formatArea(region.area)} mm² · {region.kind}
+            </span>
           </div>
         ))}
       </div>

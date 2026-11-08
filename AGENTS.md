@@ -575,6 +575,16 @@ docs/
   primary stays disabled until at least one profile is picked. The draft's own test ids
   are `extrude-draft-popover`, `extrude-apply` and `extrude-cancel`; existing features
   keep `feature-popover-apply` / `...-cancel`.
+- **Input pickers follow `docs/showcase/PICKS.md`.** Three patterns only: model multi
+  (faces/edges always live, plain click toggles), sketch regions (profile row `select`
+  switches stage) and single candidate (axis/support row + `pick`). Every multi input is
+  an `N selected` row plus a scrolling `Kind N · detail · remove` list directly under it,
+  **before** the value row. Empty input = `0 selected`, no list, disabled primary. The
+  form forces its model family filter (`faces` for shell/offset, `edges` for
+  blend/chamfer) and makes the filter row read-only; closing restores `all`. A revolve
+  axis is `axis · line N · construction · pick`, never a chip wall: `pick` enters a
+  candidate mode (lines + X/Y highlighted, region fills decoration) and Escape exits the
+  pick first, then cancels. Lists use `formatLength`/`formatArea`, never raw floats.
 - **Creation is contextual, never a header default.** Every gap in the timeline is an
   insert affordance: a full-height divider with an inset `+` that is **hover-only** (there
   is no always-visible one after the active step). There is a leading gap before the first
@@ -632,6 +642,8 @@ docs/
   a filtered-out hit is *blocked* and keeps the selection instead of clearing it. The
   current filter's consequence is a tooltip on the `FILTER` kicker, not inline prose (the
   row said "everything can be picked", which is self-evident and read like a status line).
+  A model multi form (shell/offset, blend/chamfer, project) forces its family and makes
+  the filter buttons read-only until the form closes; the closed state restores `all`.
   Create tools reuse the same row for their variants (`corner/center/3-point` rect,
   `center/2-/3-point` circle, `3-point/centre/tangent` arc); a variant change cancels
   the in-progress gesture. Bodies wait for multi-body. Do not put filters in the selection
@@ -642,9 +654,9 @@ docs/
   crossing its path). Both select *through* the body, Shift adds, a plain marquee
   replaces, and an empty marquee is a no-op. The marquee is ephemeral UI state drawn over
   the canvas; `Viewport.marqueeResult` projects each edge group's polyline, and the pure
-  box/lasso rules live in `src/viewer/marquee.ts` with unit tests. Faces are not
-  multi-selectable yet, so a marquee under the `faces` filter selects nothing until
-  shell/offset lands. Orbit drags are disabled while a marquee tool is active (the same
+  box/lasso rules live in `src/viewer/marquee.ts` with unit tests. Faces are
+  multi-selectable under the `faces` filter (shell/offset/project inputs). Orbit drags
+  are disabled while a marquee tool is active (the same
   pointer events would orbit), but the wheel still zooms.
 - **Edge picking at a corner is screen-distance deterministic.** `pickCandidatesAt`
   updates the camera's world matrix first (OrbitControls moves it between render frames,

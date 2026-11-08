@@ -131,6 +131,8 @@ export interface SketchCanvasProps {
   onZoomChange?: (percent: number) => void;
   /** A new zoom preset request; `seq` makes repeated picks re-apply. */
   zoomRequest?: { seq: number; value: "fit" | number } | null;
+  /** Line/reference ids highlighted while a single-candidate pick is active. */
+  candidateCurveIds?: readonly string[];
   /** Ids of the selected curves/points (ephemeral UI state, not the document). */
   selected: ReadonlySet<string>;
   /** The constraint selected by clicking its mark, if any. */
@@ -216,6 +218,7 @@ export function SketchCanvas({
   onGridScaleResolved,
   onZoomChange,
   zoomRequest,
+  candidateCurveIds,
   selected,
   selectedConstraintId = null,
   onSelectConstraint,
@@ -1934,6 +1937,34 @@ export function SketchCanvas({
           />
         ))}
       </g>
+
+      {candidateCurveIds && candidateCurveIds.length > 0 ? (
+        <g pointerEvents="none" data-axis-candidates="">
+          {candidateCurveIds.map((id) => {
+            const curve = allCurves(sketch).find(
+              (candidate) => candidate.id === id,
+            );
+            if (curve?.type !== "line") return null;
+            const a = points[curve.a];
+            const b = points[curve.b];
+            if (!a || !b) return null;
+            return (
+              <line
+                key={`candidate-${id}`}
+                x1={a[0]}
+                y1={a[1]}
+                x2={b[0]}
+                y2={b[1]}
+                stroke={palette.markerSoft}
+                strokeWidth={10}
+                strokeLinecap="round"
+                vectorEffect="non-scaling-stroke"
+                data-axis-candidate={id}
+              />
+            );
+          })}
+        </g>
+      ) : null}
 
       {sketch.references?.lines.map((axis) => {
         const a = points[axis.a];

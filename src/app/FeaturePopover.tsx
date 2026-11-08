@@ -1,12 +1,16 @@
+import { formatArea, formatLength } from "../core/format";
+import type { SketchRegion } from "../core/sketch/loops";
 import type { ExtrudeFeature, SketchFeature } from "../core/doc/types";
 import { MeasureField } from "./MeasureField";
 import { OPERATION_LABELS, OperationRow } from "./OperationRow";
+import { countLabel, InputRow, PickList } from "./PickRows";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
 
 interface FeaturePopoverProps {
   feature: ExtrudeFeature;
   sketches: readonly SketchFeature[];
-  regionCount: number;
+  /** The regions currently selected, in the order they are listed. */
+  profiles: readonly SketchRegion[];
   mode: "model" | "sketch";
   position: PopoverPosition;
   onMove: (position: PopoverPosition) => void;
@@ -20,6 +24,7 @@ interface FeaturePopoverProps {
   hasBase?: boolean;
   onEnd: (end: ExtrudeFeature["end"]) => void;
   onSelectProfiles: () => void;
+  onRemoveProfile: (index: number) => void;
   /** Popover chrome. Drafts use the same form with different wording/test ids. */
   kicker?: string;
   title?: string;
@@ -40,7 +45,7 @@ interface FeaturePopoverProps {
 export function FeaturePopover({
   feature,
   sketches,
-  regionCount,
+  profiles,
   mode,
   position,
   onMove,
@@ -54,6 +59,7 @@ export function FeaturePopover({
   hasBase = true,
   onEnd,
   onSelectProfiles,
+  onRemoveProfile,
   kicker = "extrude feature",
   title,
   testId = "feature-popover",
@@ -65,14 +71,15 @@ export function FeaturePopover({
   hint = "changes rebuild live · cancel reverts",
   summaryOverride,
 }: FeaturePopoverProps) {
-  const profiles = `${regionCount} region${regionCount === 1 ? "" : "s"}`;
+  const profileCount = profiles.length;
+  const profileWords = `${profileCount} profile${profileCount === 1 ? "" : "s"}`;
   const summary =
     summaryOverride ??
     (feature.end === "throughAll"
-      ? `through all · ${OPERATION_LABELS[feature.operation]} · ${profiles}`
-      : `${feature.height} mm · ${OPERATION_LABELS[feature.operation]}${
+      ? `through all · ${OPERATION_LABELS[feature.operation]} · ${profileWords}`
+      : `${formatLength(feature.height)} mm · ${OPERATION_LABELS[feature.operation]}${
           feature.symmetric ? " · symmetric" : ""
-        } · ${profiles}`);
+        } · ${profileWords}`);
 
   return (
     <StagePopover
@@ -88,7 +95,7 @@ export function FeaturePopover({
         label: primaryLabel,
         onClick: onApply,
         testId: primaryTestId,
-        disabled: primaryDisabled,
+        disabled: primaryDisabled || profileCount === 0,
       }}
     >
       {showSketchRow && onSketchChange ? (
@@ -109,6 +116,27 @@ export function FeaturePopover({
           </select>
         </label>
       ) : null}
+
+      <InputRow
+        label="profile"
+        value={countLabel(profileCount)}
+        valueTestId="extrude-profiles"
+        action={{
+          label: mode === "sketch" ? "pick in sketch" : "select",
+          onClick: onSelectProfiles,
+          testId: "popover-select-profiles",
+        }}
+      />
+      <PickList
+        rows={profiles.map((profile, index) => ({
+          id: profile.id,
+          label: `Profile ${index + 1}`,
+          detail: `${formatArea(profile.area)} mm²`,
+        }))}
+        onRemove={onRemoveProfile}
+        removeTestId="extrude-remove-profile"
+        testId="extrude-profile-list"
+      />
 
       <MeasureField
         label="distance"
@@ -164,21 +192,6 @@ export function FeaturePopover({
           </option>
         </select>
       </label>
-
-      <div className="feature-row">
-        <span className="detail-key">profile</span>
-        <span className="detail-value">
-          {regionCount} region{regionCount === 1 ? "" : "s"}
-        </span>
-        <button
-          className="text-action"
-          type="button"
-          onClick={onSelectProfiles}
-          data-testid="popover-select-profiles"
-        >
-          {mode === "sketch" ? "pick in sketch" : "select profiles"}
-        </button>
-      </div>
     </StagePopover>
   );
 }

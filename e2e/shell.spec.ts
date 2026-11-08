@@ -34,7 +34,7 @@ test("shells the plate with the top face open", async ({ app: page }) => {
   await page.getByTestId("start-shell").click();
   await expect(page.getByTestId("shell-feature-popover")).toBeVisible();
   await expect(page.getByTestId("shell-feature-faces")).toHaveText(
-    "1 open face",
+    "1 selected",
   );
   await page.getByTestId("shell-feature-thickness").fill("2");
 

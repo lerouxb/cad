@@ -1,3 +1,4 @@
+import { formatArea } from "../core/format";
 import type { TopoRef } from "../core/kernel/protocol";
 import { faceRefKey } from "../core/doc/datum";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
@@ -20,7 +21,7 @@ function faceDetail(face: TopoRef): string {
     : "face";
   return face.hint.area === undefined
     ? surface
-    : `${surface} · ${Math.round(face.hint.area)} mm²`;
+    : `${surface} · ${formatArea(face.hint.area)} mm²`;
 }
 
 /**

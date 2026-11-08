@@ -1,5 +1,7 @@
+import { formatLength } from "../core/format";
 import { edgeRefKey, type EdgeRef } from "../core/kernel/protocol";
 import { MeasureField } from "./MeasureField";
+import { countLabel, InputRow, PickList } from "./PickRows";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
 
 interface SolidBlendPopoverProps {
@@ -44,8 +46,8 @@ export function SolidBlendPopover({
   const valueLabel = isFillet ? "radius" : "distance";
   const title = isFillet ? "Fillet" : "Chamfer";
   const summary = isFillet
-    ? `R ${value} mm · ${edgeSummary}`
-    : `${value} mm · ${edgeSummary}`;
+    ? `R ${formatLength(value)} mm · ${edgeSummary}`
+    : `${formatLength(value)} mm · ${edgeSummary}`;
   return (
     <StagePopover
       kicker={isDraft ? "new feature" : `${kind} feature`}
@@ -67,6 +69,25 @@ export function SolidBlendPopover({
         disabled: edgeCount === 0 || !(value > 0),
       }}
     >
+      <InputRow
+        label="edges"
+        value={countLabel(edgeCount)}
+        valueTestId={`${prefix}-edges`}
+      />
+      <PickList
+        rows={edges.map((edge, index) => ({
+          id: edgeRefKey(edge),
+          label: `Edge ${index + 1}`,
+          detail:
+            edge.hint.length === undefined
+              ? "—"
+              : `${formatLength(edge.hint.length)} mm`,
+        }))}
+        onRemove={onRemoveEdge}
+        removeTestId={`${kind}-remove-edge`}
+        testId={`${prefix}-edge-list`}
+      />
+
       <MeasureField
         label={valueLabel}
         value={value}
@@ -78,34 +99,6 @@ export function SolidBlendPopover({
         sliderTestId={`${prefix}-${valueLabel}-slider`}
         ariaLabel={`${title} ${valueLabel} in millimetres`}
       />
-
-      <div className="feature-row">
-        <span className="detail-key">edges</span>
-        <span className="detail-value" data-testid={`${prefix}-edges`}>
-          {edgeSummary}
-        </span>
-      </div>
-
-      <div className="selection-list">
-        {edges.map((edge, index) => (
-          <div className="selection-item" key={edgeRefKey(edge)}>
-            <span>Edge {index + 1}</span>
-            <span className="mono">
-              {edge.hint.length === undefined
-                ? "—"
-                : `${edge.hint.length.toFixed(1)} mm`}
-            </span>
-            <button
-              className="text-action is-quiet"
-              type="button"
-              onClick={() => onRemoveEdge(index)}
-              data-testid={`${kind}-remove-edge-${index}`}
-            >
-              remove
-            </button>
-          </div>
-        ))}
-      </div>
     </StagePopover>
   );
 }

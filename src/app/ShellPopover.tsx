@@ -1,6 +1,8 @@
+import { formatArea, formatLength } from "../core/format";
 import type { TopoRef } from "../core/kernel/protocol";
 import { faceRefKey } from "../core/doc/datum";
 import { MeasureField } from "./MeasureField";
+import { countLabel, InputRow, PickList } from "./PickRows";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
 
 interface ShellPopoverProps {
@@ -25,7 +27,7 @@ function faceDetail(face: TopoRef): string {
     : "face";
   return face.hint.area === undefined
     ? surface
-    : `${surface} · ${Math.round(face.hint.area)} mm²`;
+    : `${surface} · ${formatArea(face.hint.area)} mm²`;
 }
 
 /**
@@ -55,7 +57,7 @@ export function ShellPopover({
       position={position}
       onMove={onMove}
       hint="click faces in the model to open or close them"
-      summary={`${thickness} mm · ${faceSummary}`}
+      summary={`${formatLength(thickness)} mm · ${faceSummary}`}
       cancel={{
         label: "cancel",
         onClick: onCancel,
@@ -68,6 +70,22 @@ export function ShellPopover({
         disabled: count === 0 || !(thickness > 0),
       }}
     >
+      <InputRow
+        label="open faces"
+        value={countLabel(count)}
+        valueTestId="shell-feature-faces"
+      />
+      <PickList
+        rows={faces.map((face, index) => ({
+          id: faceRefKey(face),
+          label: `Face ${index + 1}`,
+          detail: faceDetail(face),
+        }))}
+        onRemove={onRemoveFace}
+        removeTestId="shell-remove-face"
+        testId="shell-feature-face-list"
+      />
+
       <MeasureField
         label="thickness"
         value={thickness}
@@ -79,30 +97,6 @@ export function ShellPopover({
         sliderTestId="shell-feature-thickness-slider"
         ariaLabel="Shell thickness in millimetres"
       />
-
-      <div className="feature-row">
-        <span className="detail-key">open faces</span>
-        <span className="detail-value" data-testid="shell-feature-faces">
-          {faceSummary}
-        </span>
-      </div>
-
-      <div className="selection-list">
-        {faces.map((face, index) => (
-          <div className="selection-item" key={faceRefKey(face)}>
-            <span>Face {index + 1}</span>
-            <span className="mono">{faceDetail(face)}</span>
-            <button
-              className="text-action is-quiet"
-              type="button"
-              onClick={() => onRemoveFace(index)}
-              data-testid={`shell-remove-face-${index}`}
-            >
-              remove
-            </button>
-          </div>
-        ))}
-      </div>
     </StagePopover>
   );
 }

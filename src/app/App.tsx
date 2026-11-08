@@ -539,11 +539,14 @@ export function App() {
   const [revolveDraft, setRevolveDraft] = useState<RevolveDraft | null>(null);
   const [revolveBaseline, setRevolveBaseline] =
     useState<RevolveFeature | null>(null);
+  const [revolveAxisPicking, setRevolveAxisPicking] = useState(false);
   const [datumDraft, setDatumDraft] = useState<DatumPlaneDraft | null>(null);
   const extrudeHeight = activeExtrude?.height ?? 12;
-  const storedRegionIds = extrudeDraft
-    ? extrudeDraft.regions
-    : activeExtrude?.regions;
+  const storedRegionIds = revolveDraft
+    ? revolveDraft.regions
+    : extrudeDraft
+      ? extrudeDraft.regions
+      : activeExtrude?.regions;
 
   const [themeSettings, setThemeSettings] = useState<ThemeSettings>(() => loadTheme());
   const palette = useMemo(() => sketchPalette(themeSettings), [themeSettings]);
@@ -1809,6 +1812,7 @@ export function App() {
     setOffsetGhostMesh(null);
     setRevolveDraft(null);
     setRevolveBaseline(null);
+    setRevolveAxisPicking(false);
   };
 
   /** Filters and Select Other are ephemeral; a new/loaded document starts clean. */
@@ -1871,6 +1875,7 @@ export function App() {
     const picks = feature.edges.map(edgeBodyPick);
     setEdgeSelection(picks);
     viewportRef.current?.setEdgeSelection(picks);
+    setModelFilter("edges");
     setMode("model");
     setSelection([]);
     setBodyPick(null);
@@ -1923,6 +1928,7 @@ export function App() {
     setSelectOther(null);
     viewportRef.current?.clearPick();
     setSelection([]);
+    setModelFilter("all");
   };
 
   /** Start a UI-only fillet/chamfer draft from the selected edges. */
@@ -1941,6 +1947,7 @@ export function App() {
       value: defaultBlendValue(mesh, edges),
       anchorId: activeFeatureId,
     });
+    setModelFilter("edges");
     setMode("model");
     setSelection([]);
     setBodyPick(null);
@@ -2654,7 +2661,8 @@ export function App() {
       info.candidates.length > 1 &&
       !blendDraft &&
       !shellDraft &&
-      !offsetDraft
+      !offsetDraft &&
+      !projectDraft
         ? info
         : null,
     );
@@ -2985,6 +2993,7 @@ export function App() {
     setMode("model");
     setSelection([]);
     setHistoryNotice(null);
+    setModelFilter("all");
   };
 
   const openExtrudeEditor = (
@@ -3734,6 +3743,7 @@ export function App() {
       operation: hasBody ? "join" : "new",
       anchorId: activeFeatureId,
     });
+    setRevolveAxisPicking(false);
     setProfileSelection([]);
     setSelection([]);
     setSelectedConstraintId(null);
@@ -3781,6 +3791,7 @@ export function App() {
     const draft = revolveDraft;
     setRevolveDraft(null);
     setRevolveBaseline(null);
+    setRevolveAxisPicking(false);
     if (draft?.mode === "edit" && baseline) {
       const current = getState();
       const doc = updateRevolveFeature(current.doc, baseline.id, (feature) => ({
@@ -3822,6 +3833,7 @@ export function App() {
       operation: feature.operation,
       anchorId: null,
     });
+    setRevolveAxisPicking(false);
     setActiveFeatureId(feature.id);
     setMode("sketch");
     setTool("select");
@@ -3862,6 +3874,7 @@ export function App() {
     }
     setRevolveDraft(null);
     setRevolveBaseline(null);
+    setRevolveAxisPicking(false);
     setSelection([]);
     setProfileSelection([]);
     setMode("model");
@@ -3887,13 +3900,14 @@ export function App() {
   const handleSelect = (entityId: string | null, additive: boolean): void => {
     clearTransientSolve();
     if (revolveDraft) {
-      // The revolve form is the active surface. A sketch line or the X/Y
-      // reference sets the axis; every other sketch click is swallowed so a
-      // second selection popover cannot stack over the form.
-      if (entityId) {
+      // The revolve form is the active surface. Only the explicit axis pick
+      // mode consumes a line/reference click; every other sketch click is
+      // swallowed so a second selection popover cannot stack over the form.
+      if (revolveAxisPicking && entityId) {
         const axis = revolveAxisForPick(revolveSketch ?? sketch, entityId);
         if (axis) {
           updateRevolveDraft((draft) => ({ ...draft, axis }));
+          setRevolveAxisPicking(false);
         }
       }
       setSelection([]);
@@ -5035,6 +5049,10 @@ export function App() {
   };
 
   const commitRegions = (next: readonly string[]): void => {
+    if (revolveDraft) {
+      updateRevolveDraft((draft) => ({ ...draft, regions: [...next] }));
+      return;
+    }
     if (extrudeDraft) {
       setExtrudeDraft((draft) =>
         draft ? { ...draft, regions: [...next] } : draft,
@@ -5056,7 +5074,52 @@ export function App() {
     commit({ doc, solved: current.solved, solvedFor: current.solvedFor });
   };
 
-  const profileEditing = activeExtrude !== null || extrudeDraft !== null;
+  const removeExtrudeProfile = (index: number): void => {
+    const next = activeRegions
+      .filter((_, at) => at !== index)
+      .map((region) => region.id);
+    if (extrudeDraft) {
+      setExtrudeDraft((draft) =>
+        draft ? { ...draft, regions: next } : draft,
+      );
+      return;
+    }
+    updateActiveExtrude((feature) => ({ ...feature, regions: next }));
+  };
+
+  const removeRevolveProfile = (index: number): void => {
+    const next = revolveSelectedRegions
+      .filter((_, at) => at !== index)
+      .map((region) => region.id);
+    updateRevolveDraft((draft) => ({ ...draft, regions: next }));
+  };
+
+  const selectRevolveProfiles = (): void => {
+    setRevolveAxisPicking(false);
+    setMode("sketch");
+    setTool("select");
+    setSelection([]);
+    setSelectedConstraintId(null);
+    setProfileSelection([]);
+    setCancelToken((token) => token + 1);
+    setFitToken((token) => token + 1);
+  };
+
+  const beginRevolveAxisPick = (): void => {
+    setRevolveAxisPicking(true);
+    setMode("sketch");
+    setTool("select");
+    setSelection([]);
+    setSelectedConstraintId(null);
+    setProfileSelection([]);
+    setCancelToken((token) => token + 1);
+    setFitToken((token) => token + 1);
+  };
+
+  const profileEditing =
+    activeExtrude !== null ||
+    extrudeDraft !== null ||
+    revolveDraft !== null;
 
   const handleSelectRegion = (regionId: string, additive: boolean): void => {
     // Profile mode (a draft or an existing extrude editor) edits the operation's
@@ -5710,7 +5773,13 @@ export function App() {
           return;
         }
         if (revolveDraft) {
-          commitRevolveDraft();
+          // M17: the first Escape exits an axis pick and keeps the form; the
+          // next one cancels the draft (the footer cancel semantics).
+          if (revolveAxisPicking) {
+            setRevolveAxisPicking(false);
+            return;
+          }
+          cancelRevolveEditor();
           return;
         }
         if (extrudeDraft) {
@@ -6013,7 +6082,10 @@ export function App() {
 
   const profileMode =
     mode === "sketch" &&
-    (activeFeature?.type === "extrude" || extrudeDraft !== null);
+    !revolveAxisPicking &&
+    (activeFeature?.type === "extrude" ||
+      extrudeDraft !== null ||
+      revolveDraft !== null);
   const hint = extrudeDraft
     ? extrudeDraft.regions.length === 0
       ? "Pick at least one filled region for the new extrude; Shift adds. Set distance, direction and operation in the popover."
@@ -6035,16 +6107,6 @@ export function App() {
     activeState?.result?.diagnostics.some(
       (diagnostic) => diagnostic.code === "support-lost",
     ) ?? false;
-  const activeExtrudeOutput =
-    activeState?.result?.output?.kind === "extrude"
-      ? activeState.result.output
-      : null;
-  const activeRegionCount = extrudeDraft
-    ? extrudeDraft.regions.length
-    : activeExtrudeOutput?.regionIds.length ??
-      (activeFeature && isExtrudeFeature(activeFeature)
-        ? activeFeature.regions.length
-        : 0);
   const sourceSketches =
     activeFeatureIndex > 0
       ? doc.features
@@ -6585,6 +6647,12 @@ export function App() {
                 }}
                 note={selectionFilterNote(modelFilter)}
                 testPrefix="model-filter"
+                disabled={
+                  blendDraft !== null ||
+                  shellDraft !== null ||
+                  offsetDraft !== null ||
+                  projectDraft !== null
+                }
               />
             </div>
 
@@ -6592,6 +6660,8 @@ export function App() {
             selectOther.candidates.length > 1 &&
             !blendDraft &&
             !shellDraft &&
+            !offsetDraft &&
+            !projectDraft &&
             !measureOpen ? (
               <button
                 type="button"
@@ -6863,9 +6933,11 @@ export function App() {
                   selectedRegions={selectedRegions}
                   profileSelection={profileMode}
                   regionsSelectable={
-                    activeExtrude !== null ||
-                    extrudeDraft !== null ||
-                    (mode === "sketch" && tool === "select")
+                    !revolveAxisPicking &&
+                    (activeExtrude !== null ||
+                      extrudeDraft !== null ||
+                      revolveDraft !== null ||
+                      (mode === "sketch" && tool === "select"))
                   }
                   onSelectRegion={handleSelectRegion}
                   onMarqueeSelectRegions={handleMarqueeSelectRegions}
@@ -6882,6 +6954,15 @@ export function App() {
                   onGridScaleResolved={setGridPixels}
                   onZoomChange={handleZoomChange}
                   zoomRequest={zoomRequest}
+                  candidateCurveIds={
+                    revolveAxisPicking
+                      ? [
+                          "axis-x",
+                          "axis-y",
+                          ...revolveAxisCandidates.map((curve) => curve.id),
+                        ]
+                      : undefined
+                  }
                   selected={selectedSet}
                   onSelect={handleSelect}
                   onSetPointPosition={handleSetPointPosition}
@@ -6922,9 +7003,10 @@ export function App() {
                 sketchName={
                   findFeature(doc, revolveDraft.sketchId)?.name ?? "Sketch"
                 }
-                profileCount={revolveDraft.regions.length}
+                profiles={revolveSelectedRegions}
                 axis={revolveDraft.axis}
                 axisCandidates={revolveAxisCandidates}
+                axisPicking={revolveAxisPicking}
                 angles={revolveDraft.angle}
                 direction={revolveDraft.direction}
                 operation={revolveDraft.operation}
@@ -6933,9 +7015,9 @@ export function App() {
                 error={revolveDraftError ?? revolvePreviewError}
                 position={popoverPosition}
                 onMove={setPopoverPosition}
-                onAxis={(axis) =>
-                  updateRevolveDraft((draft) => ({ ...draft, axis }))
-                }
+                onSelectProfiles={selectRevolveProfiles}
+                onRemoveProfile={removeRevolveProfile}
+                onPickAxis={beginRevolveAxisPick}
                 onAngle={(angle) =>
                   updateRevolveDraft(
                     (draft) => ({
@@ -7338,7 +7420,7 @@ export function App() {
             <FeaturePopover
               feature={draftFeature}
               sketches={activeSketchFeature ? [activeSketchFeature] : []}
-              regionCount={extrudeDraft.regions.length}
+              profiles={activeRegions}
               mode={mode}
               position={popoverPosition}
               onMove={setPopoverPosition}
@@ -7372,6 +7454,7 @@ export function App() {
                 )
               }
               onSelectProfiles={selectExtrudeProfiles}
+              onRemoveProfile={removeExtrudeProfile}
               kicker="new feature"
               title={`Extrude ${activeSketchFeature?.name ?? ""}`.trim()}
               testId="extrude-draft-popover"
@@ -7527,7 +7610,7 @@ export function App() {
             <FeaturePopover
               feature={activeFeature}
               sketches={sourceSketches}
-              regionCount={activeRegionCount}
+              profiles={activeRegions}
               mode={mode}
               position={popoverPosition}
               onMove={setPopoverPosition}
@@ -7541,6 +7624,7 @@ export function App() {
               onEnd={handleExtrudeEnd}
               hasBase={hasBaseForForm}
               onSelectProfiles={selectExtrudeProfiles}
+              onRemoveProfile={removeExtrudeProfile}
             />
           ) : null}
 
@@ -8095,8 +8179,10 @@ function describeSelection(
         result.push({
           id,
           kind: "line",
-          label: curve.construction ? "Construction line" : "Line",
-          detail: a && b ? `${formatLength(distance(a, b))} mm` : "—",
+          label: "Line",
+          detail: `${
+            a && b ? `${formatLength(distance(a, b))} mm` : "—"
+          }${curve.construction ? " · construction" : ""}`,
         });
       } else {
         const radius = curveRadius(curve, geometry.points, geometry.radii);
@@ -8126,6 +8212,19 @@ function describeSelection(
       detail: `${formatLength(position[0])}, ${formatLength(position[1])} mm`,
     });
   }
+  // PICKS.md P11: selected geometry rows use `Kind N`; reference identities
+  // (Origin, X axis, projected labels) and dimensions keep their names.
+  const ordinals = new Map<string, number>();
+  for (const item of result) {
+    if (
+      item.kind === "reference" || item.kind === "dimension"
+    ) {
+      continue;
+    }
+    const next = (ordinals.get(item.kind) ?? 0) + 1;
+    ordinals.set(item.kind, next);
+    item.label = `${item.label} ${next}`;
+  }
   return result;
 }
 
@@ -8147,6 +8246,7 @@ function ToolOptionsRow({
   onChange,
   note,
   testPrefix,
+  disabled = false,
 }: {
   kicker: string;
   options: readonly string[];
@@ -8154,6 +8254,7 @@ function ToolOptionsRow({
   onChange: (value: string) => void;
   note: string;
   testPrefix: string;
+  disabled?: boolean;
 }) {
   return (
     <div className="tool-options" role="toolbar" aria-label="Tool options">
@@ -8168,6 +8269,12 @@ function ToolOptionsRow({
           className={`tool-option${option === value ? " is-on" : ""}`}
           type="button"
           aria-pressed={option === value}
+          disabled={disabled}
+          title={
+            disabled
+              ? "The filter is fixed while this form is open"
+              : undefined
+          }
           onClick={() => onChange(option)}
           data-testid={`${testPrefix}-${option}`}
         >

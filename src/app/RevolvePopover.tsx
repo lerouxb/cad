@@ -1,14 +1,18 @@
+import { formatArea, formatEditable } from "../core/format";
+import type { SketchRegion } from "../core/sketch/loops";
 import type { ExtrudeOperation, RevolveAxis } from "../core/doc/types";
 import type { SketchCurve } from "../core/sketch/types";
 import { MeasureField } from "./MeasureField";
 import { OPERATION_LABELS, OperationRow } from "./OperationRow";
+import { countLabel, InputRow, PickList } from "./PickRows";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
 
 interface RevolvePopoverProps {
   sketchName: string;
-  profileCount: number;
+  profiles: readonly SketchRegion[];
   axis: RevolveAxis | null;
   axisCandidates: readonly SketchCurve[];
+  axisPicking: boolean;
   angles: number;
   direction: "ccw" | "cw";
   operation: ExtrudeOperation;
@@ -17,7 +21,9 @@ interface RevolvePopoverProps {
   error?: string | null;
   position: PopoverPosition;
   onMove: (position: PopoverPosition) => void;
-  onAxis: (axis: RevolveAxis) => void;
+  onSelectProfiles: () => void;
+  onRemoveProfile: (index: number) => void;
+  onPickAxis: () => void;
   onAngle: (value: number) => void;
   onAngleEnd: () => void;
   onDirection: (direction: "ccw" | "cw") => void;
@@ -33,12 +39,14 @@ function lineLabel(curve: SketchCurve, index: number): string {
 /**
  * The revolve form. A profile is selected before the chip starts the draft; the
  * axis is an explicit sketch line or the X/Y reference, never a silent default.
+ * The axis row enters a candidate pick instead of listing every line as chips.
  */
 export function RevolvePopover({
   sketchName,
-  profileCount,
+  profiles,
   axis,
   axisCandidates,
+  axisPicking,
   angles,
   direction,
   operation,
@@ -47,7 +55,9 @@ export function RevolvePopover({
   error,
   position,
   onMove,
-  onAxis,
+  onSelectProfiles,
+  onRemoveProfile,
+  onPickAxis,
   onAngle,
   onAngleEnd,
   onDirection,
@@ -55,6 +65,7 @@ export function RevolvePopover({
   onApply,
   onCancel,
 }: RevolvePopoverProps) {
+  const profileCount = profiles.length;
   const axisLabel =
     axis === null
       ? "pick one"
@@ -71,7 +82,7 @@ export function RevolvePopover({
             },
             axisCandidates.findIndex((curve) => curve.id === axis.curveId),
           ) ?? "line");
-  const summary = `${profileCount} profile${profileCount === 1 ? "" : "s"} · ${angles}° · ${OPERATION_LABELS[operation]}`;
+  const summary = `${formatEditable(angles)}° · ${OPERATION_LABELS[operation]} · ${profileCount} profile${profileCount === 1 ? "" : "s"}`;
   return (
     <StagePopover
       kicker={isDraft ? "new feature" : "revolve feature"}
@@ -80,9 +91,13 @@ export function RevolvePopover({
       position={position}
       onMove={onMove}
       hint={
-        axis === null
-          ? "pick an axis: a sketch line or X/Y"
-          : "the profile must stay on one side of the axis"
+        axisPicking
+          ? "click a sketch line or the X/Y reference · Esc exits the pick"
+          : profileCount === 0
+            ? "pick at least one profile with select"
+            : axis === null
+              ? "pick an axis: a sketch line or X/Y"
+              : "the profile must stay on one side of the axis"
       }
       summary={summary}
       cancel={{
@@ -106,55 +121,39 @@ export function RevolvePopover({
         <span className="detail-value">{sketchName}</span>
       </div>
 
-      <div className="feature-row">
-        <span className="detail-key">profile</span>
-        <span className="detail-value" data-testid="revolve-profiles">
-          {profileCount} profile{profileCount === 1 ? "" : "s"}
-        </span>
-      </div>
+      <InputRow
+        label="profile"
+        value={countLabel(profileCount)}
+        valueTestId="revolve-profiles"
+        action={{
+          label: "select",
+          onClick: onSelectProfiles,
+          testId: "revolve-select-profiles",
+          active: false,
+        }}
+      />
+      <PickList
+        rows={profiles.map((profile, index) => ({
+          id: profile.id,
+          label: `Profile ${index + 1}`,
+          detail: `${formatArea(profile.area)} mm²`,
+        }))}
+        onRemove={onRemoveProfile}
+        removeTestId="revolve-remove-profile"
+        testId="revolve-profile-list"
+      />
 
-      <div className="feature-row">
-        <span className="detail-key">axis</span>
-        <span className="detail-value" data-testid="revolve-axis">
-          {axisLabel}
-        </span>
-      </div>
-
-      <div className="sc-chip-row">
-        <span className="tool-kicker">axis</span>
-        <button
-          className={`sc-chip${axis?.kind === "reference" && axis.axis === "x" ? " is-active" : ""}`}
-          type="button"
-          onClick={() => onAxis({ kind: "reference", axis: "x" })}
-          data-testid="revolve-axis-x"
-        >
-          X
-        </button>
-        <button
-          className={`sc-chip${axis?.kind === "reference" && axis.axis === "y" ? " is-active" : ""}`}
-          type="button"
-          onClick={() => onAxis({ kind: "reference", axis: "y" })}
-          data-testid="revolve-axis-y"
-        >
-          Y
-        </button>
-        {axisCandidates.map((curve, index) => {
-          const active =
-            axis?.kind === "line" && axis.curveId === curve.id;
-          return (
-            <button
-              className={`sc-chip${active ? " is-active" : ""}`}
-              type="button"
-              key={curve.id}
-              onClick={() => onAxis({ kind: "line", curveId: curve.id })}
-              data-testid={`revolve-axis-line-${index}`}
-              title={lineLabel(curve, index)}
-            >
-              {lineLabel(curve, index)}
-            </button>
-          );
-        })}
-      </div>
+      <InputRow
+        label="axis"
+        value={axisLabel}
+        valueTestId="revolve-axis"
+        action={{
+          label: "pick",
+          onClick: onPickAxis,
+          testId: "revolve-axis-pick",
+          active: axisPicking,
+        }}
+      />
 
       <MeasureField
         label="angle"

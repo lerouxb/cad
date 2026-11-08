@@ -1,6 +1,8 @@
+import { formatArea, formatLength } from "../core/format";
 import type { TopoRef } from "../core/kernel/protocol";
 import { faceRefKey } from "../core/doc/datum";
 import { MeasureField } from "./MeasureField";
+import { countLabel, InputRow, PickList } from "./PickRows";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
 
 interface OffsetFacePopoverProps {
@@ -28,7 +30,7 @@ function faceDetail(face: TopoRef): string {
     : "face";
   return face.hint.area === undefined
     ? surface
-    : `${surface} · ${Math.round(face.hint.area)} mm²`;
+    : `${surface} · ${formatArea(face.hint.area)} mm²`;
 }
 
 /**
@@ -54,8 +56,8 @@ export function OffsetFacePopover({
   const count = faces.length;
   const magnitude = Math.abs(distance);
   const direction = distance < 0 ? "in" : "out";
-  const signed = `${distance < 0 ? "−" : "+"}${magnitude.toFixed(1)}`;
-  const summary = `${count} face${count === 1 ? "" : "s"} · ${signed} mm`;
+  const signed = `${distance < 0 ? "−" : "+"}${formatLength(magnitude)}`;
+  const summary = `${signed} mm · ${count} face${count === 1 ? "" : "s"}`;
   const cylinder = count === 1 ? faces[0] : undefined;
   const radius = cylinder?.hint.radius;
   const radialSign = cylinder?.hint.radialSign;
@@ -84,6 +86,22 @@ export function OffsetFacePopover({
         disabled: count === 0 || !(magnitude > 0) || Boolean(error),
       }}
     >
+      <InputRow
+        label="faces"
+        value={countLabel(count)}
+        valueTestId="offset-face-faces"
+      />
+      <PickList
+        rows={faces.map((face, index) => ({
+          id: faceRefKey(face),
+          label: `Face ${index + 1}`,
+          detail: faceDetail(face),
+        }))}
+        onRemove={onRemoveFace}
+        removeTestId="offset-face-remove"
+        testId="offset-face-list"
+      />
+
       <MeasureField
         label="distance"
         value={magnitude}
@@ -120,12 +138,6 @@ export function OffsetFacePopover({
         </span>
       </div>
 
-      {error ? (
-        <p className="feature-error" data-testid="offset-face-error">
-          {error}
-        </p>
-      ) : null}
-
       {newRadius !== null && newRadius > 0 ? (
         <div className="feature-row">
           <span className="detail-key">result</span>
@@ -135,22 +147,11 @@ export function OffsetFacePopover({
         </div>
       ) : null}
 
-      <div className="selection-list">
-        {faces.map((face, index) => (
-          <div className="selection-item" key={faceRefKey(face)}>
-            <span>Face {index + 1}</span>
-            <span className="mono">{faceDetail(face)}</span>
-            <button
-              className="text-action is-quiet"
-              type="button"
-              onClick={() => onRemoveFace(index)}
-              data-testid={`offset-face-remove-${index}`}
-            >
-              remove
-            </button>
-          </div>
-        ))}
-      </div>
+      {error ? (
+        <p className="feature-error" data-testid="offset-face-error">
+          {error}
+        </p>
+      ) : null}
     </StagePopover>
   );
 }

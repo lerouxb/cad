@@ -75,6 +75,7 @@ test("a selected line leaves constraints quiet; a selected mark highlights its b
     "data-count",
     "1",
   );
+  await expect(page.getByTestId("selection-panel")).toContainText(/Line 1/i);
   const horizontal = page
     .locator('[data-constraint-type="horizontal"]')
     .first();

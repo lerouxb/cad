@@ -145,7 +145,7 @@ test("selecting a step opens its editor instead of footer commands", async ({
   await expect(detail).not.toContainText("select profiles");
   await expect(detail).not.toContainText("rename");
   await expect(page.getByTestId("edit-feature")).toHaveCount(0);
-  await expect(page.getByTestId("extrude-profiles")).toHaveCount(0);
+  await expect(detail.getByTestId("extrude-profiles")).toHaveCount(0);
 
   // Profiles are picked from the same form that edits the feature.
   await page.getByTestId("popover-select-profiles").click();

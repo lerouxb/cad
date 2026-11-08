@@ -17,3 +17,12 @@ export function formatLength(value: number): string {
 export function formatEditable(value: number): string {
   return String(Math.round(value * 100) / 100);
 }
+
+const areaFormat = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 1,
+});
+
+/** Areas in square millimetres, with a thousands separator. */
+export function formatArea(value: number): string {
+  return areaFormat.format(value);
+}

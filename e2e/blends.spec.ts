@@ -54,7 +54,7 @@ async function createPlateFillet(page: Page, radius = 2) {
   await page.getByTestId("start-fillet").click();
   await expect(page.getByTestId("fillet-feature-popover")).toBeVisible();
   await expect(page.getByTestId("fillet-feature-edges")).toContainText(
-    "4 edges",
+    "4 selected",
   );
   await expect(
     page.getByTestId("fillet-feature-radius-slider"),
@@ -238,7 +238,7 @@ test("creates a chamfer from selected edges with a live preview", async ({
   await page.getByTestId("start-chamfer").click();
   await expect(page.getByTestId("chamfer-feature-popover")).toBeVisible();
   await expect(page.getByTestId("chamfer-feature-edges")).toContainText(
-    `${selected.length} edge`,
+    `${selected.length} selected`,
   );
   await expect(page.getByTestId("chamfer-feature-distance-slider")).toBeVisible();
 

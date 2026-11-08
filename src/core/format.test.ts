@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatEditable, formatLength } from "./format";
+import { formatArea, formatEditable, formatLength } from "./format";
 
 describe("measurement formatting", () => {
   it("shows whole millimetres without a decimal and otherwise one", () => {
@@ -13,6 +13,11 @@ describe("measurement formatting", () => {
     expect(formatEditable(56.25)).toBe("56.25");
     expect(formatEditable(56.2499)).toBe("56.25");
     expect(formatEditable(56.2)).toBe("56.2");
+  });
+
+  it("shows areas with a thousands separator", () => {
+    expect(formatArea(2400)).toBe("2,400");
+    expect(formatArea(12.34)).toBe("12.3");
   });
 
   it("rounds once, not twice", () => {

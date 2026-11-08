@@ -304,7 +304,7 @@ test("cancel restores the previous extrude and discards a draft", async ({
   const plate30 = examplePlateVolume(30);
   await expect.poll(() => volume(page)).toBeCloseTo(plate30, -1);
   await expect(page.getByTestId("feature-popover")).toContainText(
-    "30 mm · new body · symmetric · 1 region",
+    "30 mm · new body · symmetric · 1 profile",
   );
 
   await page.getByTestId("feature-popover-cancel").click();
