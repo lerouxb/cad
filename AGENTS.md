@@ -554,11 +554,17 @@ docs/
   card is the click target. The track is the only horizontal scroll surface: a vertical
   wheel scrolls it sideways, and `overflow-y` is hidden so a horizontal overflow can
   never add a second scrollbar. Native overlay scrollbars are an OS setting; do not
-  build a fake/virtual scrollbar. The empty tail after the last step is always at least
-  64px wide; clicking it clears the history cursor, renders the full document with no
-  active step and no feature popover/overlay. Multiple bodies, body chips as things,
-  groups and the lost-body bottom line are deferred (see `docs/showcase/TIMELINE.md` and
-  PLAN M6).
+  build a fake/virtual scrollbar. The step track has no extra horizontal padding: the
+  leading tail is a fixed 44px start target, and the trailing tail fills the remaining
+  width after the last insert gap (minimum 44px), so clicking anywhere in it clears the
+  history cursor, renders the full document with no active step and no feature
+  popover/overlay. The final insert gap stays a 26px insert affordance. Opening a
+  document leaves the cursor empty (`activeFeatureId = null`): the full document
+  renders, the track is scrolled to the end, no step is active and no step popover is
+  open. Selecting a step is explicit. Escape at rest — with no menu, editor,
+  gesture, tool or selection left to cancel — does exactly what the end tail
+  does: no step, full document, track at the end. Multiple bodies, body chips as things, groups and
+  the lost-body bottom line are deferred (see `docs/showcase/TIMELINE.md` and PLAN M6).
 - **Visibility is a chip affordance, not a footer command.** A datum plane's chip has
   an always-visible eye split control (outline = shown, struck = hidden) with a tooltip;
   the footer no longer has `hide`/`show`. The step still dims when hidden, but the eye is

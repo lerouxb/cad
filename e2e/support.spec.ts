@@ -288,9 +288,11 @@ test("datum planes based on a face follow source body edits", async ({
     .poll(() =>
       page.evaluate(() => {
         const doc = JSON.parse(localStorage.getItem("cad.doc")!);
-        const datum = doc.features.find(
-          (feature: { type: string }) => feature.type === "datum",
-        );
+        // The datum this test created is appended at the insert gap; the
+        // example ships a hidden Midplane datum earlier in the history.
+        const datum = [...doc.features]
+          .reverse()
+          .find((feature: { type: string }) => feature.type === "datum");
         return (
           datum?.frame?.origin?.map(
             (value: number) => Math.round(value * 1000) / 1000 || 0,

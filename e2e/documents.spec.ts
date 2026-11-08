@@ -244,8 +244,8 @@ test("builds a cut and join from a saved multi-feature document", async ({
   const cut = page.locator('[data-feature-id="extrude-2"]');
   await expect(holeSketch).toContainText("Hole sketch");
   await expect(cut).toContainText("Cut 1");
-  // Opening a document selects its end, so the whole history is built.
-  await expect(timeline).toHaveAttribute("data-active-feature", "extrude-3");
+  // Opening a document selects no step; the whole history is still built.
+  await expect(timeline).toHaveAttribute("data-active-feature", "");
 
   // Selecting a later sketch edits that sketch; it does not silently take over
   // its consuming extrude. Select the extrude step for profile editing.

@@ -258,6 +258,9 @@ the selection popover closes. The draft owns its inputs until apply/cancel.
 - Selection is **ephemeral**: not in the document, not undoable, not persisted.
 - It is cleared on tool change, Escape, delete, timeline navigation, entering a
   feature draft, and new/open document.
+- Escape is per-press: it clears the selection first; with nothing left to
+  cancel, the next Escape clears the history cursor and shows the full document
+  (the end-tail state). See `MODES.md` R1.
 - Undo/redo prunes ids that no longer exist.
 - Selection order is preserved only for the current gesture (symmetric axis).
 - The stage renders only the selected prefix; selecting a step is the history

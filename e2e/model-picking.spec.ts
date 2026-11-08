@@ -300,6 +300,11 @@ test("edges that share a face pair are hovered and picked separately", async ({
 
 test("picks faces and edges in the model view", async ({ app: page }) => {
   const canvas = page.locator("canvas.viewport-canvas");
+  // Loading starts with no history cursor; selecting the base extrude is what
+  // puts its sketch overlay on the model.
+  await page.getByTestId("timeline-extrude").click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("feature-popover")).toHaveCount(0);
   await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
   await fitView(page);
 

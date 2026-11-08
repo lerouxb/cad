@@ -840,7 +840,7 @@
 }
 
 .bd-timeline .steps {
-  padding: 0 26px;
+  padding: 0;
 }
 
 /* a rule above the steps that runs the full width, sitting below the group
@@ -956,7 +956,8 @@
 }
 
 /* the empty tail at each end of the track: a click target that clears the
-   cursor, the way the app's empty tail does */
+   cursor, the way the app's empty tail does. The start tail is a fixed 44px
+   target; the end tail fills the remaining width of the track. */
 .bd-timeline .insert-tail {
   flex: none;
   align-self: stretch;
@@ -966,6 +967,12 @@
   border: 0;
   background: none;
   cursor: pointer;
+}
+
+.bd-timeline .insert-tail:last-child {
+  flex: 1 1 44px;
+  width: auto;
+  min-width: 44px;
 }
 
 /* the gaps supply the spacing now, so the steps sit flush against them */

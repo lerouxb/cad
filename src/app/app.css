@@ -1712,7 +1712,7 @@ body {
   align-self: stretch;
   align-items: stretch;
   gap: 0;
-  padding: 0 22px;
+  padding: 0;
   /* Horizontal scrolling is expected for a long history; never let that
      compute overflow-y:auto and add a vertical scrollbar to the strip. */
   overflow-y: hidden;
@@ -2005,6 +2005,14 @@ body {
   cursor: default;
 }
 
+/* The trailing tail fills everything after the final insert gap. */
+.timeline-empty[data-testid="timeline-empty"] {
+  flex: 1 1 44px;
+  width: auto;
+  min-width: 44px;
+  cursor: pointer;
+}
+
 .insert-menu {
   position: absolute;
   z-index: 12;
@@ -2147,6 +2155,10 @@ body {
   font-size: var(--type-micro);
   letter-spacing: var(--tracking-label);
   text-transform: uppercase;
+}
+
+.timeline-detail > .timeline-note:first-child {
+  margin-left: auto;
 }
 
 .timeline-note {

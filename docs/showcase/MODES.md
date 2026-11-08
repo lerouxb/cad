@@ -1,6 +1,7 @@
 # Interaction modes and input rules
 
-> Status: **implemented contract**, 2026-11-07. Decisions D1–D12 are accepted
+> Status: **implemented contract**, 2026-11-07; the timeline/escape additions
+> of 2026-11-08 are implemented. Decisions D1–D12 are accepted
 > (see §5) and the app implements the tables in §3. §4 records the outcome of
 > the original audit: every divergence is fixed or explicitly deferred. Keep the
 > `⚠` markers out of §3 — a cell that disagrees with the code is a bug in one of
@@ -63,11 +64,17 @@ Escape acts on the topmost layer only, in this order:
 4. the current gesture (line draft, marquee, dimension target), **keeping the
    armed tool**;
 5. the armed tool → `select`;
-6. the selection / picks (already empty after step 5 in most cases).
+6. the selection / picks;
+7. the **history cursor** → no step, exactly like clicking the end tail: the
+   full document renders, the stage returns to the model, no step or step
+   popover is active, the selection is empty, and the track sits at its end.
+   If there is no active step, this is the final no-op.
 
-One press = one outcome. Escape never changes the history cursor and never
-leaves the stage, except when cancelling an operation whose *baseline* mode is
-the other stage (the extrude editor returns to the mode it opened from).
+One press = one outcome. Escape changes the history cursor only after every other
+layer is empty, and then it does exactly what the end tail does — including
+leaving the sketch stage for the full model. It never leaves the stage for any
+other reason, except when cancelling an operation whose *baseline* mode is the
+other stage (the extrude editor returns to the mode it opened from).
 
 > Why this differs from today: the app currently resets the tool, the draft,
 > the selection and every pick in one press (fine), but skips several
@@ -109,16 +116,22 @@ a line vertex, starts a marquee, places a dimension, etc.
 
 ### R5 — The timeline never commits
 
-Clicking a step, an insert gap or the empty tail cancels the current gesture
+Clicking a step, an insert gap or the **end tail** cancels the current gesture
 and operation with the same semantics as its `cancel`, then moves the history
-cursor (the empty tail clears it). It never presses `apply`. A focused text
+cursor (the end tail clears it). It never presses `apply`. A focused text
 field is the one exception: it commits on blur as usual (R7).
 
 - A step selects itself and changes the stage to match its type.
 - A normal insert gap moves the cursor to the step before it, then opens the
   menu.
 - The start insert gap keeps the cursor where it is.
-- The empty tail clears the cursor and shows the whole document.
+- The **end tail** is the whole area to the right of the last step's insert gap;
+  it fills the remaining track width, so clicking anywhere after the last step
+  clears the cursor and shows the whole document.
+- The leading 44px tail is the start target and also clears the cursor.
+- **On load the cursor is empty**: the full document renders, the track is
+  scrolled to the end, and no step or step popover is active. Selecting a step is
+  explicit.
 
 ### R6 — A stage change cancels stage-local state
 
@@ -165,6 +178,10 @@ If Enter cannot do anything (an incomplete form, a disabled primary, an
 operation with no input), it does nothing **and the footer says why**. Do not
 quietly close, apply a default, or fall through to "finish sketch".
 
+**The Escape column is the first press.** The stack is per-press: once the
+popover, gesture, tool or selection is gone, the next Escape clears the history
+cursor exactly like the end tail (full document, no step, track at the end).
+
 ## 3. The matrix
 
 **Abbreviations**
@@ -182,7 +199,7 @@ quietly close, apply a default, or fall through to "finish sketch".
 
 | ID | State | Enter | Escape | Stage background | Timeline | Delete |
 | --- | --- | --- | --- | --- | --- | --- |
-| S0 | Idle · `select` · nothing selected | finish sketch → model D2 | — | — | `nav` | — |
+| S0 | Idle · `select` · nothing selected | finish sketch → model D2 | clear history cursor → full document (no-op if none) | — | `nav` | — |
 | S1 | Sketch geometry / dimensions selected (any mix; `selection-panel`) | — | clear selection / close popover | `clear` | `nav` | delete the selected geometry/dimensions (references skipped; one undo) |
 | S1b | **Constraint mark selected** (the constraint's marks highlight; participant geometry is washed; constraint popover) | — | clear selection / close popover | `clear` | `nav` · clear | remove the constraint (one undo; no geometry change) |
 | S1c | **Profile selected** (normal sketch select; profile popover) | — | clear profile selection / close popover | `clear` | `nav` · clear | clear the profile selection; no geometry change |
@@ -221,7 +238,7 @@ Notes:
 
 | ID | State | Enter | Escape | Stage background | Timeline | Delete |
 | --- | --- | --- | --- | --- | --- | --- |
-| M0 | Idle · `select` · nothing picked | | — | — | `nav` | — D10 |
+| M0 | Idle · `select` · nothing picked | — | clear history cursor → full document (no-op if none) | — | `nav` | — D10 |
 | M1 | Single pick (body / datum / edge readout) | — | `clear` | `clear` | `nav` · `clear` | — |
 | M2 | Edge set (`body-selection-popover`) | — | `clear` edges, close | `clear` (empty click) | `nav` · `clear` | — |
 | M3 | Face set (`face-selection-popover`) | — | `clear` faces, close | `clear` | `nav` · `clear` | — |
@@ -311,7 +328,7 @@ log below.
 
 | # | Decision | Why / consequence |
 | --- | --- | --- |
-| D1 | **Escape pops one layer per press** (operation → gesture → tool → selection), instead of resetting everything at once. | "Press Escape until it stops" becomes predictable, and it matches the operation/popover stack. |
+| D1 | **Escape pops one layer per press** (menu → editor → operation → gesture → tool → selection → history cursor), instead of resetting everything at once. | "Press Escape until it stops" becomes predictable: the final press clears the step and shows the finished model, exactly like the end tail. |
 | D2 | **Enter in idle sketch finishes the sketch.** | It is the documented gesture and mirrors the `finish sketch` button. |
 | D3 | **Enter with an armed creation tool and no gesture ends the tool** (→ `select`). | Two Enter presses finish the sketch; one Enter must not abandon the stage. |
 | D4 | **An outside click cancels an inline editor** (dimension and point X/Y alike). | Matches `INTERACTION.md` and Escape. Committing on a stray click is the more dangerous mistake. |

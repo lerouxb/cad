@@ -60,6 +60,13 @@ exists at that step*. So:
 - **A step's identity is stable; the number it shows is its position in the
   timeline.** Inserting a step in the middle renumbers the *display*, not the
   step. Paused styling and the 3D stage key off position, not identity.
+- **Opening a document selects no step.** The cursor starts empty
+  (`activeFeatureId = null`), the full document renders, the track is scrolled to
+  its end, and no step or feature popover is active. Selecting a step is explicit.
+- **Escape at rest clears the cursor.** Once there is no menu, editor, gesture,
+  tool or selection left to cancel, Escape does exactly what the end tail does:
+  no step, full document, track at the end. This is the quick way back to the
+  finished model.
 - **The active step is marked by a bottom line only** —
   `box-shadow: inset 0 -2px 0 var(--marker)`. There is no name wash; the line is
   the marker.
@@ -124,9 +131,12 @@ changed.
 - **Escape or a click outside closes the menu.**
 - **There is a gap before the first step too**, so a step can be inserted at the
   very start.
-- **The empty ends clear the cursor.** The tail before the first step and the tail
-  after the last one are click targets that clear the selection: the stage then
-  renders the full document with no active step, mirroring the app's empty tail.
+- **The track has no extra horizontal padding.** The leading tail is a fixed
+  44px start target. The trailing tail fills the remaining track width after the
+  final insert gap (minimum 44px), so clicking anywhere to the right of the last
+  step's insert gap clears the cursor. The final insert gap remains the 26px
+  insert affordance. With no active step the stage renders the full document and
+  the detail row shows only the autosave/status note.
 - **Tooltips:** the gap says `Insert a step here`; the group controls say
   `Collapse group` / `Expand group`.
 
@@ -154,7 +164,8 @@ and go:
 - The step block already says everything, so the line carries **only what the
   block cannot**: a status note (`autosaved locally`) on the right, or the
   lost-body message plus `reselect body` / `open sketch`. It never repeats the
-  step / type / outputs.
+  step / type / outputs. With no active step it shows only the status note; the
+  step actions are absent.
 
 ## Chip anatomy
 
@@ -206,7 +217,7 @@ The mockup's numbers, for translation into app tokens — not law:
   to retarget the reference to the surviving body, with `reselect` as the escape
   hatch.
 - **Insert at the very start** is supported (a gap before the first step).
-- **The empty ends clear the cursor** (see [Insert](#insert)).
+- **The end tail fills the track and clears the cursor; the start tail is a 44px target** (see [Insert](#insert)). No extra track padding.
 - **Visibility is a split button on the chip.** The left part of a chip selects
   the thing; the right part is a small **eye** glyph (outline = shown, struck
   through = hidden) with a tooltip. It works for a body, a sketch or a plane

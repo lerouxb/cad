@@ -240,11 +240,6 @@ function datumDefinitionLabel(definition: DatumPlaneDefinition): string {
     : "midplane";
 }
 
-/** Start at the end of the history: selection is the render prefix. */
-function initialActiveFeatureId(doc: Doc): string | null {
-  return doc.features[doc.features.length - 1]?.id ?? null;
-}
-
 /** Resolve the selected step; null means "no step selected, show the end". */
 function resolveActiveFeature(doc: Doc, featureId: string | null): Feature | null {
   return featureId ? findFeature(doc, featureId) ?? null : null;
@@ -410,9 +405,9 @@ export function App() {
   const { state: editor, getState, commit, replace, reset, undo, redo, endMerge } =
     history;
   const doc = editor.doc;
-  const [activeFeatureId, setActiveFeatureId] = useState<string | null>(() =>
-    initialActiveFeatureId(initialEditor.doc),
-  );
+  // Opening a document leaves the history cursor empty; selecting a step is
+  // explicit (TIMELINE.md).
+  const [activeFeatureId, setActiveFeatureId] = useState<string | null>(null);
   const activeFeature = useMemo(
     () => resolveActiveFeature(doc, activeFeatureId),
     [doc, activeFeatureId],
@@ -586,6 +581,19 @@ export function App() {
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const timelineTrackRef = useRef<HTMLDivElement>(null);
+
+  const scrollTimelineToEnd = useCallback((): void => {
+    const scroll = (): void => {
+      const track = timelineTrackRef.current;
+      if (!track) return;
+      track.scrollLeft = track.scrollWidth - track.clientWidth;
+    };
+    scroll();
+    requestAnimationFrame(() => requestAnimationFrame(scroll));
+  }, []);
+  useEffect(() => {
+    scrollTimelineToEnd();
+  }, [scrollTimelineToEnd]);
   const clientRef = useRef<KernelClient | null>(null);
   const viewportRef = useRef<Viewport | null>(null);
   const handleBodyPickRef = useRef<
@@ -2188,6 +2196,7 @@ export function App() {
     viewportRef.current?.setFaceSelection([]);
     // Abort any hidden sketch gesture (MODES F4/R6).
     setCancelToken((token) => token + 1);
+    scrollTimelineToEnd();
   };
 
   const activateFeature = (feature: Feature): void => {
@@ -3875,6 +3884,7 @@ export function App() {
     viewportRef.current?.clearPick();
     setZoomPreset("fit");
     setFitToken((token) => token + 1);
+    scrollTimelineToEnd();
   };
 
   const loadExample = (): void => {
@@ -3904,12 +3914,12 @@ export function App() {
       solved: outcome,
       solvedFor: firstSketch?.id ?? null,
     });
-    if (firstSketch) setActiveFeatureId(firstSketch.id);
+    setActiveFeatureId(null);
     dismissEditor();
     setSupportOpen(false);
     setCreationAnchorId(null);
     setCreationAtStart(false);
-    setMode("sketch");
+    setMode("model");
     setSolveError(null);
     setSelection([]);
     setDimensionRequest(null);
@@ -3928,6 +3938,7 @@ export function App() {
     viewportRef.current?.clearPick();
     viewportRef.current?.clearMesh();
     viewportRef.current?.setFaceSelection([]);
+    scrollTimelineToEnd();
   };
 
   const openDocument = (next: Doc): void => {
@@ -3939,14 +3950,12 @@ export function App() {
     setDatumDraft(null);
     reset({ doc: next, solved: null, solvedFor: null });
     resetSelectionFilters();
-    const active = initialActiveFeatureId(next);
-    setActiveFeatureId(active);
-    const feature = active ? findFeature(next, active) : null;
+    setActiveFeatureId(null);
     dismissEditor();
     setSupportOpen(false);
     setCreationAnchorId(null);
     setCreationAtStart(false);
-    setMode(feature?.type === "sketch" ? "sketch" : "model");
+    setMode("model");
     setSelection([]);
     setSolveError(null);
     setExportOpen(false);
@@ -3954,6 +3963,7 @@ export function App() {
     setFaceSelection([]);
     viewportRef.current?.clearMesh();
     viewportRef.current?.setFaceSelection([]);
+    scrollTimelineToEnd();
     setFileError(null);
     setFileMenuOpen(false);
     setBodyPick(null);
@@ -4223,6 +4233,17 @@ export function App() {
           return;
         }
         // R1 step 6: clear the selection/picks but stay in the stage.
+        const hadSelection =
+          selection.length > 0 ||
+          selectedConstraintId !== null ||
+          profileSelection.length > 0 ||
+          bodyPick !== null ||
+          edgeSelection.length > 0 ||
+          faceSelection.length > 0 ||
+          selectOther !== null ||
+          pendingConstraint !== null ||
+          solveError !== null ||
+          dimensionRequest !== null;
         setPendingConstraint(null);
         setSolveError(null);
         setDimensionRequest(null);
@@ -4237,6 +4258,9 @@ export function App() {
         setSelectOther(null);
         viewportRef.current?.clearPick();
         viewportRef.current?.setFaceSelection([]);
+        if (hadSelection) return;
+        // R1 step 7: at rest, Escape is the end tail. No active step is a no-op.
+        if (activeFeatureId) clearActiveFeature();
         return;
       }
 
@@ -6287,11 +6311,7 @@ export function App() {
                   </button>
                 </span>
               </>
-            ) : (
-              <span className="detail-empty">
-                {doc.features.length > 0 ? "No step selected" : "No features"}
-              </span>
-            )}
+            ) : null}
             {activeState?.messages.length ? (
               <span className="timeline-note is-error">
                 {activeState.messages.join(" · ")}

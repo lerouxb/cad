@@ -168,6 +168,8 @@ test("shows only the selected extrude's profiles on the model overlay", async ({
   app: page,
 }) => {
   const canvas = page.locator("canvas.viewport-canvas");
+  await page.getByTestId("timeline-extrude").click();
+  await expect(page.getByTestId("feature-popover")).toBeVisible();
   await expect(canvas).toHaveAttribute("data-sketch-overlay", "on");
   // Extrude 1 uses the plate plus its central hole; construction and unused
   // curves are hidden until profile selection. The selected profile is shaded,
@@ -325,7 +327,18 @@ test("clicking the empty timeline tail clears the selected step", async ({
   await expect(timeline).toHaveAttribute("data-active-feature", "");
   await expect(page.locator(".timeline-item.is-active")).toHaveCount(0);
   await expect(page.getByTestId("feature-popover")).toHaveCount(0);
-  await expect(page.getByTestId("timeline-detail")).toContainText(
+  const track = page.locator(".timeline-track");
+  await expect
+    .poll(() =>
+      track.evaluate(
+        (element) =>
+          Math.abs(
+            element.scrollLeft + element.clientWidth - element.scrollWidth,
+          ) <= 1,
+      ),
+    )
+    .toBe(true);
+  await expect(page.getByTestId("timeline-detail")).not.toContainText(
     "No step selected",
   );
   // The autosave/status note stays on the right even with no selected step.
@@ -343,6 +356,65 @@ test("clicking the empty timeline tail clears the selected step", async ({
   await expect(timeline).toHaveAttribute("data-active-feature", "");
   await page.getByTestId("timeline-sketch").click();
   await expect(timeline).toHaveAttribute("data-active-feature", sketchId!);
+  expect(errors).toEqual([]);
+});
+
+
+test("opening a document starts with no step selected", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  const timeline = page.getByTestId("timeline");
+  await expect(timeline).toHaveAttribute("data-active-feature", "");
+  await expect(timeline).toHaveAttribute("data-active-extrude", "");
+  await expect(page.locator(".timeline-item.is-active")).toHaveCount(0);
+  await expect(page.getByTestId("feature-popover")).toHaveCount(0);
+  await expect(page.getByTestId("timeline-detail")).not.toContainText(
+    "No step selected",
+  );
+  await expect(page.getByTestId("rebuild-status")).toBeVisible();
+  await expect.poll(() => volume(page)).toBeCloseTo(examplePlateVolume(), -1);
+
+  const track = page.locator(".timeline-track");
+  await expect
+    .poll(() =>
+      track.evaluate(
+        (element) =>
+          Math.abs(
+            element.scrollLeft + element.clientWidth - element.scrollWidth,
+          ) <= 1,
+      ),
+    )
+    .toBe(true);
+  expect(errors).toEqual([]);
+});
+
+
+test("Escape at rest clears the selected step", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  const timeline = page.getByTestId("timeline");
+  await page.getByTestId("timeline-sketch").click();
+  await expect(timeline).toHaveAttribute("data-active-feature", /.+/);
+
+  await page.keyboard.press("Escape");
+  await expect(timeline).toHaveAttribute("data-active-feature", "");
+  await expect(page.locator(".timeline-item.is-active")).toHaveCount(0);
+  await expect(page.getByTestId("feature-popover")).toHaveCount(0);
+  await expect(page.getByTestId("model-tool-select")).toBeVisible();
+
+  const track = page.locator(".timeline-track");
+  await expect
+    .poll(() =>
+      track.evaluate(
+        (element) =>
+          Math.abs(
+            element.scrollLeft + element.clientWidth - element.scrollWidth,
+          ) <= 1,
+      ),
+    )
+    .toBe(true);
+
+  // A second Escape is a no-op: there is no cursor left to clear.
+  await page.keyboard.press("Escape");
+  await expect(timeline).toHaveAttribute("data-active-feature", "");
   expect(errors).toEqual([]);
 });
 
@@ -398,6 +470,8 @@ test("highlights the geometry an extrude step created", async ({
   const extrude = page.getByTestId("timeline-extrude");
   const extrudeId = await extrude.getAttribute("data-feature-id");
 
+  // Selecting the step is explicit; loading starts with no cursor.
+  await extrude.click();
   // The first extrude created the whole plate, so every face is highlighted,
   // and its source sketch overlay is still requested.
   await expect(canvas).toHaveAttribute("data-feature-highlight", extrudeId!);
@@ -472,9 +546,9 @@ test("the example reuses one sketch for independent extruded regions", async ({
     .locator('[data-feature-type="extrude"]')
     .filter({ hasText: "Center pin" });
   await expect(pin).toHaveCount(1);
-  // The shared beforeEach leaves the cursor on the base extrude, so the pin is
-  // downstream and paused until selected.
-  await expect(pin).toHaveAttribute("data-status", "paused");
+  // Loading starts with no cursor, so the suppressed pin is simply skipped
+  // until it is selected explicitly.
+  await expect(pin).toHaveAttribute("data-status", "skipped");
 
   await pin.click();
   await page.getByTestId("feature-suppress").click();
@@ -675,7 +749,10 @@ test("the global clear resets the whole file to an empty document", async ({
   await page.getByTestId("clear-document").click();
   await expect(page.locator("[data-feature-id]")).toHaveCount(0);
   await expect(page.getByTestId("timeline-extrude")).toHaveCount(0);
-  await expect(page.getByTestId("timeline-detail")).toContainText("No features");
+  await expect(page.getByTestId("timeline-detail")).not.toContainText(
+    "No features",
+  );
+  await expect(page.getByTestId("rebuild-status")).toBeVisible();
   await expect(page.getByTestId("tool-select")).toBeHidden();
 
   // The leading gap starts the first step.
