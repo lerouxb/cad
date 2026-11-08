@@ -75,6 +75,27 @@ the face list, `MeasureField` distance, out/in direction, live preview, `apply` 
 history step, live edit and baseline-restoring `cancel`. The preview error is inline and
 disables `apply`.
 
+## Same-domain merge spike (2026-11-08)
+
+`unifySameDomain` via the raw kernel does merge the faces the boolean splits at the old
+boundary:
+
+| Shape (top face +5) | Boolean result | After unify |
+| --- | --- | --- |
+| 20 × 20 × 10 cube | 10 faces | **6 faces** |
+| 40 × 30 × 12 plate with a hole | 12 faces | **8 faces** |
+| 60 × 40 filleted plate with a hole | 20 faces | **13 faces** |
+
+Volume and `isValid` were unchanged in all three. The hole wall still splits into two
+cylindrical faces on the plated cases.
+
+**It is not safe in this kernel build yet.** Calling `unifySameDomain` on an offset result
+corrupts a later fuse on the same cached prefix: a second fuse from the same base returned
+`isValid === false` (volume still plausible), even though the input base still validated.
+The worker rebuilds offset previews repeatedly from the same prefix, so the second request
+fails. v1 therefore leaves the extra same-domain faces. Do not call `unifySameDomain` in
+the offset path until the kernel (or a base-rebuild strategy) makes it side-effect free.
+
 ## Alternatives considered
 
 1. **Whole-solid `offset()`.** Moves every face; returns a shell in this kernel. Rejected.

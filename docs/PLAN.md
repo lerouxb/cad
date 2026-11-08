@@ -830,7 +830,8 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       [ADR-0006](decisions/0006-offset-faces.md)
 - [ ] **Offset Faces v2** — cylindrical hole/boss walls (the main tolerance/fit use:
       `Ø old → new`, enlarge/shrink), adjacent non-parallel faces with a rebuilt corner,
-      the tangent-chain toggle, and the preview ghost/normal arrow
+      the tangent-chain toggle, the preview ghost/normal arrow, and same-domain face
+      merging once `unifySameDomain` no longer corrupts a later fuse on the prefix
 - [x] Selection UX: box and lasso select model edges, hover prehighlight, selection
       filters, and Select Other for cycling overlapping picks. Box = every projected
       vertex inside (window), lasso = touched/crossed; both select through the body,

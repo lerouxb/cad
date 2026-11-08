@@ -224,6 +224,11 @@ faces with holes, opposite parallel faces). It is **not** a whole-body offset:
 the unchecked prism leaves L-steps at adjacent faces and undercuts at tangent
 top-edge fillets, which is why the checks reject those inputs.
 
+Same-domain merge: `unifySameDomain` restores the minimal face count (a cube goes
+10 → 6 faces; a plated body 20 → 13), but in this kernel build it corrupts a
+later fuse on the same cached prefix. v1 keeps the split faces; do not call it in
+the offset path until the kernel is fixed.
+
 Still open, in order:
 
 1. **Cylindrical hole/boss wall** (the tolerance/fit use case);
