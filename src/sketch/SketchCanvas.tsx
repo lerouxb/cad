@@ -178,7 +178,9 @@ interface Snap {
   referenceLineId?: string;
   /** Every line through the snapped point (an intersection has two). */
   referenceLineIds?: string[];
-  kind: "point" | "line" | "axis" | "grid" | "free";
+  /** Existing circle/arc the point snapped onto. */
+  referenceCircleId?: string;
+  kind: "point" | "line" | "circle" | "axis" | "grid" | "free";
 }
 
 /** Selection is deliberately not the tone colour: it must read as "picked". */
@@ -710,6 +712,45 @@ export function SketchCanvas({
         }
       }
       if (bestLine) return bestLine.snap;
+
+      // Projected circles are analytic, so they are not in `snapLines`; snap
+      // onto the circumference and attach the new point with pointOnCircle.
+      let bestCircle: { snap: Snap; distance: number } | null = null;
+      for (const circle of [
+        ...sketch.curves,
+        ...(sketch.references?.circles ?? []),
+      ]) {
+        if (circle.type !== "circle") continue;
+        const center = points[circle.center];
+        if (!center) continue;
+        const radius = radii[circle.id] ?? circle.radius;
+        const dx = raw[0] - center[0];
+        const dy = raw[1] - center[1];
+        const length = Math.hypot(dx, dy);
+        if (length < 1e-9 || radius <= 0) continue;
+        const projected: Vec2 = [
+          center[0] + (dx / length) * radius,
+          center[1] + (dy / length) * radius,
+        ];
+        const distance = Math.hypot(
+          projected[0] - raw[0],
+          projected[1] - raw[1],
+        );
+        if (
+          distance <= snapTolerance &&
+          (!bestCircle || distance < bestCircle.distance)
+        ) {
+          bestCircle = {
+            snap: {
+              point: projected,
+              referenceCircleId: circle.id,
+              kind: "circle",
+            },
+            distance,
+          };
+        }
+      }
+      if (bestCircle) return bestCircle.snap;
     }
 
     let x = snapEnabled
@@ -1172,6 +1213,7 @@ export function SketchCanvas({
           existingPointId: snap.existingPointId,
           referenceLineId: snap.referenceLineId,
           referenceLineIds: snap.referenceLineIds,
+          referenceCircleId: snap.referenceCircleId,
         },
       ]);
       return;
@@ -1200,6 +1242,7 @@ export function SketchCanvas({
         existingPointId: snap.existingPointId,
         referenceLineId: snap.referenceLineId,
         referenceLineIds: snap.referenceLineIds,
+        referenceCircleId: snap.referenceCircleId,
       },
     ]);
   };
@@ -1261,6 +1304,7 @@ export function SketchCanvas({
           point: snap.point,
           referenceLineId: snap.referenceLineId,
           referenceLineIds: snap.referenceLineIds,
+          referenceCircleId: snap.referenceCircleId,
         });
       return;
     }

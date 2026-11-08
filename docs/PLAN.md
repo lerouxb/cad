@@ -509,12 +509,13 @@ with face sketches.
       they came from, are re-derived from the source feature's cached prefix solid on
       every rebuild, and are kept as cached geometry (marked stale) if their topology
       changes. Downstream booleans cannot move or split them.
-- [x] **Line snapping regression:** every existing line is a snap target (ordinary sketch
-      edges, the fixed X/Y axes and projected boundaries), with points, crossings, lines
-      and the grid in that order. A snapped vertex gets a `pointOnLine` for every line it
-      lies on; at a crossing it attaches to both lines, and snapping to an existing point
-      reuses that point (coincident). Drawing tools are not intercepted by existing curve
-      hit targets. E2E covers off-grid edge snapping and a crossing.
+- [x] **Line/circle snapping regression:** every existing line is a snap target (ordinary
+      sketch edges, the fixed X/Y axes and projected boundaries), with points, crossings,
+      lines, circles and the grid in that order. A snapped vertex gets a `pointOnLine` for
+      every line it lies on or `pointOnCircle` for a circle/arc; at a crossing it attaches
+      to both lines, and snapping to an existing point reuses that point (coincident).
+      Drawing tools are not intercepted by existing curve hit targets. E2E covers off-grid
+      edge snapping, a crossing, and snapping a new point onto a projected circle.
 - [x] Projected references participate in the solver as fixed (group-0-like) entities, so
       point-on-line / point-on-point / coincident constraints work against them. Points
       and edges are snap targets; snapping a vertex to a projected edge adds a

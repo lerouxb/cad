@@ -124,6 +124,60 @@ test("a projected circular boundary accepts a point-on-circle constraint", async
   expect(errors).toEqual([]);
 });
 
+test("a new point snaps onto a projected circle", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await page
+    .locator('[data-feature-type="sketch"]')
+    .filter({ hasText: "Mounting holes" })
+    .click();
+  const referenceCircle = page.locator("circle[data-projection-id]");
+  await expect
+    .poll(async () => referenceCircle.count())
+    .toBeGreaterThan(0);
+  const radius = Number(
+    await referenceCircle.first().getAttribute("r"),
+  );
+
+  await page.getByTestId("tool-point").click();
+  // Drop the point just outside the circle, off-axis: circle snapping must win
+  // over the grid and attach it with pointOnCircle.
+  const angle = Math.PI / 3;
+  await clickSketch(
+    page,
+    (radius + 0.6) * Math.cos(angle),
+    (radius + 0.6) * Math.sin(angle),
+  );
+  await page.getByTestId("tool-select").click();
+  const point = page
+    .locator('circle[data-point-id]:not([data-point-id="origin"])')
+    .last();
+  await expect
+    .poll(async () => {
+      const cx = Number(await point.getAttribute("cx"));
+      const cy = Number(await point.getAttribute("cy"));
+      return Math.hypot(cx, cy);
+    })
+    .toBeCloseTo(radius, 1);
+
+  // The snap also attached pointOnCircle, so dragging the point away must slide
+  // it around the circumference instead of leaving the circle.
+  const box = await point.boundingBox();
+  if (!box) throw new Error("Point has no screen box");
+  const center = { x: box.x + box.width / 2, y: box.y + box.height / 2 };
+  await page.mouse.move(center.x, center.y);
+  await page.mouse.down();
+  await page.mouse.move(center.x + 120, center.y + 120, { steps: 8 });
+  await page.mouse.up();
+  await expect
+    .poll(async () => {
+      const cx = Number(await point.getAttribute("cx"));
+      const cy = Number(await point.getAttribute("cy"));
+      return Math.hypot(cx, cy);
+    })
+    .toBeCloseTo(radius, 1);
+  expect(errors).toEqual([]);
+});
+
 test("cancelling the project picker leaves the sketch untouched", async ({
   app: page,
 }) => {

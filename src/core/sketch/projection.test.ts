@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addPoint, emptySketch } from "./create";
+import { addPoint, addPolyline, emptySketch } from "./create";
 import {
   applicableConstraints,
   applyConstraint,
@@ -254,6 +254,41 @@ describe("face projections", () => {
     expect(outcome.ok).toBe(true);
     const solved = outcome.points[pointId]!;
     expect(Math.hypot(solved[0] - 3, solved[1] + 2)).toBeCloseTo(8, 3);
+  });
+
+  it("attaches a point snapped onto a projected circle", () => {
+    const sketch = applyProjectionGeometry(
+      emptySketch(),
+      "proj-snap",
+      "Projected circle",
+      [circleLoop(8)],
+    );
+    if (!sketch) throw new Error("Expected the projection to apply");
+    const circle = sketch.references!.circles![0]!;
+    const snapped = addPoint(sketch, [0, 8], undefined, undefined, circle.id);
+    expect(
+      snapped.constraints.some(
+        (constraint) =>
+          constraint.type === "pointOnCircle" &&
+          constraint.circle === circle.id,
+      ),
+    ).toBe(true);
+
+    const polyline = addPolyline(
+      sketch,
+      [
+        { point: [0, 8], referenceCircleId: circle.id },
+        { point: [12, 8] },
+      ],
+      false,
+    );
+    expect(
+      polyline.constraints.filter(
+        (constraint) =>
+          constraint.type === "pointOnCircle" &&
+          constraint.circle === circle.id,
+      ),
+    ).toHaveLength(1);
   });
 
   it("knows when a projection is safe to re-represent", () => {

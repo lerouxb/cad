@@ -727,11 +727,13 @@ docs/
   cursor, so suppressed and downstream bodies do not appear; editing the body updates
   it. Face sketches already get the supporting boundary through the live face projection
   and do not duplicate it. Explicit user projections are still a separate M9 feature.
-- **Snapping order is points, then crossings, then lines, then grid.** Every existing
-  line is a snap target — ordinary sketch edges, the fixed X/Y axes and projected face
-  boundaries. A snapped vertex gets an ordinary `pointOnLine` constraint for every line
-  it lies on, not only projected references; at a crossing it attaches to **both** lines
-  (two point-on-line constraints) and is fully coincident with the intersection. Snapping
+- **Snapping order is points, then crossings, then lines, then circles, then grid.**
+  Every existing line is a snap target — ordinary sketch edges, the fixed X/Y axes and
+  projected face boundaries. A snapped vertex gets an ordinary `pointOnLine` constraint
+  for every line it lies on, not only projected references; at a crossing it attaches to
+  **both** lines (two point-on-line constraints) and is fully coincident with the
+  intersection. A point snapped onto a circle/arc (including an analytic projected
+  circle) gets `pointOnCircle`, so it can be dragged around the circumference. Snapping
   to an existing point reuses that point id (coincident), including projected points.
   Drawing tools must return early from `onCurvePointerDown` (`tool` is not
   select/dimension/trim) so an existing edge cannot swallow the click before the draft

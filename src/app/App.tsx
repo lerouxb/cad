@@ -4575,6 +4575,9 @@ export function App() {
         ...(vertex.referenceLineIds
           ? { referenceLineIds: vertex.referenceLineIds }
           : {}),
+        ...(vertex.referenceCircleId
+          ? { referenceCircleId: vertex.referenceCircleId }
+          : {}),
       };
     });
     return drawAndCommit(base, addPolyline(base, valid, closed));
@@ -4587,6 +4590,7 @@ export function App() {
         vertex.point,
         vertex.referenceLineId,
         vertex.referenceLineIds,
+        vertex.referenceCircleId,
       ),
     );
     setSelection([]);

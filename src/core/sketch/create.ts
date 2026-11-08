@@ -28,6 +28,8 @@ export interface DraftVertex {
   referenceLineId?: string;
   /** Every line through the snapped point; an intersection has two. */
   referenceLineIds?: string[];
+  /** Circle/arc this new point snapped onto. */
+  referenceCircleId?: string;
 }
 
 /** True when the id names any line the point can be attached to. */
@@ -35,6 +37,16 @@ function isSnapLine(sketch: Sketch, id: string | undefined): id is string {
   if (!id) return false;
   return allCurves(sketch).some(
     (curve) => curve.type === "line" && curve.id === id,
+  );
+}
+
+/** True when the id names any circle/arc the point can be attached to. */
+function isSnapCircle(sketch: Sketch, id: string | undefined): id is string {
+  if (!id) return false;
+  return allCurves(sketch).some(
+    (curve) => curve.type === "circle" || curve.type === "arc"
+      ? curve.id === id
+      : false,
   );
 }
 
@@ -62,6 +74,14 @@ function addSnapLineConstraints(
       type: "pointOnLine",
       point: pointId,
       line: lineId,
+    });
+  }
+  if (isSnapCircle(sketch, vertex.referenceCircleId)) {
+    constraints.push({
+      id: newId("c"),
+      type: "pointOnCircle",
+      point: pointId,
+      circle: vertex.referenceCircleId,
     });
   }
 }
@@ -139,6 +159,7 @@ export function addPoint(
   point: Vec2,
   referenceLineId?: string,
   referenceLineIds?: string[],
+  referenceCircleId?: string,
 ): Sketch {
   const id = newId("p");
   const constraints = [...sketch.constraints];
@@ -146,6 +167,7 @@ export function addPoint(
     point,
     referenceLineId,
     referenceLineIds,
+    referenceCircleId,
   });
   return {
     ...sketch,
