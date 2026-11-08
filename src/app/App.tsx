@@ -3312,13 +3312,17 @@ export function App() {
     commitDoc(applySolution(base, outcome), outcome, `drag:${lineId}`);
   };
 
-  const drawAndCommit = (base: Sketch, next: Sketch): void => {
-    if (next === base) return;
-    solveAndCommit(next);
-    setFitToken((token) => token + 1);
+  const drawAndCommit = (base: Sketch, next: Sketch): boolean => {
+    if (next === base) return false;
+    const ok = solveAndCommit(next);
+    if (ok) setFitToken((token) => token + 1);
+    return ok;
   };
 
-  const handlePolyline = (vertices: DraftVertex[], closed: boolean): void => {
+  const handlePolyline = (
+    vertices: DraftVertex[],
+    closed: boolean,
+  ): boolean => {
     const base = currentSketch();
     const valid = vertices.map((vertex) => {
       const existing = vertex.existingPointId
@@ -3335,7 +3339,7 @@ export function App() {
           : {}),
       };
     });
-    drawAndCommit(base, addPolyline(base, valid, closed));
+    return drawAndCommit(base, addPolyline(base, valid, closed));
   };
 
   const handlePoint = (vertex: DraftVertex): void => {

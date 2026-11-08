@@ -122,7 +122,8 @@ export interface SketchCanvasProps {
   onDragPoint: (pointId: string, x: number, y: number) => void;
   onDragLine: (lineId: string, targets: DragTarget[]) => void;
   onDragEnd: () => void;
-  onCreatePolyline: (vertices: DraftVertex[], closed: boolean) => void;
+  /** Returns false when the sketch could not be solved; keep the draft then. */
+  onCreatePolyline: (vertices: DraftVertex[], closed: boolean) => boolean;
   onCreateRectangle: (spec: RectangleSpec) => void;
   onCreateCircle: (spec: CircleSpec) => void;
   onCreateArc: (spec: ArcSpec) => void;
@@ -446,6 +447,12 @@ export function SketchCanvas({
   // only commits a line draft that already has two points. It must not finish
   // the sketch, and it is inert while the sketch stage is hidden. App's global
   // handler sees preventDefault() and does nothing for the same press.
+  //
+  // A pointer click on a toolbar button normally leaves focus on the body, but
+  // browsers do not all honour preventDefault() for focus. Once a gesture has
+  // started, the draft owns Enter regardless of which control still has focus:
+  // otherwise Enter would activate a stale "clear sketch" button, or a focused
+  // tool button would swallow the commit. Only text fields keep their keys.
   useEffect(() => {
     const onEnter = (event: KeyboardEvent) => {
       if (!stageActive || event.key !== "Enter" || event.defaultPrevented) {
@@ -457,15 +464,16 @@ export function SketchCanvas({
         (target.tagName === "INPUT" ||
           target.tagName === "TEXTAREA" ||
           target.tagName === "SELECT" ||
-          target.tagName === "BUTTON" ||
           target.isContentEditable)
       ) {
         return;
       }
       const current = draftRef.current;
-      if (current.length < 2) return;
+      if (current.length === 0) return;
       event.preventDefault();
-      onCreatePolyline(current, false);
+      event.stopImmediatePropagation();
+      if (current.length < 2) return;
+      if (!onCreatePolyline(current, false)) return;
       draftRef.current = [];
       setDraft([]);
       setHover(null);
@@ -1079,8 +1087,7 @@ export function SketchCanvas({
       Math.hypot(snap.point[0] - first.point[0], snap.point[1] - first.point[1]) <
         snapTolerance;
     if (closes) {
-      onCreatePolyline(current, true);
-      updateDraft([]);
+      if (onCreatePolyline(current, true)) updateDraft([]);
       return;
     }
 
@@ -1616,7 +1623,7 @@ export function SketchCanvas({
   const onDoubleClick = () => {
     const current = draftRef.current;
     if (tool === "line" && current.length >= 2) {
-      onCreatePolyline(current, false);
+      if (!onCreatePolyline(current, false)) return;
       draftRef.current = [];
       setDraft([]);
     }

@@ -1098,6 +1098,33 @@ test("reports live zoom and has no dead view labels", async ({ app: page }) => {
 });
 
 
+test("a live line draft owns Enter even when a control kept focus", async ({
+  app: page,
+}) => {
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+  await page.getByTestId("tool-line").click();
+
+  // Draw a two-point segment, then put focus on a control that has a native
+  // Enter action. The draft must commit; the control must not fire.
+  await clickSketch(page, -30, 0);
+  await clickSketch(page, 0, 0);
+  await page.getByTestId("clear-sketch").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("[data-geometry-id]")).toHaveCount(1);
+  await expect(page.getByTestId("tool-line")).toHaveAttribute(
+    "aria-pressed",
+    "true",
+  );
+
+  await clickSketch(page, 10, 10);
+  await clickSketch(page, 40, 10);
+  await page.getByTestId("tool-line").focus();
+  await page.keyboard.press("Enter");
+  await expect(page.locator("[data-geometry-id]")).toHaveCount(2);
+});
+
+
 test("finishes the active sketch with Enter", async ({ app: page }) => {
   await enterSketch(page);
   await page.keyboard.press("Enter");
