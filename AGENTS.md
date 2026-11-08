@@ -231,10 +231,26 @@ docs/
   own mark (badge background/glyph) and participants; selecting geometry washes only the
   geometry and leaves its constraints quiet.
 - **Selection families and actions are in `docs/showcase/SELECTION.md`.** A click selects;
-  feature actions are chips in the same selection popover (a profile offers `extrude`, a
-  face offers `new sketch`/`shell`, edges offer `fillet`/`chamfer`). No click starts a
-  feature. One family at a time; sketch geometry + dimensions is the only allowed mix.
-  Box/lasso follows the filter and Backspace deletes the resulting sketch selection.
+  feature actions are chips in the same selection popover (a profile offers
+  `extrude`/`revolve`, a face offers `new sketch`/`offset face`/`shell`, edges offer
+  `fillet`/`chamfer`). No click starts a feature. One family at a time; sketch geometry +
+  dimensions is the only allowed mix. Box/lasso follows the filter and Backspace deletes
+  the resulting sketch selection. **Selection looks the same in both stages:** a selected
+  line/edge is a highlighter block (soft token) under an ink centerline, a selected
+  face/region is a highlighter wash with the ink boundary visible, and hover is the same
+  block at lower opacity. Never a single opaque highlighter line. `SELECTION.md` §8/S15.
+- **Boolean operations are one contract.** `docs/showcase/BOOLEANS.md` is the source
+  of truth. Every solid feature that adds/removes material offers exactly
+  `new body` / `join` / `cut` / `intersect` in one segmented row, in that order; never
+  `new` and never a dropdown. `new body` keeps the result-body preview; **join**
+  highlights the material it adds in the highlighter; **cut** shows the removed
+  volume in cut red; **intersect** keeps the overlap normal and ghosts everything
+  outside it (never red). The result body is not repainted. Offset
+  faces is **not** a boolean row: `out`/`in` is a signed distance that reuses the
+  added/removed/ghost preview. Cut/intersect need a base and a non-empty result;
+  no base/no overlap is a visible error, never an empty step or a silent operation
+  change. Through all is cut-only. The timeline chip stays `+`/`→`; `−` means
+  consumes. The offset-face added/removed diff is the reference preview.
 - **Offset faces v1 is planar/prismatic plus full cylindrical holes and bosses.**
   `docs/showcase/OFFSET_FACES.md` is the contract. `OffsetFaceFeature` (schema v13) stores
   face refs and a signed distance. The planar path sweeps a face and fuses/cuts it; it
@@ -248,14 +264,14 @@ docs/
   copy: calling it directly on a shape that shares subshapes with the cached prefix
   corrupts a later fuse. The draft returns true added/removed boolean-difference meshes
   (added in the highlighter, removed in red) over a faint ghost of the pre-offset body.
-  Do not replace the feature with a whole-body `offset`, a shell or a scale.
-  Blind/partial cylinders, the tangent-chain expansion and the normal arrow/dashed
+  Do not replace the feature with a whole-body `offset`, a shell or a scale. Blind/partial cylinders, the tangent-chain expansion and the normal arrow/dashed
   input-face ghost are still open; do not claim them.
 - **Revolve v1 is a history step around an in-plane sketch axis.** `docs/showcase/REVOLVE.md`
   is the contract. Schema v14 `RevolveFeature` stores `sketchId`, regions, an explicit axis
   (a sketch line id or the X/Y reference), a 1–360° angle, a partial direction and
   new/join/cut. The profile popover's `revolve…` chip starts the draft; the form lists
-  explicit X/Y/line axis chips (no silent default), validates that every region stays on
+  explicit X/Y/line axis chips, and clicking a sketch line or the X/Y reference in the
+  stage sets the same axis (no silent default). It validates that every region stays on
   one side of the infinite axis or touches it, previews through the worker and inserts a
   re-editable step. A sketch edit that deletes the line is a lost axis, never a retarget.
   A 3D axis outside the sketch plane is out of scope until datum axes. The stage axis-pick

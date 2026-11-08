@@ -54,236 +54,33 @@ The app should feel like an annotated drawing on paper, not a dashboard.
 reserved for the active choice. A failed step stays in history and the last good body
 stays on the page.
 
-**Immediate priority:** the design-fidelity pass (M2.8) comes before more M3 chrome. The
-goal is that the current sketch → model loop already looks and reads like the studies;
-feature work then lands inside that system.
+## Current state (2026-11-08)
+
+The core loop is real and edited through history: sketch → solid → sketch on a face →
+downstream rebuild.
+
+- **Sketching:** constrained lines/points/rectangles/circles/arcs and a corner fillet, a
+  full constraint set with dragging projected onto the constraint tangent space, regions
+  (material/void), trim, grid/snap, construction geometry, undo/redo.
+- **Document and rebuild:** plain-JSON schema (now v14), migrations, autosave, a cached
+  ordered rebuild, visible per-feature status/diagnostics and a worker protocol.
+- **Timeline:** create/edit/reorder/suppress/delete, selection as the history cursor, the
+  no-step load/empty-tail/Escape-at-rest contract and insert gaps.
+- **Selection:** one language across sketch and model; profile/face/edge families; box,
+  lasso and Select Other; contextual feature chips.
+- **Solid features:** extrude (new/join/cut), revolve, fillet, chamfer, shell, offset
+  faces (planar + full cylindrical through holes/bosses), datum planes, measure and
+  STL/STEP export from the rebuilt prefix.
+- **Recent:** offset added/removed diff previews, revolve, the selection pair for sketch
+  lines and model edges, and the sketch-creation-aware no-solid callout.
+- **Tests:** `npm run verify` (240 unit) and `npm run e2e` (142) are green.
+
+**Next:** the shared boolean contract in
+[`showcase/BOOLEANS.md`](showcase/BOOLEANS.md). Offset faces already implements its
+added/removed/ghost preview; extrude and revolve still have three operations, a select
+instead of the segmented row, and no diff preview.
 
 ---
-
-## Where we are (2026-10-31)
-
-**M0 and M1 are done.** The app is an editable parametric sketcher:
-
-- `slvs` loads lazily and solves real sketches. Dragging projects the cursor delta onto
-  the constraint tangent space, so points slide along lines and circles, and whole lines
-  translate (or stretch) instead of the drag being rejected.
-- Draw with line (chain, closes on first point), standalone point, rectangle (drag), and
-  circle (centre + radius). Grid, point and line snapping; automatic horizontal/vertical
-  constraints; coincident endpoints come from shared points.
-- Closed profiles are extracted as **selectable regions** (faces with holes). Click a
-  filled region (including a hole's void profile) to choose the extrude profile; Shift
-  adds, All selects material, Voids selects negative space, and Auto returns to the
-  largest material face. Multiple regions are extruded and fused. Holes and islands
-  follow the containment tree. Extruded by OCCT in a worker; three.js renders the solid and its B-rep
-  edges, Z-up.
-- Dimension tool: distance (point-to-point, point-to-line, line), angle, diameter and
-  radius, driving or reference, with inline edit/delete and draggable labels. It is
-  entered contextually from the selection popover; the top line no longer carries
-  dimension/trim. The selection popover also offers parallel, perpendicular, equal,
-  point-on-line, point-on-circle,
-  tangent, symmetric, midpoint, coincident, fix, horizontal/vertical, construction,
-  dimension and trim.
-- Arcs: three-point arcs and a parametric corner fillet; arc loops extrude exactly as
-  OCCT arc edges (not tessellated).
-- Undo/redo with gesture grouping (`Cmd/Ctrl+Z`, `Shift+Cmd/Ctrl+Z`); one drag or slider
-  gesture is one step. `Esc` cancels a draft and clears the selection.
-- Click curves/points to select them, Shift-click to multi-select, and Delete/Backspace to
-  remove. Deletion cascades to dependent curves and constraints, and leaves no orphaned
-  references. A selection popover reports length/diameter/position and offers the
-  immediate constraint/dimension/trim actions.
-- Profile faces come from a non-destructive planar arrangement: crossings and
-  T-junctions split into real regions, and the trim tool removes the clicked line/arc
-  segment between intersections with undo.
-- The part is a plain-JSON document (`Doc` + typed features), not component state:
-  migrate-on-load, autosave to `localStorage`, undoable extrude height and region
-  selection, and the feature names drive the timeline.
-- The main-thread rebuild is ordered and cached: sketch features solve and extract
-  profiles, extrude features resolve their source and regions, and every feature gets a
-  status/diagnostics record. A height edit reuses the sketch result; a sketch edit
-  invalidates the extrude. The worker receives the ordered solid-feature list, caches
-  prefix solids by feature cache key, applies new/join/cut booleans and fillet/chamfer blends, and
-  returns per-feature build statuses.
-- The example part can be loaded, cleared, edited, or replaced by drawing. It is the
-  dimensioned plate, a suppressed “Center pin” extrude from the **same Sketch 1** (the
-  central hole's void region as a cylinder), a second “Mounting holes” sketch and a
-  suppressed through-all cut, plus a suppressed four-edge “Rounded plate” fillet. The
-  suppressed features keep the familiar plate and picking goldens while exercising
-  same-sketch region ownership, a second sketch, suppression, edits, the 3D sketch
-  overlay and the M5 fillet/chamfer steps. A new sketch is added from the timeline's
-  `+ sketch` support popover (world XY/XZ/YZ, planar faces and datum planes) and
-  `+ plane` geometry. A new extrude is
-  started from the selected sketch step and begins with **no profile selected**; the
-  draft only becomes a history feature after at least one profile and the parameters are
-  applied. Existing extrudes are edited by selecting their step.
-- `npm run verify` (187 unit tests) and `npm run e2e` (64 tests) are green. The e2e asserts
-  exact volumes, arcs, fillets, angular/radius dimensions, label dragging, constraints,
-  reference-frame constraints, exact point coordinates, draws, selects/deletes, and
-  undoes. The suite reuses a worker-scoped page, so the WASM is loaded twice (2 workers)
-  instead of once per test.
-
-Numbers from the running app: a drawn 115×75×12 plate with a Ø30 hole is
-95 017.7 mm³ and rebuilds in ~35 ms after warm-up.
-
-**Still temporary** (all scheduled below): auto mode defaults to the largest material
-region until you click one; trim handles lines/arcs but not circles; support-list detail
-copy and through-3-point planes are the remaining M4/M6 support pieces. M3 is done: the history supports
-create/edit/reorder by drag/suppress/delete and a selection-driven history cursor, a
-local file menu/list with
-copy/open/download/rename/new, blind/symmetric/through-all extrudes, and role propagation
-through booleans, with the multi-feature rebuild covered by e2e. Free 3D sketches,
-splines/text/images and drawing exports remain out of scope.
-
----
-
-## Design audit — real usage (2026-11-02)
-
-The reference part (`Disqo / rounded-square`) was read through the Fusion MCP: **113
-timeline steps, 14 sketches, 17 components**, nothing suppressed. It is an **assembly**,
-not a single body: vendor STEP parts are inserted as components, rigid-grouped, and the
-case is cut around them. The full table lives in
-[`docs/showcase/BACKLOG.md`](showcase/BACKLOG.md).
-
-Usage that changes priorities:
-
-| Feature | Uses | Consequence |
-| --- | --- | --- |
-| Sketch | 14 | done (M1) |
-| Extrude | ~38 | done; options in M3/M4 |
-| **Offset Faces** | **11** | **reversed from Drop to Keep** (M5/M6); every use is tolerance/fit |
-| Chamfer / Fillet | 6 / 5 | M5 |
-| Combine | 6 | M6, confirmed used |
-| Construction plane | 4 | M4 (offset/midplane in) |
-| Mirror / Rectangular pattern / Circular pattern | 4 / 2 / 1 | M6, confirmed used |
-| Shell | 1 | M5 |
-| Split Body / Move | 1 / 1 | M6, confirmed used |
-| Component insert | 6 | M8 assembly layer |
-| Rigid Group / Snapshot | 1 / 2 | M8 assembly layer; Snapshot was previously unplanned |
-| Timeline group | 10 | Keep, M3/M6 timeline refinement |
-
-Conclusions incorporated below:
-
-1. **Offset Faces is Keep**, not Drop; it is the third most-used modelling feature after
-   extrude and chamfer.
-2. **The real workflow is an assembly.** Single-body scope is the largest structural gap
-   between this plan and the part it is meant to make.
-3. **M6 patterns/mirror/combine/split-body are confirmed**, not speculative.
-4. **Timeline groups are part of the workflow**, used 10 times.
-5. **Not used in the reference part:** revolve, loft, sweep, draft, hole/thread,
-   primitives, thicken, boundary fill, delete/replace face. Those stay Low/M9/Drop.
-
----
-
-## Mockup coverage audit (2026-11-01)
-
-`docs/mockups/` is the design target; this table keeps every study traceable to a
-milestone. The mockups themselves stay static and are never imported by `src/`.
-
-| Study | Where it lands |
-| --- | --- |
-| 01 history | **M3**: feature tree/active step (done), rename (done), status (done), scrub by selecting a step (downstream paused, no roll-forward control), readout-only detail line, delete step. |
-| 02 sketch | **M1/M2** (done): geometry, dimensions, inline editing, constraints, reference dimensions. **M2.7** (done): point tool. **M2.8**: adaptive/free-form grid step, snap on/off independent of grid, scale bar, 50/100/200/fit zoom menu, contextual selection line, type-token audit. **M2.9**: rectangular/lasso profile selection. **M4**: dashed fixed projected references + project tool. |
-| 03 model | **M3**: selected-feature summary line (distance/direction/operation/profile), a draggable parameter popover, and edit/suppress/delete. **M5**: selecting a feature highlights the geometry it created; body health line (1 body · 1 shell · faces · watertight); overall dimensions drawn on the model. |
-| 04 support | **M3**: `+ sketch` opens an explicit support popover. **M4**: world planes / planar faces (done), datum planes, hover/select preview on the dimmed body, curved faces explained, cached frame, reselect recovery. |
-| 05 export | **M5**: export is a page over the visible model, generated from the current rebuild; body/watertight/shell/open-edge/normal checks, units/scale/triangles/file size, build-volume fit, one export action; STL + STEP. |
-| 06 errors | **M3**: failed step stays visible, last-good body stays on stage, diagnostics name the step and lost reference, recovery actions (reselect / open sketch / revert). **M4**: TopoRef loss + cached frame. Error style is ink + dotted rule + “!”, not red. |
-| 07 files | **M3 persistence**: filename as the file menu, download/open `.cad`, make a copy, rename, local file index with step/body counts and modified time, new file, offline-only. |
-| 08 body | **M5**: body appearance (material + finish) attached to the body-creating feature; later join/cut keep it; timeline summary; decide whether appearance is document data or presentation-only. |
-| TYPOGRAPHY.md | **M2.5** (done): families/roles/themes. **M2.8**: port the token contract into `src/app/app.css` and extend `check-typography.mjs` to audit the app CSS as well as the mockups. |
-
-Notable conflict: mockup 02 gives the **project** tool the `P` shortcut, but the point
-tool now owns `P`. M4 must pick another shortcut for project (or deliberately move the
-point tool) rather than duplicating it.
-
-`docs/showcase/` is an additional design study for **rectangular pattern, circular
-pattern, mirror and offset** in the sketch. It is promoted to **M6.0** with **ADR-0004**:
-stored parametric operations, derived instances, and re-editable parameters (Fusion-like),
-not one-shot materialised copies. Feature/body patterns and mirror remain M6; feature/face
-offset remains M9.
-
-## Feature coverage vs SolveSpace (sanity check)
-
-Checked against SolveSpace's actual menu/group inventory **and** the 3:13 homepage demo
-video (frames extracted at 2 s intervals). The headline gap was **sketch supports**: a
-sketch used to be always on XY. World XZ/YZ and planar faces are in; datum planes move
-into M4 and become a history feature, not a sketch property. The demo also makes one
-more gap explicit: sketch points must be constrainable to **existing solid faces and
-edges**, which is how the gusset is anchored between the inner walls.
-
-| SolveSpace feature | Our status |
-| --- | --- |
-| New group: sketch in workplane | **Gap → M4**: datum planes (offset, midplane) |
-| Sketch on a planar face | **Gap → M4**: `PlaneRef.kind = "face"` |
-| Sketch in a midplane / symmetry plane between faces | **Gap → M4**: `midplane` datum plane (or reuse the original plane of a symmetric extrude) |
-| Constrain a point to a solid face/edge ("On Plane", "On Line") | **Gap → M4**: live projected reference edges/points as fixed construction geometry, then point-on-line/coincident |
-| Sketch anywhere in 3D (3D lines/constraints) | Not implemented: the document/solver are 2D-plane. See M9; needed for 3D sweep paths and free 3D sketches. |
-| Datum point / workplane | Planes M4; datum points/axes M6 (needed for through-3-point planes and revolve axes) |
-| Line, construction line, rectangle, circle | Done |
-| Arc (3-point, tangent at point) | Done — three-point arcs + a parametric corner fillet |
-| Cubic Bézier | `slvs` has `E_CUBIC`; our app does not expose it yet. See M9. |
-| General B-splines / NURBS | Not in `slvs`; M9 upstream work (kernel side is easy, solver side is not) |
-| Ellipses, parabolic/hyperbolic arcs, conic sections | Not in `slvs`; M9 upstream work. Approximate with lines/arcs for now. |
-| Sketch text / images | Not implemented; M9 |
-| Expressions / spreadsheets | M7 (app-level; `slvs` only receives numeric values) |
-| Split curves at intersection / trim | M2.6 (done) |
-| Distance (point-point, point-line), angle, diameter, radius, reference dimensions | Done |
-| Angle / reference angle | Done (dimension tool) |
-| Horizontal, vertical, parallel, perpendicular, equal, point-on-line | Done |
-| Midpoint, symmetric, tangent | Done |
-| Lock point where dragged / fix | Done |
-| Extrude, one-sided | Done |
-| Two-sided / symmetric extrude | M3 (`symmetric`) |
-| Through-all / up-to-face extrude end condition | M3 blind + through-all; up-to-face in M4 (needs `TopoRef`) |
-| Boolean union / difference (join / cut) | M3 |
-| Revolve / lathe | M9 low; not used in the reference part |
-| 3D fillet / chamfer | M5 (OCCT/`brepjs`, not a `slvs` gap) |
-| Loft / sweep | M9 low; not used in the reference part (OCCT; a 3D sweep path also needs M9 curve work) |
-| Draft | Not planned yet; M9 |
-| Shell / thickness / offset | M5 shell; **Offset Faces M5/M6**; thicken M9 |
-| Linear/circular patterns, feature/body mirror | M6; sketch symmetry constraint is done. Mirror is high priority. |
-| Hole/thread feature | Circle + cut extrude now; M9 low (not used in the reference part) |
-| Helix (threads/springs) | M6 optional |
-| Link / assemble | M8 |
-| Measure volume / area / perimeter / centre of mass | Volume in stats; the rest M5 |
-| Interference / naked edges | M5/M8 optional |
-| STEP / STL export | M5 |
-| DXF / SVG / PDF, trace, step-dimension | Deferred / out of scope |
-
-Two workflow points from the demo are already explicit in the plan: one sketch reused by
-several operations (M2 regions + M3 feature references) and reading dimensions without
-driving (reference dimensions, done).
-
-### Reference workflow: the demo's angle bracket
-
-This is the end-to-end acceptance scenario we should be able to reproduce. Timestamps are
-from the homepage video.
-
-1. **0:00–0:50 — profile sketch.** Empty XY workplane. Draw the L-shaped profile with
-   line segments; horizontal, vertical, perpendicular, parallel and equal constraints;
-   live distance dimensions. *(Done in M1.)*
-2. **0:50–1:14 — the gusset, sketched "between the walls".** After extruding the bracket
-   two-sided, start a new sketch in the **symmetry plane** of the body — the original
-   profile plane, which is the midplane between the two side faces. (With a one-sided
-   body this would be a datum midplane between the side faces.) Draw a triangle whose
-   vertices are constrained **onto the solid's inner corner and inner flange faces/edges**.
-   The extrude starts one-sided, is switched to **two-sided**, and is **unioned** into the
-   body.
-   *(The triangle is not on a face. It is in a plane in empty space, anchored to the
-   solid. This is the feature the transcript calls "sketch between surfaces".)*
-3. **1:28–2:12 — mounting holes on a face.** New workplane on the upright flange face.
-   Draw two circles with equal radius, symmetry about the face's vertical centreline, and
-   distance dimensions. **Cut** extrude through the flange.
-4. **2:36–3:04 — edit early history.** Return to the first sketch, replace the sharp inner
-   corner with a tangent arc (Ø25), add tangent + perpendicular constraints and a 90°
-   angle dimension. The bracket, gusset and holes rebuild downstream.
-5. **3:10 — group tree.** `g001-#references`, `g002-sketch-in-plane`, `g003-extrude`,
-   `g004-sketch-in-plane`, `g005-extrude`, `g006-sketch-in-plane`, `g007-extrude`: three
-   sketches, three features, all editable.
-
-Our equivalent of SolveSpace's direct "On Face / On Line" constraints is to project the
-referenced faces/edges into the sketch as **live fixed construction geometry** (derived
-from a `TopoRef` on every rebuild, never stored as user geometry), then use ordinary
-point-on-line / coincident constraints. This keeps the 2D solver pure and makes the
-reference survive edits through topological naming.
 
 ## Done: M0 — Skeleton
 
@@ -341,7 +138,7 @@ the full constraint set.
       the last selected line) and adds both endpoint-pair symmetric constraints in one
       action — the rectangle-about-a-centreline workflow.
 - [x] Midpoint constraint UI (point + line → at midpoint); point-on-circle
-- [x] A real "fix point" constraint (SolveSpace's lock-where-dragged)
+- [x] A real "fix point" constraint (lock the point where it is dragged)
 - [x] Coincident constraint action for points that are near but not identical (drawing
       still snaps exact/shared points)
 - [x] Arc tool (three-point) + a parametric corner fillet, plus exact line/arc loops in
@@ -365,7 +162,7 @@ The old M1 list also had `core/doc` and "move the sketch into the document store
 are prerequisites for history, not sketcher UX, and only make sense once features and
 rebuild exist; they are tracked at the top of M3.
 
-## M2 — Profiles and solids (the spike covers ~70%)
+## M2 — Profiles and solids
 
 - [x] Worker client + protocol, init handshake, latest-wins rebuilds
 - [x] Extrude evaluator: polygon/circle loops → wire → face → solid, with validation
@@ -402,7 +199,7 @@ with exact volume. Auto still means the largest material region; M2.6 adds split
 the profile path handles crossings, T-junctions, holes, void profiles, circle splitting,
 and trim. The reported circle-through-hole part is a unit fixture and an e2e regression.
 
-## M2.5 — UI foundations: paper/ink visual system (2–3 days)
+## M2.5 — UI foundations: paper/ink visual system
 
 Use `docs/mockups/` as the design target without importing it into `src/`. This is a
 visual and interaction-layer pass only; it must not invent history steps, support pickers,
@@ -431,7 +228,7 @@ refinement stays deferred.
 both day and night, the theme/highlighter choices survive reload, and no placeholder
 history/support/export UI has been added.
 
-## M2.6 — Split at intersections / trim (2–3 days)
+## M2.6 — Split at intersections / trim
 
 The biggest remaining profile-correctness gap: intersecting segments without a shared
 endpoint do not yet split the graph.
@@ -474,7 +271,7 @@ solver point, so drag/constrain/dimension/X/Y editing all reuse the existing pat
 **Done when:** you can place two free points, dimension the distance between them, drag
 one, and undo the whole gesture without affecting any profile.
 
-## M2.8 — Design fidelity (done except the file menu, which lands with M3)
+## M2.8 — Design fidelity (done)
 
 The app must look and read like the studies before more feature chrome lands. The mockup
 HTML is illustrative; the **Design contract** above is the requirement. This pass covers
@@ -562,7 +359,7 @@ draft/editor) marquees regions.
 - [x] Tests: pure box/lasso cases plus e2e marquee + Backspace, profile marquee, and
       mixed geometry/dimension delete
 
-## M3 — History (4–6 days)
+## M3 — History
 
 **Done.** The document store, migrations, autosave, feature names, undoable feature
 parameters, the ordered rebuild/cache, the worker solid cache + new/join/cut, the full
@@ -587,8 +384,9 @@ plumbing, and evolution-based role propagation through booleans are in.
       the box is unchanged (and the line's slope is held for the whole-line drag).
 - [x] Scrub by selecting a step: the stage renders the prefix through the active step and
       later steps are paused/dimmed. There is no separate roll-back/roll-forward control;
-      opening a document selects its end. Clicking either 44px empty tail clears the
-      cursor, renders the full document and hides step overlays/popovers.
+      opening a document leaves no step selected (full document, track at the end). The
+      leading 44px tail and the trailing tail (fills the remaining width) clear the cursor,
+      render the full document and hide step overlays/popovers. Escape at rest does the same.
 - [x] Header `clear` is a development reset of the whole file: same document id/name,
       all steps removed (the empty timeline tail starts the first sketch), undo history
       reset. The sketch tool line has a scoped `clear sketch` that only empties the
@@ -627,7 +425,8 @@ plumbing, and evolution-based role propagation through booleans are in.
       up-to-face remains M4
 - [ ] Extrude start offset — begin the solid at a distance from the sketch plane
 - [ ] Extrude taper angle — drafted side walls without a separate Draft feature
-- [ ] Extrude intersect — the third boolean operation
+- [ ] Extrude intersect — the fourth operation; contract in
+      `docs/showcase/BOOLEANS.md` (cut is red, intersect is ghost)
 - [x] First TopoRef plumbing: worker `assignRoles` + `captureHint`/`createRef` on the
       final body, carried through `FaceGroup`/`BodyPick` as JSON-safe refs
 - [x] Evolution-based `updateRoles` across fuse/cut; the worker keeps a role table per
@@ -646,7 +445,7 @@ suppresses, deletes and rolls back, and lists/copies/reopens local files. Role t
 now propagated through joins/cuts with `updateRoles`; the next step is storing face refs
 on features for M4.
 
-## M4 — Sketch supports: datum planes and faces (7–9 days)
+## M4 — Sketch supports: datum planes and faces
 
 A sketch support is resolved from references, then given a stable frame. Datum planes
 come first: they cover "sketch in thin air" and share the resolution/recovery machinery
@@ -730,8 +529,8 @@ with face sketches.
       keeping the cached frame until the new support resolves
 - [ ] Extrude to-object / to-next end condition, resolved through `TopoRef`
 - [ ] Project arbitrary edges/faces into a sketch in addition to the support boundary.
-      The full Fusion projection suite (project / include 3D / intersect /
-      project-to-surface) is deferred; see M9
+      The full projection suite (project / include 3D / intersect / project-to-surface)
+      is deferred; see M9
 - [x] Topological-naming regression test: change base height, boss on top face follows
 - [x] UI: unsupported (curved) face → clear explanation, no broken state
 - [x] **First slice landed:** face refs + deterministic cached frame, sketch on a planar
@@ -765,11 +564,11 @@ extrude → gusset triangle in the symmetry plane, anchored to projected inner e
 two-sided union extrude → two holes on the flange face, cut through — then edit the first
 sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correctly.
 
-## M5 — Refinement features (4–5 days)
+## M5 — Refinement features
 
 ### Sketch refinements (from gap backlog)
 
-- [x] Collinear constraint. SolveSpace has no collinear primitive, so it maps to
+- [x] Collinear constraint. The solver has no collinear primitive, so it maps to
       parallel + point-on-line (a shared endpoint needs only parallel); it is one
       document constraint/chip with solver and drag rows. Covered by unit tests
       (solver, DOF and drag) and the collinear e2e case.
@@ -821,7 +620,8 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       restores faces and thickness. The example does not ship a shell step.
 - [x] **Revolve v1** — schema v14 `RevolveFeature` for a closed profile swept around an
       in-plane sketch line or X/Y axis. The profile popover's `revolve…` chip opens a form
-      with explicit axis chips (no silent default), 1–360° angle, ccw/cw for partial,
+      with explicit axis chips or a stage click on a sketch line/X/Y reference (no silent
+      default), 1–360° angle, ccw/cw for partial,
       new/join/cut, live worker preview, re-editable history step and cancel/restore.
       Regions must stay on one side of the infinite axis or touch it. The stage axis-pick
       highlight, intersect, and the start-profile/angle-arc preview remain open.
@@ -909,11 +709,45 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
 size and the fillets survive. The printer export page reports real checks and produces
 an STL derived from the current history.
 
-## M6 — More shape (1–2 weeks, can reorder)
+## Next: Boolean operations (M5.x; [BOOLEANS.md](showcase/BOOLEANS.md))
 
-The design audit confirms patterns, mirror, Combine and Split Body are used in the
-reference part; they are not speculative. Timeline groups are also a real workflow item
-(10 uses), added below.
+This is the next implementation step. The offset-face diff is the reference preview; the
+operation vocabulary and colour language are already specified.
+
+- [ ] Add `intersect` to `ExtrudeOperation`/`KernelOperation`, the document validation and
+      the worker boolean branch (`intersect`/`intersectWithEvolution`), with visible
+      no-base and empty-overlap errors.
+- [ ] Replace the extrude `<select>` with one segmented row on extrude **and** revolve:
+      `new body · join · cut · intersect`, always in that order, all four visible.
+      `new` stays the document key; the visible label is `new body`.
+- [ ] Default the draft to `new body` with no body and `join` with a body. Never switch an
+      operation silently after the draft opens.
+- [ ] Preview grammar:
+      - `new body`: result body normal, no diff;
+      - `join`: added material (result minus target) in the highlighter;
+      - `cut`: removed material in cut red; ghost the tool outside the target;
+      - `intersect`: keep the overlap normal and ghost the discarded target/tool volume;
+        never red.
+      The result body itself is never repainted.
+- [ ] Add a `--cut` removed-material token to the app palette and extend the viewer's diff
+      layer to support the ghost state (the offset preview currently hardcodes the red).
+- [ ] Request diff meshes for extrude/revolve previews only (like `offset-draft`), not for
+      committed steps or export.
+- [ ] Through-all remains cut-only. Cut/intersect need a base and a non-empty result;
+      no-overlap/no-base are visible errors, never empty steps.
+- [ ] Timeline: operation in the meta (`12 mm · cut`), output chip stays `+`/`→`; `−` is
+      reserved for consumes. Re-edit restores the baseline operation.
+- [ ] Tests: new body/join/cut/intersect volumes, diff triangle sides, no-base and
+      no-overlap errors, through-all cut-only, edit/cancel, and the segmented row in both
+      feature forms.
+
+**Done when:** extrude and revolve share the four-operation row and every preview distinguishes
+added, removed and discarded material without repainting the result body.
+
+## M6 — More shape
+
+Patterns, mirror, Combine and Split Body are real workflow items, not speculative.
+Timeline groups are used heavily and are added below.
 
 ### M6.0 — Sketch layout operations (pattern, mirror, offset)
 
@@ -928,7 +762,7 @@ re-editable** operations, not one-shot copied geometry. See **ADR-0004**.
 - [ ] Mirror: line/axis source, optional keep-original
 - [ ] Offset: closed loops, distance, side, miter/round; open chains and
       self-intersections are explicit errors, not bad profiles
-- [ ] Select first, then tool (Fusion order); live preview: source ink + highlighter,
+- [ ] Select first, then tool; live preview: source ink + highlighter,
       derived copies dashed/faint; apply/cancel is one undo entry
 - [ ] Re-edit: select the operation (or its sources) and reopen the same popup with its
       current parameters; changing count/spacing/axis/mirror/offset regenerates copies
@@ -946,16 +780,14 @@ reopened, tweaked, and the solid updates — with no materialised copies in the 
 
 ### Feature/body patterns and shape
 
-The design audit confirms feature/body patterns, mirror, Combine and Split Body are used
-in the reference part. Revolve, loft and sweep are **not used there**; keep them behind
-the proven items rather than letting them displace the workflow-critical work.
+Feature/body patterns, mirror, Combine and Split Body are the next shape work after the
+boolean contract. Loft and sweep remain deferred until a real part needs them.
 
 - [ ] Feature/body linear and circular patterns (reuse the M6.0 popup/preview grammar)
 - [ ] Feature/body mirror (sketch mirror lives in M6.0; this one uses `TopoRef` evolution)
-- [ ] Datum axes and points (revolve axes, through-point planes, sweep paths); the audit
-      uses construction planes heavily, so these stay as enabling infrastructure
-- [ ] Revolve, loft/sweep — not used by the reference part; promote from M9 only when a
-      real part needs them
+- [ ] Datum axes and points (through-point planes, sweep paths) as enabling infrastructure
+- [ ] Loft/sweep — deferred until a real part needs them; the revolve axes are already
+      in-plane sketch lines.
 - [ ] Helix (threads, springs) — optional
 - [ ] **Combine** — join / cut / intersect, keep tool bodies, use a body as a tool
       (elevate general body booleans to a real feature). Target and tool are a selection
@@ -991,11 +823,12 @@ the multi-body work.
       work because OCCT can return a touching fuse as a compound.
 - [ ] **Groups.** Named, collapsible groups of related history steps; a bracket across the
       members, a stack chip when collapsed (mark + name + count; **no peek**), collapse
-      refused while the active step is inside, drag-step-onto-adjacent-step to group,
+      always allowed (if the cursor is inside, it moves to the end with no active step,
+      exactly like the empty tail), drag-step-onto-adjacent-step to group,
       contiguous members only, a one-step group dissolves. The active-step-inside-group
-      double rule and divider/`+` inset are decided (keep as designed). The audit uses 10
-      groups. Pattern/mirror/offset are sketch objects listed in the sketch step's detail,
-      not timeline rows.
+      double rule (while expanded) and divider/`+` inset are decided (keep as designed).
+      Groups are used heavily (about ten in the target workflow). Pattern/mirror/offset are
+      sketch objects listed in the sketch step's detail, not timeline rows.
 - [x] **Bottom status line is readout-only**: lost support, the remaining actions and the
       autosave note; it does not repeat the step block. The lost-body message joins it
       when bodies land.
@@ -1004,7 +837,7 @@ the multi-body work.
       recovery offers follow-the-merge. Disjoint-result detection is queued with
       multi-body/Combine.
 
-## M7 — Parameters (3–4 days)
+## M7 — Parameters
 
 - [ ] Named parameters with units; `Expr` evaluation + dependency ordering
 - [ ] Expression editing on every dimension field
@@ -1018,10 +851,9 @@ collaboration, plugin API.
 
 ### Assemblies (largest structural gap)
 
-The design audit shows the reference part is an assembly: 17 components, 6 component
-inserts, 1 rigid group and 2 snapshots. Single-body scope is therefore the biggest
-structural gap between the plan and the part it must make. This is a layer, not one
-feature, and needs its own design pass before v1 scope is fixed.
+Multi-component assemblies are the largest structural gap between the current single-body
+scope and the target workflow. This is a layer, not one feature, and needs its own design
+pass before scope is fixed.
 
 - [ ] Component / occurrence layer: insert parts, including STEP bodies, as components
       with stable instance identity; assemblies can contain assemblies
@@ -1106,137 +938,53 @@ The design decision is in **ADR-0005**; this is the delivery checklist.
 **Non-goals for v1:** arbitrary network/filesystem access from scripts; a plugin
 marketplace; exposing OCCT handles; pixel-coordinate automation.
 
-## M9 — TODO: unsupported features and upstream SolveSpace work (unscheduled)
+## M9 — Out of scope / deferred (unscheduled)
 
-This is the honest limitations list, not a delivery milestone. It separates three kinds of
-gap:
+This is the limitations list, not a delivery milestone. Promote an item only with a real
+milestone, an ADR if it changes a design decision, and numeric tests.
 
-- **solver/entity gaps** — need `slvs` (or a different sketch solver); good upstream
-  SolveSpace contributions;
-- **kernel/feature gaps** — OCCT/`brepjs` can already do these, but our feature layer does
-  not expose them yet;
-- **app-level gaps** — expressions, document/feature support, text/images.
+### Sketch entities and tools
 
-Based on the FreeCAD/SolveSpace comparison supplied with the demo transcript and the demo
-itself. Nothing here is promised for v1; promote an item only when it moves into a real
-milestone.
+- Ellipses, parabolic/hyperbolic arcs, general conics and general B-splines/NURBS. The
+  solver has no entity for these; approximate with lines/arcs until promoted.
+- Cubic Bézier (`E_CUBIC` exists in the solver, but the document, tool, profile extraction
+  and kernel path do not expose it).
+- Free 3D sketch entities and 3D constraints; the document and solver are 2D-plane.
+- Sketch text/images.
+- Split-at-point / divide-into-N: only intersection splits and trim exist today.
+- Full sketch offset is part of M6.0; feature/face offset is the separate M5 offset step.
 
-### Solver/sketch entity gaps
+### Features, bodies and assemblies
 
-| Feature | Limitation today | Workaround today | What it needs | Target |
-| --- | --- | --- | --- | --- |
-| Ellipse | No entity in `slvs` (only lines, arcs, circles, cubic Béziers) | Circle/arc approximation | Ellipse entity + constraints; profile extraction; OCCT ellipse wire | M9 **upstream** |
-| Parabolic/hyperbolic arcs, general conics | No conic entity/constraints | Line/arc approximation | Conic entity + constraints; profile/kernel wire | M9 **upstream** |
-| General B-spline / NURBS | `slvs` has cubic Bézier, not general B-splines | Line/arc chain | B-spline entity + constraints; profile/kernel NURBS wire | M9 **upstream** |
-| Cubic Bézier | `slvs` has `E_CUBIC`; our document, tool, profile extraction and kernel path do not | Line/arc chain | Adapter + tool + profile/path + kernel `bezier` wire | M9 **app** (solver already has it) |
-| Free 3D sketch entities and 3D constraints | Document/solver are 2D-plane | Use a planar workplane (M4) | 3D document representation, solver plumbing, 3D picking/plane inference | M9 **upstream + app** |
-| Expression-driven dimensions | Numeric values only in `slvs` | Fixed numbers | App-level `Expr` evaluation before solving; M7 | M7 (no solver change) |
-| Ellipse/conic/spline tangency and curvature constraints | Not available | Approximate with arcs/lines | Upstream constraint equations | M9 **upstream** |
-| Sketch text/images | No entity or profile handling | None | Text/image entities + profile extraction | M9 **app** |
-| Offset/trim sketch curves | Trim is M2; **sketch offset is promoted to M6.0** (ADR-0004); feature/face offset is not planned | Manual construction | Curve trimming/offset + profile rebuild | M2/M6.0 (sketch) / M9 (feature offset) |
-| Split at a point / divide into equal sections | Only intersection splits exist (derived arrangement + trim); no editable split or divide tool | Draw separate collinear segments and constrain them Equal | Split-at-point tool; divide-into-N with a persisted count; constraint remapping; decide destructive vs construction | M9 **app** |
-| 3D assembly constraints/joints | No assembly model | M8 | Assembly solver/joints | M8 |
+- Loft and sweep; a 3D sweep also needs the free-3D-curve work above.
+- Draft, multi-face Press/Pull/thicken, holes/threads, helix features.
+- Feature/body patterns and mirror, Combine and Split Body (M6), including stable body
+  identity and `TopoRef` evolution.
+- Drawings, STEP import, sheet metal, curved-face sketches, collaboration and a plugin API
+  (M8).
+- Full projection/import of arbitrary solid geometry; the M4 subset only projects the
+  supporting face boundary and body edges.
+- Assemblies and joints (M8).
 
-### Kernel/feature gaps (not blocked on `slvs`)
+### Dropped
 
-| Feature | Limitation today | Workaround today | What it needs | Target |
-| --- | --- | --- | --- | --- |
-| 3D edge fillet/chamfer | Only 2D sketch fillets before extrude | Draw the fillet into the sketch | `brepjs`/OCCT fillet/chamfer with evolution, feature UI | M5 |
-| Revolve | Not implemented; not used in the reference part | Manual extrudes/rotations | OCCT revolve + axis selection | M9 (low) |
-| Loft | Not implemented; not used in the reference part | Multiple extrudes/manual blends | OCCT loft between sections | M9 (low) |
-| Sweep along a path | Not implemented; not used in the reference part | Planar sweep not yet; 3D path impossible | OCCT pipe/sweep; 3D path needs the M9 3D-curve work | M9 (low; 3D path also M9-curve work) |
-| Feature/body mirror, linear/polar patterns | Sketch symmetry constraint exists; no feature transforms | Duplicate/rotate sketches/features manually | Feature transforms + history pattern feature | M6 — **mirror is high priority** |
-| Draft for moulds/castings | Not implemented | None | OCCT draft on selected faces + neutral plane | M9 (promote to M5 if needed) |
-| Shell / thickness / offset | Shell is planned M5; offset/thicken not | Nested sketches and holes | `brepjs` shell/offset/thicken, open-face selection | M5/M9 |
-| Press/Pull / multi-face offset | Single-face Offset Faces is promoted to M5/M6; multi-face Press/Pull is not | Nested sketches and holes | Multi-face offset/thicken; pair with Offset Faces | M9 (low) |
-| Full sketch projection suite | Support boundary is projected (M4); arbitrary project/include 3D/intersect/project-to-surface is not | Draw construction geometry manually | Projection feature/selection grammar, projected edges, solver refs | M4 subset / M9 rest (low) |
-| Hole/thread feature | Circle + cut extrude; not used in the reference part | Manual circle/cut | Hole profiles, standard sizes, helix/thread | M9 (low) |
-| Text/images in sketches | Not implemented | None | Text/image entities and profiles | M9 |
-| 3D curves for sweeps | Solver/document gap (above) | Planar path only | 3D curve entity + constraints | M9 |
-| Drawings, assemblies | Not implemented | M8 | Separate modules | M8 |
+Slot · sketch scale · sketch extend · sketch chamfer · arc-length/tangent-distance/
+ordinate dimensions · Rib · Web · Emboss · primitive bodies · silhouette split · replace /
+delete face · boundary fill · stitch/unstitch/simplify · direct modeling without history.
 
-### Upstream SolveSpace wishlist (give back)
+### Open design questions
 
-`slvs` is GPLv3, and our adapter (`core/sketch/solver.ts`) is deliberately the only file
-that imports it. That makes it practical to contribute upstream without spreading the API
-through the app.
-
-1. **Entity/constraint coverage:** ellipse, parabolic/hyperbolic conic, general B-spline
-   (or NURBS), 3D curves; corresponding tangency/curvature/position constraints. This is
-   the largest piece and would let us drop the line/arc approximations.
-2. **Safer JS/WASM bindings:** the `.d.ts` has wrong signatures for `symmetric` and
-   `midpoint`; `tangent` calls `Platform::FatalError` and kills the whole WASM instance if
-   the arc/line do not share an endpoint. Expose validation/errors, correct the typings,
-   and add binding tests.
-3. **Cubic Bézier first:** `E_CUBIC` already exists. Exposing it in our adapter, tool,
-   profile extraction and OCCT path is lower risk than waiting for B-splines.
-4. **Docs/tests:** add a small JS binding test suite and examples for arc normals, group-0
-   reference geometry, 3D constraints and constraint failure reporting.
-5. **Coordinate with upstream:** file issues before large PRs; keep changes GPLv3
-   compatible; do not add a second solver without an ADR.
-
-### Priority notes
-
-- **Workflow-critical from the design audit:** Offset Faces, feature/body patterns,
-  mirror, Combine, Split Body, timeline groups and assemblies. Promote those ahead of
-  revolve, loft, sweep, draft, hole/thread and primitives, which the reference part does
-  not use.
-- **Mirror/symmetry** is high-use; pull the M6 feature/body Mirror forward into M5 if M6
-  slips. The sketch **symmetric** constraint already covers 2D symmetry about a line.
-- **3D fillet/chamfer and shell** are M5; they are OCCT features, not solver gaps.
-- **Expressions** are M7 and app-level; they do not require touching `slvs`.
-- **Ellipses/conics/B-splines** are research/upstream work. Use line/arc approximations
-  until they are promoted; do not pretend they are exact.
-- If **3D sweeps** become a requirement, prioritize free 3D curves and 3D constraints
-  before loft/sweep; otherwise plan only planar sweeps.
-- **Draft, threads, text/images and drawings** are later. Promote one at a time with an
-  ADR, a milestone, and numeric tests.
-
-**Done when:** an item is promoted out of M9 into a real milestone or ADR with tests. M9
-itself stays documentation-only.
-
-### Covered by existing tools (no new work)
-
-- **Concentric:** two circles/arcs sharing a coincident centre are concentric; add Equal
-  only when the radii must match. Remaining work is UX convenience (auto-pick centres).
-- **Curvature / Smooth (G2):** only meaningful for splines/Béziers, which are M9.
-- **Sketch region selection:** planar arrangement + half-edge faces already handle
-  intersecting sub-profiles (M2.9).
-
-### Dropped (decided no)
-
-Slot · Sketch scale · Sketch extend · Sketch chamfer · arc-length / tangent-distance /
-ordinate dimensions · Rib · Web · Emboss · primitive bodies (box/cylinder/sphere/torus)
-· silhouette split · replace / delete face · boundary fill · stitch / unstitch
-/ simplify · direct modeling ("Capture Design History", base feature, paste-new, derive).
-
-**Offset Faces was removed from this Drop list** after the 2026-11-02 design audit: it is
-Keep at M5/M6 (11 real uses, all tolerance/fit work).
-
-### Open design questions (from the gap backlog)
-
-- **Combine / Split Body:** are tool bodies a selection in the feature dialog, or a
-  separate bodies list on the document? How do result bodies keep stable identity
-  (`TopoRef`) across a split?
-- **Section Analysis:** view-only overlay (never in history)? How does it interact with
-  visibility toggles and isolate?
-- **Move / Copy:** materialised one-shot transform or persistent feature? Sketch geometry
-  should use the M6.0 persistent grammar; bodies are closer to a feature.
-- **Sketch-create variants:** resolved — one tool plus a variant in the tool options
-  row (same surface as the select filters), not a second toolbar or flyout.
+- **Combine / Split Body:** tool bodies as a selection in the feature form or a separate
+  document list; how split result bodies keep stable `TopoRef` identity.
+- **Section Analysis:** view-only overlay (never in history), and how it relates to the
+  visibility/isolate surface.
+- **Move / Copy bodies:** persistent feature vs one-shot transform.
 - **Visibility toggles:** show/hide sketches, bodies, constraints, construction,
-  dimensions, isolate/opacity — design as a coherent surface before implementation.
-- **Assemblies:** what is a component/occurrence in the plain-JSON document? How do
-  inserted STEP bodies keep stable identity, and how does `TopoRef` address a face inside
-  an instance? What exactly does Snapshot capture (transforms only, or visibility too)?
-- **Timeline groups:** are groups document data or presentation state? How do they
-  interact with the selection cursor, suppression and nested sketch-operation rows?
-- **Projecting sketch geometry onto a datum plane / project-to-surface:** is this a
-  projection feature, a sketch import, or a view transform? It needs a separate design
-  pass; the M4 subset only projects a supporting face boundary and arbitrary solid edges.
-  Keep the full suite in M9 until that grammar is clear.
-
----
+  dimensions; isolate/opacity as one coherent surface.
+- **Assemblies:** component/occurrence model and `TopoRef` addressing across instances.
+- **Timeline groups:** document data or presentation state; interaction with the cursor
+  and suppression.
+- **Projection grammar:** projection feature, sketch import or view transform.
 
 ## Sequencing notes
 
