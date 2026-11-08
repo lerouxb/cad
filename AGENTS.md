@@ -226,7 +226,8 @@ docs/
   visual atlas. A new constraint or measurement updates both, and the marks stay a derived
   UI layer — never document state. A mark is the handle for its constraint: hover links the
   companions and participants, click selects the whole constraint, Backspace/Delete removes
-  it. Constraint selection is ephemeral UI state.
+  it. Constraint selection is ephemeral UI state. Selected marks stay ink on paper — the
+  highlighter is a wash under the geometry, never the mark's stroke or badge fill.
 - The worker protocol is a discriminated union in `core/kernel/protocol.ts`. Both
   sides import the same types.
 - Prefer small, explicit functions over clever abstractions. This domain is already

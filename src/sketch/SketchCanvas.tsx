@@ -2248,23 +2248,6 @@ export function SketchCanvas({
         </g>
       ) : null}
 
-      <ConstraintMarks
-        sketch={sketch}
-        points={points}
-        palette={palette}
-        px={px}
-        selected={selected}
-        hoveredCurveId={hoveredCurveId}
-        hoveredPointId={hoveredPointId}
-        viewBox={viewBox}
-        tooltipConstraintId={visibleTooltipId}
-        interactive={tool === "select"}
-        selectedConstraintId={selectedConstraintId}
-        hoveredConstraintId={hoveredConstraintId}
-        onHoverConstraint={setHoveredConstraintId}
-        onSelectConstraint={onSelectConstraint}
-      />
-
       <g>
         {sketch.constraints.map((constraint) => {
           if (constraint.type === "distance") {
@@ -2273,6 +2256,7 @@ export function SketchCanvas({
             if (!a || !b) return null;
             return (
               <LinearDimension
+                layer="lines"
                 key={constraint.id}
                 id={constraint.id}
                 a={a}
@@ -2299,6 +2283,7 @@ export function SketchCanvas({
             if (!info) return null;
             return (
               <LinearDimension
+                layer="lines"
                 key={constraint.id}
                 id={constraint.id}
                 a={info.point}
@@ -2325,6 +2310,7 @@ export function SketchCanvas({
             if (!circle) return null;
             return (
               <DiameterDimension
+                layer="lines"
                 key={constraint.id}
                 id={constraint.id}
                 center={circle.center}
@@ -2354,6 +2340,143 @@ export function SketchCanvas({
             if (!info) return null;
             return (
               <AngleDimension
+                layer="lines"
+                key={constraint.id}
+                id={constraint.id}
+                vertex={info.vertex}
+                rayA={info.rayA}
+                rayB={info.rayB}
+                radius={constraint.offset ?? 30}
+                value={angleBetweenVectors(info.vertex, info.rayA, info.rayB)}
+                reference={constraint.driving === false}
+                palette={palette}
+                px={px}
+                fontSize={fontSize}
+                editingId={editor?.id ?? null}
+                onEdit={dimensionsSelectable ? openDimensionEditor : undefined}
+                onDrag={
+                  dimensionsSelectable
+                    ? (event) => startDimensionDrag(event, constraint)
+                    : undefined
+                }
+              />
+            );
+          }
+          return null;
+        })}
+      </g>
+
+
+      <ConstraintMarks
+        sketch={sketch}
+        points={points}
+        palette={palette}
+        px={px}
+        selected={selected}
+        hoveredCurveId={hoveredCurveId}
+        hoveredPointId={hoveredPointId}
+        viewBox={viewBox}
+        tooltipConstraintId={visibleTooltipId}
+        interactive={tool === "select"}
+        selectedConstraintId={selectedConstraintId}
+        hoveredConstraintId={hoveredConstraintId}
+        onHoverConstraint={setHoveredConstraintId}
+        onSelectConstraint={onSelectConstraint}
+      />
+
+      <g>
+        {sketch.constraints.map((constraint) => {
+          if (constraint.type === "distance") {
+            const a = points[constraint.a];
+            const b = points[constraint.b];
+            if (!a || !b) return null;
+            return (
+              <LinearDimension
+                layer="labels"
+                key={constraint.id}
+                id={constraint.id}
+                a={a}
+                b={b}
+                offset={constraint.offset ?? 12}
+                along={constraint.along}
+                value={distanceBetween(a, b)}
+                reference={constraint.driving === false}
+                px={px}
+                fontSize={fontSize}
+                palette={palette}
+                editingId={editor?.id ?? null}
+                onEdit={dimensionsSelectable ? openDimensionEditor : undefined}
+                onDrag={
+                  dimensionsSelectable
+                    ? (event) => startDimensionDrag(event, constraint)
+                    : undefined
+                }
+              />
+            );
+          }
+          if (constraint.type === "pointLineDistance") {
+            const info = pointLineInfo(constraint.point, constraint.line);
+            if (!info) return null;
+            return (
+              <LinearDimension
+                layer="labels"
+                key={constraint.id}
+                id={constraint.id}
+                a={info.point}
+                b={info.projection}
+                offset={constraint.offset ?? 10}
+                along={constraint.along}
+                value={distanceBetween(info.point, info.projection)}
+                reference={constraint.driving === false}
+                px={px}
+                fontSize={fontSize}
+                palette={palette}
+                editingId={editor?.id ?? null}
+                onEdit={dimensionsSelectable ? openDimensionEditor : undefined}
+                onDrag={
+                  dimensionsSelectable
+                    ? (event) => startDimensionDrag(event, constraint)
+                    : undefined
+                }
+              />
+            );
+          }
+          if (constraint.type === "diameter") {
+            const circle = circleLike(constraint.circle);
+            if (!circle) return null;
+            return (
+              <DiameterDimension
+                layer="labels"
+                key={constraint.id}
+                id={constraint.id}
+                center={circle.center}
+                radius={circle.radius}
+                angle={constraint.angle ?? 45}
+                distance={constraint.distance}
+                arcStartAngle={circle.startAngle}
+                arcSweep={circle.sweep}
+                value={constraint.radius ? circle.radius : circle.radius * 2}
+                asRadius={constraint.radius}
+                reference={constraint.driving === false}
+                px={px}
+                fontSize={fontSize}
+                palette={palette}
+                editingId={editor?.id ?? null}
+                onEdit={dimensionsSelectable ? openDimensionEditor : undefined}
+                onDrag={
+                  dimensionsSelectable
+                    ? (event) => startDimensionDrag(event, constraint)
+                    : undefined
+                }
+              />
+            );
+          }
+          if (constraint.type === "angle") {
+            const info = angleInfo(constraint.a, constraint.b);
+            if (!info) return null;
+            return (
+              <AngleDimension
+                layer="labels"
                 key={constraint.id}
                 id={constraint.id}
                 vertex={info.vertex}
@@ -2959,6 +3082,8 @@ interface DimensionHandlers {
   onDrag?: (event: ReactPointerEvent) => void;
   /** The dimension whose inline editor is open; its SVG label is hidden. */
   editingId?: string | null;
+  /** Split rendering so constraint marks can sit between lines and labels. */
+  layer?: "lines" | "labels";
 }
 
 function LinearDimension({
@@ -2976,12 +3101,15 @@ function LinearDimension({
   onEdit,
   onDrag,
   editingId,
+  layer,
 }: DimensionHandlers & {
   a: Vec2;
   b: Vec2;
   offset: number;
   along?: number;
 }) {
+  const showLines = layer !== "labels";
+  const showLabels = layer !== "lines";
   const dx = b[0] - a[0];
   const dy = b[1] - a[1];
   const length = Math.hypot(dx, dy) || 1;
@@ -3014,44 +3142,48 @@ function LinearDimension({
       }
     >
       <title>{`Dimension ${label}. Drag to move; double-click to edit.`}</title>
-      <line
-        x1={a[0]}
-        y1={a[1]}
-        x2={A[0]}
-        y2={A[1]}
-        strokeWidth={0.8}
-        opacity={0.55}
-        vectorEffect="non-scaling-stroke"
-      />
-      <line
-        x1={b[0]}
-        y1={b[1]}
-        x2={B[0]}
-        y2={B[1]}
-        strokeWidth={0.8}
-        opacity={0.55}
-        vectorEffect="non-scaling-stroke"
-      />
-      <line
-        x1={A[0]}
-        y1={A[1]}
-        x2={B[0]}
-        y2={B[1]}
-        strokeWidth={1}
-        vectorEffect="non-scaling-stroke"
-      />
-      {[A, B].map((point, index) => (
-        <line
-          key={index}
-          x1={point[0] - nx * tick}
-          y1={point[1] - ny * tick}
-          x2={point[0] + nx * tick}
-          y2={point[1] + ny * tick}
-          strokeWidth={1.4}
-          vectorEffect="non-scaling-stroke"
-        />
-      ))}
-      {editingId !== id ? (
+      {showLines ? (
+        <>
+          <line
+            x1={a[0]}
+            y1={a[1]}
+            x2={A[0]}
+            y2={A[1]}
+            strokeWidth={0.8}
+            opacity={0.55}
+            vectorEffect="non-scaling-stroke"
+          />
+          <line
+            x1={b[0]}
+            y1={b[1]}
+            x2={B[0]}
+            y2={B[1]}
+            strokeWidth={0.8}
+            opacity={0.55}
+            vectorEffect="non-scaling-stroke"
+          />
+          <line
+            x1={A[0]}
+            y1={A[1]}
+            x2={B[0]}
+            y2={B[1]}
+            strokeWidth={1}
+            vectorEffect="non-scaling-stroke"
+          />
+          {[A, B].map((point, index) => (
+            <line
+              key={index}
+              x1={point[0] - nx * tick}
+              y1={point[1] - ny * tick}
+              x2={point[0] + nx * tick}
+              y2={point[1] + ny * tick}
+              strokeWidth={1.4}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+        </>
+      ) : null}
+      {showLabels && editingId !== id ? (
         <text
           x={mid[0]}
           y={mid[1] + fontSize * 0.35}
@@ -3100,6 +3232,7 @@ function DiameterDimension({
   arcSweep,
   distance,
   editingId,
+  layer,
 }: DimensionHandlers & {
   center: Vec2;
   radius: number;
@@ -3127,6 +3260,8 @@ function DiameterDimension({
   const anchor = dx < -0.3 ? "end" : dx > 0.3 ? "start" : "middle";
   const color = reference ? palette.dim : palette.dimension;
   const label = `${reference ? "(" : ""}${asRadius ? "R" : "⌀"} ${formatLength(value)}${reference ? ")" : ""}`;
+  const showLines = layer !== "labels";
+  const showLabels = layer !== "lines";
 
   return (
     <g
@@ -3150,15 +3285,17 @@ function DiameterDimension({
       }
     >
       <title>{`Dimension ${label}. Drag to move; double-click to edit.`}</title>
-      <line
-        x1={start[0]}
-        y1={start[1]}
-        x2={end[0]}
-        y2={end[1]}
-        strokeWidth={1}
-        vectorEffect="non-scaling-stroke"
-      />
-      {editingId !== id ? (
+      {showLines ? (
+        <line
+          x1={start[0]}
+          y1={start[1]}
+          x2={end[0]}
+          y2={end[1]}
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+        />
+      ) : null}
+      {showLabels && editingId !== id ? (
         <text
           x={textX}
           y={textY}
@@ -3207,7 +3344,10 @@ function AngleDimension({
   onEdit,
   onDrag,
   editingId,
+  layer,
 }: DimensionHandlers & { vertex: Vec2; rayA: Vec2; rayB: Vec2; radius: number }) {
+  const showLines = layer !== "labels";
+  const showLabels = layer !== "lines";
   let startAngle = Math.atan2(rayA[1] - vertex[1], rayA[0] - vertex[0]);
   let endAngle = Math.atan2(rayB[1] - vertex[1], rayB[0] - vertex[0]);
   let sweep = normalizeAngle(endAngle - startAngle);
@@ -3251,31 +3391,35 @@ function AngleDimension({
       }
     >
       <title>{`Dimension ${text}. Drag to move; double-click to edit.`}</title>
-      <line
-        x1={vertex[0]}
-        y1={vertex[1]}
-        x2={start[0]}
-        y2={start[1]}
-        strokeWidth={0.8}
-        opacity={0.55}
-        vectorEffect="non-scaling-stroke"
-      />
-      <line
-        x1={vertex[0]}
-        y1={vertex[1]}
-        x2={end[0]}
-        y2={end[1]}
-        strokeWidth={0.8}
-        opacity={0.55}
-        vectorEffect="non-scaling-stroke"
-      />
-      <path
-        d={`M ${start[0]} ${start[1]} A ${radius} ${radius} 0 0 1 ${end[0]} ${end[1]}`}
-        fill="none"
-        strokeWidth={1.1}
-        vectorEffect="non-scaling-stroke"
-      />
-      {editingId !== id ? (
+      {showLines ? (
+        <>
+          <line
+            x1={vertex[0]}
+            y1={vertex[1]}
+            x2={start[0]}
+            y2={start[1]}
+            strokeWidth={0.8}
+            opacity={0.55}
+            vectorEffect="non-scaling-stroke"
+          />
+          <line
+            x1={vertex[0]}
+            y1={vertex[1]}
+            x2={end[0]}
+            y2={end[1]}
+            strokeWidth={0.8}
+            opacity={0.55}
+            vectorEffect="non-scaling-stroke"
+          />
+          <path
+            d={`M ${start[0]} ${start[1]} A ${radius} ${radius} 0 0 1 ${end[0]} ${end[1]}`}
+            fill="none"
+            strokeWidth={1.1}
+            vectorEffect="non-scaling-stroke"
+          />
+        </>
+      ) : null}
+      {showLabels && editingId !== id ? (
         <text
           x={label[0]}
           y={label[1] + fontSize * 0.35}
@@ -3389,7 +3533,7 @@ function ConstraintMarks({
   const renderMark = (mark: ConstraintMark, index: number) => {
     const color =
       mark.style === "active"
-        ? palette.marker
+        ? palette.ink
         : mark.style === "hover"
           ? palette.hover
           : palette.badge;
@@ -3410,7 +3554,7 @@ function ConstraintMarks({
               width={width}
               height={height}
               rx={2 * px}
-              fill={mark.style === "active" ? palette.markerSoft : palette.halo}
+              fill={palette.halo}
               stroke={color}
               strokeWidth={1}
               vectorEffect="non-scaling-stroke"
@@ -3418,13 +3562,23 @@ function ConstraintMarks({
             <text
               x={mark.x}
               y={mark.y + 3 * px}
-              fill={mark.style === "active" ? palette.markerInk : color}
+              fill={color}
               fontSize={8 * px}
               textAnchor="middle"
               pointerEvents="none"
             >
               {mark.label}
             </text>
+            {mark.style === "active" ? (
+              <rect
+                x={mark.x - width / 2}
+                y={mark.y + height / 2 + 0.5 * px}
+                width={width}
+                height={1.6 * px}
+                rx={0.8 * px}
+                fill={palette.marker}
+              />
+            ) : null}
           </g>
         );
       }

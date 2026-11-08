@@ -184,7 +184,7 @@ quietly close, apply a default, or fall through to "finish sketch".
 | --- | --- | --- | --- | --- | --- | --- |
 | S0 | Idle · `select` · nothing selected | finish sketch → model D2 | — | — | `nav` | — |
 | S1 | Sketch geometry selected (`selection-panel`) | — | clear selection / close popover | `clear` | `nav` | delete selection |
-| S1b | **Constraint mark selected** (all companion marks + participants highlit; constraint popover) | — | clear selection / close popover | `clear` | `nav` · clear | remove the constraint (one undo; no geometry change) |
+| S1b | **Constraint mark selected** (companion marks stay ink on paper; participant geometry is washed; constraint popover) | — | clear selection / close popover | `clear` | `nav` · clear | remove the constraint (one undo; no geometry change) |
 | S2 | Tool armed, no gesture (`line`/`rect`/`circle`/`arc`/`dimension`/`trim`/`box`/`lasso`) | end tool → `select` D3 | → `select` | `input` (see S3–S6) | `nav` · abort | — |
 | S3 | Line draft · 1 point | — | drop draft, stay in `line` D1 | `input` · add vertex | `nav` · drop draft | — D11 |
 | S4 | Line draft · ≥ 2 points | commit open polyline, stay in `line` | drop draft, stay in `line` D1 | `input` · add vertex / close on first point | `nav` · drop draft | — D11 |

@@ -1788,13 +1788,22 @@
   stroke: var(--ink);
 }
 
-.con-badge.is-selected .con-badge-box {
+.con-badge-underline {
+  display: none;
   fill: var(--marker);
-  stroke: var(--marker);
+}
+
+.con-badge.is-selected .con-badge-box {
+  fill: var(--bg);
+  stroke: var(--ink);
 }
 
 .con-badge.is-selected .con-badge-text {
-  fill: var(--marker-ink);
+  fill: var(--ink);
+}
+
+.con-badge.is-selected .con-badge-underline {
+  display: block;
 }
 
 .con-badge.is-preview .con-badge-box {
@@ -1823,12 +1832,16 @@
 }
 
 .con-card.is-selected .con-badge-box {
-  fill: var(--marker);
-  stroke: var(--marker);
+  fill: var(--bg);
+  stroke: var(--ink);
 }
 
 .con-card.is-selected .con-badge-text {
-  fill: var(--marker-ink);
+  fill: var(--ink);
+}
+
+.con-card.is-selected .con-badge-underline {
+  display: block;
 }
 
 .con-card.is-selected .con-name {
@@ -2016,12 +2029,16 @@
 }
 
 .con-finder [data-constraint].is-selected .con-badge-box {
-  fill: var(--marker);
-  stroke: var(--marker);
+  fill: var(--bg);
+  stroke: var(--ink);
 }
 
 .con-finder [data-constraint].is-selected .con-badge-text {
-  fill: var(--marker-ink);
+  fill: var(--ink);
+}
+
+.con-finder [data-constraint].is-selected .con-badge-underline {
+  display: block;
 }
 
 .con-link-wash {
@@ -2187,4 +2204,158 @@ circle.con-link-wash {
 .con-tooltip.is-below,
 .con-constraint-pop.is-below {
   transform: translate(-50%, 0);
+}
+
+/* ==========================================================================
+   selection study (selection.html)
+   ========================================================================== */
+
+.sel-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.sel-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--rule);
+  background: var(--bg);
+}
+
+.sel-card.is-wide {
+  grid-column: span 2;
+}
+
+.sel-card h3 {
+  margin: 0 0 4px;
+  font-family: var(--font-serif);
+  font-size: var(--type-row);
+  font-weight: var(--weight-regular);
+  letter-spacing: var(--tracking-row);
+}
+
+.sel-card > p {
+  margin: 0 0 10px;
+  color: var(--ink-2);
+  font-size: var(--type-prose);
+  line-height: var(--leading-prose);
+}
+
+.sel-scene {
+  min-height: 112px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg);
+}
+
+.sel-scene svg {
+  display: block;
+  width: 100%;
+  height: 112px;
+}
+
+.sel-card .tool-panel {
+  position: static;
+  width: auto;
+  margin-top: 10px;
+  border: 1px solid var(--rule);
+  box-shadow: none;
+}
+
+.sel-group {
+  margin-top: 10px;
+}
+
+.sel-group .tool-label {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.sel-flag {
+  display: inline-block;
+  margin-top: 8px;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+}
+
+.sel-table {
+  width: 100%;
+  margin-top: 18px;
+  border-collapse: collapse;
+  font-size: var(--type-prose);
+  line-height: var(--leading-prose);
+}
+
+.sel-table th,
+.sel-table td {
+  padding: 7px 9px;
+  border-bottom: 1px solid var(--rule);
+  text-align: left;
+  vertical-align: top;
+}
+
+.sel-table th {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  font-weight: var(--weight-regular);
+  letter-spacing: var(--tracking-value);
+  text-transform: uppercase;
+}
+
+.sel-table td:first-child {
+  color: var(--ink);
+  white-space: nowrap;
+}
+
+.sel-table td {
+  color: var(--ink-2);
+}
+
+.sel-table code {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+}
+
+.sel-note {
+  margin: 12px 0 0;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--type-micro);
+  letter-spacing: var(--tracking-value);
+}
+
+.sel-rules {
+  margin: 18px 0 0;
+  padding-left: 1.1em;
+  columns: 2;
+  column-gap: 36px;
+  color: var(--ink-2);
+  font-size: var(--type-prose);
+  line-height: var(--leading-prose);
+}
+
+.sel-rules li {
+  break-inside: avoid;
+  margin: 0 0 9px;
+}
+
+.sel-rules b {
+  color: var(--ink);
+  font-weight: var(--weight-medium);
+}
+
+@media (max-width: 720px) {
+  .sel-card.is-wide {
+    grid-column: span 1;
+  }
+
+  .sel-rules {
+    columns: 1;
+  }
 }
