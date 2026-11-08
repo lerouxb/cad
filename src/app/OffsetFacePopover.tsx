@@ -56,6 +56,13 @@ export function OffsetFacePopover({
   const direction = distance < 0 ? "in" : "out";
   const signed = `${distance < 0 ? "−" : "+"}${magnitude.toFixed(1)}`;
   const summary = `${count} face${count === 1 ? "" : "s"} · ${signed} mm`;
+  const cylinder = count === 1 ? faces[0] : undefined;
+  const radius = cylinder?.hint.radius;
+  const radialSign = cylinder?.hint.radialSign;
+  const newRadius =
+    radius !== undefined && radialSign !== undefined
+      ? radius + distance * radialSign
+      : null;
   return (
     <StagePopover
       kicker={isDraft ? "new feature" : "offset feature"}
@@ -117,6 +124,15 @@ export function OffsetFacePopover({
         <p className="feature-error" data-testid="offset-face-error">
           {error}
         </p>
+      ) : null}
+
+      {newRadius !== null && newRadius > 0 ? (
+        <div className="feature-row">
+          <span className="detail-key">result</span>
+          <span className="detail-value" data-testid="offset-face-diameter">
+            Ø {(radius! * 2).toFixed(1)} → {(newRadius * 2).toFixed(1)} mm
+          </span>
+        </div>
       ) : null}
 
       <div className="selection-list">

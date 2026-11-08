@@ -235,16 +235,21 @@ docs/
   face offers `new sketch`/`shell`, edges offer `fillet`/`chamfer`). No click starts a
   feature. One family at a time; sketch geometry + dimensions is the only allowed mix.
   Box/lasso follows the filter and Backspace deletes the resulting sketch selection.
-- **Offset faces v1 is planar and prismatic.** `docs/showcase/OFFSET_FACES.md` is the
-  contract. `OffsetFaceFeature` (schema v12) stores face refs and a signed distance; the
-  worker sweeps a planar face and fuses/cuts it. It only accepts parallel face sets and
-  neighbours the sweep preserves (perpendicular planes, coaxial cylinders); curved faces,
-  tangent top-edge fillets, slanted walls and non-parallel sets are visible errors, never
-  a silent step. Same-domain faces are merged through `unifySameDomain` on an isolated
-  BREP copy: calling it directly on a shape that shares subshapes with the cached prefix
-  corrupts a later fuse. Do not replace the feature with a whole-body `offset`, a shell or
-  a scale. Cylindrical walls, the tangent-chain expansion and the preview ghost/arrow are
-  still open; do not claim them.
+- **Offset faces v1 is planar/prismatic plus full cylindrical holes and bosses.**
+  `docs/showcase/OFFSET_FACES.md` is the contract. `OffsetFaceFeature` (schema v13) stores
+  face refs and a signed distance. The planar path sweeps a face and fuses/cuts it; it
+  only accepts parallel face sets and neighbours the sweep preserves (perpendicular
+  planes, coaxial cylinders). The cylindrical path accepts one full 360° wall: a hole is
+  enlarged with a bigger cut cylinder and shrunk by fusing an annular tube; a boss is
+  grown with a bigger cylinder and shrunk by cutting an annular tube. Through holes only;
+  partial cylinders, blind holes, tangent top-edge fillets, slanted walls and non-parallel
+  sets are visible errors. `TopoRef.hint.radius`/`radialSign` feed the `Ø old → new`
+  readout. Same-domain faces are merged through `unifySameDomain` on an isolated BREP
+  copy: calling it directly on a shape that shares subshapes with the cached prefix
+  corrupts a later fuse. A ghost of the pre-offset body shows the added/removed volume
+  during the draft. Do not replace the feature with a whole-body `offset`, a shell or a
+  scale. Blind/partial cylinders, the tangent-chain expansion and the normal arrow/dashed
+  input-face ghost are still open; do not claim them.
 - The worker protocol is a discriminated union in `core/kernel/protocol.ts`. Both
   sides import the same types.
 - Prefer small, explicit functions over clever abstractions. This domain is already

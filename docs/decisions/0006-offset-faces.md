@@ -1,6 +1,6 @@
 # ADR-0006: Offset Faces v1 is a checked planar/prismatic push/pull
 
-- Status: **accepted** (v1 scope), 2026-11-08
+- Status: **accepted** (v1 scope, extended to full cylinders), 2026-11-08
 - Contract: [`docs/showcase/OFFSET_FACES.md`](../showcase/OFFSET_FACES.md)
 
 ## Context
@@ -52,7 +52,8 @@ unchecked prism unusable:
 
 ## Decision
 
-Implement **Offset Faces v1** as a checked planar/prismatic push/pull:
+Implement **Offset Faces v1** as a checked planar/prismatic push/pull, plus a full
+cylindrical hole/boss slice:
 
 - `OffsetFaceFeature` (schema v12) stores `faces: TopoRef[]` and a signed `distance`.
 - Resolve each face on the source prefix and require it to be **planar**.
@@ -69,6 +70,19 @@ Implement **Offset Faces v1** as a checked planar/prismatic push/pull:
 - Re-derive roles geometrically, carry the moved face's role to the face at its new
   plane, and name any new faces under the feature so the step highlight and downstream
   refs work.
+
+### Cylindrical slice
+
+A single **full 360° cylindrical wall** is rebuilt with a concentric cylinder/tube:
+
+- radius and hole/boss sign come from the face axis and `normal · radial`;
+- a through hole is enlarged with a larger cut cylinder and shrunk by fusing an annular
+  tube between the new and old radius;
+- a boss is grown with a larger cylinder and shrunk by cutting an outer annular tube;
+- the face must be full (`area ≈ 2πrh`) and a hole must span the body (through only);
+  partial cylinders and blind holes are visible errors;
+- the new wall keeps the old role, matched by its axis and new radius;
+- `TopoRef.hint.radius` and `radialSign` drive the `Ø old → new` readout.
 
 The UI follows the design study: select faces, `offset face` chip, a UI-only draft with
 the face list, `MeasureField` distance, out/in direction, live preview, `apply` as a

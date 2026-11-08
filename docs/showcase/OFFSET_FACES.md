@@ -1,13 +1,14 @@
 # Offset faces
 
-> Status: **implemented v1 (planar/prismatic)**, 2026-11-08. The visual companion is
+> Status: **implemented v1 (planar/prismatic + full cylinders)**, 2026-11-08. The visual companion is
 > [`offset-faces.html`](offset-faces.html). This is the contract for moving
 > selected faces by a distance. It complements [`SELECTION.md`](SELECTION.md)
 > (the face selection and its feature chips), [`INTERACTION.md`](INTERACTION.md)
 > (the popover surface) and [`MODES.md`](MODES.md) (the draft's inputs).
 >
-> The kernel path is decided for the planar/prismatic slice (§9); cylindrical
-> walls and the tangent chain remain open. Do not fake unsupported cases with a
+> The kernel path is decided for the planar/prismatic slice and full cylindrical
+> through holes/bosses (§9); blind/partial cylinders and the tangent chain remain
+> open. Do not fake unsupported cases with a
 > whole-body offset, a shell, a scale or an unchecked extrusion.
 
 ## The one line
@@ -208,7 +209,7 @@ shell and blend drafts. The preview body is the result, not a new pick surface.
 - `shell`, `thicken`, `removeFaces`.
 
 There is no selected-face-on-a-solid operation. **v1 implements the planar,
-prismatic slice** as a checked rebuild:
+prismatic slice** as a checked rebuild, plus a full cylindrical wall path:
 
 1. resolve each selected face on the source prefix and require it to be planar;
 2. require every selected normal to be parallel;
@@ -230,9 +231,15 @@ on a shape that shares subshapes with the cached prefix corrupts a later fuse, s
 v1 unifies an **isolated BREP copy** and adopts the result; the prefix is never
 touched. The raw unify bug is still worth an upstream ticket.
 
+**Cylindrical slice:** one full 360° wall with `area ≈ 2πrh`. A through hole is
+enlarged with a larger cut cylinder and shrunk by fusing an annular tube; a boss
+is grown with a larger cylinder and shrunk by cutting an outer annular tube. The
+new wall keeps the old role, matched by its axis and new radius. Blind holes and
+partial cylinders are visible errors.
+
 Still open, in order:
 
-1. **Cylindrical hole/boss wall** (the tolerance/fit use case);
+1. **Blind holes and partial cylindrical faces**;
 2. **Adjacent non-parallel faces** (the shared corner must be rebuilt, not two
    bosses meeting);
 3. **Tangent chain** and general curves/fillets.
@@ -284,20 +291,22 @@ Landed (schema v12):
 - The face popover's `offset face` chip opens a UI-only draft; distance,
   direction, face rows and live preview work, and `apply` inserts the history
   step after the active step.
-- The worker rebuilds the planar/prismatic slice from §9, re-derives roles,
-  carries the moved face's role, and surfaces invalid/empty/no-op results in the
-  popover and the stage status.
+- The worker rebuilds the planar/prismatic slice and the full cylindrical
+  hole/boss slice from §9, re-derives roles, carries the moved face's role, and
+  surfaces invalid/empty/no-op results in the popover and the stage status.
+- The `Ø old → new` readout is derived from `TopoRef.hint.radius`/`radialSign`.
+- The draft shows a ghost of the whole pre-offset body, so added/removed volume
+  is visible while the form is open.
 - Editing an existing step commits live; `cancel` restores the baseline.
 
 Still missing:
 
-- cylindrical hole/boss walls and general curved faces;
+- blind holes and partial cylindrical faces;
 - adjacent non-parallel face sets (they are rejected in v1);
 - the tangent-chain toggle;
-- the `Ø old → new` readout, normal arrow and dashed source-face ghost;
-- the selection popover's diameter readout and the adaptive slider ceiling from
-  the shortest adjacent dimension (the current ceiling is the body's shortest
-  dimension).
+- the normal arrow and dashed source-face ghost (the whole-body ghost is in);
+- the adaptive slider ceiling from the shortest adjacent dimension (the current
+  ceiling is the body's shortest dimension).
 
 Same-domain merging landed through an isolated BREP copy; the raw
 `unifySameDomain` prefix bug is documented for an upstream ticket.

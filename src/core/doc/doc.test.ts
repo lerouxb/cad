@@ -475,6 +475,8 @@ describe("document schema", () => {
         normal: [0, 0, 1],
         centroid: [30, 20, 12],
         area: 60 * 40,
+        radius: 8,
+        radialSign: -1,
       },
     };
 
@@ -496,6 +498,12 @@ describe("document schema", () => {
       migrated?.type === "offset" ? migrated.faces[0]?.role : null,
     ).toBe("extrude:face_6");
     expect(migrated?.type === "offset" ? migrated.distance : null).toBe(3);
+    expect(
+      migrated?.type === "offset" ? migrated.faces[0]?.hint.radius : null,
+    ).toBe(8);
+    expect(
+      migrated?.type === "offset" ? migrated.faces[0]?.hint.radialSign : null,
+    ).toBe(-1);
 
     // An offset can never move before the feature that named its faces.
     expect("error" in moveFeature(added.doc, added.feature.id, 1)).toBe(true);
@@ -773,6 +781,16 @@ describe("document migrations", () => {
         ),
       }),
     ).toBeNull();
+  });
+
+  it("opens a v12 document and bumps the schema", () => {
+    const doc = exampleDoc();
+    const migrated = migrateDoc({ ...doc, schemaVersion: 12 });
+    expect(migrated?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated?.features.map((feature) => feature.type)).toEqual([
+      "sketch",
+      "extrude",
+    ]);
   });
 
   it("opens a v11 document without offset features and bumps the schema", () => {

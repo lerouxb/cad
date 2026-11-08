@@ -27,6 +27,10 @@ export interface TopoHint {
   normal?: [number, number, number];
   centroid?: [number, number, number];
   area?: number;
+  /** Radius of a full cylindrical hole/boss wall, when known. */
+  radius?: number;
+  /** +1 for a boss wall, -1 for a hole wall (normal points into the void). */
+  radialSign?: 1 | -1;
 }
 
 /**

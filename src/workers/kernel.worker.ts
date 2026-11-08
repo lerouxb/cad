@@ -11,6 +11,7 @@ import {
   chamferWithEvolution,
   circle,
   classifyPointOnFace,
+  cylinder,
   clearMeshCache,
   clone,
   createRef,
@@ -36,6 +37,7 @@ import {
   getHashCode,
   getShells,
   getSolids,
+  getVertices,
   innerWires,
   isEmpty,
   isValid,
@@ -1060,6 +1062,265 @@ function mergeSameDomain(solid: Solid): Solid | null {
 }
 
 /**
+ * Move one full cylindrical hole or boss wall radially by changing its
+ * radius. A hole is enlarged with a bigger cut cylinder and shrunk by fusing
+ * an annular tube; a boss is grown with a bigger cylinder and shrunk by cutting
+ * an annular tube. The wall itself keeps its role and downstream refs.
+ */
+function buildCylindricalOffset(
+  feature: KernelOffsetFaceFeature,
+  base: Solid,
+  baseRoles: RoleTable,
+  face: Parameters<typeof captureHint>[0],
+): { solid: Solid; roles: RoleTable } {
+  const axis = faceAxis(face as Face);
+  if (!axis) {
+    throw new Error("The selected cylindrical face has no stable axis.");
+  }
+  const info = cylinderHint(face);
+  if (info.radius === undefined || info.radialSign === undefined) {
+    throw new Error("The selected cylindrical face has no stable radius.");
+  }
+  const [lo, hi] = faceAxialExtent(face, axis);
+  const height = hi - lo;
+  if (!(height > 1e-6)) {
+    throw new Error("The selected cylindrical face has no usable extent.");
+  }
+  const area = captureHint(face).area;
+  const fullArea = 2 * Math.PI * info.radius * height;
+  if (
+    area === undefined ||
+    Math.abs(area - fullArea) > Math.max(1e-3, fullArea * 0.01)
+  ) {
+    throw new Error(
+      "Offset faces supports full cylindrical holes and bosses only.",
+    );
+  }
+  const [bodyLo, bodyHi] = solidAxialExtent(base, axis);
+  const through =
+    Math.abs(lo - bodyLo) < 1e-2 && Math.abs(hi - bodyHi) < 1e-2;
+  if (info.radialSign < 0 && !through) {
+    throw new Error("Offset faces supports through holes only.");
+  }
+
+  const distance = feature.distance;
+  const newRadius = info.radius + distance * info.radialSign;
+  if (!(newRadius > 1e-6)) {
+    throw new Error("The offset is too large for this hole or boss.");
+  }
+
+  const basePoint = add(axis.origin, scale(axis.direction, lo));
+  let tool: Solid;
+  let mode: "fuse" | "cut";
+  if (info.radialSign < 0) {
+    if (newRadius > info.radius) {
+      // Hole grows: cut a larger cylinder; through holes get a small pad so the
+      // cut is clean at both open ends.
+      const pad = through ? 0.25 : 0;
+      tool = cylinder(newRadius, height + 2 * pad, {
+        at: add(basePoint, scale(axis.direction, -pad)),
+        axis: axis.direction,
+      });
+      mode = "cut";
+    } else {
+      // Hole shrinks: fill the annular gap between the old and new radius.
+      const outer = cylinder(info.radius, height, {
+        at: basePoint,
+        axis: axis.direction,
+      });
+      const inner = cylinder(newRadius, height, {
+        at: basePoint,
+        axis: axis.direction,
+      });
+      tool = unwrap(cut(outer, inner));
+      mode = "fuse";
+    }
+  } else if (newRadius > info.radius) {
+    // Boss grows: add a larger cylinder over the existing boss.
+    tool = cylinder(newRadius, height, {
+      at: basePoint,
+      axis: axis.direction,
+    });
+    mode = "fuse";
+  } else {
+    // Boss shrinks: remove its outer annular shell.
+    const outer = cylinder(info.radius + 0.01, height, {
+      at: basePoint,
+      axis: axis.direction,
+    });
+    const inner = cylinder(newRadius, height, {
+      at: basePoint,
+      axis: axis.direction,
+    });
+    tool = unwrap(cut(outer, inner));
+    mode = "cut";
+  }
+
+  let solid: Solid;
+  try {
+    solid = unwrap(mode === "fuse" ? fuse(base, tool) : cut(base, tool));
+  } finally {
+    tool.delete();
+  }
+
+  try {
+    if (isEmpty(solid)) {
+      throw new Error("The offset removes the whole body.");
+    }
+    if (getSolids(solid).length !== 1) {
+      throw new Error("The offset did not produce a single body.");
+    }
+    if (!isValid(solid)) {
+      throw new Error("The offset did not produce a valid closed body.");
+    }
+    const merged = mergeSameDomain(solid);
+    if (merged) {
+      if (
+        isValid(merged) &&
+        getFaces(merged).length <= getFaces(solid).length
+      ) {
+        solid.delete();
+        solid = merged;
+      } else {
+        merged.delete();
+      }
+    }
+    const before = unwrap(measureVolume(base));
+    const after = unwrap(measureVolume(solid));
+    if (Math.abs(after - before) < 1e-6) {
+      throw new Error("The offset did not change the body.");
+    }
+    const remap = remapRolesByGeometry(base, solid, baseRoles);
+    const roles = transferCylinderRole(
+      solid,
+      remap,
+      baseRoles,
+      getHashCode(face),
+      axis,
+      newRadius,
+      feature.featureId,
+    );
+    return { solid, roles };
+  } catch (error) {
+    solid.delete();
+    throw error;
+  }
+}
+
+function faceAxialExtent(
+  face: Parameters<typeof captureHint>[0],
+  axis: { origin: Vec3; direction: Vec3 },
+): [number, number] {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const edge of getEdges(face as Face)) {
+    for (const t of [0, 0.25, 0.5, 0.75, 1]) {
+      const point = curvePointAt(edge, t);
+      const axial = dot(
+        add(point, scale(axis.origin, -1)),
+        axis.direction,
+      );
+      lo = Math.min(lo, axial);
+      hi = Math.max(hi, axial);
+    }
+  }
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+    throw new Error("The selected cylindrical face has no usable extent.");
+  }
+  return [lo, hi];
+}
+
+function solidAxialExtent(
+  solid: Solid,
+  axis: { origin: Vec3; direction: Vec3 },
+): [number, number] {
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const vertex of getVertices(solid)) {
+    const point = vertexPosition(
+      vertex as Parameters<typeof vertexPosition>[0],
+    );
+    const axial = dot(add(point, scale(axis.origin, -1)), axis.direction);
+    lo = Math.min(lo, axial);
+    hi = Math.max(hi, axial);
+  }
+  if (!Number.isFinite(lo) || !Number.isFinite(hi)) {
+    throw new Error("The body has no usable extent for this offset.");
+  }
+  return [lo, hi];
+}
+
+function transferCylinderRole(
+  post: Solid,
+  remap: RoleRemap,
+  baseRoles: RoleTable,
+  preHash: number,
+  axis: { origin: Vec3; direction: Vec3 },
+  radius: number,
+  featureId: string,
+): RoleTable {
+  const next: MutableRoleTable = new Map();
+  for (const [origin, roleMap] of remap.roles) {
+    const copy = new Map<string, number[]>();
+    for (const [role, hashes] of roleMap) copy.set(role, [...hashes]);
+    next.set(origin, copy);
+  }
+  const claimed = new Set(remap.claimed);
+  const owners: Array<{ origin: string; role: string }> = [];
+  for (const [origin, roleMap] of baseRoles) {
+    for (const [role, hashes] of roleMap) {
+      if (hashes.includes(preHash)) owners.push({ origin, role });
+    }
+  }
+
+  let best: { hash: number; score: number } | null = null;
+  for (const candidate of getFaces(post) as Array<Parameters<typeof captureHint>[0]>) {
+    const hash = getHashCode(candidate);
+    if (claimed.has(hash)) continue;
+    if (!String(faceGeomType(candidate as Face)).toUpperCase().includes("CYL")) {
+      continue;
+    }
+    const candidateAxis = faceAxis(candidate as Face);
+    const hint = cylinderHint(candidate);
+    if (!candidateAxis || hint.radius === undefined) continue;
+    if (Math.abs(dot(unit(candidateAxis.direction), unit(axis.direction))) < 0.999) {
+      continue;
+    }
+    const relative = add(candidateAxis.origin, scale(axis.origin, -1));
+    const axial = dot(relative, unit(axis.direction));
+    const radial = add(relative, scale(unit(axis.direction), -axial));
+    const axisDistance = Math.hypot(radial[0], radial[1], radial[2]);
+    if (axisDistance > 0.05) continue;
+    const radiusDiff = Math.abs(hint.radius - radius);
+    if (radiusDiff > 0.05) continue;
+    const score = radiusDiff + axisDistance;
+    if (!best || score < best.score) best = { hash, score };
+  }
+
+  if (best && owners.length > 0) {
+    for (const owner of owners) {
+      const roleMap = next.get(owner.origin) ?? new Map<string, number[]>();
+      const hashes = roleMap.get(owner.role) ?? [];
+      if (!hashes.includes(best.hash)) hashes.push(best.hash);
+      roleMap.set(owner.role, hashes);
+      next.set(owner.origin, roleMap);
+    }
+    claimed.add(best.hash);
+  }
+
+  const featureRoles = new Map<string, number[]>();
+  let anonymous = 0;
+  for (const candidate of getFaces(post) as Array<Parameters<typeof captureHint>[0]>) {
+    const hash = getHashCode(candidate);
+    if (claimed.has(hash)) continue;
+    featureRoles.set(`offset:face_${anonymous++}`, [hash]);
+    claimed.add(hash);
+  }
+  if (featureRoles.size > 0) next.set(featureId, featureRoles);
+  return next;
+}
+
+/**
  * Move planar faces along their normals. A face is swept by the signed
  * distance and fused (outward) or cut (inward). This is exact only when every
  * neighbouring surface is preserved by the sweep: planar neighbours must
@@ -1081,6 +1342,35 @@ function buildOffsetFaceFeature(
   }
 
   type Face3D = Parameters<typeof captureHint>[0];
+  // Cylindrical hole/boss walls need a different rebuild (a concentric
+  // cylinder or tube), not a planar sweep.
+  const resolvedFaces: Face3D[] = [];
+  for (const ref of feature.faces) {
+    const resolved = resolveFaceOnSolid(base, baseRoles, ref);
+    if ("broken" in resolved) {
+      throw new Error(
+        "The selected face no longer exists on the current body; reselect it or remove the offset.",
+      );
+    }
+    resolvedFaces.push(resolved.face as Face3D);
+  }
+  const cylinderFaces = resolvedFaces.filter((face) =>
+    String(faceGeomType(face as Face)).toUpperCase().includes("CYL"),
+  );
+  if (cylinderFaces.length > 0) {
+    if (resolvedFaces.length !== 1) {
+      throw new Error(
+        "Select one full cylindrical hole or boss at a time.",
+      );
+    }
+    return buildCylindricalOffset(
+      feature,
+      base,
+      baseRoles,
+      resolvedFaces[0]!,
+    );
+  }
+
   const selected: Array<{
     face: Face3D;
     normal: Vec3;
@@ -1878,6 +2168,37 @@ function topoEdgeRefs(
   return refs;
 }
 
+/** Radius and inward/outward sign for a full cylindrical hole/boss wall. */
+function cylinderHint(
+  face: Parameters<typeof captureHint>[0],
+): { radius?: number; radialSign?: 1 | -1 } {
+  const type = String(faceGeomType(face as Face)).toUpperCase();
+  if (!type.includes("CYL")) return {};
+  const axis = faceAxis(face as Face);
+  if (!axis) return {};
+  const vertex = getVertices(face as Face)[0];
+  if (!vertex) return {};
+  const point = vertexPosition(vertex);
+  const relative: Vec3 = [
+    point[0] - axis.origin[0],
+    point[1] - axis.origin[1],
+    point[2] - axis.origin[2],
+  ];
+  const axial = dot(relative, axis.direction);
+  const radial: Vec3 = [
+    relative[0] - axis.direction[0] * axial,
+    relative[1] - axis.direction[1] * axial,
+    relative[2] - axis.direction[2] * axial,
+  ];
+  const radius = Math.hypot(radial[0], radial[1], radial[2]);
+  if (!(radius > 1e-9)) return {};
+  const normal = normalAt(face as Face, point);
+  return {
+    radius,
+    radialSign: dot(normal, scale(radial, 1 / radius)) >= 0 ? 1 : -1,
+  };
+}
+
 /** Turn the propagated role table into JSON-safe refs for the final body. */
 function topoRefs(solid: Solid, roles: RoleTable): Map<number, TopoRef> {
   const refs = new Map<number, TopoRef>();
@@ -1916,6 +2237,7 @@ function topoRefs(solid: Solid, roles: RoleTable): Map<number, TopoRef> {
                   }
                 : {}),
               ...(hint.area !== undefined ? { area: hint.area } : {}),
+              ...cylinderHint(face),
             },
           });
         }

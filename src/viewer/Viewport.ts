@@ -132,6 +132,9 @@ export class Viewport {
   /** The faces one history feature introduced, highlighted on its step. */
   private featureGroup = new THREE.Group();
   private featureHighlightId: string | null = null;
+  /** The pre-offset body shown as a ghost under an offset draft. */
+  private ghostGroup = new THREE.Group();
+  private ghostMesh: BodyMesh | null = null;
   private theme: ViewportTheme;
   private highlightColor: string;
   private readonly onPick?: (
@@ -215,6 +218,7 @@ export class Viewport {
     this.scene.add(this.edgeSelectionGroup);
     this.scene.add(this.faceSelectionGroup);
     this.scene.add(this.featureGroup);
+    this.scene.add(this.ghostGroup);
     this.addEnvironment();
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -653,6 +657,55 @@ export class Viewport {
     this.dirty = true;
   }
 
+  /** Show the pre-offset body as a wireframe/translucent ghost. */
+  setGhostMesh(mesh: BodyMesh | null): void {
+    if (this.ghostMesh === mesh && (mesh !== null || this.ghostGroup.children.length === 0)) {
+      return;
+    }
+    this.ghostMesh = mesh;
+    this.clearGroup(this.ghostGroup);
+    this.canvas.dataset.offsetGhost = mesh ? "on" : "";
+    if (mesh && mesh.positions.length > 0) {
+      const color = this.theme === "night" ? "#c8d0da" : "#3a3a3a";
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(mesh.positions, 3),
+      );
+      geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+      const material = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 0.07,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const ghost = new THREE.Mesh(geometry, material);
+      ghost.renderOrder = 0;
+      ghost.raycast = () => {};
+      this.ghostGroup.add(ghost);
+
+      if (mesh.edgePositions.length > 0) {
+        const edgeGeometry = new THREE.BufferGeometry();
+        edgeGeometry.setAttribute(
+          "position",
+          new THREE.BufferAttribute(mesh.edgePositions, 3),
+        );
+        const edgeMaterial = new THREE.LineBasicMaterial({
+          color,
+          transparent: true,
+          opacity: 0.45,
+          depthTest: false,
+        });
+        const edges = new THREE.LineSegments(edgeGeometry, edgeMaterial);
+        edges.renderOrder = 1;
+        edges.raycast = () => {};
+        this.ghostGroup.add(edges);
+      }
+    }
+    this.dirty = true;
+  }
+
   frameAll(): void {
     const box = new THREE.Box3().setFromObject(this.body);
     if (box.isEmpty()) box.setFromObject(this.sketch);
@@ -682,6 +735,7 @@ export class Viewport {
     this.canvas.removeEventListener("pointerleave", this.onPointerLeave);
     this.cancelMarquee();
     this.clearBody();
+    this.clearGroup(this.ghostGroup);
     this.clearSketchOverlay();
     this.clearEnvironment();
     this.renderer.dispose();

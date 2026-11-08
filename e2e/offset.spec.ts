@@ -6,8 +6,8 @@ import {
   volume,
 } from "./support/app";
 import {
-  addFacePick,
   fitView,
+  pickCylindricalFace,
   pickRightFace,
   pickTopFace,
 } from "./support/model";
@@ -27,6 +27,8 @@ test("offsets the top face out and in as a history step", async ({
   await pickTopFace(page);
   await page.getByTestId("start-offset-face").click();
   await expect(page.getByTestId("offset-face-popover")).toBeVisible();
+  const canvas = page.locator("canvas.viewport-canvas");
+  await expect(canvas).toHaveAttribute("data-offset-ghost", "on");
 
   await page.getByTestId("offset-face-distance").fill("5");
   await expect
@@ -39,6 +41,7 @@ test("offsets the top face out and in as a history step", async ({
   await expect(step).toHaveAttribute("data-status", "ok");
   await expect(step.locator(".tree-meta")).toContainText("5 mm · out");
   await expect(page.getByTestId("offset-face-popover")).toHaveCount(0);
+  await expect(canvas).toHaveAttribute("data-offset-ghost", "");
   await expect
     .poll(() => volume(page))
     .toBeCloseTo(examplePlateVolume(17), -1);
@@ -102,34 +105,119 @@ test("offsets a side wall and grows the plate", async ({ app: page }) => {
   expect(errors).toEqual([]);
 });
 
-test("rejects a curved face in the draft preview", async ({ app: page }) => {
+test("offsets a through hole wall and shows the diameter change", async ({
+  app: page,
+}) => {
   const errors = collectErrors(page);
-  await pickTopFace(page);
-  const topId = await page.getByTestId("body-pick").getAttribute("data-id");
-  expect(topId).toBeTruthy();
-  await addFacePick(page, new Set([topId!]));
+  const plate = examplePlateVolume();
+  await pickCylindricalFace(page, (ref) => ref.hint?.radius === 8);
   await expect(page.getByTestId("face-selection-popover")).toHaveAttribute(
     "data-count",
-    "2",
+    "1",
   );
 
   await page.getByTestId("start-offset-face").click();
-  await page.getByTestId("offset-face-distance").fill("5");
-  await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
-    "data-status",
-    "error",
+  await page.getByTestId("offset-face-distance").fill("2");
+  await expect(page.getByTestId("offset-face-diameter")).toContainText(
+    "Ø 16.0 → 12.0 mm",
   );
+  const shrunk = plate + Math.PI * (64 - 36) * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(shrunk, -1);
+  await page.getByTestId("offset-face-apply").click();
+
+  const step = page.locator('[data-feature-type="offset"]');
+  await expect(step).toHaveAttribute("data-status", "ok");
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(shrunk, -1);
+  await expect(page.getByTestId("mesh-stats")).toHaveAttribute(
+    "data-faces",
+    "7",
+  );
+  await expect(page.getByTestId("body-health")).toHaveAttribute(
+    "data-valid",
+    "true",
+  );
+
+  // The same step reopens: in grows the hole to Ø20.
+  await step.click();
+  await expect(page.getByTestId("offset-face-popover")).toBeVisible();
+  await page.getByTestId("offset-face-in").click();
+  await expect(page.getByTestId("offset-face-diameter")).toContainText(
+    "Ø 16.0 → 20.0 mm",
+  );
+  const grown = plate - Math.PI * (100 - 64) * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(grown, -1);
+  await page.getByTestId("offset-face-cancel").click();
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(shrunk, -1);
+  expect(errors).toEqual([]);
+});
+
+
+test("offsets the exposed wall of a cylindrical boss", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  const pin = page
+    .locator('[data-feature-type="extrude"]')
+    .filter({ hasText: "Center pin" });
+  await pin.click();
+  await page.getByTestId("feature-suppress").click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("feature-popover")).toHaveCount(0);
+
+  const base = examplePlateVolume() + Math.PI * 64 * 20;
+  await expect.poll(() => volume(page)).toBeCloseTo(base, -1);
+
+  await pickCylindricalFace(
+    page,
+    (ref) => ref.hint?.radius === 8 && (ref.hint?.centroid?.[2] ?? 0) > 12,
+  );
+  await page.getByTestId("start-offset-face").click();
+  await page.getByTestId("offset-face-distance").fill("2");
+  await expect(page.getByTestId("offset-face-diameter")).toContainText(
+    "Ø 16.0 → 20.0 mm",
+  );
+  // The exposed boss wall is the pin above the 12 mm plate.
+  const grown = base + Math.PI * (100 - 64) * 8;
+  await expect.poll(() => volume(page)).toBeCloseTo(grown, -1);
+  await page.getByTestId("offset-face-apply").click();
+  const step = page.locator('[data-feature-type="offset"]');
+  await expect(step).toHaveAttribute("data-status", "ok");
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(grown, -1);
+  expect(errors).toEqual([]);
+});
+
+
+test("rejects a partial cylindrical face in the draft preview", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  const fillet = page
+    .locator('[data-feature-type="fillet"]')
+    .filter({ hasText: "Rounded plate" });
+  await fillet.click();
+  await page.getByTestId("feature-suppress").click();
+  await expect(fillet).toHaveAttribute("data-status", "ok");
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("fillet-popover")).toHaveCount(0);
+
+  await pickCylindricalFace(
+    page,
+    (ref) => Math.abs((ref.hint?.radius ?? 0) - 4) < 0.1,
+  );
+  await page.getByTestId("start-offset-face").click();
+  await page.getByTestId("offset-face-distance").fill("1");
   await expect(page.getByTestId("offset-face-error")).toContainText(
-    "planar faces only",
+    "full cylindrical holes and bosses only",
   );
   await expect(page.getByTestId("offset-face-apply")).toBeDisabled();
   await page.getByTestId("offset-face-cancel").click();
-  await expect(page.getByTestId("rebuild-status")).toHaveAttribute(
-    "data-status",
-    "ok",
-  );
   expect(errors).toEqual([]);
 });
+
 
 test("rejects an inward offset that removes the whole body", async ({
   app: page,
@@ -169,6 +257,10 @@ test("Escape cancels the offset draft without a history step", async ({
   await page.locator(".stage-popover-head").click();
   await page.keyboard.press("Escape");
   await expect(page.getByTestId("offset-face-popover")).toHaveCount(0);
+  await expect(page.locator("canvas.viewport-canvas")).toHaveAttribute(
+    "data-offset-ghost",
+    "",
+  );
   await expect(page.locator('[data-feature-type="offset"]')).toHaveCount(0);
   await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
   await expect(page.getByTestId("face-selection-popover")).toHaveCount(0);

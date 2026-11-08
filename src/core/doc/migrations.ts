@@ -39,7 +39,8 @@ export function migrateDoc(raw: unknown): Doc | null {
   // v8 → v9 adds fillet features;
   // v9 → v10 adds chamfer features (older documents simply have none);
   // v10 → v11 adds shell features (older documents simply have none);
-  // v11 → v12 adds offset-face features (older documents simply have none).
+  // v11 → v12 adds offset-face features (older documents simply have none);
+  // v12 → v13 adds optional radius/radialSign to face hints.
   if (
     version === 1 ||
     version === 2 ||
@@ -51,7 +52,8 @@ export function migrateDoc(raw: unknown): Doc | null {
     version === 8 ||
     version === 9 ||
     version === 10 ||
-    version === 11
+    version === 11 ||
+    version === 12
   ) {
     return validateDoc(raw);
   }
@@ -429,6 +431,14 @@ function validateTopoRef(raw: unknown): TopoRef | null {
       ...(isVec3(hint.centroid) ? { centroid: hint.centroid } : {}),
       ...(typeof hint.area === "number" && Number.isFinite(hint.area)
         ? { area: hint.area }
+        : {}),
+      ...(typeof hint.radius === "number" &&
+      Number.isFinite(hint.radius) &&
+      hint.radius > 0
+        ? { radius: hint.radius }
+        : {}),
+      ...(hint.radialSign === 1 || hint.radialSign === -1
+        ? { radialSign: hint.radialSign }
         : {}),
     },
   };

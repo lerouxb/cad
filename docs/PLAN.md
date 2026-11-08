@@ -819,19 +819,20 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       visible error (OCCT silently returns a larger solid), and the unchanged body stays
       visible. New shells preview through the kernel; editing commits live; cancel
       restores faces and thickness. The example does not ship a shell step.
-- [x] **Offset Faces v1 (planar/prismatic)** — schema v12 `OffsetFaceFeature` with
-      face refs and a signed distance. The face popover's `offset face` chip opens a
-      UI-only draft with distance, out/in and live preview; apply inserts a history step,
-      edit commits live and cancel restores the baseline. The worker accepts planar faces
-      with parallel normals and neighbours the sweep preserves (perpendicular planes,
-      coaxial cylinders), carries the moved face's role and rejects curved faces, tangent
-      top-edge fillets, slanted walls, non-parallel sets and empty/no-op results visibly.
-      Same-domain faces merge on an isolated BREP copy, so a cube offset keeps six faces
-      and a plate keeps its wall/hole faces. Design: `docs/showcase/OFFSET_FACES.md` +
-      `offset-faces.html`; decision: [ADR-0006](decisions/0006-offset-faces.md)
-- [ ] **Offset Faces v2** — cylindrical hole/boss walls (the main tolerance/fit use:
-      `Ø old → new`, enlarge/shrink), adjacent non-parallel faces with a rebuilt corner,
-      the tangent-chain toggle, and the preview ghost/normal arrow
+- [x] **Offset Faces v1 (planar + full cylinders)** — schema v13 `OffsetFaceFeature`
+      with face refs and a signed distance. The plan path sweeps planar faces with
+      parallel normals and neighbours the sweep preserves; the cylindrical path moves one
+      full 360° hole/boss wall with a concentric cylinder/tube boolean (through holes
+      only). The popover shows `Ø old → new`, the draft previews live with a ghost of the
+      pre-offset body, apply inserts a history step, edit commits live and cancel restores
+      the baseline. Roles carry through, and same-domain faces merge on an isolated BREP
+      copy so a cube keeps six faces and a plate keeps its wall/hole faces. Partial
+      cylinders, blind holes, non-parallel sets and no-op results are visible errors.
+      Design: `docs/showcase/OFFSET_FACES.md` + `offset-faces.html`; decision:
+      [ADR-0006](decisions/0006-offset-faces.md)
+- [ ] **Offset Faces v2** — blind and partial cylindrical faces, adjacent non-parallel
+      faces with a rebuilt corner, the tangent-chain toggle, and the normal arrow/dashed
+      input-face ghost (the whole-body ghost is in v1)
 - [x] Selection UX: box and lasso select model edges, hover prehighlight, selection
       filters, and Select Other for cycling overlapping picks. Box = every projected
       vertex inside (window), lasso = touched/crossed; both select through the body,

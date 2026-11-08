@@ -269,7 +269,14 @@ export async function selectedFaceRefs(page: Page): Promise<
   Array<{
     source: string;
     role: string;
-    hint?: { surfaceType?: string; area?: number };
+    hint?: {
+      surfaceType?: string;
+      area?: number;
+      radius?: number;
+      radialSign?: 1 | -1;
+      normal?: [number, number, number];
+      centroid?: [number, number, number];
+    };
   }>
 > {
   await page.evaluate(
@@ -288,9 +295,46 @@ export async function selectedFaceRefs(page: Page): Promise<
     Array<{
       source: string;
       role: string;
-      hint?: { surfaceType?: string; area?: number };
+      hint?: {
+        surfaceType?: string;
+        area?: number;
+        radius?: number;
+        radialSign?: 1 | -1;
+        normal?: [number, number, number];
+        centroid?: [number, number, number];
+      };
     }>
   >;
+}
+
+/** Select the first full cylindrical face matching the optional predicate. */
+export async function pickCylindricalFace(
+  page: Page,
+  matches: (ref: {
+    hint?: {
+      surfaceType?: string;
+      radius?: number;
+      radialSign?: 1 | -1;
+      centroid?: [number, number, number];
+    };
+  }) => boolean = () => true,
+): Promise<void> {
+  await fitView(page);
+  for (const candidate of await scanVisibleFaces(page)) {
+    await page.mouse.click(candidate.x, candidate.y);
+    const refs = await selectedFaceRefs(page);
+    const ref = refs[refs.length - 1];
+    if (
+      ref &&
+      (ref.hint?.surfaceType ?? "").toUpperCase().includes("CYL") &&
+      matches(ref)
+    ) {
+      return;
+    }
+    const clear = page.getByTestId("clear-face-selection");
+    if (await clear.count()) await clear.click();
+  }
+  throw new Error("No matching cylindrical face found");
 }
 
 /** Shift-click a visible face whose pick id is not in `exclude`. */

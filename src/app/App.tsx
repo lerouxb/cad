@@ -555,6 +555,8 @@ export function App() {
   const [offsetDraft, setOffsetDraft] = useState<OffsetDraft | null>(null);
   const [offsetBaseline, setOffsetBaseline] =
     useState<OffsetFaceFeature | null>(null);
+  /** The body before the offset draft; shown as a ghost while previewing. */
+  const [offsetGhostMesh, setOffsetGhostMesh] = useState<BodyMesh | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportPlane, setSupportPlane] = useState<WorldPlane>("XY");
@@ -1455,6 +1457,7 @@ export function App() {
     setShellBaseline(null);
     setOffsetDraft(null);
     setOffsetBaseline(null);
+    setOffsetGhostMesh(null);
   };
 
   /** Filters and Select Other are ephemeral; a new/loaded document starts clean. */
@@ -1791,6 +1794,7 @@ export function App() {
     setDatumDraft(null);
     setSupportOpen(false);
     setOffsetBaseline(feature);
+    setOffsetGhostMesh(mesh);
     setOffsetDraft({
       mode: "edit",
       featureId: feature.id,
@@ -1812,6 +1816,7 @@ export function App() {
     const baseline = offsetBaseline;
     setOffsetDraft(null);
     setOffsetBaseline(null);
+    setOffsetGhostMesh(null);
     if (baseline) {
       const current = getState();
       const next = updateOffsetFaceFeature(
@@ -1851,6 +1856,7 @@ export function App() {
     setDatumDraft(null);
     setSupportOpen(false);
     setHistoryNotice(null);
+    setOffsetGhostMesh(mesh);
     setOffsetDraft({
       mode: "new",
       featureId: null,
@@ -1952,6 +1958,7 @@ export function App() {
       setActiveFeatureId(draft.featureId);
     }
     dismissEditor();
+    setOffsetGhostMesh(null);
     setFaceSelection([]);
     viewportRef.current?.setFaceSelection([]);
     setBodyPick(null);
@@ -3593,6 +3600,10 @@ export function App() {
   useEffect(() => {
     viewportRef.current?.setFeatureHighlight(featureHighlightId);
   }, [featureHighlightId]);
+
+  useEffect(() => {
+    viewportRef.current?.setGhostMesh(offsetGhostMesh);
+  }, [offsetGhostMesh]);
 
   // The timeline only scrolls sideways, so a vertical wheel over it scrolls the
   // real native scroll container horizontally (shift+wheel and trackpad
