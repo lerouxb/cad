@@ -374,9 +374,10 @@ rebuild exist; they are tracked at the top of M3.
 - [x] `core/sketch/loops.ts`: graph → simple cycles → face filtering (a cycle containing
       a smaller cycle that shares an edge is a subdivision, not a face) → containment tree
       (even depth material, odd depth holes) → selectable regions, with tests
-- [x] Region picking in the sketch UI: translucent fills with holes and void profiles,
-      click/Shift-click, and an **All / Voids / Auto** panel. The active regions are
-      highlighted and previewed in 3D
+- [x] Profile picking in the sketch UI: translucent fills with holes and void profiles;
+      click/Shift-click selects the profile family and opens its popover, with
+      **All / Voids / Auto**; `extrude…` starts the draft. A later SELECTION.md pass
+      moved the same helpers into that popover.
 - [x] `regionId = hash(sorted outer + direct-hole curve ids)`; stable across dimension
       edits and invalidated when a boundary changes
 - [x] Multiple regions per extrude. The worker extrudes each region and fuses the solids
@@ -393,9 +394,9 @@ rebuild exist; they are tracked at the top of M3.
 - [x] Face/edge picking + hover/selection highlight: raycast `faceGroups`/`edgeGroups`,
       edge-priority picking, highlighter overlays, and an ephemeral `BodyPick` readout
 
-**Done when:** you can draw an arbitrary multi-region sketch, click one or more regions
-(including holes and islands), and extrude/fuse them with exact volume. Auto mode still
-defaults to the largest material region until you click; M2.6 adds split/trim.
+**Done when:** you can draw an arbitrary multi-region sketch, select one or more profiles
+(including holes and islands), choose `extrude…` in the profile popover, and fuse them
+with exact volume. Auto still means the largest material region; M2.6 adds split/trim.
 
 **M2 is complete.** The 3D view picks faces and edges with hover/selection highlights;
 the profile path handles crossings, T-junctions, holes, void profiles, circle splitting,
@@ -501,8 +502,8 @@ the shell (header, stage foot, timeline) first, then the sketch view controls.
 - [x] Timeline detail is a **readout + actions**; feature/tool parameters live in one
       draggable stage popover (design rule 6), with a summary + `cancel`/`apply` footer.
 - [x] Applied constraints appear as active selection chips; clicking one removes it
-      (including H/V). Clicking a filled region clears a non-empty geometry selection
-      before it can start an extrude draft.
+      (including H/V). Clicking a filled region selects the profile family and opens its
+      popover; it never starts an extrude draft by itself (`SELECTION.md` S1/S4).
 - [x] Finish the interaction contract on the sketch side: the selection popover replaces
       the selection card + constraint bar; X/Y is an inline editor at the point; a
       dimension value is an inline editor with unit and driving/reference; the fillet is
@@ -541,30 +542,25 @@ The sketch interaction and typography targets that are not yet in the app.
 typography audit and Enter-to-finish are in. The filename file-menu affordance is the only
 remaining item and lands with the M3 local-files work.
 
-## M2.9 — Sketch selection tools (done)
+## M2.9 — Sketch selection tools (done; superseded by SELECTION.md)
 
-Click/Shift-click was the only way to select sketch profile regions. Box and lasso
-selection make multi-region extrudes and bulk edits practical.
+Box and lasso selection make multi-object selection and bulk deletes practical.
+The profile-region-only marquee from M2.9 was superseded by
+[`SELECTION.md`](showcase/SELECTION.md) §3: in normal sketch select the marquee
+selects geometry and dimensions through the filter; only profile mode (an extrude
+draft/editor) marquees regions.
 
-- [x] Rectangular select in sketch mode: drag a marquee to select profile **regions**;
-      Shift adds/toggles, non-additive replaces, Escape clears, and click selection keeps
-      working
+- [x] Rectangular select in normal sketch select: geometry/dimensions fully inside
+      through the current filter; Shift toggles, non-additive replaces, Escape clears.
+      Profile mode keeps the region marquee.
 - [x] Draw the marquee in ink with a highlighter wash; it is ephemeral UI state, never in
       the document or undo history
-- [x] Selection semantics: **box = fully inside**; **lasso = touched/crossing** (a corner
-      loop selects the profile it touches); void regions are selectable on the same terms;
-      an empty marquee is a **no-op** and must never fall back to the largest profile
+- [x] Selection semantics: **box = fully inside**; **lasso = touched/crossing**; an empty
+      marquee is a **no-op**; references are click-only
 - [x] Lasso selection (`G`) after the rectangular tool, sharing the same selection model;
       freehand polygon, Shift/replace behaviour
-- [ ] Extend the same tool to curves/points only if it does not muddy the profile workflow
-      (a mode or modifier, decided by use)
-- [x] Tests: disjoint/partial/circle box cases, concave/circle/corner/empty/hole lasso
-      cases, and e2e box-select and lasso-select (including a corner touch and empty
-      no-op) then extrude
-
-**Done.** `B` box-selects fully-enclosed profile regions and `G` lasso-selects profiles it
-touches. The marquee is ephemeral, an empty marquee leaves the selection unchanged, and
-both tools feed the same active-extrude region selection.
+- [x] Tests: pure box/lasso cases plus e2e marquee + Backspace, profile marquee, and
+      mixed geometry/dimension delete
 
 ## M3 — History (4–6 days)
 
@@ -831,8 +827,16 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       vertex inside (window), lasso = touched/crossed; both select through the body,
       Shift adds, an empty marquee is a no-op, and the same jobs feed the fillet/chamfer
       set. Faces are a second multi-set: Shift-click and the marquee under the `faces`
-      filter collect them, the face popover starts a shell, and a plain pick replaces the
-      other kind. Edge-chain selection is still open.
+      filter collect them, the face popover offers `new sketch` / `shell…`, and a plain
+      pick replaces the other kind. Edge-chain selection is still open.
+- [x] **Selection contract** (`docs/showcase/SELECTION.md`): click selects and feature
+      chips start operations. A profile has its own popover (`all / voids / auto`,
+      `extrude…`, `clear`); a face offers `new sketch` / `shell…` and never extrude; edges
+      keep `fillet…` / `chamfer…`. Normal sketch marquees select geometry/dimensions
+      through the filter; only profile mode marquees regions. Geometry + dimensions mix,
+      delete spans the allowed pair in one undo, and a selected dimension can open its
+      editor from the popover. Reference geometry stays click-only and model Delete stays
+      a no-op.
 - [x] **Tool options row** (design: `docs/showcase/select.html` and `select-model.html`;
       `TIMELINE.md`): a second row under the tool line that follows the *tool*, not the
       mode. One filter at a time (no multi-select), and the row collapses for tools with

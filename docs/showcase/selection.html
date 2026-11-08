@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — selection</title>
+    <link rel="stylesheet" href="../mockups/mockup.css" />
+    <link rel="stylesheet" href="showcase.css" />
+    <script src="../mockups/theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="../mockups/index.html">
+        cad <span class="tag">tool showcase</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Showcase">
+        <a href="index.html">sketch layout</a>
+        <a href="sketch-edit.html">sketch edit</a>
+        <a href="dimension.html">dimension</a>
+        <a href="constraints.html">constraints</a>
+        <a class="is-active" href="selection.html">selection</a>
+        <a href="sketch-create.html">sketch create</a>
+        <a href="select.html">select</a>
+        <a href="select-model.html">model select</a>
+        <a href="body-ops.html">body ops</a>
+        <a href="bodies.html">bodies</a>
+        <a href="transform.html">transform</a>
+        <a href="extrude.html">extrude</a>
+        <a href="inspect.html">inspect</a>
+        <a href="BACKLOG.md">backlog</a>
+      </nav>
+      <div class="mockbar-right">
+        <a class="mockbar-btn" href="../mockups/index.html">studies</a>
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" title="File menu">
+            <span class="doc-name">selection</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-center">
+          <span>sketch + model</span>
+          <span class="mode">study</span>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage is-study" id="stage">
+          <div class="study-scroll">
+            <header class="study-head">
+              <div class="notes-kicker">design study · selection</div>
+              <h1>Select, then act</h1>
+              <p>
+                Selection is not a command. A click selects an object; the
+                selection popover holds the constraints, measurements, edits and
+                feature commands that apply. This study writes down every family,
+                what can mix, what box/lasso and Backspace do, and where a new
+                feature begins.
+              </p>
+              <div class="study-controls">
+                <span>one family at a time · geometry + dimensions may mix</span>
+                <a class="text-action" href="SELECTION.md">open the contract</a>
+              </div>
+            </header>
+
+            <section class="study-section" id="one-rule">
+              <h2>Select first, action second</h2>
+              <p class="study-lede">
+                A profile is the input to an extrude; a face is a support for a
+                sketch, not a profile. A feature chip starts a draft; it never
+                applies from a click. The panels below show the three feature
+                families side by side.
+              </p>
+
+              <div class="sel-grid">
+                <div class="sel-card">
+                  <h3>Profile</h3>
+                  <p>A filled sketch region. Clicking one selects it; it does not start an extrude.</p>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 320 112" role="img" aria-label="Two filled sketch regions, one selected.">
+                      <rect x="52" y="20" width="96" height="72" fill="var(--marker-fill)" stroke="var(--ink)" stroke-width="1.4"/>
+                      <rect x="156" y="20" width="112" height="72" fill="none" stroke="var(--ink)" stroke-width="1.4"/>
+                      <path d="M156 20H268V92H156Z" fill="none" stroke="var(--ink-3)" stroke-width="1" stroke-dasharray="4 3"/>
+                      <path d="M52 20H148V92H52Z" fill="none" stroke="var(--marker)" stroke-width="6" opacity="0.45"/>
+                      <text x="100" y="60" text-anchor="middle" class="constraint-label">material</text>
+                      <text x="212" y="60" text-anchor="middle" class="constraint-label">void</text>
+                    </svg>
+                  </div>
+                  <div class="tool-panel">
+                    <div class="tool-panel-head">
+                      <div>
+                        <div class="tool-panel-kicker">profile</div>
+                        <h2 class="tool-panel-title">2 regions · 1 void</h2>
+                      </div>
+                    </div>
+                    <div class="tool-panel-body">
+                      <div class="sel-group">
+                        <span class="tool-label">regions</span>
+                        <div class="sc-chip-row">
+                          <button class="sc-chip" type="button">all</button>
+                          <button class="sc-chip" type="button">voids</button>
+                          <button class="sc-chip" type="button">auto</button>
+                        </div>
+                      </div>
+                      <div class="sel-group">
+                        <span class="tool-label">feature</span>
+                        <div class="sc-chip-row">
+                          <button class="sc-chip is-on" type="button">extrude…</button>
+                        </div>
+                      </div>
+                      <p class="tool-hint">extrude opens the draft; it does not apply here</p>
+                    </div>
+                    <div class="tool-panel-foot">
+                      <span class="tool-summary">2 profiles selected</span>
+                      <span class="tool-panel-actions"><button class="text-action is-quiet" type="button">clear</button></span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="sel-card">
+                  <h3>Face</h3>
+                  <p>A model face is a support. It offers a sketch or a shell — never an extrude.</p>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 320 112" role="img" aria-label="A planar model face selected.">
+                      <path d="M74 82 164 52 246 74 156 104Z" fill="var(--marker-fill)" stroke="var(--marker)" stroke-width="6" opacity="0.9"/>
+                      <path d="M74 82 164 52 246 74 156 104Z" fill="none" stroke="var(--ink)" stroke-width="1.5"/>
+                      <path d="M164 52V20M246 74V42M156 104V72" stroke="var(--ink-3)" stroke-width="1" stroke-dasharray="4 3"/>
+                      <text x="160" y="86" text-anchor="middle" class="constraint-label">planar face</text>
+                    </svg>
+                  </div>
+                  <div class="tool-panel">
+                    <div class="tool-panel-head">
+                      <div>
+                        <div class="tool-panel-kicker">face</div>
+                        <h2 class="tool-panel-title">1 planar face</h2>
+                      </div>
+                    </div>
+                    <div class="tool-panel-body">
+                      <div class="tool-row"><span class="tool-label">face</span><span class="tool-note">face_04 · planar</span></div>
+                      <div class="sel-group">
+                        <span class="tool-label">feature</span>
+                        <div class="sc-chip-row">
+                          <button class="sc-chip" type="button">new sketch</button>
+                          <button class="sc-chip" type="button">shell…</button>
+                        </div>
+                      </div>
+                      <p class="tool-hint">a face has no extrude; sketch on it, then extrude the profile</p>
+                    </div>
+                    <div class="tool-panel-foot">
+                      <span class="tool-summary">1 face</span>
+                      <span class="tool-panel-actions"></span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="sel-card">
+                  <h3>Edges</h3>
+                  <p>Model edges are blend inputs. Selecting them offers fillet or chamfer; nothing applies until you choose one.</p>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 320 112" role="img" aria-label="Two model edges selected.">
+                      <path d="M78 86 162 58 244 80 160 108Z" fill="none" stroke="var(--ink)" stroke-width="1.3"/>
+                      <path d="M162 58V26M244 80V48M78 86V54M160 108V76" stroke="var(--ink)" stroke-width="1.3"/>
+                      <path d="M78 86 162 58M162 58 244 80" stroke="var(--marker)" stroke-width="7" opacity="0.55"/>
+                      <path d="M78 86 162 58M162 58 244 80" stroke="var(--ink)" stroke-width="1.8"/>
+                      <text x="160" y="96" text-anchor="middle" class="constraint-label">2 edges</text>
+                    </svg>
+                  </div>
+                  <div class="tool-panel">
+                    <div class="tool-panel-head">
+                      <div>
+                        <div class="tool-panel-kicker">edges</div>
+                        <h2 class="tool-panel-title">2 edges</h2>
+                      </div>
+                    </div>
+                    <div class="tool-panel-body">
+                      <div class="tool-row"><span class="tool-label">edge 04</span><span class="tool-note">18.0 mm</span></div>
+                      <div class="tool-row"><span class="tool-label">edge 07</span><span class="tool-note">22.4 mm</span></div>
+                      <div class="sel-group">
+                        <span class="tool-label">feature</span>
+                        <div class="sc-chip-row">
+                          <button class="sc-chip" type="button">fillet…</button>
+                          <button class="sc-chip" type="button">chamfer…</button>
+                        </div>
+                      </div>
+                      <p class="tool-hint">choosing one starts the blend draft</p>
+                    </div>
+                    <div class="tool-panel-foot">
+                      <span class="tool-summary">2 edges · 40.4 mm</span>
+                      <span class="tool-panel-actions"></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="study-section" id="families">
+              <h2>Selection families</h2>
+              <p class="study-lede">
+                A family is the unit of compatibility. Any mix of entity types
+                inside a family is allowed; a different family replaces on a plain
+                click and is blocked on Shift. Geometry + dimensions is the one
+                deliberate cross-family pair.
+              </p>
+              <div class="sel-table-wrap"><table class="sel-table">
+                <thead>
+                  <tr><th>Family</th><th>Members</th><th>Multiple</th><th>May mix with</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>Sketch geometry</td><td>points, lines, circles, arcs, reference points/axes</td><td>yes · any type mix</td><td>dimensions, references</td></tr>
+                  <tr><td>Sketch dimensions</td><td>distance, point-line, angle, diameter/radius, reference</td><td>yes</td><td>geometry</td></tr>
+                  <tr><td>Sketch constraint</td><td>one constraint mark</td><td>no</td><td>nothing</td></tr>
+                  <tr><td>Sketch profile</td><td>filled regions (material or void)</td><td>yes</td><td>nothing · profile mode</td></tr>
+                  <tr><td>Model edges</td><td>B-rep edges</td><td>yes</td><td>edges only</td></tr>
+                  <tr><td>Model faces</td><td>planar and curved faces</td><td>yes</td><td>faces only</td></tr>
+                  <tr><td>Model bodies</td><td>bodies (future)</td><td>future</td><td>bodies only</td></tr>
+                  <tr><td>Feature step</td><td>timeline step</td><td>no</td><td>not a selection popover</td></tr>
+                </tbody>
+              </table></div>
+            </section>
+
+            <section class="study-section" id="actions">
+              <h2>What appears for a selection</h2>
+              <p class="study-lede">
+                Constraint and dimension chips come from the existing pure helpers;
+                this study does not add combinations. Feature chips start a draft.
+                Empty groups are hidden.
+              </p>
+              <div class="sel-table-wrap"><table class="sel-table">
+                <thead>
+                  <tr><th>Selection</th><th>Constrain</th><th>Measure</th><th>Edit</th><th>Feature</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>1 point</td><td>—</td><td>—</td><td>X/Y, fix</td><td>—</td></tr>
+                  <tr><td>2 points</td><td>coincident</td><td>distance</td><td>—</td><td>—</td></tr>
+                  <tr><td>1 line</td><td>horizontal, vertical</td><td>length</td><td>construction, trim</td><td>—</td></tr>
+                  <tr><td>2 lines</td><td>parallel, perpendicular, collinear, equal</td><td>angle</td><td>construction, fillet</td><td>—</td></tr>
+                  <tr><td>3 lines</td><td>symmetric (2 + axis)</td><td>—</td><td>construction</td><td>—</td></tr>
+                  <tr><td>circle / arc</td><td>—</td><td>diameter, radius</td><td>construction, trim</td><td>—</td></tr>
+                  <tr><td>2 circles</td><td>equal</td><td>—</td><td>construction</td><td>—</td></tr>
+                  <tr><td>point + line</td><td>point on line, midpoint</td><td>point-line distance</td><td>construction</td><td>—</td></tr>
+                  <tr><td>point + circle/arc</td><td>point on circle</td><td>—</td><td>construction</td><td>—</td></tr>
+                  <tr><td>line + arc</td><td>tangent</td><td>—</td><td>construction</td><td>—</td></tr>
+                  <tr><td>geometry + dimensions</td><td>geometry subset</td><td>one dimension row</td><td>construction</td><td>—</td></tr>
+                  <tr><td>2+ dimensions</td><td>—</td><td>delete only</td><td>—</td><td>—</td></tr>
+                  <tr><td>1+ profiles</td><td>—</td><td>—</td><td>all / voids / auto</td><td><code>extrude…</code></td></tr>
+                  <tr><td>1 planar face</td><td>—</td><td>—</td><td>—</td><td><code>new sketch</code>, <code>shell…</code></td></tr>
+                  <tr><td>2+ faces</td><td>—</td><td>—</td><td>—</td><td><code>shell…</code></td></tr>
+                  <tr><td>1+ edges</td><td>—</td><td>—</td><td>—</td><td><code>fillet…</code>, <code>chamfer…</code></td></tr>
+                  <tr><td>constraint</td><td>—</td><td>—</td><td>reset position</td><td>—</td></tr>
+                  <tr><td>reference only</td><td>chips that use it</td><td>dimensions that use it</td><td>—</td><td>—</td></tr>
+                </tbody>
+              </table></div>
+            </section>
+
+            <section class="study-section" id="mixed">
+              <h2>Mixed selections</h2>
+              <p class="study-lede">
+                Geometry + dimensions may mix for selection and deletion. The
+                constraint chips only see the geometry subset; the dimension rows
+                keep their own edit/delete. Everything else is one family at a
+                time.
+              </p>
+              <div class="sel-grid">
+                <div class="sel-card is-wide">
+                  <h3>2 lines + 1 dimension</h3>
+                  <p>One selection, two action groups. Delete removes all three in one undo entry.</p>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 660 112" role="img" aria-label="Two selected lines and one selected dimension.">
+                      <path d="M86 74 274 38M292 74 470 38" stroke="var(--marker)" stroke-width="7" opacity="0.5"/>
+                      <path d="M86 74 274 38M292 74 470 38" stroke="var(--ink)" stroke-width="1.8"/>
+                      <path d="M106 90V100M254 90V100M86 95H274" stroke="var(--ink-3)" stroke-width="1"/>
+                      <text x="180" y="88" text-anchor="middle" class="dim-text">70.0</text>
+                    </svg>
+                  </div>
+                  <div class="tool-panel">
+                    <div class="tool-panel-head">
+                      <div>
+                        <div class="tool-panel-kicker">selection</div>
+                        <h2 class="tool-panel-title">2 lines · 1 dimension</h2>
+                      </div>
+                    </div>
+                    <div class="tool-panel-body">
+                      <div class="tool-row"><span class="tool-label">line 04</span><span class="tool-note">70.0 mm</span></div>
+                      <div class="tool-row"><span class="tool-label">line 07</span><span class="tool-note">44.0 mm</span></div>
+                      <div class="tool-row"><span class="tool-label">dimension</span><span class="tool-note">70.0 mm · driving</span></div>
+                      <div class="sel-group">
+                        <span class="tool-label">constrain</span>
+                        <div class="sc-chip-row">
+                          <button class="sc-chip" type="button">parallel</button>
+                          <button class="sc-chip" type="button">perpendicular</button>
+                          <button class="sc-chip" type="button">equal</button>
+                        </div>
+                      </div>
+                      <div class="sel-group">
+                        <span class="tool-label">measure</span>
+                        <div class="sc-chip-row"><button class="sc-chip" type="button">angle</button></div>
+                      </div>
+                      <p class="tool-hint">the dimension is edited at its label</p>
+                    </div>
+                    <div class="tool-panel-foot">
+                      <span class="tool-summary">2 lines + 1 dimension</span>
+                      <span class="tool-panel-actions"><button class="text-action is-quiet" type="button">delete</button></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <p class="sel-note">
+                A constraint replaces the set and stays single. A profile is its own
+                mode. Model edges, faces and bodies do not mix in v1. Reference
+                geometry may mix with user geometry; delete skips it.
+              </p>
+            </section>
+
+            <section class="study-section" id="marquee">
+              <h2>Box, lasso, Backspace</h2>
+              <div class="sel-grid">
+                <div class="sel-card is-wide">
+                  <h3>Marquee = selection</h3>
+                  <p>
+                    In ordinary sketch select, box/lasso marquee geometry and
+                    dimensions through the current filter. Profile mode is the
+                    exception: its marquee selects regions. Backspace deletes the
+                    resulting sketch set.
+                  </p>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 660 112" role="img" aria-label="A box marquee around three sketch lines.">
+                      <path d="M96 78 236 58 380 80 240 100Z" fill="none" stroke="var(--ink)" stroke-width="1.4"/>
+                      <path d="M96 78V28M236 58V12M380 80V36M240 100V54" stroke="var(--ink)" stroke-width="1.3"/>
+                      <rect x="72" y="16" width="330" height="94" fill="var(--marker-fill)" stroke="var(--ink)" stroke-width="1" stroke-dasharray="5 4"/>
+                      <path d="M96 78 236 58M236 58 380 80M240 100 96 78" stroke="var(--marker)" stroke-width="7" opacity="0.5"/>
+                      <path d="M96 78 236 58M236 58 380 80M240 100 96 78" stroke="var(--ink)" stroke-width="1.7"/>
+                      <text x="470" y="44" class="constraint-label">box = fully inside</text>
+                      <text x="470" y="62" class="constraint-label">lasso = touched</text>
+                      <text x="470" y="80" class="constraint-label">Backspace = delete</text>
+                    </svg>
+                  </div>
+                  <div class="tool-panel">
+                    <div class="tool-panel-head">
+                      <div>
+                        <div class="tool-panel-kicker">selection</div>
+                        <h2 class="tool-panel-title">4 lines</h2>
+                      </div>
+                    </div>
+                    <div class="tool-panel-body">
+                      <div class="tool-row"><span class="tool-label">line 04</span><span class="tool-note">70.0 mm</span></div>
+                      <div class="tool-row"><span class="tool-label">line 05</span><span class="tool-note">44.0 mm</span></div>
+                      <div class="tool-row"><span class="tool-label">line 06</span><span class="tool-note">52.0 mm</span></div>
+                      <div class="tool-row"><span class="tool-label">line 07</span><span class="tool-note">44.0 mm</span></div>
+                      <p class="tool-hint">Backspace deletes all four; one undo entry. An empty marquee is a no-op.</p>
+                    </div>
+                    <div class="tool-panel-foot">
+                      <span class="tool-summary">4 lines · 8 DOF</span>
+                      <span class="tool-panel-actions"><button class="text-action is-quiet" type="button">delete</button></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="study-section" id="rules">
+              <h2>The rules in one place</h2>
+              <ul class="sel-rules">
+                <li><b>Select first, act second.</b> A click never creates a feature; the selection popover holds the commands.</li>
+                <li><b>Feature chips start drafts.</b> `extrude…`, `new sketch`, `shell…`, `fillet…`, `chamfer…` open the relevant draft; they do not apply immediately.</li>
+                <li><b>A profile is not a face.</b> A profile offers `extrude…`; a face offers `new sketch` / `shell…`, never extrude.</li>
+                <li><b>One family at a time.</b> Geometry + dimensions is the one allowed mix; a constraint, profile or another model family replaces.</li>
+                <li><b>Any type mix inside geometry is allowed.</b> Two lines, a line + arc, a point + line: the chips come from what that exact set supports.</li>
+                <li><b>Shift toggles inside the family.</b> Shift on an incompatible family is blocked; a plain click replaces.</li>
+                <li><b>Box/lasso respect the filter.</b> Normal sketch marquees geometry/dimensions; profile mode marquees regions; model marquees edges/faces.</li>
+                <li><b>Backspace deletes the selection.</b> Sketch geometry and dimensions are deleted in one undo; constraints are removed; profiles are cleared; model edges/faces are a no-op.</li>
+                <li><b>Reference geometry is click-only.</b> It can be a constraint/dimension participant, but it is never marquee-selected or deleted.</li>
+                <li><b>Empty groups vanish.</b> Show only applicable chips; if none apply, say so and leave delete.</li>
+                <li><b>Selection stays ephemeral.</b> Not document state, not undoable; the order is only for the current gesture (the symmetric axis).</li>
+              </ul>
+            </section>
+          </div>
+        </section>
+
+        <footer class="stage-foot">
+          <div class="stage-foot-left">
+            <span>selection · families · actions · marquee</span>
+          </div>
+          <div class="stage-foot-right">
+            <span>ephemeral state</span>
+            <span>paper · ink</span>
+          </div>
+        </footer>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · selection</div>
+          <h2>Selection is not a command</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        The current app has a few direct shortcuts: clicking a profile starts an
+        extrude draft, and box/lasso in the sketch picks profile regions. That is
+        convenient once, and confusing every other time. This study separates the
+        two acts: <b>select</b> the thing, then choose an action from the popover.
+      </p>
+      <h3>What this study settles</h3>
+      <ul>
+        <li><b>A profile is selected, not extruded.</b> The profile popover has `all / voids / auto` and `extrude…`; the chip starts the draft.</li>
+        <li><b>A face is a support.</b> The face popover has `new sketch` and `shell…`; it never has `extrude`.</li>
+        <li><b>Feature actions are chips, like constraints.</b> They live in the same selection popover under `FEATURE`, not in a footer and not on a raw click.</li>
+        <li><b>Box/lasso select sketch geometry</b> in ordinary select, respecting the filter. Backspace deletes the set. Profile mode is the only marquee that picks regions.</li>
+        <li><b>Geometry + dimensions may mix.</b> Constraint chips use the geometry subset; the dimension row edits/deletes; the footer delete handles all.</li>
+        <li><b>A constraint is single.</b> Clicking one replaces the set; it has name, participants, delete and reset position.</li>
+        <li><b>Model families do not mix yet.</b> Edges and faces are separate; no direct feature on click.</li>
+        <li><b>References are click-only.</b> They can participate in constraints/dimensions, but delete skips them.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Should there be a `regions` filter, or is profile mode enough for marquee region selection?</li>
+        <li>Does a double-click on one dimension in a multi-selection make it the sole selection?</li>
+        <li>Should `new sketch` appear on a face popover as well as the insert gap?</li>
+        <li>Should the delete summary name skipped references?</li>
+        <li>Do model edges/faces need any Delete action, or is the feature step always the unit?</li>
+      </ul>
+      <div class="mini-note">
+        The contract, including the family table, the action matrix and the
+        implementation gaps, is in <a href="SELECTION.md">SELECTION.md</a>.
+      </div>
+    </aside>
+
+    <script src="../mockups/mockups.js"></script>
+  </body>
+</html>

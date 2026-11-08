@@ -78,6 +78,13 @@ constraint and opens the same popover with its name, participants and delete;
 Backspace removes it. The applied chips on a geometry selection remain the
 immediate-remove shortcut. See [`CONSTRAINTS.md`](CONSTRAINTS.md) §7.
 
+**A selection is never a command.** The popover holds the actions: constraints,
+dimensions, construction/trim/fillet, and the **feature** row. A profile offers
+`extrude…`, a face offers `new sketch`/`shell…`, edges offer
+`fillet…`/`chamfer…`; choosing one starts the relevant draft or editor. A raw
+click, double-click or marquee never starts a feature. See
+[`SELECTION.md`](SELECTION.md).
+
 The one thing that stays anchored to its annotation rather than becoming a popover
 box is the **inline editor**: a single dimension value, edited where the dimension
 is. Everything else that a selection can do lives in the popover.

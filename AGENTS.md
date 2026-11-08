@@ -32,8 +32,9 @@ is an editable sketcher driving an exact solid:
   arcs extrude as OCCT arc edges, not tessellated), click/shift-click selection,
   cascading delete, a non-destructive planar arrangement for profile faces (crossings and
   T-junctions split into real regions), trim by clicking a line/arc segment with undo,
-  explicit region selection (click a filled region or a hole, Shift adds, All/Voids/Auto;
-  multiple selected regions are extruded and fused), 3D face/edge picking with hover and
+  explicit profile selection (a filled region or hole becomes a profile; its popover
+  offers All/Voids/Auto, `extrude…` and `clear`; multiple regions are extruded and fused
+  only after the feature chip), 3D face/edge picking with hover and
   selection highlights, dimensions (point-point, point-line,
   angle, diameter, radius, driving or reference, inline edit/delete and draggable labels),
   selection-popover constraint chips
@@ -228,6 +229,11 @@ docs/
   companions and participants, click selects the whole constraint, Backspace/Delete removes
   it. Constraint selection is ephemeral UI state. Selected marks stay ink on paper — the
   highlighter is a wash under the geometry, never the mark's stroke or badge fill.
+- **Selection families and actions are in `docs/showcase/SELECTION.md`.** A click selects;
+  feature actions are chips in the same selection popover (a profile offers `extrude`, a
+  face offers `new sketch`/`shell`, edges offer `fillet`/`chamfer`). No click starts a
+  feature. One family at a time; sketch geometry + dimensions is the only allowed mix.
+  Box/lasso follows the filter and Backspace deletes the resulting sketch selection.
 - The worker protocol is a discriminated union in `core/kernel/protocol.ts`. Both
   sides import the same types.
 - Prefer small, explicit functions over clever abstractions. This domain is already
@@ -563,16 +569,16 @@ docs/
   `clear sketch` (test id `clear-sketch`) only empties the active sketch and keeps the
   history; do not merge the two.
 - **A sketch step never owns region editing.** `activeExtrudeFor` returns null for a
-  sketch. Select an extrude step to edit its existing regions, or start an extrude draft
-  from the sketch step. Without an active extrude or draft, region fills are read-only
-  and the hint explains how to start. A click on a filled region with a non-empty geometry
-  selection clears that selection first; with nothing selected the same click starts an
-  explicit extrude draft.
+  sketch. Select an extrude step to edit its existing regions. In ordinary sketch select
+  a region click selects the **profile family** and opens its popover; `extrude…` starts
+  the new-extrude draft. It never starts a feature by itself (`SELECTION.md` S1/S4).
+  Box/lasso in ordinary select selects geometry/dimensions through the filter; only
+  profile mode (a draft or existing extrude editor) marquees regions.
 - **The tool options row is contextual and one-at-a-time.** A second row under the tool
   line holds the current tool's options; it collapses for tools with none. Sketch select
-  filters are `all/points/curves/dimensions` and gate the hit targets in `SketchCanvas`
-  (a filter turns profile-region fills into decoration, so a click cannot start an extrude
-  draft). Model select filters are `all/edges/faces` and gate `Viewport.pickCandidatesAt`;
+  filters are `all/points/curves/dimensions` and gate clicks and normal marquees in
+  `SketchCanvas` (a filter turns profile-region fills into decoration; profile mode forces
+  `all` for its region marquee). Model select filters are `all/edges/faces` and gate `Viewport.pickCandidatesAt`;
   a filtered-out hit is *blocked* and keeps the selection instead of clearing it. The
   current filter's consequence is a tooltip on the `FILTER` kicker, not inline prose (the
   row said "everything can be picked", which is self-evident and read like a status line).

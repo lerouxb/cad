@@ -2259,6 +2259,7 @@ circle.con-link-wash {
 .sel-card .tool-panel {
   position: static;
   width: auto;
+  max-width: 340px;
   margin-top: 10px;
   border: 1px solid var(--rule);
   box-shadow: none;
@@ -2282,9 +2283,14 @@ circle.con-link-wash {
   letter-spacing: var(--tracking-value);
 }
 
+.sel-table-wrap {
+  margin-top: 18px;
+  overflow-x: auto;
+}
+
 .sel-table {
   width: 100%;
-  margin-top: 18px;
+  margin-top: 0;
   border-collapse: collapse;
   font-size: var(--type-prose);
   line-height: var(--leading-prose);

@@ -1,6 +1,6 @@
 # Tool showcase
 
-Interactive design targets for tools that do not exist yet, split into twelve pages.
+Interactive design targets for tools that do not exist yet, split into thirteen pages.
 
 This folder and [`../mockups/`](../mockups/) are the two halves of one design
 system:
@@ -16,7 +16,9 @@ rules are in [`INTERACTION.md`](INTERACTION.md). The timeline surface — steps,
 bodies, groups and insertion — has its own contract in
 [`TIMELINE.md`](TIMELINE.md). What Enter, Escape, a background click and a
 timeline click do in every mode is in [`MODES.md`](MODES.md); how every sketch
-constraint and dimension is drawn is in [`CONSTRAINTS.md`](CONSTRAINTS.md).
+constraint and dimension is drawn is in [`CONSTRAINTS.md`](CONSTRAINTS.md); what
+a selection means and where its actions live is in
+[`SELECTION.md`](SELECTION.md).
 
 | Study | Page | What it covers | Milestone |
 | --- | --- | --- | --- |
@@ -24,6 +26,7 @@ constraint and dimension is drawn is in [`CONSTRAINTS.md`](CONSTRAINTS.md).
 | **Sketch selection** | [`sketch-edit.html`](sketch-edit.html) | selection popover (constraints), inline dimension editor | app consistency (see INTERACTION.md) |
 | **Dimension kind** | [`dimension.html`](dimension.html) | driving vs reference: the value as a field or a readout, a segmented kind control | M5 sketch polish |
 | **Constraints & measurements** | [`constraints.html`](constraints.html) | every constraint mark, hover/select/delete, symmetric on vertical/horizontal axes, collisions, dimensions and the inline editor | app consistency (see CONSTRAINTS.md) |
+| **Selection rules** | [`selection.html`](selection.html) | selection families, mixed sets, box/lasso + Backspace, and feature actions in the popover | app consistency (see SELECTION.md) |
 | **Sketch create** | [`sketch-create.html`](sketch-create.html) | rectangle / circle / arc variants, polygon | M6.0-era sketch polish |
 | **Selection filters** | [`select.html`](select.html) | a contextual **tool options row**: selection filters, create variants, select other | M5 selection UX |
 | **Model selection** | [`select-model.html`](select-model.html) | the same row on the model: **edges** / **faces** / **bodies** filters, one at a time | M5 selection UX |
@@ -178,6 +181,7 @@ showcase-constraints.js  the constraint/measurement atlas, finder and collision 
 INTERACTION.md       the interaction contract (popover, actions, foot)
 MODES.md             the input contract (modes × Enter / Escape / background / timeline)
 CONSTRAINTS.md       the constraint and measurement contract (marks, dimensions, states)
+SELECTION.md         the selection contract (families, actions, marquee, delete)
 TIMELINE.md          the timeline contract (steps, bodies, groups, insert)
 BACKLOG.md           the gap decisions (keep / drop / defer) and their homes
 README.md            this file

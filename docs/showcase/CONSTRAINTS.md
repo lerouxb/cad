@@ -7,8 +7,9 @@
 > one of them is wrong — decide which.
 >
 > Companion docs: [`INTERACTION.md`](INTERACTION.md) (selection popover, inline
-> editor, actions), [`MODES.md`](MODES.md) (Enter / Escape / background / timeline)
-> and [`TIMELINE.md`](TIMELINE.md).
+> editor, actions), [`MODES.md`](MODES.md) (Enter / Escape / background / timeline),
+> [`SELECTION.md`](SELECTION.md) (families, actions, feature chips) and
+> [`TIMELINE.md`](TIMELINE.md).
 
 ## The one-line version
 

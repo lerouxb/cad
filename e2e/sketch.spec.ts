@@ -920,7 +920,7 @@ test("clears a conflict when a conflicting constraint is released", async ({
 });
 
 
-test("clicking outside a selection clears it before starting a draft", async ({
+test("clicking outside a selection clears it before selecting a profile", async ({
   app: page,
 }) => {
   const errors = collectErrors(page);
@@ -930,13 +930,15 @@ test("clicking outside a selection clears it before starting a draft", async ({
   await clickSketch(page, 0, 20);
   await expect(page.getByTestId("selection-panel")).toHaveCount(1);
 
-  // A filled region is outside the selected line: the first click deselects.
+  // A filled region is outside the selected line: the first click deselects
+  // the line and selects the profile family; it does not start a feature.
   await clickSketch(page, 20, -10);
   await expect(page.getByTestId("selection-panel")).toHaveCount(0);
+  await expect(page.getByTestId("profile-popover")).toBeVisible();
   await expect(page.getByTestId("extrude-draft-popover")).toHaveCount(0);
 
-  // With nothing selected, the same click starts an explicit extrude draft.
-  await clickSketch(page, 20, -10);
+  // The profile's feature chip starts the draft with that region.
+  await page.getByTestId("profile-extrude").click();
   await expect(page.getByTestId("extrude-draft-popover")).toHaveCount(1);
 
   // An empty grid click clears the profile but keeps the draft (D7); only its

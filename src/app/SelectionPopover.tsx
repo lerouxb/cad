@@ -25,6 +25,8 @@ interface SelectionPopoverProps {
     onRadius?: () => void;
   };
   trim?: { onClick: () => void };
+  /** Open the inline editor for the one selected dimension. */
+  onEditDimension?: () => void;
   position: PopoverPosition;
   onMove: (position: PopoverPosition) => void;
 }
@@ -32,15 +34,16 @@ interface SelectionPopoverProps {
 function selectionTitle(info: readonly SelectionInfo[]): string {
   if (info.length === 0) return "Selection";
   if (info.length === 1) return info[0]!.label;
-  const kinds = new Set(info.map((item) => item.kind));
-  if (kinds.size === 1) {
-    const kind = info[0]!.kind;
-    if (kind === "line") return `${info.length} lines`;
-    if (kind === "point") return `${info.length} points`;
-    if (kind === "circle") return `${info.length} circles`;
-    if (kind === "arc") return `${info.length} arcs`;
+  const counts = new Map<string, number>();
+  for (const item of info) {
+    counts.set(item.kind, (counts.get(item.kind) ?? 0) + 1);
   }
-  return `${info.length} selected`;
+  return [...counts.entries()]
+    .map(
+      ([kind, count]) =>
+        `${count} ${kind}${count === 1 ? "" : "s"}`,
+    )
+    .join(" + ");
 }
 
 /**
@@ -59,9 +62,18 @@ export function SelectionPopover({
   onOpenFillet,
   dimension,
   trim,
+  onEditDimension,
   position,
   onMove,
 }: SelectionPopoverProps) {
+  const hasDimension = info.some((item) => item.kind === "dimension");
+  const hint = hasDimension
+    ? actions.length > 0
+      ? "constraints apply immediately · double-click a dimension label to edit"
+      : "double-click a dimension label to edit; delete removes the whole set"
+    : actions.length > 0
+      ? "constraints apply immediately"
+      : undefined;
   return (
     <StagePopover
       kicker="selection"
@@ -71,7 +83,7 @@ export function SelectionPopover({
       className="selection-popover"
       position={position}
       onMove={onMove}
-      hint={actions.length > 0 ? "constraints apply immediately" : undefined}
+      hint={hint}
       summary={`${info.length} selected`}
       destructive={{
         label: "delete",
@@ -92,7 +104,8 @@ export function SelectionPopover({
       construction !== null ||
       onOpenFillet ||
       dimension ||
-      trim ? (
+      trim ||
+      onEditDimension ? (
         <div className="sc-chip-row">
           {actions.map((action) => (
             <button
@@ -155,6 +168,16 @@ export function SelectionPopover({
               data-testid="tool-trim"
             >
               trim
+            </button>
+          ) : null}
+          {onEditDimension ? (
+            <button
+              className="sc-chip"
+              type="button"
+              onClick={onEditDimension}
+              data-testid="edit-dimension"
+            >
+              edit
             </button>
           ) : null}
         </div>

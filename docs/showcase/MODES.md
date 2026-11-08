@@ -183,8 +183,9 @@ quietly close, apply a default, or fall through to "finish sketch".
 | ID | State | Enter | Escape | Stage background | Timeline | Delete |
 | --- | --- | --- | --- | --- | --- | --- |
 | S0 | Idle · `select` · nothing selected | finish sketch → model D2 | — | — | `nav` | — |
-| S1 | Sketch geometry selected (`selection-panel`) | — | clear selection / close popover | `clear` | `nav` | delete selection |
+| S1 | Sketch geometry / dimensions selected (any mix; `selection-panel`) | — | clear selection / close popover | `clear` | `nav` | delete the selected geometry/dimensions (references skipped; one undo) |
 | S1b | **Constraint mark selected** (companion marks stay ink on paper; participant geometry is washed; constraint popover) | — | clear selection / close popover | `clear` | `nav` · clear | remove the constraint (one undo; no geometry change) |
+| S1c | **Profile selected** (normal sketch select; profile popover) | — | clear profile selection / close popover | `clear` | `nav` · clear | clear the profile selection; no geometry change |
 | S2 | Tool armed, no gesture (`line`/`rect`/`circle`/`arc`/`dimension`/`trim`/`box`/`lasso`) | end tool → `select` D3 | → `select` | `input` (see S3–S6) | `nav` · abort | — |
 | S3 | Line draft · 1 point | — | drop draft, stay in `line` D1 | `input` · add vertex | `nav` · drop draft | — D11 |
 | S4 | Line draft · ≥ 2 points | commit open polyline, stay in `line` | drop draft, stay in `line` D1 | `input` · add vertex / close on first point | `nav` · drop draft | — D11 |
@@ -201,14 +202,20 @@ Notes:
 
 - Region/point/curve/label clicks `stopPropagation`; they never reach the SVG
   background branch.
-- In profile-selection mode, a region click is the input; in normal sketch mode
-  a click on a filled region with nothing else selected starts an extrude draft.
+- In **normal sketch select**, a region click selects the profile family and opens
+  the profile popover; it does **not** start an extrude. The popover's `extrude…`
+  chip enters S10. Box/lasso at this level marquees sketch geometry/dimensions
+  through the current filter; in **profile mode** (S10/S11) it marquees regions.
+  Backspace deletes the geometry/dimension set, or clears the profile set.
 - Double-click a line draft commits it; double-click a dimension label edits it.
 - A **constraint mark** is a selectable annotation: hover previews the companions
   and participants, click selects the whole constraint, Backspace/Delete removes
   it. It is mutually exclusive with a geometry/dimension selection. A constraint
   chooser or cluster list is a transient overlay above the selection; Escape
   closes it before it clears the selection.
+- A **selection is not a command**: feature actions (`extrude…`, `new sketch`,
+  `shell…`, `fillet…`, `chamfer…`) are chips in the selection popover, not the
+  result of a click. See `SELECTION.md`.
 
 ### 3.2 Model stage
 
@@ -251,7 +258,7 @@ Notes:
 | `l p r c a d t` | force sketch stage, arm the tool, clear selection | same | cancel form, then arm D6 | ignored |
 | `Enter` | finish sketch (idle) / commit draft / end tool | — | apply if enabled, else no-op | commit field |
 | `Escape` | pop one layer (R1) | pop one layer (R1) | cancel | cancel field |
-| `Delete` / `Backspace` | delete the selected geometry / dimension / constraint; in a new extrude draft, clear the selected profiles | — | — | text edit |
+| `Delete` / `Backspace` | delete the selected geometry / dimension / constraint; clear a profile selection (normal or draft) | — | — | text edit |
 | `Cmd/Ctrl+Z`, `Shift+Z` | undo / redo | undo / redo | cancel form first D9 | field undo |
 | `Cmd/Ctrl+Y` | redo | redo | cancel form first D9 | field redo |
 | `Space` / `Tab` | focused control only (native) | focused control only | focused control only | text |

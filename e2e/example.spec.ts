@@ -585,9 +585,11 @@ test("a polygon crossing the example keeps every profile selectable", async ({
   const before = await volume(page);
   await page.getByTestId("timeline-sketch").click();
 
-  // Starting the extrude can be as direct as clicking a profile in the sketch.
+  // Selecting the profile opens its popover; the feature chip starts the draft.
   await expect(page.getByTestId("extrude-apply")).toHaveCount(0);
   await clickSketch(page, -22, 5);
+  await expect(page.getByTestId("profile-popover")).toBeVisible();
+  await page.getByTestId("profile-extrude").click();
   await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
   await expect(page.getByTestId("extrude-apply")).toBeEnabled();
   await expect(page.getByTestId("region-panel")).toContainText("1 of 10 regions");

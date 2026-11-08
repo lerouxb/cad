@@ -205,6 +205,7 @@ import {
   type DatumSupportOption,
 } from "./DatumPlanePopover";
 import { SelectionPopover } from "./SelectionPopover";
+import { ProfilePopover } from "./ProfilePopover";
 import { BodySelectionPopover } from "./BodySelectionPopover";
 import { ExportPopover } from "./ExportPopover";
 import { MeasurePopover } from "./MeasurePopover";
@@ -456,6 +457,8 @@ export function App() {
     null,
   );
   const [selection, setSelection] = useState<string[]>([]);
+  /** The profile family: filled regions selected in ordinary sketch editing. */
+  const [profileSelection, setProfileSelection] = useState<string[]>([]);
   /** A constraint selected through its mark; ephemeral, like geometry selection. */
   const [selectedConstraintId, setSelectedConstraintId] = useState<
     string | null
@@ -493,6 +496,11 @@ export function App() {
    * it is not written to the document. */
   const [pendingConstraint, setPendingConstraint] =
     useState<ConstraintAction | null>(null);
+  const dimensionEditSeq = useRef(0);
+  const [dimensionEditRequest, setDimensionEditRequest] = useState<{
+    id: string;
+    seq: number;
+  } | null>(null);
   const [trimNotice, setTrimNotice] = useState<string | null>(null);
   const [solverState, setSolverState] = useState<LoadState>("loading");
   const [solverError, setSolverError] = useState<string | null>(null);
@@ -684,8 +692,10 @@ export function App() {
   const activeRegions = regionSelection.regions;
   const selectedRegions = useMemo(
     () =>
-      new Set(activeExtrude || extrudeDraft ? activeRegionIds : []),
-    [activeExtrude, extrudeDraft, activeRegionIds],
+      new Set(
+        activeExtrude || extrudeDraft ? activeRegionIds : profileSelection,
+      ),
+    [activeExtrude, extrudeDraft, activeRegionIds, profileSelection],
   );
   const modelSketchOverlay = useMemo<SketchOverlayData | null>(() => {
     if (
@@ -1175,6 +1185,10 @@ export function App() {
   const popoverInfo = constraintSelected
     ? constraintSelectionInfo
     : selectedInfo;
+  const selectedDimensions = useMemo(
+    () => selectedInfo.filter((info) => info.kind === "dimension"),
+    [selectedInfo],
+  );
   const selectedSet = useMemo(() => new Set(selectedInfo.map((info) => info.id)), [selectedInfo]);
   const constraintActions = useMemo(() => {
     const actions = applicableConstraints(sketch, selection);
@@ -1282,6 +1296,7 @@ export function App() {
     options?: { cancelOperation?: boolean },
   ): void => {
     setSelectedConstraintId(null);
+    setProfileSelection([]);
     // D6: a tool button/key while a form is open cancels the form, then arms.
     // The shortcut path cancels explicitly so it can choose the stage after
     // the cancel (the cancel restores its own baseline mode). Profile
@@ -1351,6 +1366,7 @@ export function App() {
     setSketchFilter("all");
     setSelectOther(null);
     setSelectedConstraintId(null);
+    setProfileSelection([]);
   };
 
   /** Leave the measure mode and drop its targets/overlays. */
@@ -2146,6 +2162,7 @@ export function App() {
   const clearActiveFeature = (): void => {
     clearTransientSolve();
     setSelectedConstraintId(null);
+    setProfileSelection([]);
     cancelOpenOperationRef.current();
     endMeasure();
     setExportOpen(false);
@@ -2176,6 +2193,7 @@ export function App() {
   const activateFeature = (feature: Feature): void => {
     clearTransientSolve();
     setSelectedConstraintId(null);
+    setProfileSelection([]);
     // Timeline navigation leaves the current operation exactly as its cancel
     // would (MODES D5/R9) and never keeps a hidden draft (F4/R6).
     cancelOpenOperationRef.current();
@@ -2222,6 +2240,7 @@ export function App() {
 
   const finishSketch = (): void => {
     setSelectedConstraintId(null);
+    setProfileSelection([]);
     const { current, sketchFeature: currentSketchFeatureValue } = resolveCurrent();
     const consumers = currentSketchFeatureValue
       ? extrudesForSketch(current.doc, currentSketchFeatureValue.id).filter(
@@ -2246,6 +2265,7 @@ export function App() {
    * switching the active feature to a different consuming extrude. */
   const finishActiveMode = (): void => {
     setSelectedConstraintId(null);
+    setProfileSelection([]);
     if (extrudeDraft) {
       commitExtrudeDraft();
       return;
@@ -2263,6 +2283,7 @@ export function App() {
 
   const selectExtrudeProfiles = (): void => {
     setSelectedConstraintId(null);
+    setProfileSelection([]);
     if (extrudeDraft) {
       setMode("sketch");
       setTool("select");
@@ -2354,6 +2375,7 @@ export function App() {
   const moveCursor = (feature: Feature): void => {
     clearTransientSolve();
     setSelectedConstraintId(null);
+    setProfileSelection([]);
     dismissEditor();
     setDatumDraft(null);
     setSupportOpen(false);
@@ -2617,6 +2639,7 @@ export function App() {
 
   const beginExtrudeDraft = (regions: readonly string[] = []): void => {
     setSelectedConstraintId(null);
+    setProfileSelection([]);
     const { current, sketchFeature: source } = resolveCurrent();
     if (!source) return;
     cancelOpenOperationRef.current();
@@ -2713,7 +2736,11 @@ export function App() {
 
   const handleSelect = (entityId: string | null, additive: boolean): void => {
     clearTransientSolve();
+    if (additive && (profileSelection.length > 0 || selectedConstraintId)) {
+      return;
+    }
     setSelectedConstraintId(null);
+    setProfileSelection([]);
     if (filletOpen) {
       setFilletOpen(false);
       setFilletRadiusBefore(null);
@@ -2740,9 +2767,18 @@ export function App() {
     });
   };
 
-  const selectConstraint = (id: string | null): void => {
+  const selectConstraint = (
+    id: string | null,
+    additive = false,
+  ): void => {
+    // A constraint is one family; Shift from geometry/dimensions/profiles is
+    // blocked, and a plain click replaces them (SELECTION.md S2/S8).
+    if (additive && (selection.length > 0 || profileSelection.length > 0)) {
+      return;
+    }
     clearTransientSolve();
     setSelectedConstraintId(id);
+    setProfileSelection([]);
     setSelection([]);
     setDimensionRequest(null);
     setPendingConstraint(null);
@@ -2763,6 +2799,10 @@ export function App() {
       solveAndCommit(next);
       return;
     }
+    if (profileSelection.length > 0) {
+      setProfileSelection([]);
+      return;
+    }
     if (filletOpen) {
       setFilletOpen(false);
       setFilletRadiusBefore(null);
@@ -2770,10 +2810,17 @@ export function App() {
     const deletable = selectedInfo.filter((info) => info.kind !== "reference");
     if (deletable.length === 0) return;
     const base = currentSketch();
-    const next = deleteEntities(
+    let next = deleteEntities(
       base,
-      deletable.map((info) => info.id),
+      deletable
+        .filter((info) => info.kind !== "dimension")
+        .map((info) => info.id),
     );
+    for (const info of deletable) {
+      if (info.kind === "dimension") {
+        next = removeConstraint(next, info.id);
+      }
+    }
     if (next === base) return;
     setSelection([]);
     solveAndCommit(next);
@@ -3527,20 +3574,28 @@ export function App() {
     commit({ doc, solved: current.solved, solvedFor: current.solvedFor });
   };
 
+  const profileEditing = activeExtrude !== null || extrudeDraft !== null;
+
   const handleSelectRegion = (regionId: string, additive: boolean): void => {
-    setSelectedConstraintId(null);
-    // In ordinary sketch editing a click outside the selected geometry clears
-    // the selection. Do not start a draft until the user clicks a profile with
-    // nothing else selected.
-    if (!activeExtrude && !extrudeDraft && selection.length > 0) {
+    // Profile mode (a draft or an existing extrude editor) edits the operation's
+    // regions; ordinary select selects the profile family and never starts a
+    // feature (SELECTION.md S1/S4).
+    if (!profileEditing) {
+      if (additive && (selection.length > 0 || selectedConstraintId)) return;
       setSelection([]);
+      setSelectedConstraintId(null);
+      setProfileSelection((current) =>
+        additive
+          ? current.includes(regionId)
+            ? current.filter((id) => id !== regionId)
+            : [...current, regionId]
+          : [regionId],
+      );
       return;
     }
+    setSelectedConstraintId(null);
+    setProfileSelection([]);
     setSelection([]);
-    if (!activeExtrude && !extrudeDraft) {
-      if (activeSketchFeature) beginExtrudeDraft([regionId]);
-      return;
-    }
     const current = storedRegionIds ?? [];
     if (!additive) {
       commitRegions([regionId]);
@@ -3560,11 +3615,22 @@ export function App() {
     // An empty marquee is a no-op. Committing an empty list would fall back to
     // auto/largest material, which reads as "selected the wrong profile".
     if (regionIds.length === 0) return;
-    setSelection([]);
-    if (!activeExtrude && !extrudeDraft) {
-      if (activeSketchFeature) beginExtrudeDraft(regionIds);
+    if (!profileEditing) {
+      if (additive && (selection.length > 0 || selectedConstraintId)) return;
+      setSelection([]);
+      setSelectedConstraintId(null);
+      setProfileSelection((current) => {
+        if (!additive) return regionIds;
+        const next = new Set(current);
+        for (const id of regionIds) {
+          if (next.has(id)) next.delete(id);
+          else next.add(id);
+        }
+        return [...next];
+      });
       return;
     }
+    setSelection([]);
     if (!additive) {
       commitRegions(regionIds);
       return;
@@ -3575,6 +3641,62 @@ export function App() {
       else next.add(id);
     }
     commitRegions([...next]);
+  };
+
+  const handleMarqueeSelectEntities = (
+    ids: string[],
+    additive: boolean,
+  ): void => {
+    // Empty marquee: no-op. It must not clear the current selection.
+    if (ids.length === 0) return;
+    if (additive && (profileSelection.length > 0 || selectedConstraintId)) {
+      return;
+    }
+    setSelectedConstraintId(null);
+    setProfileSelection([]);
+    setSelection((current) => {
+      if (!additive) return ids;
+      const next = new Set(current);
+      for (const id of ids) {
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+      }
+      return [...next];
+    });
+  };
+
+  const selectedProfileRegions = useMemo(
+    () =>
+      profileSelection
+        .map((id) => regions.find((region) => region.id === id))
+        .filter((region): region is NonNullable<typeof region> => Boolean(region)),
+    [profileSelection, regions],
+  );
+
+  const selectAllProfileRegions = (): void => {
+    setProfileSelection(
+      regions
+        .filter((region) => region.kind === "material")
+        .map((region) => region.id),
+    );
+  };
+
+  const selectAllProfileVoids = (): void => {
+    setProfileSelection(
+      regions
+        .filter((region) => region.kind === "void")
+        .map((region) => region.id),
+    );
+  };
+
+  const autoSelectProfileRegions = (): void => {
+    setProfileSelection(selectExtrudeRegions(regions, []).ids);
+  };
+
+  const extrudeSelectedProfiles = (): void => {
+    const ids = selectedProfileRegions.map((region) => region.id);
+    if (ids.length === 0) return;
+    beginExtrudeDraft(ids);
   };
 
   const selectAllRegions = (): void => {
@@ -3960,6 +4082,7 @@ export function App() {
   const goBack = (): void => {
     clearTransientSolve();
     setSelectedConstraintId(null);
+    setProfileSelection([]);
     // Cancel without adding a history entry: the undo below must act on the
     // document change the user means, not on the cancellation itself (D9).
     cancelOpenOperationRef.current({ history: false });
@@ -3972,6 +4095,7 @@ export function App() {
   const goForward = (): void => {
     clearTransientSolve();
     setSelectedConstraintId(null);
+    setProfileSelection([]);
     cancelOpenOperationRef.current({ history: false });
     endMeasure();
     setExportOpen(false);
@@ -4106,6 +4230,7 @@ export function App() {
         setFilletRadiusBefore(null);
         setSelection([]);
         setSelectedConstraintId(null);
+        setProfileSelection([]);
         setBodyPick(null);
         setEdgeSelection([]);
         setFaceSelection([]);
@@ -4182,14 +4307,24 @@ export function App() {
             changeTool("select");
             return;
           }
-          if (selection.length > 0) return;
+          if (
+            selection.length > 0 ||
+            selectedConstraintId ||
+            profileSelection.length > 0
+          ) {
+            return;
+          }
           finishActiveMode();
         }
         return;
       }
 
       if (event.key === "Delete" || event.key === "Backspace") {
-        if (mode === "sketch" && selectedConstraintId && !sketchGesture) {
+        if (
+          mode === "sketch" &&
+          (selectedConstraintId || profileSelection.length > 0) &&
+          !sketchGesture
+        ) {
           event.preventDefault();
           deleteKey();
           return;
@@ -4335,8 +4470,8 @@ export function App() {
         : tool === "line"
           ? "Click to add points · Enter or double-click finishes the line · Esc cancels."
           : tool === "select" && activeFeature?.type === "sketch"
-            ? "Click a filled region to start an extrude draft; Shift adds. Select an extrude step to edit its existing profiles."
-            : "Select to inspect, or drag a box/lasso around profiles. L line · P point · B box · G lasso · R rectangle · C circle · A arc · D dimension · T trim · Delete removes.";
+            ? "Click a filled region to select its profile; the profile popover's extrude chip starts the feature. Shift adds. Box/lasso selects geometry and dimensions through the filter."
+            : "Select to inspect, or drag a box/lasso around geometry and dimensions. L line · P point · B box · G lasso · R rectangle · C circle · A arc · D dimension · T trim · Delete removes.";
 
   const activeState = activeFeature
     ? featureStates.get(activeFeature.id)
@@ -5156,10 +5291,9 @@ export function App() {
                   }
                   onSelectRegion={handleSelectRegion}
                   onMarqueeSelectRegions={handleMarqueeSelectRegions}
+                  onMarqueeSelectEntities={handleMarqueeSelectEntities}
                   tool={tool}
-                  selectionFilter={
-                    tool === "select" ? sketchFilter : "all"
-                  }
+                  selectionFilter={profileMode ? "all" : sketchFilter}
                   dimensionMode="distance"
                   radiusDimensions={false}
                   cancelToken={cancelToken}
@@ -5183,6 +5317,7 @@ export function App() {
                   onCreateArc={handleArc}
                   selectedConstraintId={selectedConstraintId}
                   onSelectConstraint={selectConstraint}
+                  editDimensionRequest={dimensionEditRequest}
                   rectVariant={rectVariant}
                   circleVariant={circleVariant}
                   arcVariant={arcVariant}
@@ -5202,6 +5337,21 @@ export function App() {
               <div className="sketch-notice" data-testid="trim-notice" role="status">
                 {trimNotice}
               </div>
+            ) : null}
+
+            {!profileMode && mode === "sketch" && selectedProfileRegions.length > 0 ? (
+              <ProfilePopover
+                regions={selectedProfileRegions}
+                hasMaterial={regions.some((region) => region.kind === "material")}
+                hasVoids={regions.some((region) => region.kind === "void")}
+                onAll={selectAllProfileRegions}
+                onVoids={selectAllProfileVoids}
+                onAuto={autoSelectProfileRegions}
+                onExtrude={extrudeSelectedProfiles}
+                onClear={() => setProfileSelection([])}
+                position={popoverPosition}
+                onMove={setPopoverPosition}
+              />
             ) : null}
 
             {popoverInfo.length > 0 ? (
@@ -5256,6 +5406,17 @@ export function App() {
                   trim={
                     !constraintSelected && trimCurve
                       ? { onClick: startTrim }
+                      : undefined
+                  }
+                  onEditDimension={
+                    selectedDimensions.length === 1
+                      ? () => {
+                          dimensionEditSeq.current += 1;
+                          setDimensionEditRequest({
+                            id: selectedDimensions[0]!.id,
+                            seq: dimensionEditSeq.current,
+                          });
+                        }
                       : undefined
                   }
                   position={popoverPosition}
@@ -5662,6 +5823,16 @@ export function App() {
               faces={selectedFaceRefs}
               position={bodyPopoverPosition}
               onMove={setBodyPopoverPosition}
+              canNewSketch={
+                selectedFaceRefs.length === 1 &&
+                selectedFaceRefs[0]?.hint.surfaceType === "PLANE"
+              }
+              onNewSketch={() => {
+                const face = faceSelection[faceSelection.length - 1];
+                if (!face) return;
+                setBodyPick(face);
+                openInsertSketch(activeFeatureId, false);
+              }}
               onClear={() => {
                 setFaceSelection([]);
                 setBodyPick(null);
@@ -6157,7 +6328,7 @@ export function App() {
 
 interface SelectedEntity {
   id: string;
-  kind: "line" | "circle" | "arc" | "point" | "reference";
+  kind: "line" | "circle" | "arc" | "point" | "reference" | "dimension";
   label: string;
   detail: string;
 }
@@ -6169,6 +6340,26 @@ function describeSelection(
 ): SelectedEntity[] {
   const result: SelectedEntity[] = [];
   for (const id of ids) {
+    const dimension = sketch.constraints.find(
+      (constraint) =>
+        constraint.id === id &&
+        (constraint.type === "distance" ||
+          constraint.type === "pointLineDistance" ||
+          constraint.type === "diameter" ||
+          constraint.type === "angle"),
+    );
+    if (dimension) {
+      result.push({
+        id,
+        kind: "dimension",
+        label: constraintLabel(dimension.type),
+        detail:
+          "driving" in dimension && dimension.driving === false
+            ? "reference dimension"
+            : "driving dimension",
+      });
+      continue;
+    }
     const referenceLine = sketch.references?.lines.find((line) => line.id === id);
     if (referenceLine) {
       result.push({

@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -38,6 +39,10 @@ import {
 } from "../core/sketch/geometry";
 import { niceGridStep, type GridStep } from "../core/sketch/grid";
 import { constraintLabel } from "../core/sketch/constraints";
+import {
+  marqueeSketchSelection,
+  type SketchMarquee,
+} from "../core/sketch/marqueeSelect";
 import {
   constraintMarks,
   constraintParticipantSummary,
@@ -95,8 +100,10 @@ export interface SketchCanvasProps {
   /** When false, region fills are decoration; there is no extrude owner to edit. */
   regionsSelectable?: boolean;
   onSelectRegion: (regionId: string, additive: boolean) => void;
-  /** Rectangular selection: region ids fully inside the marquee. */
+  /** Profile mode: region ids inside the marquee. */
   onMarqueeSelectRegions: (regionIds: string[], additive: boolean) => void;
+  /** Normal select: geometry/dimension ids inside the marquee. */
+  onMarqueeSelectEntities: (ids: string[], additive: boolean) => void;
   tool: SketchTool;
   /** One filter at a time, from the tool options row. */
   selectionFilter?: "all" | "points" | "curves" | "dimensions";
@@ -123,7 +130,7 @@ export interface SketchCanvasProps {
   selected: ReadonlySet<string>;
   /** The constraint selected by clicking its mark, if any. */
   selectedConstraintId?: string | null;
-  onSelectConstraint?: (id: string | null) => void;
+  onSelectConstraint?: (id: string | null, additive: boolean) => void;
   /** Select one entity, clear the selection, or add/toggle with `additive`. */
   onSelect: (entityId: string | null, additive: boolean) => void;
   /** Commit an exact point position from the inline X/Y editor. */
@@ -145,6 +152,8 @@ export interface SketchCanvasProps {
   onCreateDimension: (target: DimensionTarget, placement: DimensionPlacement) => void;
   /** A contextual dimension target chosen from the selection popover. */
   dimensionRequest?: { target: DimensionTarget; seq: number } | null;
+  /** Open the inline editor for a selected dimension from the popover. */
+  editDimensionRequest?: { id: string; seq: number } | null;
   onChangeDimension: (id: string, value: number, driving: boolean) => void;
   onMoveDimension: (id: string, placement: DimensionPlacement) => void;
   onDeleteDimension: (id: string) => void;
@@ -187,6 +196,7 @@ export function SketchCanvas({
   regionsSelectable = true,
   onSelectRegion,
   onMarqueeSelectRegions,
+  onMarqueeSelectEntities,
   tool,
   selectionFilter = "all",
   dimensionMode,
@@ -218,6 +228,7 @@ export function SketchCanvas({
   onTrimCurve,
   onCreateDimension,
   dimensionRequest,
+  editDimensionRequest,
   onChangeDimension,
   onMoveDimension,
   onDeleteDimension,
@@ -358,6 +369,24 @@ export function SketchCanvas({
       ),
     [sketch, hoveredConstraintId],
   );
+  useEffect(() => {
+    if (!editDimensionRequest) return;
+    const svg = svgRef.current;
+    if (!svg) return;
+    const element = svg.querySelector(
+      `[data-dimension-id="${CSS.escape(editDimensionRequest.id)}"]`,
+    ) as SVGTextElement | null;
+    if (!element) return;
+    const rect = element.getBoundingClientRect();
+    element.dispatchEvent(
+      new MouseEvent("dblclick", {
+        bubbles: true,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+      }),
+    );
+  }, [editDimensionRequest]);
+
   useEffect(() => {
     if (!hoveredConstraintId || hoveredConstraintId === selectedConstraintId) {
       return;
@@ -560,7 +589,9 @@ export function SketchCanvas({
     dimLine !== null ||
     dimTarget !== null ||
     activeDimTarget !== null;
-  useEffect(() => {
+  // Layout timing: a completed marquee must report idle before the next paint,
+  // so an immediate Backspace is not blocked by a stale gesture flag.
+  useLayoutEffect(() => {
     onGestureChange?.(gestureActive);
   }, [gestureActive, onGestureChange]);
 
@@ -1503,14 +1534,27 @@ export function SketchCanvas({
     }
 
     if (lassoRef.current.length > 0) {
-      const points = lassoRef.current;
+      const path = lassoRef.current;
       lassoRef.current = [];
       setLassoPoints([]);
-      if (points.length >= 3) {
-        const ids = regionsIntersectingPolygon(regions, points).map(
-          (region) => region.id,
-        );
-        onMarqueeSelectRegions(ids, event.shiftKey);
+      if (path.length >= 3) {
+        if (profileSelection) {
+          const ids = regionsIntersectingPolygon(regions, path).map(
+            (region) => region.id,
+          );
+          onMarqueeSelectRegions(ids, event.shiftKey);
+        } else {
+          onMarqueeSelectEntities(
+            marqueeSketchSelection(
+              sketch,
+              points,
+              radii,
+              { kind: "lasso", points: path } satisfies SketchMarquee,
+              selectionFilter,
+            ),
+            event.shiftKey,
+          );
+        }
       }
     }
 
@@ -1522,10 +1566,23 @@ export function SketchCanvas({
         maxX: Math.max(boxStart[0], end[0]),
         maxY: Math.max(boxStart[1], end[1]),
       };
-      const ids = regionsFullyInside(regions, box).map((region) => region.id);
       setBoxStart(null);
       setBoxEnd(null);
-      onMarqueeSelectRegions(ids, event.shiftKey);
+      if (profileSelection) {
+        const ids = regionsFullyInside(regions, box).map((region) => region.id);
+        onMarqueeSelectRegions(ids, event.shiftKey);
+      } else {
+        onMarqueeSelectEntities(
+          marqueeSketchSelection(
+            sketch,
+            points,
+            radii,
+            { kind: "box", ...box } satisfies SketchMarquee,
+            selectionFilter,
+          ),
+          event.shiftKey,
+        );
+      }
     }
 
     if (rectVariant !== "3-point" && rectStart) {
@@ -2257,6 +2314,8 @@ export function SketchCanvas({
             return (
               <LinearDimension
                 layer="lines"
+                selected={selected.has(constraint.id)}
+                onSelect={tool === "select" ? onSelect : undefined}
                 key={constraint.id}
                 id={constraint.id}
                 a={a}
@@ -2284,6 +2343,8 @@ export function SketchCanvas({
             return (
               <LinearDimension
                 layer="lines"
+                selected={selected.has(constraint.id)}
+                onSelect={tool === "select" ? onSelect : undefined}
                 key={constraint.id}
                 id={constraint.id}
                 a={info.point}
@@ -2311,6 +2372,8 @@ export function SketchCanvas({
             return (
               <DiameterDimension
                 layer="lines"
+                selected={selected.has(constraint.id)}
+                onSelect={tool === "select" ? onSelect : undefined}
                 key={constraint.id}
                 id={constraint.id}
                 center={circle.center}
@@ -2341,6 +2404,8 @@ export function SketchCanvas({
             return (
               <AngleDimension
                 layer="lines"
+                selected={selected.has(constraint.id)}
+                onSelect={tool === "select" ? onSelect : undefined}
                 key={constraint.id}
                 id={constraint.id}
                 vertex={info.vertex}
@@ -2393,6 +2458,8 @@ export function SketchCanvas({
             return (
               <LinearDimension
                 layer="labels"
+                selected={selected.has(constraint.id)}
+                onSelect={tool === "select" ? onSelect : undefined}
                 key={constraint.id}
                 id={constraint.id}
                 a={a}
@@ -2420,6 +2487,8 @@ export function SketchCanvas({
             return (
               <LinearDimension
                 layer="labels"
+                selected={selected.has(constraint.id)}
+                onSelect={tool === "select" ? onSelect : undefined}
                 key={constraint.id}
                 id={constraint.id}
                 a={info.point}
@@ -2447,6 +2516,8 @@ export function SketchCanvas({
             return (
               <DiameterDimension
                 layer="labels"
+                selected={selected.has(constraint.id)}
+                onSelect={tool === "select" ? onSelect : undefined}
                 key={constraint.id}
                 id={constraint.id}
                 center={circle.center}
@@ -2477,6 +2548,8 @@ export function SketchCanvas({
             return (
               <AngleDimension
                 layer="labels"
+                selected={selected.has(constraint.id)}
+                onSelect={tool === "select" ? onSelect : undefined}
                 key={constraint.id}
                 id={constraint.id}
                 vertex={info.vertex}
@@ -3080,6 +3153,9 @@ interface DimensionHandlers {
     anchor?: Vec2,
   ) => void;
   onDrag?: (event: ReactPointerEvent) => void;
+  /** Select the dimension; geometry and dimensions may mix. */
+  onSelect?: (id: string, additive: boolean) => void;
+  selected?: boolean;
   /** The dimension whose inline editor is open; its SVG label is hidden. */
   editingId?: string | null;
   /** Split rendering so constraint marks can sit between lines and labels. */
@@ -3100,6 +3176,8 @@ function LinearDimension({
   palette,
   onEdit,
   onDrag,
+  onSelect,
+  selected,
   editingId,
   layer,
 }: DimensionHandlers & {
@@ -3120,7 +3198,11 @@ function LinearDimension({
   const t = along ?? 0.5;
   const mid: Vec2 = [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t];
   const tick = 3.5 * px;
-  const color = reference ? palette.dim : palette.dimension;
+  const color = selected
+    ? palette.marker
+    : reference
+      ? palette.dim
+      : palette.dimension;
   const label = `${reference ? "(" : ""}${formatLength(value)}${reference ? ")" : ""}`;
 
   return (
@@ -3132,6 +3214,10 @@ function LinearDimension({
       onPointerDown={(event) => {
         if (preview) return;
         event.stopPropagation();
+        onSelect?.(
+          id,
+          event.shiftKey || event.metaKey || event.ctrlKey,
+        );
         onDrag?.(event);
       }}
       onDoubleClick={
@@ -3198,6 +3284,10 @@ function LinearDimension({
           onPointerDown={(event) => {
             if (preview) return;
             event.stopPropagation();
+            onSelect?.(
+              id,
+              event.shiftKey || event.metaKey || event.ctrlKey,
+            );
             onDrag?.(event);
           }}
           onDoubleClick={
@@ -3227,6 +3317,8 @@ function DiameterDimension({
   palette,
   onEdit,
   onDrag,
+  onSelect,
+  selected,
   asRadius,
   arcStartAngle,
   arcSweep,
@@ -3258,7 +3350,11 @@ function DiameterDimension({
   const textX = end[0] + dx * 1.5 * px;
   const textY = end[1] + dy * 1.5 * px + fontSize * 0.35;
   const anchor = dx < -0.3 ? "end" : dx > 0.3 ? "start" : "middle";
-  const color = reference ? palette.dim : palette.dimension;
+  const color = selected
+    ? palette.marker
+    : reference
+      ? palette.dim
+      : palette.dimension;
   const label = `${reference ? "(" : ""}${asRadius ? "R" : "⌀"} ${formatLength(value)}${reference ? ")" : ""}`;
   const showLines = layer !== "labels";
   const showLabels = layer !== "lines";
@@ -3272,6 +3368,10 @@ function DiameterDimension({
       onPointerDown={(event) => {
         if (preview) return;
         event.stopPropagation();
+        onSelect?.(
+          id,
+          event.shiftKey || event.metaKey || event.ctrlKey,
+        );
         onDrag?.(event);
       }}
       onDoubleClick={
@@ -3310,6 +3410,10 @@ function DiameterDimension({
           onPointerDown={(event) => {
             if (preview) return;
             event.stopPropagation();
+            onSelect?.(
+              id,
+              event.shiftKey || event.metaKey || event.ctrlKey,
+            );
             onDrag?.(event);
           }}
           onDoubleClick={
@@ -3343,6 +3447,8 @@ function AngleDimension({
   palette,
   onEdit,
   onDrag,
+  onSelect,
+  selected,
   editingId,
   layer,
 }: DimensionHandlers & { vertex: Vec2; rayA: Vec2; rayB: Vec2; radius: number }) {
@@ -3369,7 +3475,11 @@ function AngleDimension({
     vertex[0] + Math.cos(labelAngle) * labelRadius,
     vertex[1] + Math.sin(labelAngle) * labelRadius,
   ];
-  const color = reference ? palette.dim : palette.dimension;
+  const color = selected
+    ? palette.marker
+    : reference
+      ? palette.dim
+      : palette.dimension;
   const text = `${reference ? "(" : ""}${formatLength(value)}°${reference ? ")" : ""}`;
 
   return (
@@ -3381,6 +3491,10 @@ function AngleDimension({
       onPointerDown={(event) => {
         if (preview) return;
         event.stopPropagation();
+        onSelect?.(
+          id,
+          event.shiftKey || event.metaKey || event.ctrlKey,
+        );
         onDrag?.(event);
       }}
       onDoubleClick={
@@ -3434,6 +3548,10 @@ function AngleDimension({
           onPointerDown={(event) => {
             if (preview) return;
             event.stopPropagation();
+            onSelect?.(
+              id,
+              event.shiftKey || event.metaKey || event.ctrlKey,
+            );
             onDrag?.(event);
           }}
           onDoubleClick={
@@ -3487,7 +3605,7 @@ function ConstraintMarks({
   selectedConstraintId: string | null;
   hoveredConstraintId: string | null;
   onHoverConstraint?: (id: string | null) => void;
-  onSelectConstraint?: (id: string | null) => void;
+  onSelectConstraint?: (id: string | null, additive: boolean) => void;
 }) {
   const marks = constraintMarks(sketch, {
     points,
@@ -3776,7 +3894,10 @@ function ConstraintMarks({
               ? (event) => {
                   event.stopPropagation();
                   event.preventDefault();
-                  onSelectConstraint?.(id);
+                  onSelectConstraint?.(
+                    id,
+                    event.shiftKey || event.metaKey || event.ctrlKey,
+                  );
                 }
               : undefined
           }

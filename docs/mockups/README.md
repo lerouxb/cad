@@ -14,7 +14,9 @@ inspect, and the sketch selection inputs). The
 [study index](index.html) lists both, and the rules the two folders share are in
 [`../showcase/INTERACTION.md`](../showcase/INTERACTION.md). The sketch
 constraint and measurement marks are in
-[`../showcase/CONSTRAINTS.md`](../showcase/CONSTRAINTS.md).
+[`../showcase/CONSTRAINTS.md`](../showcase/CONSTRAINTS.md); selection families
+and feature actions are in
+[`../showcase/SELECTION.md`](../showcase/SELECTION.md).
 
 ## The eight studies
 

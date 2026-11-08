@@ -46,12 +46,6 @@ export function BodySelectionPopover({
       hint="Shift adds or removes an edge"
       summary={`${count} edge${count === 1 ? "" : "s"}`}
       cancel={{ label: "clear", onClick: onClear, testId: "clear-body-selection" }}
-      secondary={{
-        label: "chamfer",
-        onClick: onChamfer,
-        testId: "start-chamfer",
-      }}
-      primary={{ label: "fillet", onClick: onFillet, testId: "start-fillet" }}
     >
       <div className="selection-list">
         {edges.map((edge, index) => (
@@ -64,6 +58,25 @@ export function BodySelectionPopover({
             <span className="mono">{edgeDetail(edge)}</span>
           </div>
         ))}
+      </div>
+      <div className="sc-chip-row">
+        <span className="tool-kicker">feature</span>
+        <button
+          className="sc-chip"
+          type="button"
+          onClick={onFillet}
+          data-testid="start-fillet"
+        >
+          fillet…
+        </button>
+        <button
+          className="sc-chip"
+          type="button"
+          onClick={onChamfer}
+          data-testid="start-chamfer"
+        >
+          chamfer…
+        </button>
       </div>
     </StagePopover>
   );
