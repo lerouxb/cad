@@ -9,6 +9,7 @@ interface ProfilePopoverProps {
   onVoids: () => void;
   onAuto: () => void;
   onExtrude: () => void;
+  onRevolve: () => void;
   onClear: () => void;
   position: PopoverPosition;
   onMove: (position: PopoverPosition) => void;
@@ -26,6 +27,7 @@ export function ProfilePopover({
   onVoids,
   onAuto,
   onExtrude,
+  onRevolve,
   onClear,
   position,
   onMove,
@@ -40,7 +42,7 @@ export function ProfilePopover({
       className="selection-popover"
       position={position}
       onMove={onMove}
-      hint="select profiles first; the extrude chip starts the draft"
+      hint="select profiles first; the feature chips start the draft"
       summary={`${count} region${count === 1 ? "" : "s"}`}
       cancel={{ label: "clear", onClick: onClear, testId: "profile-clear" }}
     >
@@ -97,6 +99,15 @@ export function ProfilePopover({
           data-testid="profile-extrude"
         >
           extrude…
+        </button>
+        <button
+          className="sc-chip"
+          type="button"
+          onClick={onRevolve}
+          disabled={count === 0}
+          data-testid="profile-revolve"
+        >
+          revolve…
         </button>
       </div>
     </StagePopover>

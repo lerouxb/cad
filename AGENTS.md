@@ -251,6 +251,16 @@ docs/
   Do not replace the feature with a whole-body `offset`, a shell or a scale.
   Blind/partial cylinders, the tangent-chain expansion and the normal arrow/dashed
   input-face ghost are still open; do not claim them.
+- **Revolve v1 is a history step around an in-plane sketch axis.** `docs/showcase/REVOLVE.md`
+  is the contract. Schema v14 `RevolveFeature` stores `sketchId`, regions, an explicit axis
+  (a sketch line id or the X/Y reference), a 1–360° angle, a partial direction and
+  new/join/cut. The profile popover's `revolve…` chip starts the draft; the form lists
+  explicit X/Y/line axis chips (no silent default), validates that every region stays on
+  one side of the infinite axis or touches it, previews through the worker and inserts a
+  re-editable step. A sketch edit that deletes the line is a lost axis, never a retarget.
+  A 3D axis outside the sketch plane is out of scope until datum axes. The stage axis-pick
+  highlight, intersect, and the start-profile/angle-arc preview are still open; do not
+  claim them.
 - The worker protocol is a discriminated union in `core/kernel/protocol.ts`. Both
   sides import the same types.
 - Prefer small, explicit functions over clever abstractions. This domain is already

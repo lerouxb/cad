@@ -5,6 +5,7 @@ import {
   addDatumPlaneFeature,
   addFilletFeature,
   addOffsetFaceFeature,
+  addRevolveFeature,
   addShellFeature,
   addSketchFeature,
   setDatumPlaneHidden,
@@ -17,11 +18,11 @@ import {
 import { datumDefinitionFrame } from "../doc/support";
 import { faceRefKey } from "../doc/datum";
 import { extrudeParams } from "../features/extrude";
-import { addCircle, emptySketch } from "../sketch/create";
+import { addCircle, addRectangle, emptySketch } from "../sketch/create";
 import { createDemoModel } from "../sketch/demo";
 import { sketchGeometry } from "../sketch/geometry";
 import { regionsFromSketch } from "../sketch/loops";
-import type { ExtrudeFeature, SketchFeature } from "../doc/types";
+import type { Doc, ExtrudeFeature, SketchFeature } from "../doc/types";
 import type { EdgeRef, TopoRef } from "../kernel/protocol";
 import type { SolveOutcome } from "../sketch/solver";
 import type { Sketch } from "../sketch/types";
@@ -604,6 +605,80 @@ describe("ordered rebuild", () => {
     expect(suppressedResult.features[2]?.status).toBe("error");
     expect(suppressedResult.features[2]?.diagnostics[0]?.code).toBe(
       "nothing-to-shell",
+    );
+  });
+
+  it("evaluates and extracts a revolve around a reference axis", () => {
+    const source = createDocument(
+      addRectangle(emptySketch(), [10, -10], [20, 10]),
+      {
+        id: "revolve-doc",
+        sketchId: "sketch-r",
+        extrudeId: "extrude-r",
+      },
+    );
+    const sketchOnly: Doc = { ...source, features: [source.features[0]!] };
+    const added = addRevolveFeature(
+      sketchOnly,
+      "sketch-r",
+      [],
+      { kind: "reference", axis: "y" },
+      360,
+      "new",
+      "ccw",
+    );
+    const result = rebuildDocument(added.doc, {}, countingDeps().deps);
+    expect(result.status).toBe("ok");
+    expect(result.features[1]?.output?.kind).toBe("revolve");
+    const kernel = extractKernelFeatures(result);
+    expect(kernel.map((feature) => feature.kind)).toEqual(["revolve"]);
+    expect(kernel[0]?.kind === "revolve" ? kernel[0].params.angle : null).toBe(
+      360,
+    );
+
+    const crossing = addRevolveFeature(
+      {
+        ...source,
+        features: [
+          {
+            ...source.features[0]!,
+            sketch: addRectangle(emptySketch(), [-10, -10], [10, 10]),
+          } as SketchFeature,
+        ],
+      },
+      "sketch-r",
+      [],
+      { kind: "reference", axis: "y" },
+      360,
+      "new",
+      "ccw",
+    );
+    const crossingResult = rebuildDocument(
+      crossing.doc,
+      {},
+      countingDeps().deps,
+    );
+    expect(crossingResult.features[1]?.status).toBe("error");
+    expect(crossingResult.features[1]?.diagnostics[0]?.code).toBe(
+      "profile-crosses-axis",
+    );
+
+    const missingAxis = addRevolveFeature(
+      sketchOnly,
+      "sketch-r",
+      [],
+      { kind: "line", curveId: "missing" },
+      360,
+      "new",
+      "ccw",
+    );
+    const missingResult = rebuildDocument(
+      missingAxis.doc,
+      {},
+      countingDeps().deps,
+    );
+    expect(missingResult.features[1]?.diagnostics[0]?.code).toBe(
+      "missing-axis",
     );
   });
 

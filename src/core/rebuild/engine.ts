@@ -4,6 +4,7 @@ import {
   isExtrudeFeature,
   isFilletFeature,
   isOffsetFaceFeature,
+  isRevolveFeature,
   isShellFeature,
   isSketchFeature,
   type ChamferFeature,
@@ -15,6 +16,8 @@ import {
   type FilletFeature,
   type OffsetFaceFeature,
   type PlaneRef,
+  type RevolveAxis,
+  type RevolveFeature,
   type ShellFeature,
   type SketchFeature,
 } from "../doc/types";
@@ -26,8 +29,10 @@ import {
 } from "../doc/support";
 import { faceRefKey } from "../doc/datum";
 import type { PlaneFrame } from "../types";
+import type { Sketch } from "../sketch/types";
 import type { KernelFeature } from "../kernel/protocol";
 import { extrudeParams, selectExtrudeRegions } from "../features/extrude";
+import { revolveParams, revolveProfileError } from "../features/revolve";
 import { applySolution } from "../sketch/geometry";
 import { regionsFromSketch } from "../sketch/loops";
 import { solveSketch } from "../sketch/solver";
@@ -39,6 +44,7 @@ import {
   type FeatureResult,
   type FilletRebuildOutput,
   type OffsetFaceRebuildOutput,
+  type RevolveRebuildOutput,
   type RebuildDeps,
   type RebuildDiagnostic,
   type RebuildInputs,
@@ -178,6 +184,9 @@ function evaluateFeature(
     }
     if (isExtrudeFeature(feature)) {
       return evaluateExtrude(feature, base, byId, deps);
+    }
+    if (isRevolveFeature(feature)) {
+      return evaluateRevolve(feature, base, byId);
     }
     if (isFilletFeature(feature)) {
       return evaluateFillet(feature, base, byId);
@@ -525,6 +534,214 @@ function evaluateExtrude(
   return { ...base, status: "ok", output, diagnostics };
 }
 
+function evaluateRevolve(
+  feature: RevolveFeature,
+  base: Omit<FeatureResult, "status" | "output" | "diagnostics">,
+  byId: Map<string, FeatureResult>,
+): FeatureResult {
+  const source = byId.get(feature.sketchId);
+  if (!source) {
+    return {
+      ...base,
+      status: "error",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "missing-sketch",
+          message: `Sketch "${feature.sketchId}" does not exist earlier in the history.`,
+        },
+      ],
+    };
+  }
+  if (source.status !== "ok" || source.output?.kind !== "sketch") {
+    return {
+      ...base,
+      status: "skipped",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "upstream-error",
+          message: `Skipped because ${source.name} could not be evaluated.`,
+        },
+      ],
+    };
+  }
+  if (
+    !Number.isFinite(feature.angle) ||
+    feature.angle < 1 ||
+    feature.angle > 360
+  ) {
+    return {
+      ...base,
+      status: "error",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "invalid-angle",
+          message: "Revolve angle must be between 1° and 360°.",
+        },
+      ],
+    };
+  }
+  if (feature.operation === "cut") {
+    const hasBody = [...byId.values()].some(
+      (result) =>
+        result.status === "ok" &&
+        result.output &&
+        result.output.kind !== "sketch" &&
+        result.output.kind !== "datum",
+    );
+    if (!hasBody) {
+      return {
+        ...base,
+        status: "error",
+        output: null,
+        diagnostics: [
+          {
+            severity: "error",
+            code: "nothing-to-cut",
+            message: "Nothing exists to cut.",
+          },
+        ],
+      };
+    }
+  }
+
+  const axis = resolveRevolveAxis(source.output.sketch, feature.axis);
+  if (!axis) {
+    return {
+      ...base,
+      status: "error",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "missing-axis",
+          message:
+            feature.axis.kind === "line"
+              ? "The revolve axis line no longer exists in the sketch."
+              : "The revolve axis is not available.",
+        },
+      ],
+    };
+  }
+  if (axis.lengthSq < 1e-12) {
+    return {
+      ...base,
+      status: "error",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "degenerate-axis",
+          message: "The revolve axis has no length.",
+        },
+      ],
+    };
+  }
+
+  const selection = selectExtrudeRegions(source.output.regions, feature.regions);
+  if (selection.regions.length === 0) {
+    return {
+      ...base,
+      status: "error",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "no-region",
+          message: "No closed profile region is available to revolve.",
+        },
+      ],
+    };
+  }
+  const profileError = revolveProfileError(selection.regions, {
+    at: axis.at,
+    direction: axis.direction,
+  });
+  if (profileError) {
+    return {
+      ...base,
+      status: "error",
+      output: null,
+      diagnostics: [
+        {
+          severity: "error",
+          code: "profile-crosses-axis",
+          message: profileError,
+        },
+      ],
+    };
+  }
+
+  const diagnostics: RebuildDiagnostic[] = [];
+  if (selection.stale) {
+    diagnostics.push({
+      severity: "warning",
+      code: "stale-regions",
+      message: selection.auto
+        ? "The stored region selection no longer exists; using the largest material region."
+        : "Some stored region ids no longer exist and were ignored.",
+    });
+  }
+  const output: RevolveRebuildOutput = {
+    kind: "revolve",
+    params: revolveParams(
+      selection.regions,
+      { at: axis.at, direction: axis.direction },
+      feature.angle,
+      feature.direction,
+      source.output.frame,
+    ),
+    sketchId: feature.sketchId,
+    regionIds: selection.ids,
+    auto: selection.auto,
+    operation: feature.operation,
+    angle: feature.angle,
+    direction: feature.direction,
+    axis: feature.axis,
+  };
+  return { ...base, status: "ok", output, diagnostics };
+}
+
+interface ResolvedRevolveAxis {
+  at: [number, number];
+  direction: [number, number];
+  lengthSq: number;
+}
+
+function resolveRevolveAxis(
+  sketch: Sketch,
+  axis: RevolveAxis,
+): ResolvedRevolveAxis | null {
+  if (axis.kind === "reference") {
+    return {
+      at: [0, 0],
+      direction: axis.axis === "x" ? [1, 0] : [0, 1],
+      lengthSq: 1,
+    };
+  }
+  const curve = sketch.curves.find(
+    (candidate) =>
+      candidate.id === axis.curveId &&
+      candidate.type === "line",
+  );
+  if (!curve || curve.type !== "line") return null;
+  const a = sketch.points.find((point) => point.id === curve.a);
+  const b = sketch.points.find((point) => point.id === curve.b);
+  if (!a || !b) return null;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  return {
+    at: [a.x, a.y],
+    direction: [dx, dy],
+    lengthSq: dx * dx + dy * dy,
+  };
+}
+
 function evaluateFillet(
   feature: FilletFeature,
   base: Omit<FeatureResult, "status" | "output" | "diagnostics">,
@@ -584,6 +801,7 @@ function evaluateEdgeBlend(
     (result) =>
       result.status === "ok" &&
       (result.output?.kind === "extrude" ||
+        result.output?.kind === "revolve" ||
         result.output?.kind === "fillet" ||
         result.output?.kind === "chamfer" ||
         result.output?.kind === "shell" ||
@@ -640,6 +858,7 @@ function evaluateEdgeBlend(
     }
     if (
       source.output?.kind !== "extrude" &&
+      source.output?.kind !== "revolve" &&
       source.output?.kind !== "fillet" &&
       source.output?.kind !== "chamfer"
     ) {
@@ -701,6 +920,7 @@ function evaluateOffsetFace(
 
   const solidKinds = new Set([
     "extrude",
+    "revolve",
     "fillet",
     "chamfer",
     "shell",
@@ -908,6 +1128,17 @@ export function extractKernelFeatures(result: RebuildResult): KernelFeature[] {
       return [
         {
           kind: "extrude",
+          featureId: feature.featureId,
+          cacheKey: feature.cacheKey,
+          params: feature.output.params,
+          operation: feature.output.operation,
+        },
+      ];
+    }
+    if (feature.output.kind === "revolve") {
+      return [
+        {
+          kind: "revolve",
           featureId: feature.featureId,
           cacheKey: feature.cacheKey,
           params: feature.output.params,

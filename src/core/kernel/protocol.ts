@@ -1,4 +1,4 @@
-import type { PlaneFrame, ProfileLoop, Vec3 } from "../types";
+import type { PlaneFrame, ProfileLoop, Vec2, Vec3 } from "../types";
 
 export type { ProfileLoop };
 
@@ -17,6 +17,17 @@ export interface ExtrudeParams {
   /** `blind` uses height; `throughAll` cuts the current body's full extent. */
   end?: "blind" | "throughAll";
   /** Local sketch plane -> world. Omitted for the XY world plane. */
+  frame?: PlaneFrame;
+}
+
+/** A profile revolved around an in-plane sketch axis. */
+export interface RevolveParams {
+  regions: ProfileRegion[];
+  /** Local sketch-plane coordinates; the axis is infinite in both directions. */
+  axis: { at: Vec2; direction: Vec2 };
+  /** Degrees, 1–360. */
+  angle: number;
+  direction: "ccw" | "cw";
   frame?: PlaneFrame;
 }
 
@@ -189,6 +200,13 @@ export interface KernelExtrudeFeature extends KernelFeatureBase {
   operation: KernelOperation;
 }
 
+/** A profile revolved around an in-plane sketch axis. */
+export interface KernelRevolveFeature extends KernelFeatureBase {
+  kind: "revolve";
+  params: RevolveParams;
+  operation: KernelOperation;
+}
+
 /** A constant-radius fillet on selected edges of the current body. */
 export interface KernelFilletFeature extends KernelFeatureBase {
   kind: "fillet";
@@ -225,6 +243,7 @@ export type KernelEdgeBlendFeature =
 
 export type KernelFeature =
   | KernelExtrudeFeature
+  | KernelRevolveFeature
   | KernelFilletFeature
   | KernelChamferFeature
   | KernelShellFeature

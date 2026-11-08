@@ -8,6 +8,7 @@ import {
   createExtrudeFeature,
   createFilletFeature,
   createOffsetFaceFeature,
+  createRevolveFeature,
   createShellFeature,
   createSketchFeature,
 } from "./create";
@@ -18,6 +19,7 @@ import {
   isExtrudeFeature,
   isFilletFeature,
   isOffsetFaceFeature,
+  isRevolveFeature,
   isShellFeature,
   isSketchFeature,
   type ChamferFeature,
@@ -32,6 +34,8 @@ import {
   type FilletFeature,
   type OffsetFaceFeature,
   type PlaneRef,
+  type RevolveAxis,
+  type RevolveFeature,
   type ShellFeature,
   type SketchFeature,
 } from "./types";
@@ -167,6 +171,16 @@ export function updateShellFeature(
   );
 }
 
+export function updateRevolveFeature(
+  doc: Doc,
+  featureId: string,
+  update: (feature: RevolveFeature) => RevolveFeature,
+): Doc {
+  return updateFeature(doc, featureId, (feature) =>
+    isRevolveFeature(feature) ? update(feature) : feature,
+  );
+}
+
 export function updateOffsetFaceFeature(
   doc: Doc,
   featureId: string,
@@ -247,7 +261,9 @@ export function nextFeatureName(doc: Doc, type: Feature["type"]): string {
               ? "Shell"
               : type === "offset"
                 ? "Offset"
-                : "Extrude";
+                : type === "revolve"
+                  ? "Revolve"
+                  : "Extrude";
   const count = doc.features.filter((feature) => feature.type === type).length;
   return `${prefix} ${count + 1}`;
 }
@@ -431,6 +447,45 @@ function faceSourceIds(faces: readonly TopoRef[]): string[] {
   return [...sources];
 }
 
+/** Insert a revolve after the selected step. */
+export function addRevolveFeature(
+  doc: Doc,
+  sketchId: string,
+  regions: readonly string[],
+  axis: RevolveAxis,
+  angle: number,
+  operation: ExtrudeOperation,
+  direction: "ccw" | "cw",
+  options: {
+    name?: string;
+    id?: string;
+    afterFeatureId?: string | null;
+    atStart?: boolean;
+  } = {},
+): { doc: Doc; feature: RevolveFeature } {
+  const feature: RevolveFeature = {
+    ...createRevolveFeature(sketchId, {
+      name: options.name ?? nextFeatureName(doc, "revolve"),
+      axis,
+      angle,
+      direction,
+      ...(options.id ? { id: options.id } : {}),
+    }),
+    regions: [...regions],
+    operation,
+  };
+  return {
+    doc: insertFeature(
+      doc,
+      feature,
+      options.afterFeatureId,
+      [sketchId],
+      options.atStart,
+    ),
+    feature,
+  };
+}
+
 /** Insert a shell after the selected step, with the listed faces open. */
 export function addShellFeature(
   doc: Doc,
@@ -588,7 +643,8 @@ export function deleteFeature(
     for (const feature of doc.features) {
       if (removed.has(feature.id)) continue;
       const dependsOnRemoved =
-        (isExtrudeFeature(feature) && removed.has(feature.sketchId)) ||
+        ((isExtrudeFeature(feature) || isRevolveFeature(feature)) &&
+          removed.has(feature.sketchId)) ||
         (isSketchFeature(feature) &&
           feature.support.kind === "datum" &&
           removed.has(feature.support.featureId)) ||
@@ -639,7 +695,9 @@ function hasValidOrder(features: readonly Feature[]): boolean {
     return dependencyIndex !== undefined && dependencyIndex < (index.get(featureId) ?? -1);
   };
   return features.every((feature) => {
-    if (isExtrudeFeature(feature)) return before(feature.sketchId, feature.id);
+    if (isExtrudeFeature(feature) || isRevolveFeature(feature)) {
+      return before(feature.sketchId, feature.id);
+    }
     if (isDatumPlaneFeature(feature)) {
       return datumBaseFeatureIds(feature.definition).every((id) =>
         before(id, feature.id),

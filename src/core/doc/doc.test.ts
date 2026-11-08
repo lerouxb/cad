@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addCircle, addPoint, emptySketch } from "../sketch/create";
+import { addCircle, addPoint, addRectangle, emptySketch } from "../sketch/create";
 import { createDemoModel } from "../sketch/demo";
 import { createDocument } from "./create";
 import { createExampleDocument } from "./example";
@@ -12,6 +12,7 @@ import {
   addExtrudeFeature,
   addFilletFeature,
   addOffsetFaceFeature,
+  addRevolveFeature,
   addShellFeature,
   addSketchFeature,
   deleteFeature,
@@ -31,6 +32,7 @@ import {
   updateExtrudeRegions,
   updateFilletFeature,
   updateOffsetFaceFeature,
+  updateRevolveFeature,
   updateShellFeature,
   updatePrimarySketch,
   updateSketchFeature,
@@ -39,6 +41,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   isChamferFeature,
   isFilletFeature,
+  isRevolveFeature,
   type Doc,
   type ExtrudeFeature,
   type SketchFeature,
@@ -463,6 +466,68 @@ describe("document schema", () => {
     ).toBeNull();
   });
 
+  it("adds a revolve with an explicit axis and re-edits it", () => {
+    const doc = createDocument(addRectangle(emptySketch(), [10, -10], [20, 10]), {
+      id: "doc-revolve",
+      sketchId: "sketch-r",
+      extrudeId: "extrude-r",
+      name: "Revolve",
+    });
+    const sketchOnly: Doc = { ...doc, features: [doc.features[0]!] };
+    const added = addRevolveFeature(
+      sketchOnly,
+      "sketch-r",
+      [],
+      { kind: "reference", axis: "y" },
+      360,
+      "new",
+      "ccw",
+    );
+    expect(added.feature.name).toBe("Revolve 1");
+    expect(added.feature.axis).toEqual({ kind: "reference", axis: "y" });
+    expect(added.doc.features.map((feature) => feature.type)).toEqual([
+      "sketch",
+      "revolve",
+    ]);
+
+    const parsed = validateDoc(JSON.parse(JSON.stringify(added.doc)));
+    const migrated = parsed?.features.find(
+      (feature) => feature.id === added.feature.id,
+    );
+    expect(migrated && isRevolveFeature(migrated)).toBe(true);
+    expect(
+      migrated && isRevolveFeature(migrated) ? migrated.angle : null,
+    ).toBe(360);
+
+    const edited = updateRevolveFeature(
+      added.doc,
+      added.feature.id,
+      (feature) => ({ ...feature, angle: 180, direction: "cw" }),
+    );
+    const changed = edited.features.find(isRevolveFeature);
+    expect(changed?.angle).toBe(180);
+    expect(changed?.direction).toBe("cw");
+
+    expect(
+      validateDoc({
+        ...added.doc,
+        features: [
+          ...added.doc.features.slice(0, 1),
+          { ...added.feature, angle: 0 },
+        ],
+      }),
+    ).toBeNull();
+    expect(
+      validateDoc({
+        ...added.doc,
+        features: [
+          ...added.doc.features.slice(0, 1),
+          { ...added.feature, axis: { kind: "line" } },
+        ],
+      }),
+    ).toBeNull();
+  });
+
   it("adds an offset face with stable face references", () => {
     const doc = exampleDoc();
     const face: TopoRef = {
@@ -781,6 +846,16 @@ describe("document migrations", () => {
         ),
       }),
     ).toBeNull();
+  });
+
+  it("opens a v13 document and bumps the schema", () => {
+    const doc = exampleDoc();
+    const migrated = migrateDoc({ ...doc, schemaVersion: 13 });
+    expect(migrated?.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+    expect(migrated?.features.map((feature) => feature.type)).toEqual([
+      "sketch",
+      "extrude",
+    ]);
   });
 
   it("opens a v12 document and bumps the schema", () => {

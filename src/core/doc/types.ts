@@ -3,7 +3,7 @@ import type { PlaneFrame, Vec2 } from "../types";
 import type { EdgeRef, TopoRef } from "../kernel/protocol";
 
 /** The document schema version. Bump this on every shape change. */
-export const CURRENT_SCHEMA_VERSION = 13;
+export const CURRENT_SCHEMA_VERSION = 14;
 
 export type WorldPlane = "XY" | "XZ" | "YZ";
 
@@ -64,6 +64,25 @@ export interface FaceProjection {
 }
 
 export type ExtrudeOperation = "new" | "join" | "cut";
+
+/** A revolve is a profile swept around an in-plane sketch axis. */
+export type RevolveAxis =
+  | { kind: "line"; curveId: string }
+  | { kind: "reference"; axis: "x" | "y" };
+
+export interface RevolveFeature {
+  id: string;
+  type: "revolve";
+  name: string;
+  sketchId: string;
+  regions: string[];
+  axis: RevolveAxis;
+  /** Degrees, 1–360. */
+  angle: number;
+  direction: "ccw" | "cw";
+  operation: ExtrudeOperation;
+  suppressed?: boolean;
+}
 
 export interface ExtrudeFeature {
   id: string;
@@ -138,6 +157,7 @@ export interface OffsetFaceFeature {
 export type Feature =
   | SketchFeature
   | ExtrudeFeature
+  | RevolveFeature
   | DatumPlaneFeature
   | FilletFeature
   | ChamferFeature
@@ -161,6 +181,10 @@ export function isSketchFeature(feature: Feature): feature is SketchFeature {
 
 export function isExtrudeFeature(feature: Feature): feature is ExtrudeFeature {
   return feature.type === "extrude";
+}
+
+export function isRevolveFeature(feature: Feature): feature is RevolveFeature {
+  return feature.type === "revolve";
 }
 
 export function isDatumPlaneFeature(

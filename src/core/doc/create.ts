@@ -13,6 +13,8 @@ import {
   type FilletFeature,
   type OffsetFaceFeature,
   type PlaneRef,
+  type RevolveAxis,
+  type RevolveFeature,
   type ShellFeature,
   type SketchFeature,
 } from "./types";
@@ -77,6 +79,30 @@ export function createExtrudeFeature(
     operation: "new",
     symmetric: false,
     end: "blind",
+  };
+}
+
+/** A profile revolved around an in-plane sketch axis. */
+export function createRevolveFeature(
+  sketchId: string,
+  options: {
+    name?: string;
+    id?: string;
+    axis?: RevolveAxis;
+    angle?: number;
+    direction?: "ccw" | "cw";
+  } = {},
+): RevolveFeature {
+  return {
+    id: options.id ?? newId("feat"),
+    type: "revolve",
+    name: options.name ?? "Revolve 1",
+    sketchId,
+    regions: [],
+    axis: options.axis ?? { kind: "reference", axis: "x" },
+    angle: options.angle ?? 360,
+    direction: options.direction ?? "ccw",
+    operation: "new",
   };
 }
 

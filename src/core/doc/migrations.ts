@@ -6,6 +6,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   isDatumPlaneFeature,
   isExtrudeFeature,
+  isRevolveFeature,
   isSketchFeature,
   type DatumPlaneDefinition,
   type Doc,
@@ -13,6 +14,7 @@ import {
   type FaceProjection,
   type Feature,
   type PlaneRef,
+  type RevolveAxis,
   type WorldPlane,
 } from "./types";
 
@@ -40,7 +42,8 @@ export function migrateDoc(raw: unknown): Doc | null {
   // v9 → v10 adds chamfer features (older documents simply have none);
   // v10 → v11 adds shell features (older documents simply have none);
   // v11 → v12 adds offset-face features (older documents simply have none);
-  // v12 → v13 adds optional radius/radialSign to face hints.
+  // v12 → v13 adds optional radius/radialSign to face hints;
+  // v13 → v14 adds revolve features (older documents simply have none).
   if (
     version === 1 ||
     version === 2 ||
@@ -53,7 +56,8 @@ export function migrateDoc(raw: unknown): Doc | null {
     version === 9 ||
     version === 10 ||
     version === 11 ||
-    version === 12
+    version === 12 ||
+    version === 13
   ) {
     return validateDoc(raw);
   }
@@ -102,7 +106,7 @@ export function validateDoc(raw: unknown): Doc | null {
     );
   };
   for (const feature of features) {
-    if (isExtrudeFeature(feature)) {
+    if (isExtrudeFeature(feature) || isRevolveFeature(feature)) {
       const source = features.find(
         (candidate) => candidate.id === feature.sketchId,
       );
@@ -229,6 +233,39 @@ function validateFeature(raw: unknown): Feature | null {
     };
   }
 
+  if (raw.type === "revolve") {
+    if (typeof raw.sketchId !== "string") return null;
+    if (!Array.isArray(raw.regions) || !raw.regions.every((id) => typeof id === "string")) {
+      return null;
+    }
+    const axis = validateRevolveAxis(raw.axis);
+    if (!axis) return null;
+    if (
+      typeof raw.angle !== "number" ||
+      !Number.isFinite(raw.angle) ||
+      raw.angle < 1 ||
+      raw.angle > 360
+    ) {
+      return null;
+    }
+    if (raw.direction !== "ccw" && raw.direction !== "cw") return null;
+    if (raw.operation !== "new" && raw.operation !== "join" && raw.operation !== "cut") {
+      return null;
+    }
+    return {
+      id,
+      type: "revolve",
+      name,
+      sketchId: raw.sketchId,
+      regions: [...raw.regions],
+      axis,
+      angle: raw.angle,
+      direction: raw.direction,
+      operation: raw.operation,
+      ...(raw.suppressed === true ? { suppressed: true } : {}),
+    };
+  }
+
   if (raw.type === "shell") {
     const thickness = raw.thickness;
     if (typeof thickness !== "number" || !Number.isFinite(thickness)) {
@@ -287,6 +324,19 @@ function validateFeature(raw: unknown): Feature | null {
     };
   }
 
+  return null;
+}
+
+function validateRevolveAxis(raw: unknown): RevolveAxis | null {
+  if (!isRecord(raw)) return null;
+  if (raw.kind === "reference") {
+    return raw.axis === "x" || raw.axis === "y"
+      ? { kind: "reference", axis: raw.axis }
+      : null;
+  }
+  if (raw.kind === "line" && typeof raw.curveId === "string") {
+    return { kind: "line", curveId: raw.curveId };
+  }
   return null;
 }
 

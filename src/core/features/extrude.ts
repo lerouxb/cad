@@ -69,7 +69,7 @@ export function extrudeParams(
 }
 
 
-function counterClockwiseLoop(loop: ProfileLoop): ProfileLoop {
+export function counterClockwiseLoop(loop: ProfileLoop): ProfileLoop {
   if (loop.kind === "circle") return loop;
   if (loop.kind === "polygon") {
     return { kind: "polygon", points: ensureCounterClockwise(loop.points) };

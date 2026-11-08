@@ -58,6 +58,7 @@ import {
   primaryExtrudeFeature,
   primarySketch,
   primarySketchFeature,
+  addRevolveFeature,
   addShellFeature,
   renameDocument,
   renameFeature,
@@ -71,6 +72,7 @@ import {
   updateFeature,
   updateFilletFeature,
   updateOffsetFaceFeature,
+  updateRevolveFeature,
   updateShellFeature,
   updateSketchFeature,
 } from "../core/doc/selectors";
@@ -81,6 +83,7 @@ import {
   isExtrudeFeature,
   isFilletFeature,
   isOffsetFaceFeature,
+  isRevolveFeature,
   isShellFeature,
   isSketchFeature,
   type DatumPlaneDefinition,
@@ -91,11 +94,17 @@ import {
   type Feature,
   type OffsetFaceFeature,
   type PlaneRef,
+  type RevolveAxis,
+  type RevolveFeature,
   type ShellFeature,
   type SketchFeature,
   type WorldPlane,
 } from "../core/doc/types";
 import { extrudeParams, selectExtrudeRegions } from "../core/features/extrude";
+import {
+  revolveParams,
+  revolveProfileError,
+} from "../core/features/revolve";
 import { KernelClient } from "../core/kernel/client";
 import type {
   BodyMesh,
@@ -216,6 +225,7 @@ import { MeasurePopover } from "./MeasurePopover";
 import { FaceSelectionPopover } from "./FaceSelectionPopover";
 import { ShellPopover } from "./ShellPopover";
 import { OffsetFacePopover } from "./OffsetFacePopover";
+import { RevolvePopover } from "./RevolvePopover";
 import { SolidBlendPopover } from "./SolidBlendPopover";
 import { FilletPopover } from "./FilletPopover";
 import type { PopoverPosition } from "./StagePopover";
@@ -254,7 +264,7 @@ function resolveActiveFeature(doc: Doc, featureId: string | null): Feature | nul
 function sketchForFeature(doc: Doc, feature: Feature | null): SketchFeature | null {
   if (!feature) return null;
   if (feature.type === "sketch") return feature;
-  if (feature.type === "extrude") {
+  if (feature.type === "extrude" || feature.type === "revolve") {
     return sketchFeatureById(doc, feature.sketchId) ?? null;
   }
   return null;
@@ -280,6 +290,13 @@ function featureTimelineOutput(feature: Feature): TimelineOutput {
     isOffsetFaceFeature(feature)
   ) {
     return { op: "→", kind: "body", name: "body" };
+  }
+  if (isRevolveFeature(feature)) {
+    return {
+      op: feature.operation === "new" ? "+" : "→",
+      kind: "body",
+      name: "body",
+    };
   }
   return {
     op: feature.operation === "new" ? "+" : "→",
@@ -319,6 +336,18 @@ interface ExtrudeDraft {
   symmetric: boolean;
   operation: ExtrudeFeature["operation"];
   end: ExtrudeFeature["end"];
+}
+
+interface RevolveDraft {
+  mode: "new" | "edit";
+  featureId: string | null;
+  sketchId: string;
+  regions: string[];
+  axis: RevolveAxis | null;
+  angle: number;
+  direction: "ccw" | "cw";
+  operation: ExtrudeFeature["operation"];
+  anchorId: string | null;
 }
 
 /**
@@ -398,6 +427,29 @@ function faceBodyPick(ref: TopoRef): BodyPick {
   };
 }
 
+function resolveRevolveAxis(
+  sketch: Sketch,
+  axis: RevolveAxis,
+): { at: [number, number]; direction: [number, number] } | null {
+  if (axis.kind === "reference") {
+    return {
+      at: [0, 0],
+      direction: axis.axis === "x" ? [1, 0] : [0, 1],
+    };
+  }
+  const curve = sketch.curves.find(
+    (candidate) => candidate.id === axis.curveId && candidate.type === "line",
+  );
+  if (!curve || curve.type !== "line") return null;
+  const a = sketch.points.find((point) => point.id === curve.a);
+  const b = sketch.points.find((point) => point.id === curve.b);
+  if (!a || !b) return null;
+  return {
+    at: [a.x, a.y],
+    direction: [b.x - a.x, b.y - a.y],
+  };
+}
+
 interface ShellDraft {
   mode: "new" | "edit";
   featureId: string | null;
@@ -457,6 +509,9 @@ export function App() {
   const primarySketchId = primarySketchFeature(doc)?.id ?? null;
   const primaryExtrudeId = primaryExtrudeFeature(doc)?.id ?? null;
   const [extrudeDraft, setExtrudeDraft] = useState<ExtrudeDraft | null>(null);
+  const [revolveDraft, setRevolveDraft] = useState<RevolveDraft | null>(null);
+  const [revolveBaseline, setRevolveBaseline] =
+    useState<RevolveFeature | null>(null);
   const [datumDraft, setDatumDraft] = useState<DatumPlaneDraft | null>(null);
   const extrudeHeight = activeExtrude?.height ?? 12;
   const storedRegionIds = extrudeDraft
@@ -717,6 +772,16 @@ export function App() {
     : null;
   const regions = activeSketchBuild?.regions ?? localRegions;
   const regionSelection = useMemo(() => {
+    if (revolveDraft) {
+      const wanted = new Set(revolveDraft.regions);
+      const selected = regions.filter((region) => wanted.has(region.id));
+      return {
+        ids: selected.map((region) => region.id),
+        regions: selected,
+        auto: false,
+        stale: false,
+      };
+    }
     if (extrudeDraft) {
       const wanted = new Set(extrudeDraft.regions);
       const selected = regions.filter((region) => wanted.has(region.id));
@@ -728,16 +793,65 @@ export function App() {
       };
     }
     return selectExtrudeRegions(regions, storedRegionIds ?? []);
-  }, [regions, storedRegionIds, extrudeDraft]);
+  }, [regions, storedRegionIds, extrudeDraft, revolveDraft]);
   const activeRegionIds = regionSelection.ids;
   const activeRegions = regionSelection.regions;
   const selectedRegions = useMemo(
     () =>
       new Set(
-        activeExtrude || extrudeDraft ? activeRegionIds : profileSelection,
+        activeExtrude || extrudeDraft || revolveDraft
+          ? activeRegionIds
+          : profileSelection,
       ),
-    [activeExtrude, extrudeDraft, activeRegionIds, profileSelection],
+    [
+      activeExtrude,
+      extrudeDraft,
+      revolveDraft,
+      activeRegionIds,
+      profileSelection,
+    ],
   );
+  const revolveSketch = revolveDraft
+    ? rebuild?.sketchById.get(revolveDraft.sketchId)?.sketch ?? null
+    : null;
+  const revolveAxisCandidates = useMemo(
+    () =>
+      revolveSketch?.curves.filter((curve) => curve.type === "line") ?? [],
+    [revolveSketch],
+  );
+  const revolveSelectedRegions = useMemo(() => {
+    if (!revolveDraft) return [];
+    const wanted = new Set(revolveDraft.regions);
+    return (rebuild?.sketchById.get(revolveDraft.sketchId)?.regions ?? regions)
+      .filter((region) => wanted.has(region.id));
+  }, [rebuild, regions, revolveDraft]);
+  const revolveDraftError = useMemo(() => {
+    if (!revolveDraft?.axis || !revolveSketch) return null;
+    const axis = resolveRevolveAxis(revolveSketch, revolveDraft.axis);
+    if (!axis) return "The revolve axis is not available in this sketch.";
+    return revolveProfileError(revolveSelectedRegions, axis);
+  }, [revolveDraft, revolveSelectedRegions, revolveSketch]);
+  const revolvePreviewParams = useMemo(() => {
+    if (!revolveDraft || !revolveDraft.axis || !revolveSketch) return null;
+    const source = rebuild?.sketchById.get(revolveDraft.sketchId);
+    const axis = resolveRevolveAxis(revolveSketch, revolveDraft.axis);
+    if (!axis || revolveDraftError) return null;
+    if (revolveSelectedRegions.length === 0) return null;
+    return revolveParams(
+      revolveSelectedRegions,
+      axis,
+      revolveDraft.angle,
+      revolveDraft.direction,
+      source?.frame,
+    );
+  }, [
+    rebuild,
+    revolveDraft,
+    revolveDraftError,
+    revolveSelectedRegions,
+    revolveSketch,
+  ]);
+
   const modelSketchOverlay = useMemo<SketchOverlayData | null>(() => {
     if (
       mode !== "model" ||
@@ -955,6 +1069,18 @@ export function App() {
       ? (status.message ?? "Solid build failed.")
       : null;
   }, [offsetDraft, workerStatuses]);
+  const revolvePreviewError = useMemo(() => {
+    if (!revolveDraft) return null;
+    const featureId =
+      revolveDraft.mode === "new" ? "revolve-draft" : revolveDraft.featureId;
+    if (!featureId) return null;
+    const status = workerStatuses.find(
+      (candidate) => candidate.featureId === featureId,
+    );
+    return status && status.status !== "ok"
+      ? (status.message ?? "Solid build failed.")
+      : null;
+  }, [revolveDraft, workerStatuses]);
   // The shell quick-adjust ceiling: half the body's shortest dimension.
   const shellThicknessMax = useMemo(() => {
     const bounds = mesh?.stats.bounds;
@@ -1067,6 +1193,25 @@ export function App() {
         },
       ];
     }
+    if (revolveDraft?.mode === "new" && revolvePreviewParams) {
+      const draft = revolveDraft;
+      features = [
+        ...features,
+        {
+          kind: "revolve",
+          featureId: "revolve-draft",
+          cacheKey: `revolve-draft-${stableHash(
+            canonicalJson({
+              params: revolvePreviewParams,
+              operation: draft.operation,
+              upstream: features.map((feature) => feature.cacheKey),
+            }),
+          )}`,
+          params: revolvePreviewParams,
+          operation: draft.operation,
+        },
+      ];
+    }
     if (offsetDraft?.mode === "edit" && offsetDraft.featureId) {
       const id = offsetDraft.featureId;
       features = features.map((feature) =>
@@ -1083,6 +1228,8 @@ export function App() {
     blendDraft,
     shellDraft,
     offsetDraft,
+    revolveDraft,
+    revolvePreviewParams,
   ]);
   // The final solid in the rendered prefix, for export. Drafts are not in the
   // document, so they are excluded: export is always the applied body.
@@ -1093,6 +1240,7 @@ export function App() {
       if (feature.status !== "ok" || !feature.output) continue;
       if (
         feature.output.kind === "extrude" ||
+        feature.output.kind === "revolve" ||
         feature.output.kind === "fillet" ||
         feature.output.kind === "chamfer" ||
         feature.output.kind === "shell" ||
@@ -1526,6 +1674,8 @@ export function App() {
     setOffsetDraft(null);
     setOffsetBaseline(null);
     setOffsetGhostMesh(null);
+    setRevolveDraft(null);
+    setRevolveBaseline(null);
   };
 
   /** Filters and Select Other are ephemeral; a new/loaded document starts clean. */
@@ -2614,6 +2764,8 @@ export function App() {
       openShellEditor(feature);
     } else if (isOffsetFaceFeature(feature)) {
       openOffsetEditor(feature);
+    } else if (isRevolveFeature(feature)) {
+      openRevolveEditor(feature);
     } else {
       openDatumEditor(feature);
     }
@@ -2647,11 +2799,15 @@ export function App() {
   const finishActiveMode = (): void => {
     setSelectedConstraintId(null);
     setProfileSelection([]);
+    if (revolveDraft) {
+      commitRevolveDraft();
+      return;
+    }
     if (extrudeDraft) {
       commitExtrudeDraft();
       return;
     }
-    if (activeFeature?.type === "extrude") {
+    if (activeFeature?.type === "extrude" || activeFeature?.type === "revolve") {
       dismissEditor();
       setCancelToken((token) => token + 1);
       setTool("select");
@@ -3096,6 +3252,163 @@ export function App() {
     setExtrudeDraft(null);
     setSelection([]);
     // The draft was started from a sketch step; cancelling returns to that sketch.
+  };
+
+  const beginRevolveDraft = (): void => {
+    const source = activeSketchFeature;
+    const ids = [...profileSelection];
+    if (!source || ids.length === 0) return;
+    const current = getState();
+    const hasBody = current.doc.features.some(
+      (feature) =>
+        (isExtrudeFeature(feature) || isRevolveFeature(feature)) &&
+        feature.suppressed !== true,
+    );
+    setSupportOpen(false);
+    setDatumDraft(null);
+    setHistoryNotice(null);
+    setRevolveDraft({
+      mode: "new",
+      featureId: null,
+      sketchId: source.id,
+      regions: ids,
+      axis: null,
+      angle: 360,
+      direction: "ccw",
+      operation: hasBody ? "join" : "new",
+      anchorId: activeFeatureId,
+    });
+    setProfileSelection([]);
+    setSelection([]);
+    setSelectedConstraintId(null);
+    setTool("select");
+    setMode("sketch");
+    setBodyPick(null);
+    setEdgeSelection([]);
+    setFaceSelection([]);
+    setSelectOther(null);
+    viewportRef.current?.clearPick();
+  };
+
+  const updateRevolveDraft = (
+    update: (draft: RevolveDraft) => RevolveDraft,
+    mergeKey?: string,
+  ): void => {
+    const currentDraft = revolveDraft;
+    if (!currentDraft) return;
+    const next = update(currentDraft);
+    setRevolveDraft(next);
+    if (next.mode !== "edit" || !next.featureId || next.axis === null) return;
+    const current = getState();
+    const doc = updateRevolveFeature(
+      current.doc,
+      next.featureId,
+      (feature) => ({
+        ...feature,
+        regions: next.regions,
+        axis: next.axis!,
+        angle: next.angle,
+        direction: next.direction,
+        operation: next.operation,
+      }),
+    );
+    if (doc !== current.doc) {
+      commit(
+        { doc, solved: current.solved, solvedFor: current.solvedFor },
+        mergeKey,
+      );
+    }
+  };
+
+  const cancelRevolveEditor = (history = true): void => {
+    const baseline = revolveBaseline;
+    const draft = revolveDraft;
+    setRevolveDraft(null);
+    setRevolveBaseline(null);
+    if (draft?.mode === "edit" && baseline) {
+      const current = getState();
+      const doc = updateRevolveFeature(current.doc, baseline.id, (feature) => ({
+        ...feature,
+        regions: baseline.regions,
+        axis: baseline.axis,
+        angle: baseline.angle,
+        direction: baseline.direction,
+        operation: baseline.operation,
+      }));
+      if (doc !== current.doc) {
+        const state = {
+          doc,
+          solved: current.solved,
+          solvedFor: current.solvedFor,
+        };
+        if (history) commit(state);
+        else replace(state);
+      }
+      setActiveFeatureId(baseline.id);
+      setMode("model");
+    }
+    setSelection([]);
+  };
+
+  const openRevolveEditor = (feature: RevolveFeature): void => {
+    dismissEditor();
+    setDatumDraft(null);
+    setSupportOpen(false);
+    setRevolveBaseline(feature);
+    setRevolveDraft({
+      mode: "edit",
+      featureId: feature.id,
+      sketchId: feature.sketchId,
+      regions: [...feature.regions],
+      axis: feature.axis,
+      angle: feature.angle,
+      direction: feature.direction,
+      operation: feature.operation,
+      anchorId: null,
+    });
+    setActiveFeatureId(feature.id);
+    setMode("sketch");
+    setTool("select");
+    setSelection([]);
+    setProfileSelection([]);
+    setBodyPick(null);
+    setEdgeSelection([]);
+    setFaceSelection([]);
+    setSelectOther(null);
+    viewportRef.current?.clearPick();
+  };
+
+  const commitRevolveDraft = (): void => {
+    const draft = revolveDraft;
+    if (!draft || draft.regions.length === 0 || draft.axis === null) return;
+    if (!(draft.angle >= 1 && draft.angle <= 360)) return;
+    if (revolveDraftError) return;
+    const current = getState();
+    if (draft.mode === "new") {
+      const result = addRevolveFeature(
+        current.doc,
+        draft.sketchId,
+        draft.regions,
+        draft.axis,
+        draft.angle,
+        draft.operation,
+        draft.direction,
+        { afterFeatureId: draft.anchorId },
+      );
+      commit({
+        doc: result.doc,
+        solved: current.solved,
+        solvedFor: current.solvedFor,
+      });
+      setActiveFeatureId(result.feature.id);
+    } else if (draft.featureId) {
+      setActiveFeatureId(draft.featureId);
+    }
+    setRevolveDraft(null);
+    setRevolveBaseline(null);
+    setSelection([]);
+    setProfileSelection([]);
+    setMode("model");
   };
 
   const beginRename = (feature: Feature): void => {
@@ -3646,11 +3959,13 @@ export function App() {
     if (blendDraft?.mode === "new") return `${blendDraft.kind}-draft`;
     if (shellDraft?.mode === "new") return "shell-draft";
     if (offsetDraft?.mode === "new") return "offset-draft";
+    if (revolveDraft?.mode === "new") return "revolve-draft";
     return activeFeature &&
       (isExtrudeFeature(activeFeature) ||
         isEdgeBlendFeature(activeFeature) ||
         isShellFeature(activeFeature) ||
-        isOffsetFaceFeature(activeFeature)) &&
+        isOffsetFaceFeature(activeFeature) ||
+        isRevolveFeature(activeFeature)) &&
       !activeFeature.suppressed
       ? activeFeature.id
       : null;
@@ -3662,6 +3977,7 @@ export function App() {
     blendDraft,
     shellDraft,
     offsetDraft,
+    revolveDraft,
     activeFeature,
   ]);
 
@@ -4523,6 +4839,10 @@ export function App() {
         cancelOffsetEditor(history);
         return;
       }
+      if (revolveDraft) {
+        cancelRevolveEditor(history);
+        return;
+      }
       if (extrudeDraft) {
         cancelExtrudeDraft();
         return;
@@ -4592,6 +4912,10 @@ export function App() {
         }
         if (offsetDraft) {
           cancelOffsetEditor();
+          return;
+        }
+        if (revolveDraft) {
+          commitRevolveDraft();
           return;
         }
         if (extrudeDraft) {
@@ -4709,6 +5033,10 @@ export function App() {
           }
           return;
         }
+        if (revolveDraft) {
+          if (!revolvePreviewError) commitRevolveDraft();
+          return;
+        }
         if (extrudeDraft) {
           commitExtrudeDraft();
           return;
@@ -4760,6 +5088,7 @@ export function App() {
           blendDraft ||
           shellDraft ||
           offsetDraft ||
+          revolveDraft ||
           editorOpen ||
           datumDraft
         ) {
@@ -5364,6 +5693,10 @@ export function App() {
               cancelOffsetEditor();
               return;
             }
+            if (revolveDraft) {
+              cancelRevolveEditor();
+              return;
+            }
             if (extrudeDraft) {
               cancelExtrudeDraft();
               if (canvas) viewportRef.current?.suppressNextClick();
@@ -5766,7 +6099,51 @@ export function App() {
               </div>
             ) : null}
 
-            {!profileMode && mode === "sketch" && selectedProfileRegions.length > 0 ? (
+            {revolveDraft ? (
+              <RevolvePopover
+                sketchName={
+                  findFeature(doc, revolveDraft.sketchId)?.name ?? "Sketch"
+                }
+                profileCount={revolveDraft.regions.length}
+                axis={revolveDraft.axis}
+                axisCandidates={revolveAxisCandidates}
+                angles={revolveDraft.angle}
+                direction={revolveDraft.direction}
+                operation={revolveDraft.operation}
+                isDraft={revolveDraft.mode === "new"}
+                error={revolveDraftError ?? revolvePreviewError}
+                position={popoverPosition}
+                onMove={setPopoverPosition}
+                onAxis={(axis) =>
+                  updateRevolveDraft((draft) => ({ ...draft, axis }))
+                }
+                onAngle={(angle) =>
+                  updateRevolveDraft(
+                    (draft) => ({
+                      ...draft,
+                      angle,
+                      direction:
+                        angle >= 360 ? "ccw" : draft.direction,
+                    }),
+                    "revolve-angle",
+                  )
+                }
+                onAngleEnd={endMerge}
+                onDirection={(direction) =>
+                  updateRevolveDraft((draft) => ({ ...draft, direction }))
+                }
+                onOperation={(operation) =>
+                  updateRevolveDraft((draft) => ({ ...draft, operation }))
+                }
+                onApply={commitRevolveDraft}
+                onCancel={cancelRevolveEditor}
+              />
+            ) : null}
+
+            {!profileMode &&
+            !revolveDraft &&
+            mode === "sketch" &&
+            selectedProfileRegions.length > 0 ? (
               <ProfilePopover
                 regions={selectedProfileRegions}
                 hasMaterial={regions.some((region) => region.kind === "material")}
@@ -5775,6 +6152,7 @@ export function App() {
                 onVoids={selectAllProfileVoids}
                 onAuto={autoSelectProfileRegions}
                 onExtrude={extrudeSelectedProfiles}
+                onRevolve={beginRevolveDraft}
                 onClear={() => setProfileSelection([])}
                 position={popoverPosition}
                 onMove={setPopoverPosition}
@@ -6380,7 +6758,9 @@ export function App() {
                         ? "shell"
                         : isOffsetFaceFeature(feature)
                           ? "offset"
-                          : "extrude";
+                          : isRevolveFeature(feature)
+                            ? "revolve"
+                            : "extrude";
               const meta = isSketchFeature(feature)
                 ? `${supportLabel(feature.support)} · ${feature.sketch.curves.length} curves`
                 : isDatumPlaneFeature(feature)
@@ -6393,7 +6773,9 @@ export function App() {
                         ? `${feature.thickness} mm · ${feature.faces.length} open face${feature.faces.length === 1 ? "" : "s"}`
                         : isOffsetFaceFeature(feature)
                           ? `${Math.abs(feature.distance)} mm · ${feature.distance < 0 ? "in" : "out"} · ${feature.faces.length} face${feature.faces.length === 1 ? "" : "s"}`
-                          : `${
+                          : isRevolveFeature(feature)
+                            ? `${feature.regions.length} profile${feature.regions.length === 1 ? "" : "s"} · ${feature.angle}° · ${feature.operation === "new" ? "new body" : feature.operation}`
+                            : `${
                           feature.end === "throughAll"
                             ? "through all"
                             : `${feature.height} mm`

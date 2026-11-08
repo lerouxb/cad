@@ -819,6 +819,13 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       visible error (OCCT silently returns a larger solid), and the unchanged body stays
       visible. New shells preview through the kernel; editing commits live; cancel
       restores faces and thickness. The example does not ship a shell step.
+- [x] **Revolve v1** — schema v14 `RevolveFeature` for a closed profile swept around an
+      in-plane sketch line or X/Y axis. The profile popover's `revolve…` chip opens a form
+      with explicit axis chips (no silent default), 1–360° angle, ccw/cw for partial,
+      new/join/cut, live worker preview, re-editable history step and cancel/restore.
+      Regions must stay on one side of the infinite axis or touch it. The stage axis-pick
+      highlight, intersect, and the start-profile/angle-arc preview remain open.
+      Contract: `docs/showcase/REVOLVE.md`
 - [x] **Offset Faces v1 (planar + full cylinders)** — schema v13 `OffsetFaceFeature`
       with face refs and a signed distance. The plan path sweeps planar faces with
       parallel normals and neighbours the sweep preserves; the cylindrical path moves one

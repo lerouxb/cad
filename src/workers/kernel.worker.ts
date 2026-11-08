@@ -52,6 +52,7 @@ import {
   outerWire,
   registerKernel,
   projectPointOnFace,
+  revolve,
   resolveRef,
   shape,
   shellWithEvolution,
@@ -93,6 +94,7 @@ import type {
   MeasureResult,
   MeasureTarget,
   ProfileRegion,
+  RevolveParams,
   KernelResponse,
   ProfileLoop,
   TopoRef,
@@ -488,10 +490,14 @@ function buildFeatures(features: KernelFeature[]): {
 
     let tool: Solid;
     try {
-      if (feature.params.end === "throughAll" && feature.operation !== "cut") {
-        throw new Error("Through-all is only available for a cut extrude.");
+      if (feature.kind === "revolve") {
+        tool = buildRevolveSolid(feature.params);
+      } else {
+        if (feature.params.end === "throughAll" && feature.operation !== "cut") {
+          throw new Error("Through-all is only available for a cut extrude.");
+        }
+        tool = buildSolid(feature.params, base);
       }
-      tool = buildSolid(feature.params, base);
     } catch (error) {
       cacheInvalid = true;
       statuses.push({
@@ -531,7 +537,10 @@ function buildFeatures(features: KernelFeature[]): {
         }
         base = tool;
         baseRoles = new Map([
-          [feature.featureId, assignRoles(tool, "extrude")],
+          [
+            feature.featureId,
+            assignRoles(tool, feature.kind === "revolve" ? "revolve" : "extrude"),
+          ],
         ]);
         baseKey = feature.cacheKey;
         protectedKeys.add(feature.cacheKey);
@@ -561,7 +570,10 @@ function buildFeatures(features: KernelFeature[]): {
       }
 
       const toolRoles = new Map([
-        [feature.featureId, assignRoles(tool, "extrude")],
+        [
+          feature.featureId,
+          assignRoles(tool, feature.kind === "revolve" ? "revolve" : "extrude"),
+        ],
       ]);
       const result = unwrap(
         feature.operation === "cut"
@@ -1970,6 +1982,57 @@ function adoptBlendFaces(
   const next = new Map(remap.roles);
   next.set(featureId, featureRoles);
   return next;
+}
+
+function buildRevolveSolid(params: RevolveParams): Solid {
+  if (!Number.isFinite(params.angle) || params.angle < 1 || params.angle > 360) {
+    throw new Error("Revolve angle must be between 1° and 360°.");
+  }
+  if (params.regions.length === 0) {
+    throw new Error("Select at least one profile region.");
+  }
+  for (const region of params.regions) validateRegion(region);
+
+  const angle =
+    (params.angle * Math.PI) / 180 * (params.direction === "cw" ? -1 : 1);
+  const axis: [number, number, number] = [
+    params.axis.direction[0],
+    params.axis.direction[1],
+    0,
+  ];
+  const at: [number, number, number] = [
+    params.axis.at[0],
+    params.axis.at[1],
+    0,
+  ];
+
+  return withScope((scope) => {
+    const solids = params.regions.map((region) => {
+      const outerWire = scope.track(toWire(region.outer));
+      const holeWires = region.holes.map((hole) => scope.track(toWire(hole)));
+      const profile = scope.track(unwrap(face(outerWire)));
+      const withHoles =
+        holeWires.length > 0
+          ? scope.track(addHoles(profile, holeWires))
+          : profile;
+      return scope.track(
+        unwrap(
+          revolve(withHoles as unknown as Parameters<typeof revolve>[0], {
+            axis,
+            at,
+            angle,
+          }),
+        ) as Solid,
+      );
+    });
+    const solid =
+      solids.length === 1 ? solids[0]! : scope.track(unwrap(fuseAll(solids)));
+    const local = unwrap(clone(solid));
+    if (!params.frame) return local;
+    const moved = unwrap(applyMatrix(local, frameMatrix(params.frame)));
+    local.delete();
+    return moved;
+  });
 }
 
 function buildSolid(params: ExtrudeParams, base: Solid | null): Solid {

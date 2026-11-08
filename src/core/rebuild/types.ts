@@ -1,5 +1,15 @@
-import type { Doc, ExtrudeOperation, Feature } from "../doc/types";
-import type { EdgeRef, ExtrudeParams, TopoRef } from "../kernel/protocol";
+import type {
+  Doc,
+  ExtrudeOperation,
+  Feature,
+  RevolveAxis,
+} from "../doc/types";
+import type {
+  EdgeRef,
+  ExtrudeParams,
+  RevolveParams,
+  TopoRef,
+} from "../kernel/protocol";
 import type { SketchRegion } from "../sketch/loops";
 import type { SolveOutcome, SolveStatus } from "../sketch/solver";
 import type { Sketch } from "../sketch/types";
@@ -49,6 +59,18 @@ export interface ExtrudeRebuildOutput {
   end: "blind" | "throughAll";
 }
 
+export interface RevolveRebuildOutput {
+  kind: "revolve";
+  params: RevolveParams;
+  sketchId: string;
+  regionIds: string[];
+  auto: boolean;
+  operation: ExtrudeOperation;
+  angle: number;
+  direction: "ccw" | "cw";
+  axis: RevolveAxis;
+}
+
 export interface FilletRebuildOutput {
   kind: "fillet";
   edges: EdgeRef[];
@@ -78,6 +100,7 @@ export interface OffsetFaceRebuildOutput {
 export type FeatureOutput =
   | SketchRebuildOutput
   | ExtrudeRebuildOutput
+  | RevolveRebuildOutput
   | DatumRebuildOutput
   | FilletRebuildOutput
   | ChamferRebuildOutput
