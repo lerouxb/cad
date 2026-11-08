@@ -50,6 +50,11 @@ export interface SketchCircle {
   radius: number;
   /** Reference/dimension helper; never part of a profile. */
   construction?: boolean;
+  /** Projected face/edge reference this circle belongs to. */
+  reference?: boolean;
+  projectionId?: string;
+  /** Human label for a projected reference. */
+  referenceLabel?: string;
 }
 
 /**
@@ -138,6 +143,8 @@ export interface SketchReferences {
   origin: SketchPoint;
   points: SketchPoint[];
   lines: SketchLine[];
+  /** Projected circular boundaries, kept analytic so point-on-circle works. */
+  circles?: SketchCircle[];
 }
 
 export interface Sketch {
@@ -156,7 +163,11 @@ export function allPoints(sketch: Sketch): SketchPoint[] {
 
 export function allCurves(sketch: Sketch): SketchCurve[] {
   return sketch.references
-    ? [...sketch.curves, ...sketch.references.lines]
+    ? [
+        ...sketch.curves,
+        ...sketch.references.lines,
+        ...(sketch.references.circles ?? []),
+      ]
     : sketch.curves;
 }
 

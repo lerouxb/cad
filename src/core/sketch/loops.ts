@@ -290,8 +290,15 @@ interface Candidate {
  */
 export function profileFromSketch(sketch: Sketch): SketchProfile | null {
   const arrangement = planarArrangement(sketch);
-  const circles = sketch.curves.flatMap((curve) =>
-    curve.type === "circle" && !curve.construction ? [curve] : [],
+  const circles = [
+    ...sketch.curves,
+    ...(sketch.references?.circles ?? []),
+  ].flatMap((curve) =>
+    curve.type === "circle" &&
+    !curve.construction &&
+    (!("reference" in curve) || curve.projectionId !== undefined)
+      ? [curve]
+      : [],
   );
   const circleCenters = new Map<string, Vec2>();
   for (const circle of circles) {
@@ -393,8 +400,15 @@ export function regionsFromSketch(sketch: Sketch): SketchRegion[] {
     depth: 0,
   }));
 
-  const circles = sketch.curves.flatMap((curve) =>
-    curve.type === "circle" && !curve.construction ? [curve] : [],
+  const circles = [
+    ...sketch.curves,
+    ...(sketch.references?.circles ?? []),
+  ].flatMap((curve) =>
+    curve.type === "circle" &&
+    !curve.construction &&
+    (!("reference" in curve) || curve.projectionId !== undefined)
+      ? [curve]
+      : [],
   );
   for (const circle of circles) {
     if (arrangement.splitCircleIds.has(circle.id)) continue;

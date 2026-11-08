@@ -22,6 +22,7 @@ import type { DimensionPlacement, DimensionTarget } from "../core/sketch/dimensi
 import type { DragTarget } from "../core/sketch/solver";
 import {
   allCurves,
+  allPoints,
   type Sketch,
   type SketchArc,
   type SketchCircle,
@@ -1944,6 +1945,55 @@ export function SketchCanvas({
         );
       })}
 
+      {sketch.references?.circles?.map((circle) => {
+        const center = points[circle.center];
+        if (!center) return null;
+        const isSelected = selectedNow(circle.id);
+        const isHovered = hoveredNow(circle.id);
+        return (
+          <g key={circle.id}>
+            {isHovered ? (
+              <circle
+                cx={center[0]}
+                cy={center[1]}
+                r={circle.radius}
+                fill="none"
+                stroke={palette.marker}
+                strokeWidth={5}
+                strokeOpacity={0.7}
+                pointerEvents="none"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            {isSelected ? (
+              <circle
+                cx={center[0]}
+                cy={center[1]}
+                r={circle.radius}
+                fill="none"
+                stroke={palette.markerSoft}
+                strokeWidth={12}
+                pointerEvents="none"
+                vectorEffect="non-scaling-stroke"
+              />
+            ) : null}
+            <circle
+              data-reference-id={circle.id}
+              data-projection-id={circle.projectionId}
+              cx={center[0]}
+              cy={center[1]}
+              r={circle.radius}
+              fill="none"
+              stroke={circle.construction ? palette.dimension : palette.ink}
+              strokeWidth={1}
+              strokeDasharray={circle.construction ? "2 3" : undefined}
+              strokeLinecap="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          </g>
+        );
+      })}
+
       {regions.map((region) => {
         const d = regionPathData(region);
         if (!d) return null;
@@ -2180,6 +2230,29 @@ export function SketchCanvas({
               />
             );
               })}
+          {sketch.references?.circles?.map((circle) => {
+            const center = points[circle.center];
+            if (!center) return null;
+            return (
+              <circle
+                key={circle.id}
+                cx={center[0]}
+                cy={center[1]}
+                r={circle.radius}
+                fill="none"
+                stroke="transparent"
+                strokeWidth={12}
+                vectorEffect="non-scaling-stroke"
+                pointerEvents="stroke"
+                style={{ cursor: tool === "select" ? "pointer" : "pointer" }}
+                data-curve-id={circle.id}
+                data-projection-id={circle.projectionId}
+                onPointerDown={(event) =>
+                  onCurvePointerDown(event, circle)
+                }
+              />
+            );
+          })}
           {sketch.references && origin && tool !== "trim" ? (
             <circle
               cx={origin[0]}
@@ -4014,24 +4087,42 @@ function sketchExtent(
 ): SketchExtent | null {
   // An empty sketch gets the fixed 100 mm default view, not a tiny box around
   // the reference origin: that box would zoom the grid in and change snapping.
-  if (sketch.points.length === 0 && sketch.curves.length === 0) return null;
-  const xs = sketch.points.map((point) => point.x);
-  const ys = sketch.points.map((point) => point.y);
+  const projectedPoints =
+    sketch.references?.points.filter(
+      (point) => point.projectionId !== undefined,
+    ) ?? [];
+  const referenceCircles = sketch.references?.circles ?? [];
+  if (
+    sketch.points.length === 0 &&
+    sketch.curves.length === 0 &&
+    projectedPoints.length === 0 &&
+    referenceCircles.length === 0
+  ) {
+    return null;
+  }
+  const xs = [...sketch.points, ...projectedPoints].map((point) => point.x);
+  const ys = [...sketch.points, ...projectedPoints].map((point) => point.y);
   const origin = sketch.references?.origin;
   if (origin) {
     xs.push(origin.x);
     ys.push(origin.y);
   }
-  for (const curve of sketch.curves) {
+  for (const curve of [...sketch.curves, ...referenceCircles]) {
     if (curve.type === "circle") {
-      const center = sketch.points.find((point) => point.id === curve.center);
+      const center = allPoints(sketch).find(
+        (point) => point.id === curve.center,
+      );
       if (!center) continue;
       const radius = radii[curve.id] ?? curve.radius;
       xs.push(center.x - radius, center.x + radius);
       ys.push(center.y - radius, center.y + radius);
     } else if (curve.type === "arc") {
-      const center = sketch.points.find((point) => point.id === curve.center);
-      const start = sketch.points.find((point) => point.id === curve.start);
+      const center = allPoints(sketch).find(
+        (point) => point.id === curve.center,
+      );
+      const start = allPoints(sketch).find(
+        (point) => point.id === curve.start,
+      );
       if (!center || !start) continue;
       const radius = Math.hypot(start.x - center.x, start.y - center.y);
       xs.push(center.x - radius, center.x + radius);

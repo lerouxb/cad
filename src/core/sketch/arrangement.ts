@@ -111,6 +111,9 @@ export function planarArrangement(sketch: Sketch): PlanarArrangement {
     ...(sketch.references?.lines.filter(
       (line) => line.projectionId !== undefined && !line.construction,
     ) ?? []),
+    ...(sketch.references?.circles?.filter(
+      (circle) => circle.projectionId !== undefined && !circle.construction,
+    ) ?? []),
   ];
   for (const curve of profileCurves) {
     if (curve.construction) continue;

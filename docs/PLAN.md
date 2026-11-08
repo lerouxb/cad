@@ -497,10 +497,14 @@ with face sketches.
 - [x] Sketch on a planar face of a solid; the 2D sketch surface uses the face frame and
       the model overlay/extrude map through it (no 3D camera turn needed)
 - [x] Project the supporting face's boundary into the sketch as fixed reference
-      geometry, and label it. Projected lines are selectable and constrainable; they
-      start as construction, and a selected line can toggle to a normal profile boundary
-      (still fixed/derived) or use its `source face` chip. Outlines are cached on the
-      sketch feature and re-derived after every rebuild.
+      geometry, and label it. Projected lines/circles are selectable and constrainable;
+      they start as construction, and a selected line/circle can toggle to a normal
+      profile boundary (still fixed/derived) or use its `source face` chip. Outlines are
+      cached on the sketch feature and re-derived after every rebuild.
+- [x] **Analytic projected circles (schema v15):** a sampled circular face boundary is
+      stored as one fixed reference circle (centre + radius), not a chord polygon, so a
+      point can take `pointOnCircle` and slide around it. Elliptical/non-circular
+      projections remain polylines.
 - [x] **Live reference geometry**: projected point/line/face outlines store the `TopoRef`
       they came from, are re-derived from the source feature's cached prefix solid on
       every rebuild, and are kept as cached geometry (marked stale) if their topology
@@ -529,9 +533,11 @@ with face sketches.
 - [ ] Redefine/edit a sketch's support after creation, through the same support picker,
       keeping the cached frame until the new support resolves
 - [ ] Extrude to-object / to-next end condition, resolved through `TopoRef`
-- [ ] Project arbitrary body edges/faces into a sketch with a `project` tool (the
-      support boundary above is automatic). The full projection suite (project / include
-      3D / intersect / project-to-surface) is deferred; see M9.
+- [x] Project arbitrary body **faces** into a sketch with the `project` tool (the
+      support boundary above is automatic): face picks drive a `ProjectPopover`, the
+      result is one sketch edit (one undo entry) with fixed reference loops, and the app
+      returns to the sketch. Arbitrary body-edge projection, `include 3D`, intersect and
+      project-to-surface are deferred; see M9.
 - [x] Topological-naming regression test: change base height, boss on top face follows
 - [x] UI: unsupported (curved) face → clear explanation, no broken state
 - [x] **First slice landed:** face refs + deterministic cached frame, sketch on a planar
@@ -963,8 +969,9 @@ milestone, an ADR if it changes a design decision, and numeric tests.
   identity and `TopoRef` evolution.
 - Drawings, STEP import, sheet metal, curved-face sketches, collaboration and a plugin API
   (M8).
-- Full projection/import of arbitrary solid geometry; the M4 subset only projects the
-  supporting face boundary and body edges.
+- Full projection/import of arbitrary solid geometry; M4 projects the supporting face
+  boundary, picked body faces and body edges (the full project/include-3D/intersect
+  suite remains here).
 - Assemblies and joints (M8).
 
 ### Dropped

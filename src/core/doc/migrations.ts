@@ -43,7 +43,9 @@ export function migrateDoc(raw: unknown): Doc | null {
   // v10 → v11 adds shell features (older documents simply have none);
   // v11 → v12 adds offset-face features (older documents simply have none);
   // v12 → v13 adds optional radius/radialSign to face hints;
-  // v13 → v14 adds revolve features (older documents simply have none).
+  // v13 → v14 adds revolve features (older documents simply have none);
+  // v14 → v15 adds projected reference circles (older documents simply have
+  // none; `references.circles` is optional).
   if (
     version === 1 ||
     version === 2 ||
@@ -57,7 +59,8 @@ export function migrateDoc(raw: unknown): Doc | null {
     version === 10 ||
     version === 11 ||
     version === 12 ||
-    version === 13
+    version === 13 ||
+    version === 14
   ) {
     return validateDoc(raw);
   }

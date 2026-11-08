@@ -415,6 +415,11 @@ export function toggleConstruction(sketch: Sketch, ids: readonly string[]): Sket
                 ? { ...line, construction: makeConstruction }
                 : line,
             ),
+            circles: (sketch.references.circles ?? []).map((circle) =>
+              wanted.has(circle.id) && circle.projectionId !== undefined
+                ? { ...circle, construction: makeConstruction }
+                : circle,
+            ),
           },
         }
       : {}),

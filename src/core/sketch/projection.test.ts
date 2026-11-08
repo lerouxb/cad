@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { addPoint, emptySketch } from "./create";
 import {
   applicableConstraints,
+  applyConstraint,
   constructionState,
   toggleConstruction,
 } from "./constraints";
@@ -9,8 +10,24 @@ import { regionsFromSketch } from "./loops";
 import {
   applyProjectionGeometry,
   projectPointToPlane,
+  projectedCircle,
   sameProjectedLoops,
 } from "./projection";
+import { initSolver, solveSketch } from "./solver";
+
+function circleLoop(
+  radius: number,
+  count = 32,
+  center: [number, number] = [0, 0],
+): Array<[number, number]> {
+  return Array.from({ length: count }, (_, index) => {
+    const angle = (index / count) * Math.PI * 2;
+    return [
+      center[0] + Math.cos(angle) * radius,
+      center[1] + Math.sin(angle) * radius,
+    ] as [number, number];
+  });
+}
 
 const frame = {
   origin: [10, 20, 5] as [number, number, number],
@@ -183,5 +200,76 @@ describe("face projections", () => {
   it("compares projected loops with a tolerance", () => {
     expect(sameProjectedLoops([[[0, 0]]], [[[0.0001, 0.0001]]])).toBe(true);
     expect(sameProjectedLoops([[[0, 0]]], [[[0.1, 0]]])).toBe(false);
+  });
+
+  it("keeps a circular boundary analytic so a point can sit on it", async () => {
+    await initSolver();
+    const loop = circleLoop(8, 32, [3, -2]);
+    const fitted = projectedCircle(loop);
+    expect(fitted).not.toBeNull();
+    expect(fitted!.center[0]).toBeCloseTo(3, 9);
+    expect(fitted!.center[1]).toBeCloseTo(-2, 9);
+    expect(fitted!.radius).toBeCloseTo(8, 9);
+    const sketch = applyProjectionGeometry(
+      emptySketch(),
+      "proj-circle",
+      "Projected circle",
+      [loop],
+    );
+    if (!sketch) throw new Error("Expected the projection to apply");
+    const circles = sketch.references!.circles!.filter(
+      (circle) => circle.projectionId === "proj-circle",
+    );
+    expect(circles).toHaveLength(1);
+    expect(circles[0]).toMatchObject({
+      reference: true,
+      construction: true,
+      radius: 8,
+    });
+    expect(
+      sketch.references!.lines.filter(
+        (line) => line.projectionId === "proj-circle",
+      ),
+    ).toHaveLength(0);
+
+    const circle = circles[0]!;
+    expect(constructionState(sketch, [circle.id])).toBe("all");
+    const normal = toggleConstruction(sketch, [circle.id]);
+    expect(constructionState(normal, [circle.id])).toBe("none");
+    expect(regionsFromSketch(normal)).toHaveLength(1);
+
+    const withPoint = addPoint(normal, [20, 0]);
+    const pointId = withPoint.points[withPoint.points.length - 1]!.id;
+    expect(
+      applicableConstraints(withPoint, [pointId, circle.id]).some(
+        (action) => action.type === "pointOnCircle",
+      ),
+    ).toBe(true);
+    const constrained = applyConstraint(withPoint, "pointOnCircle", [
+      pointId,
+      circle.id,
+    ]);
+    const outcome = solveSketch(constrained);
+    expect(outcome.ok).toBe(true);
+    const solved = outcome.points[pointId]!;
+    expect(Math.hypot(solved[0] - 3, solved[1] + 2)).toBeCloseTo(8, 3);
+  });
+
+  it("leaves a non-circular projected boundary as a polyline", () => {
+    const ellipse = circleLoop(8).map(([x, y]) => [x, y * 0.5] as [number, number]);
+    expect(projectedCircle(ellipse)).toBeNull();
+    const sketch = applyProjectionGeometry(
+      emptySketch(),
+      "proj-ellipse",
+      "Projected boundary",
+      [ellipse],
+    );
+    if (!sketch) throw new Error("Expected the projection to apply");
+    expect(sketch.references!.circles).toHaveLength(0);
+    expect(
+      sketch.references!.lines.filter(
+        (line) => line.projectionId === "proj-ellipse",
+      ),
+    ).toHaveLength(ellipse.length);
   });
 });

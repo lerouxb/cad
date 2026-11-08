@@ -228,6 +228,7 @@ import { OffsetFacePopover } from "./OffsetFacePopover";
 import { RevolvePopover } from "./RevolvePopover";
 import { SolidBlendPopover } from "./SolidBlendPopover";
 import { FilletPopover } from "./FilletPopover";
+import { ProjectPopover } from "./ProjectPopover";
 import type { PopoverPosition } from "./StagePopover";
 
 type LoadState = "loading" | "ready" | "error";
@@ -482,6 +483,13 @@ interface OffsetDraft {
   anchorId: string | null;
 }
 
+/** Project picked body faces into the active sketch as fixed references. */
+interface ProjectDraft {
+  sketchId: string;
+  faces: TopoRef[];
+  returnMode: "model" | "sketch";
+}
+
 const PENDING_CONFLICT_ID = "pending-conflict";
 
 export function App() {
@@ -627,6 +635,10 @@ export function App() {
     useState<OffsetFaceFeature | null>(null);
   /** The body before the offset draft; shown as a ghost while previewing. */
   const [offsetGhostMesh, setOffsetGhostMesh] = useState<BodyMesh | null>(null);
+  const [projectDraft, setProjectDraft] = useState<ProjectDraft | null>(null);
+  const [projectBusy, setProjectBusy] = useState(false);
+  const [projectError, setProjectError] = useState<string | null>(null);
+  const projectApplySeq = useRef(0);
   const [editorOpen, setEditorOpen] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportPlane, setSupportPlane] = useState<WorldPlane>("XY");
@@ -1352,6 +1364,7 @@ export function App() {
       blendDraft !== null ||
       shellDraft !== null ||
       offsetDraft !== null ||
+      projectDraft !== null ||
       insertMenu !== null ||
       exportOpen ||
       measureOpen
@@ -1386,6 +1399,7 @@ export function App() {
     measureOpen,
     mode,
     offsetDraft,
+    projectDraft,
     rebuild,
     shellDraft,
     sketchGesture,
@@ -2177,6 +2191,197 @@ export function App() {
     setModelFilter("all");
   };
 
+  /**
+   * Project arbitrary body faces into the active sketch. This is a sketch edit:
+   * it switches to the model to pick, then writes fixed reference loops back
+   * into the same sketch and returns to it.
+   */
+  const beginProjectDraft = (): void => {
+    const { feature } = resolveCurrent();
+    if (!feature || feature.type !== "sketch") return;
+    const current = getState();
+    const target = findFeature(current.doc, feature.id);
+    if (!target || !isSketchFeature(target)) return;
+    cancelOpenOperationRef.current();
+    setSelectedConstraintId(null);
+    setProfileSelection([]);
+    setProjectError(null);
+    setProjectBusy(false);
+    projectApplySeq.current += 1;
+    setProjectDraft({
+      sketchId: target.id,
+      faces: [],
+      returnMode: mode,
+    });
+    setMode("model");
+    setModelTool("select");
+    setModelFilter("faces");
+    setSelection([]);
+    setFaceSelection([]);
+    setEdgeSelection([]);
+    setBodyPick(null);
+    setSelectOther(null);
+    viewportRef.current?.clearPick();
+    viewportRef.current?.setFaceSelection([]);
+    setCancelToken((token) => token + 1);
+    setFitToken((token) => token + 1);
+  };
+
+  const cancelProjectDraft = (): void => {
+    const draft = projectDraft;
+    if (!draft) return;
+    projectApplySeq.current += 1;
+    setProjectDraft(null);
+    setProjectBusy(false);
+    setProjectError(null);
+    setFaceSelection([]);
+    viewportRef.current?.setFaceSelection([]);
+    setBodyPick(null);
+    setSelectOther(null);
+    viewportRef.current?.clearPick();
+    setSelection([]);
+    setModelFilter("all");
+    if (draft.returnMode === "sketch") {
+      setMode("sketch");
+      setTool("select");
+      setFitToken((token) => token + 1);
+    }
+  };
+
+  const projectLoop = async (
+    client: KernelClient,
+    cacheKey: string,
+    face: TopoRef,
+    frame: PlaneFrame,
+  ): Promise<{ face: TopoRef; loops: Vec2[][] }> => {
+    const boundary = await client.requestFaceBoundary(cacheKey, face);
+    return {
+      face,
+      loops: boundary.loops.map((loop) =>
+        loop.map((point) => projectPointToPlane(point, frame)),
+      ),
+    };
+  };
+
+  const applyProjectDraft = (): void => {
+    const draft = projectDraft;
+    const client = clientRef.current;
+    if (!draft || draft.faces.length === 0 || !client || projectBusy) return;
+    const seq = ++projectApplySeq.current;
+    const latest = getState();
+    const target = findFeature(latest.doc, draft.sketchId);
+    if (!target || !isSketchFeature(target)) {
+      cancelProjectDraft();
+      return;
+    }
+    const frame =
+      rebuild?.sketchById.get(target.id)?.frame ??
+      (isDefaultSupport(target.support)
+        ? worldPlaneFrame("XY")
+        : supportFrame(target.support));
+    setProjectBusy(true);
+    setProjectError(null);
+
+    const sources = new Map<string, string>();
+    for (const face of draft.faces) {
+      const source = rebuild?.features.find(
+        (result) =>
+          result.featureId === face.source &&
+          result.status === "ok" &&
+          result.cacheKey,
+      );
+      if (!source?.cacheKey) {
+        setProjectBusy(false);
+        setProjectError("That face's source step is not built at this point.");
+        return;
+      }
+      sources.set(faceRefKey(face), source.cacheKey);
+    }
+
+    void Promise.all(
+      draft.faces.map((face) =>
+        projectLoop(
+          client,
+          sources.get(faceRefKey(face))!,
+          face,
+          frame,
+        ),
+      ),
+    )
+      .then((results) => {
+        if (seq !== projectApplySeq.current) return null;
+        const current = getState();
+        const sketchFeature = findFeature(current.doc, draft.sketchId);
+        if (!sketchFeature || !isSketchFeature(sketchFeature)) return null;
+        let sketch = sketchFeature.sketch;
+        const projections = [...(sketchFeature.projections ?? [])];
+        const added: string[] = [];
+        for (const result of results) {
+          if (result.loops.length === 0) continue;
+          const id = newProjectionId();
+          const label = `Projected ${result.face.role}`;
+          const next = applyProjectionGeometry(sketch, id, label, result.loops);
+          if (!next) continue;
+          sketch = next;
+          projections.push({
+            id,
+            kind: "faceBoundary",
+            source: result.face,
+            label,
+            loops: result.loops,
+          });
+          added.push(id);
+        }
+        if (added.length === 0) {
+          throw new Error("No boundary could be projected from those faces.");
+        }
+        const outcome = isSolverReady() ? solveSketch(sketch) : null;
+        const nextDoc = {
+          ...current.doc,
+          features: current.doc.features.map((feature) =>
+            feature.id === sketchFeature.id
+              ? {
+                  ...sketchFeature,
+                  sketch: outcome?.ok ? applySolution(sketch, outcome) : sketch,
+                  projections,
+                }
+              : feature,
+          ),
+        };
+        return { nextDoc, outcome, sketchFeatureId: sketchFeature.id };
+      })
+      .then((result) => {
+        if (!result || seq !== projectApplySeq.current) return;
+        commit({
+          doc: result.nextDoc,
+          solved: result.outcome,
+          solvedFor: result.sketchFeatureId,
+        });
+        setProjectDraft(null);
+        setProjectBusy(false);
+        setProjectError(null);
+        setFaceSelection([]);
+        viewportRef.current?.setFaceSelection([]);
+        setBodyPick(null);
+        setSelectOther(null);
+        viewportRef.current?.clearPick();
+        setSelection([]);
+        setModelFilter("all");
+        if (draft.returnMode === "sketch") {
+          setMode("sketch");
+          setTool("select");
+          setFitToken((token) => token + 1);
+        }
+      })
+      .catch((error: unknown) => {
+        if (seq !== projectApplySeq.current) return;
+        setProjectBusy(false);
+        setProjectError(
+          error instanceof Error ? error.message : String(error),
+        );
+      });
+  };
+
   /** Start a UI-only offset-face draft from the selected faces. */
   const beginOffsetDraft = (): void => {
     const faces = selectedFaceRefs;
@@ -2346,6 +2551,31 @@ export function App() {
           : [...measureTargets, pick].slice(-2),
       );
       setBodyPick(null);
+      return;
+    }
+    if (projectDraft) {
+      // The project form is a multi-face input: every click toggles a face in
+      // its list; the canvas stays a pick surface until the form closes.
+      setSelectOther(null);
+      setBodyPick(null);
+      if (!pick) return;
+      if (pick.kind !== "face" || !pick.ref) return;
+      if (!sourceKnown(pick.ref.source)) return;
+      const key = faceRefKey(pick.ref);
+      const selected = projectDraft.faces.some(
+        (face) => faceRefKey(face) === key,
+      );
+      const faces = selected
+        ? projectDraft.faces.filter((face) => faceRefKey(face) !== key)
+        : [...projectDraft.faces, pick.ref];
+      setProjectDraft({ ...projectDraft, faces });
+      setProjectError(null);
+      const picks = faces.map(faceBodyPick);
+      setFaceSelection(picks);
+      viewportRef.current?.setFaceSelection(picks);
+      viewportRef.current?.setPickedFace(null);
+      setEdgeSelection([]);
+      viewportRef.current?.setEdgeSelection([]);
       return;
     }
     setSelectOther(
@@ -2524,6 +2754,27 @@ export function App() {
           sourceKnown(pick.ref.source),
       );
       if (usable.length === 0) return;
+      if (projectDraft) {
+        const merged = new Map<string, TopoRef>();
+        if (additive) {
+          for (const face of projectDraft.faces) {
+            merged.set(faceRefKey(face), face);
+          }
+        }
+        for (const item of usable) merged.set(faceRefKey(item.ref), item.ref);
+        const faces = [...merged.values()];
+        setProjectDraft({ ...projectDraft, faces });
+        setProjectError(null);
+        const picks = faces.map(faceBodyPick);
+        setBodyPick(null);
+        setSelectOther(null);
+        setFaceSelection(picks);
+        viewportRef.current?.setFaceSelection(picks);
+        viewportRef.current?.setPickedFace(null);
+        setEdgeSelection([]);
+        viewportRef.current?.setEdgeSelection([]);
+        return;
+      }
       const merged = new Map<string, BodyPick>();
       if (additive || shellDraft || offsetDraft) {
         for (const item of faceSelection) {
@@ -3802,8 +4053,12 @@ export function App() {
       const loops = worldLoops.map((loop) =>
         loop.map((point) => projectPointToPlane(point, frame)),
       );
+      // This effect owns only the sketch's supporting-face projection. User
+      // projections (the project tool) can share the plane and must survive.
       const projection = target.projections?.find(
-        (candidate) => candidate.kind === "faceBoundary",
+        (candidate) =>
+          candidate.kind === "faceBoundary" &&
+          faceRefKey(candidate.source) === faceRefKey(faceSupport.ref),
       );
       const supportChanged = !framesClose(faceSupport.frame, frame);
       let sketch = target.sketch;
@@ -4091,6 +4346,7 @@ export function App() {
     if (
       mode !== "model" ||
       supportOpen ||
+      projectDraft !== null ||
       datumDraft !== null ||
       extrudeDraft !== null
     ) {
@@ -4114,6 +4370,7 @@ export function App() {
   }, [
     mode,
     supportOpen,
+    projectDraft,
     datumDraft,
     extrudeDraft,
     blendDraft,
@@ -4969,6 +5226,10 @@ export function App() {
         setSupportDatumId(null);
         return;
       }
+      if (projectDraft) {
+        cancelProjectDraft();
+        return;
+      }
       if (blendDraft) {
         cancelBlendEditor(history);
         return;
@@ -5042,6 +5303,10 @@ export function App() {
         }
         if (exportOpen) {
           setExportOpen(false);
+          return;
+        }
+        if (projectDraft) {
+          cancelProjectDraft();
           return;
         }
         if (blendDraft) {
@@ -5147,6 +5412,12 @@ export function App() {
         if (measureOpen || exportOpen) return;
         if (supportOpen) {
           if (handleNewSketch()) setSupportOpen(false);
+          return;
+        }
+        if (projectDraft) {
+          if (!projectBusy && projectDraft.faces.length > 0) {
+            applyProjectDraft();
+          }
           return;
         }
         if (filletOpen) {
@@ -5817,10 +6088,17 @@ export function App() {
             }
             if (mode !== "model") return;
             // Pick surfaces: clicks feed the operation, they never cancel it.
-            if (canvas && (blendDraft || shellDraft || offsetDraft || supportOpen))
+            if (
+              canvas &&
+              (blendDraft || shellDraft || offsetDraft || projectDraft || supportOpen)
+            )
               return;
             if (supportOpen) {
               cancelOpenOperationRef.current();
+              return;
+            }
+            if (projectDraft) {
+              cancelProjectDraft();
               return;
             }
             if (blendDraft) {
@@ -6066,6 +6344,13 @@ export function App() {
                   active={tool === "arc"}
                   onClick={() => changeTool("arc")}
                   testId="tool-arc"
+                />
+                <span className="tool-separator" />
+                <ToolButton
+                  label="project"
+                  active={projectDraft !== null}
+                  onClick={beginProjectDraft}
+                  testId="tool-project"
                 />
                 <span className="tool-separator" />
                 <button
@@ -6716,7 +7001,27 @@ export function App() {
             />
           ) : null}
 
-          {blendDraft ? (
+          {projectDraft ? (
+            <ProjectPopover
+              faces={projectDraft.faces}
+              busy={projectBusy}
+              error={projectError}
+              position={popoverPosition}
+              onMove={setPopoverPosition}
+              onRemoveFace={(index) => {
+                const faces = projectDraft.faces.filter(
+                  (_, at) => at !== index,
+                );
+                setProjectDraft({ ...projectDraft, faces });
+                setProjectError(null);
+                const picks = faces.map(faceBodyPick);
+                setFaceSelection(picks);
+                viewportRef.current?.setFaceSelection(picks);
+              }}
+              onApply={applyProjectDraft}
+              onCancel={cancelProjectDraft}
+            />
+          ) : blendDraft ? (
             <SolidBlendPopover
               kind={blendDraft.kind}
               value={blendDraft.value}
@@ -7362,6 +7667,20 @@ function describeSelection(
           (referencePoint.id === "origin" ? "Origin" : "Reference point"),
         detail: `${formatLength(referencePoint.x)}, ${formatLength(referencePoint.y)} mm · fixed${
           referencePoint.projectionId ? " · projected" : ""
+        }`,
+      });
+      continue;
+    }
+    const referenceCircle = sketch.references?.circles?.find(
+      (circle) => circle.id === id,
+    );
+    if (referenceCircle) {
+      result.push({
+        id,
+        kind: "circle",
+        label: referenceCircle.referenceLabel ?? "Projected circle",
+        detail: `⌀ ${formatLength(referenceCircle.radius * 2)} mm · fixed${
+          referenceCircle.construction ? " · construction" : ""
         }`,
       });
       continue;

@@ -1,6 +1,7 @@
 import type { PlaneFrame, Vec2, Vec3 } from "../types";
 import { newId, withReferences } from "./create";
-import type { Sketch } from "./types";
+import { circumcenter } from "./geometry";
+import type { Sketch, SketchCircle } from "./types";
 
 /** Project a world point into the local sketch plane. */
 export function projectPointToPlane(point: Vec3, frame: PlaneFrame): Vec2 {
@@ -22,8 +23,47 @@ function uniqueLoop(loop: ReadonlyArray<Vec2>): Vec2[] {
     : [...loop];
 }
 
+/**
+ * A projected face boundary sampled from a circular edge is a dense, closed,
+ * equidistant polygon. Keep that analytic so a point can be constrained with
+ * point-on-circle (and dragged around the circle) instead of a chord.
+ *
+ * The three-point circumcentre makes the test insensitive to slightly
+ * non-uniform sampling; a projection that makes the circle elliptical fails the
+ * radius check and stays a polyline.
+ */
+export function projectedCircle(
+  loop: ReadonlyArray<Vec2>,
+): { center: Vec2; radius: number } | null {
+  const points = uniqueLoop(loop);
+  if (points.length < 12) return null;
+  const first = points[0]!;
+  const second = points[Math.floor(points.length / 3)]!;
+  const third = points[Math.floor((points.length * 2) / 3)]!;
+  const center = circumcenter(first, second, third);
+  if (!center) return null;
+  let radiusSum = 0;
+  let radiusMin = Infinity;
+  let radiusMax = 0;
+  for (const point of points) {
+    const radius = Math.hypot(point[0] - center[0], point[1] - center[1]);
+    radiusSum += radius;
+    radiusMin = Math.min(radiusMin, radius);
+    radiusMax = Math.max(radiusMax, radius);
+  }
+  const radius = radiusSum / points.length;
+  if (radius < 1e-6) return null;
+  if (radiusMax - radiusMin > Math.max(1e-3, radius * 1e-3)) return null;
+  return { center, radius };
+}
+
 function projectionPointCount(loops: ReadonlyArray<ReadonlyArray<Vec2>>): number {
-  return loops.reduce((count, loop) => count + uniqueLoop(loop).length, 0);
+  return loops.reduce(
+    (count, loop) =>
+      count +
+      (projectedCircle(loop) ? 1 : uniqueLoop(loop).length),
+    0,
+  );
 }
 
 /**
@@ -61,10 +101,47 @@ export function applyProjectionGeometry(
   const lines = references.lines.filter(
     (line) => line.projectionId !== projectionId,
   );
+  const oldCircles = (references.circles ?? []).filter(
+    (circle) => circle.projectionId === projectionId,
+  );
+  const oldCircleConstruction = new Map(
+    oldCircles.map((circle) => [circle.id, circle.construction]),
+  );
+  const circles = (references.circles ?? []).filter(
+    (circle) => circle.projectionId !== projectionId,
+  );
 
   loops.forEach((source, loopIndex) => {
     const loop = uniqueLoop(source);
     if (loop.length < 2) return;
+    const analytic = projectedCircle(loop);
+    if (analytic) {
+      const centerId = `${projectionId}-c${loopIndex}`;
+      const circleId = `${projectionId}-circle${loopIndex}`;
+      const [x, y] = analytic.center;
+      points.push({
+        id: centerId,
+        x,
+        y,
+        fixed: true,
+        reference: true,
+        construction: true,
+        projectionId,
+        referenceLabel: label,
+      });
+      const circle: SketchCircle = {
+        id: circleId,
+        type: "circle",
+        center: centerId,
+        radius: analytic.radius,
+        construction: oldCircleConstruction.get(circleId) ?? true,
+        reference: true,
+        projectionId,
+        referenceLabel: label,
+      };
+      circles.push(circle);
+      return;
+    }
     const ids = loop.map(([x, y], pointIndex) => {
       const id = `${projectionId}-p${loopIndex}-${pointIndex}`;
       points.push({
@@ -101,6 +178,7 @@ export function applyProjectionGeometry(
       ...references,
       points,
       lines,
+      circles,
     },
   };
 }

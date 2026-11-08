@@ -737,6 +737,7 @@ export function referenceGeometry(): SketchReferences {
         reference: true,
       },
     ],
+    circles: [],
   };
 }
 

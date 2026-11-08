@@ -740,20 +740,32 @@ docs/
 - **Projected face boundaries are live fixed references.** Schema v6 adds
   `SketchFeature.projections` (the cached projected loops) and materializes them in
   `Sketch.references` as fixed points/lines with `projectionId`/`referenceLabel`, so
-  they solve in group 0 and constraints can target them. Point/line ids are
+  they solve in group 0 and constraints can target them. Point/line/circle ids are
   deterministic from projection id + loop/index; a topology change keeps the cached
   geometry and marks the projection `stale` instead of silently rewiring constraints.
   The live effect requests the face from the worker's cached prefix solid by `cacheKey`,
   `source` and `role`, so downstream booleans cannot move or split the reference
   outline. Projected points and edges are snap targets and constraint participants;
   snapping a new vertex to a projected edge adds an ordinary `pointOnLine` constraint, so
-  the drawn geometry stays attached when the body changes. Projected lines start as
-  construction; selecting one can toggle it to a normal profile boundary (it stays fixed
-  and derived) or use its source face chip. Arbitrary body-edge projection is still the
-  separate project-tool gap. `faceBoundary` chains wire edges by endpoint before
-  returning a loop; never trust kernel edge order/orientation or a side face can project
-  as two stray lines. Exact `resolveRef` and lost-support recovery are still
-  pending M4 work.
+  the drawn geometry stays attached when the body changes. Projected lines and circles
+  start as construction; selecting one can toggle it to a normal profile boundary (it
+  stays fixed and derived) or use its source face chip.
+- **Circular projected boundaries stay analytic (schema v15).** A sampled world loop
+  that is a closed, equidistant polygon becomes one fixed `references.circles` entry
+  (a group-0 centre point + fixed radius) instead of dozens of chords, so
+  `pointOnCircle` can target it and a drag slides the point around the circle; a
+  projection that is elliptical or otherwise non-circular stays a polyline. The
+  projection count/topology check counts a circle as one point so live updates keep
+  their identities.
+- **The `project` sketch tool is an edit, not a history feature.** It switches to the
+  model stage with the `faces` filter, collects picked faces in `ProjectPopover`
+  (plain click toggles, Shift adds), resolves each face's source prefix `cacheKey`,
+  asks the worker for its boundary, projects the loops into the active sketch's frame,
+  and commits one history entry before returning to the sketch. It is distinct from the
+  automatic support-face projection: the live support effect matches its projection by
+  `faceRefKey(support.ref)`, so a user projection of another face is never overwritten.
+  `faceBoundary` chains wire edges by endpoint before returning a loop; never trust
+  kernel edge order/orientation or a side face can project as two stray lines.
 - **Box/lasso selection is a sketch tool, not a pan gesture.** `tool === "box"` uses
   `regionsFullyInside` (fully enclosed); `tool === "lasso"` uses
   `regionsIntersectingPolygon` (touched/crossing, including a freehand loop inside a

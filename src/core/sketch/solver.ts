@@ -209,6 +209,21 @@ function solveWithModule(s: SlvsModule, sketch: Sketch, drag?: DragTarget): Solv
       s.addLine2D(group, need(entities, line.a), need(entities, line.b), workplane),
     );
   }
+  for (const circle of sketch.references?.circles ?? []) {
+    // The centre is a group-0 point and the radius is fixed, so a projected
+    // circle is a real anchor that point-on-circle can constrain against.
+    const radius = s.addDistance(REFERENCE_GROUP, circle.radius, workplane);
+    entities.set(
+      circle.id,
+      s.addCircle(
+        REFERENCE_GROUP,
+        planeNormalEntity(),
+        need(entities, circle.center),
+        radius,
+        workplane,
+      ),
+    );
+  }
 
   for (const point of sketch.points) {
     const dragged = drag?.pointId === point.id && !point.fixed;
