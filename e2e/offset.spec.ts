@@ -43,6 +43,12 @@ test("offsets the top face out and in as a history step", async ({
     .poll(() => volume(page))
     .toBeCloseTo(examplePlateVolume(17), -1);
 
+  // The same-domain merge keeps the plate's face count unchanged: the four
+  // side walls and the hole wall continue, there is no ring of extra faces.
+  await expect(page.getByTestId("mesh-stats")).toHaveAttribute(
+    "data-faces",
+    "7",
+  );
   const health = page.getByTestId("body-health");
   await expect(health).toHaveAttribute("data-bodies", "1");
   await expect(health).toHaveAttribute("data-valid", "true");
@@ -81,6 +87,10 @@ test("offsets a side wall and grows the plate", async ({ app: page }) => {
   await expect
     .poll(() => volume(page))
     .toBeCloseTo(plate + 40 * 12 * 5, -1);
+  await expect(page.getByTestId("mesh-stats")).toHaveAttribute(
+    "data-faces",
+    "7",
+  );
   await fitView(page);
   const bounds = await page
     .getByTestId("mesh-stats")
@@ -200,5 +210,10 @@ test("offsets the top face of a vertically filleted plate", async ({
   await expect
     .poll(() => volume(page))
     .toBeCloseTo((before * 17) / 12, -1);
+  // The four rounds continue through the new height; no straight cap ring.
+  await expect(page.getByTestId("mesh-stats")).toHaveAttribute(
+    "data-faces",
+    "12",
+  );
   expect(errors).toEqual([]);
 });

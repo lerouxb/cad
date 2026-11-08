@@ -826,12 +826,12 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       with parallel normals and neighbours the sweep preserves (perpendicular planes,
       coaxial cylinders), carries the moved face's role and rejects curved faces, tangent
       top-edge fillets, slanted walls, non-parallel sets and empty/no-op results visibly.
-      Design: `docs/showcase/OFFSET_FACES.md` + `offset-faces.html`; decision:
-      [ADR-0006](decisions/0006-offset-faces.md)
+      Same-domain faces merge on an isolated BREP copy, so a cube offset keeps six faces
+      and a plate keeps its wall/hole faces. Design: `docs/showcase/OFFSET_FACES.md` +
+      `offset-faces.html`; decision: [ADR-0006](decisions/0006-offset-faces.md)
 - [ ] **Offset Faces v2** — cylindrical hole/boss walls (the main tolerance/fit use:
       `Ø old → new`, enlarge/shrink), adjacent non-parallel faces with a rebuilt corner,
-      the tangent-chain toggle, the preview ghost/normal arrow, and same-domain face
-      merging once `unifySameDomain` no longer corrupts a later fuse on the prefix
+      the tangent-chain toggle, and the preview ghost/normal arrow
 - [x] Selection UX: box and lasso select model edges, hover prehighlight, selection
       filters, and Select Other for cycling overlapping picks. Box = every projected
       vertex inside (window), lasso = touched/crossed; both select through the body,

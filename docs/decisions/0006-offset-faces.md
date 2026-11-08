@@ -89,12 +89,17 @@ boundary:
 Volume and `isValid` were unchanged in all three. The hole wall still splits into two
 cylindrical faces on the plated cases.
 
-**It is not safe in this kernel build yet.** Calling `unifySameDomain` on an offset result
+**Isolation workaround (shipped).** Calling `unifySameDomain` directly on the offset result
 corrupts a later fuse on the same cached prefix: a second fuse from the same base returned
 `isValid === false` (volume still plausible), even though the input base still validated.
-The worker rebuilds offset previews repeatedly from the same prefix, so the second request
-fails. v1 therefore leaves the extra same-domain faces. Do not call `unifySameDomain` in
-the offset path until the kernel (or a base-rebuild strategy) makes it side-effect free.
+The worker therefore serialises the result through BREP, unifies that independent copy,
+adopts the merged shape back into brepjs, and disposes the copy. The cached prefix is never
+touched, and a second fuse from it stays valid.
+
+Face counts through the worker: the example plate's top offset keeps **7** faces (12
+before the merge), the side offset keeps **7**, and the vertically filleted plate goes
+20 → **12**. A cube stays six. The raw unify bug is still worth reporting upstream; the
+BREP copy costs one serialise/deserialise per offset result but is invisible at this size.
 
 ## Alternatives considered
 

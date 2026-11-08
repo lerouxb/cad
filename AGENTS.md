@@ -240,9 +240,11 @@ docs/
   worker sweeps a planar face and fuses/cuts it. It only accepts parallel face sets and
   neighbours the sweep preserves (perpendicular planes, coaxial cylinders); curved faces,
   tangent top-edge fillets, slanted walls and non-parallel sets are visible errors, never
-  a silent step. Do not replace it with a whole-body `offset`, a shell or a scale.
-  Cylindrical walls, the tangent-chain expansion and the preview ghost/arrow are still
-  open; do not claim them.
+  a silent step. Same-domain faces are merged through `unifySameDomain` on an isolated
+  BREP copy: calling it directly on a shape that shares subshapes with the cached prefix
+  corrupts a later fuse. Do not replace the feature with a whole-body `offset`, a shell or
+  a scale. Cylindrical walls, the tangent-chain expansion and the preview ghost/arrow are
+  still open; do not claim them.
 - The worker protocol is a discriminated union in `core/kernel/protocol.ts`. Both
   sides import the same types.
 - Prefer small, explicit functions over clever abstractions. This domain is already

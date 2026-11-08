@@ -7,6 +7,7 @@ import {
   faceAxis,
   applyMatrix,
   captureHint,
+  castShape,
   chamferWithEvolution,
   circle,
   classifyPointOnFace,
@@ -24,6 +25,7 @@ import {
   faceGeomType,
   facesOfEdge,
   filletWithEvolution,
+  fromBREP,
   fuse,
   fuseAll,
   fuseWithEvolution,
@@ -53,6 +55,7 @@ import {
   shellWithEvolution,
   sharedEdges,
   threePointArc,
+  toBREP,
   toBufferGeometryData,
   translate,
   updateRoles,
@@ -95,11 +98,17 @@ import type {
 declare const self: DedicatedWorkerGlobalScope;
 
 let kernelReady: Promise<void> | null = null;
+/** Retained for the isolated same-domain merge below. */
+let kernelAdapter: OcctWasmAdapter | null = null;
+let rawKernel: OcctKernel | null = null;
 
 function ensureKernel(): Promise<void> {
   kernelReady ??= (async () => {
     const kernel = await OcctKernel.init();
-    registerKernel("occt-wasm", OcctWasmAdapter.fromKernel(kernel));
+    const adapter = OcctWasmAdapter.fromKernel(kernel);
+    registerKernel("occt-wasm", adapter);
+    kernelAdapter = adapter;
+    rawKernel = kernel;
   })();
   return kernelReady;
 }
@@ -1024,6 +1033,33 @@ interface ResolvedEdge {
 }
 
 /**
+ * Merge same-domain faces on an isolated BREP copy.
+ *
+ * `unifySameDomain` can corrupt a later fuse on a shape it shares subshapes
+ * with, which poisons the cached prefix and makes the next offset preview fail.
+ * Copying through BREP first keeps the cached prefix untouched. The copy is
+ * only the merge input; the adopted result is independent of it.
+ */
+function mergeSameDomain(solid: Solid): Solid | null {
+  const adapter = kernelAdapter;
+  const kernel = rawKernel;
+  if (!adapter || !kernel) return null;
+  let copy: Solid | null = null;
+  try {
+    copy = unwrap(fromBREP(unwrap(toBREP(solid)))) as Solid;
+    const wrapped = (copy as unknown as { wrapped: unknown }).wrapped;
+    const id = adapter.shapeId(wrapped as never);
+    const unified = kernel.unifySameDomain(id as never);
+    const merged = castShape(adapter.adoptShape(unified)) as Solid;
+    copy.delete();
+    return merged;
+  } catch {
+    copy?.delete();
+    return null;
+  }
+}
+
+/**
  * Move planar faces along their normals. A face is swept by the signed
  * distance and fused (outward) or cut (inward). This is exact only when every
  * neighbouring surface is preserved by the sweep: planar neighbours must
@@ -1132,6 +1168,22 @@ function buildOffsetFaceFeature(
     }
     if (!isValid(solid)) {
       throw new Error("The offset did not produce a valid closed body.");
+    }
+    // A boolean splits same-domain faces at the old boundary. Unify them so a
+    // simple offset does not grow the face count (a cube stays six faces). Work
+    // on an isolated copy so the cached prefix stays usable for the next
+    // preview/edit. If the merge cannot validate, keep the boolean result.
+    const merged = mergeSameDomain(solid);
+    if (merged) {
+      if (
+        isValid(merged) &&
+        getFaces(merged).length <= getFaces(solid).length
+      ) {
+        if (solid !== base) solid.delete();
+        solid = merged;
+      } else {
+        merged.delete();
+      }
     }
     const before = unwrap(measureVolume(base));
     const after = unwrap(measureVolume(solid));

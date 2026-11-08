@@ -225,9 +225,10 @@ the unchecked prism leaves L-steps at adjacent faces and undercuts at tangent
 top-edge fillets, which is why the checks reject those inputs.
 
 Same-domain merge: `unifySameDomain` restores the minimal face count (a cube goes
-10 → 6 faces; a plated body 20 → 13), but in this kernel build it corrupts a
-later fuse on the same cached prefix. v1 keeps the split faces; do not call it in
-the offset path until the kernel is fixed.
+10 → 6 faces; the example plate's top offset stays 7 faces). Calling it directly
+on a shape that shares subshapes with the cached prefix corrupts a later fuse, so
+v1 unifies an **isolated BREP copy** and adopts the result; the prefix is never
+touched. The raw unify bug is still worth an upstream ticket.
 
 Still open, in order:
 
@@ -297,3 +298,6 @@ Still missing:
 - the selection popover's diameter readout and the adaptive slider ceiling from
   the shortest adjacent dimension (the current ceiling is the body's shortest
   dimension).
+
+Same-domain merging landed through an isolated BREP copy; the raw
+`unifySameDomain` prefix bug is documented for an upstream ticket.
