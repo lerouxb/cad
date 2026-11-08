@@ -821,7 +821,10 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       restores faces and thickness. The example does not ship a shell step.
 - [ ] **Offset Faces** — move selected faces by a distance; tolerance/fit and wall
       adjustments. The design audit shows 11 uses (third most-used modelling feature),
-      so this is Keep at M5/M6 rather than Drop
+      so this is Keep at M5/M6 rather than Drop. Kernel spike complete: v1 is a planar
+      push/pull (sweep the face + boolean), accepts parallel face sets only, and rejects
+      non-prismatic adjacency so it never silently produces a step. See
+      [ADR-0006](decisions/0006-offset-faces.md)
 - [x] Selection UX: box and lasso select model edges, hover prehighlight, selection
       filters, and Select Other for cycling overlapping picks. Box = every projected
       vertex inside (window), lasso = touched/crossed; both select through the body,
