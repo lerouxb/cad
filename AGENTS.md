@@ -263,7 +263,8 @@ docs/
   only accepts parallel face sets and neighbours the sweep preserves (perpendicular
   planes, coaxial cylinders). The cylindrical path accepts one full 360° wall: a hole is
   enlarged with a bigger cut cylinder and shrunk by fusing an annular tube; a boss is
-  grown with a bigger cylinder and shrunk by cutting an annular tube. Through holes only;
+  grown by fusing an annular shell (a solid cylinder would fill a coaxial bore, e.g. a
+  revolve tube) and shrunk by cutting an annular tube. Through holes only;
   partial cylinders, blind holes, tangent top-edge fillets, slanted walls and non-parallel
   sets are visible errors. `TopoRef.hint.radius`/`radialSign` feed the `Ø old → new`
   readout. Same-domain faces are merged through `unifySameDomain` on an isolated BREP

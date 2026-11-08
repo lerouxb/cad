@@ -11,6 +11,7 @@ import {
   pickRightFace,
   pickTopFace,
 } from "./support/model";
+import { clickSketch, dragSketch } from "./support/sketch";
 import {
   exampleBounds,
   examplePlateVolume,
@@ -82,6 +83,63 @@ test("offsets the top face out and in as a history step", async ({
   expect(errors).toEqual([]);
 });
 
+
+test("keeps the offset preview colour when the highlighter changes", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await pickTopFace(page);
+  await page.getByTestId("start-offset-face").click();
+  await page.getByTestId("offset-face-distance").fill("5");
+  const canvas = page.locator("canvas.viewport-canvas");
+  await expect(canvas).toHaveAttribute("data-offset-diff", "added");
+
+  // Draft: out uses the current highlighter; in uses cut red + ghost.
+  await page.getByTestId("highlight-pink").click();
+  await expect(canvas).toHaveAttribute("data-highlight-color", "#ff5cbc");
+  await expect(canvas).toHaveAttribute(
+    "data-offset-diff-colors",
+    "#ff5cbc",
+  );
+  // The appearance change also re-materialises the preview.
+  await page.getByTestId("theme-night").click();
+  await expect(canvas).toHaveAttribute("data-highlight-color", "#ff79c9");
+  await expect(canvas).toHaveAttribute(
+    "data-offset-diff-colors",
+    "#ff79c9",
+  );
+  await page.getByTestId("theme-day").click();
+  await expect(canvas).toHaveAttribute("data-highlight-color", "#ff5cbc");
+  await page.getByTestId("offset-face-in").click();
+  await expect(canvas).toHaveAttribute("data-offset-diff", "removed");
+  await page.getByTestId("offset-face-out").click();
+  await expect(canvas).toHaveAttribute(
+    "data-offset-diff-colors",
+    "#ff5cbc",
+  );
+
+  // Edit: the re-opened step must take the new colour too.
+  await page.getByTestId("offset-face-apply").click();
+  const step = page.locator('[data-feature-type="offset"]');
+  await step.click();
+  await expect(page.getByTestId("offset-face-popover")).toBeVisible();
+  await expect(canvas).toHaveAttribute("data-offset-diff", "added");
+  await page.getByTestId("highlight-blue").click();
+  await expect(canvas).toHaveAttribute("data-highlight-color", "#3ec8ff");
+  await expect(canvas).toHaveAttribute(
+    "data-offset-diff-colors",
+    "#3ec8ff",
+  );
+  await page.getByTestId("offset-face-in").click();
+  await expect(canvas).toHaveAttribute("data-offset-diff", "removed");
+  await page.getByTestId("offset-face-out").click();
+  await expect(canvas).toHaveAttribute(
+    "data-offset-diff-colors",
+    "#3ec8ff",
+  );
+  await page.getByTestId("offset-face-cancel").click();
+  expect(errors).toEqual([]);
+});
 
 test("offsets a side wall and grows the plate", async ({ app: page }) => {
   const errors = collectErrors(page);
@@ -168,6 +226,71 @@ test("offsets a through hole wall and shows the diameter change", async ({
   expect(errors).toEqual([]);
 });
 
+
+test("offsets a cylindrical wall of a revolve and keeps its preview colours", async ({
+  app: page,
+}) => {
+  test.setTimeout(120_000);
+  const errors = collectErrors(page);
+  await page.getByTestId("clear-document").click();
+  await page.getByTestId("insert-gap-start").click();
+  await page.getByTestId("insert-sketch").click();
+  await page.getByTestId("new-sketch").click();
+  await page.getByTestId("tool-rect").click();
+  await dragSketch(page, [10, -10], [20, 10]);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("tool-select").click();
+  await clickSketch(page, 15, 5);
+  await page.getByTestId("profile-revolve").click();
+  await page.getByTestId("revolve-axis-pick").click();
+  await clickSketch(page, 0, 5);
+  await page.getByTestId("revolve-apply").click();
+  await expect(
+    page.locator('[data-feature-type="revolve"]'),
+  ).toHaveAttribute("data-status", "ok");
+  const tube = Math.PI * (20 * 20 - 10 * 10) * 20;
+  await expect.poll(() => volume(page)).toBeCloseTo(tube, -1);
+
+  // The outer wall is a full cylindrical boss on the revolve.
+  await pickCylindricalFace(page, (ref) => ref.hint?.radius === 20);
+  await page.getByTestId("start-offset-face").click();
+  await page.getByTestId("offset-face-distance").fill("2");
+  const canvas = page.locator("canvas.viewport-canvas");
+  await expect(canvas).toHaveAttribute("data-offset-diff", "added");
+  await page.getByTestId("highlight-pink").click();
+  await expect(canvas).toHaveAttribute(
+    "data-offset-diff-colors",
+    "#ff5cbc",
+  );
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(tube + Math.PI * (22 * 22 - 20 * 20) * 20, -1);
+
+  // The same form's inward direction is removed material in cut red.
+  await page.getByTestId("offset-face-in").click();
+  await expect(canvas).toHaveAttribute("data-offset-diff", "removed");
+  await expect(canvas).toHaveAttribute("data-offset-diff-colors", "#b83b3b");
+  await page.getByTestId("offset-face-apply").click();
+
+  // Re-open the history step and change the highlighter again.
+  const step = page.locator('[data-feature-type="offset"]');
+  await expect(step).toHaveAttribute("data-status", "ok");
+  await step.click();
+  await expect(page.getByTestId("offset-face-popover")).toBeVisible();
+  await expect(canvas).toHaveAttribute("data-offset-diff", "removed");
+  await page.getByTestId("highlight-blue").click();
+  await expect(canvas).toHaveAttribute(
+    "data-offset-diff-colors",
+    "#b83b3b",
+  );
+  await page.getByTestId("offset-face-out").click();
+  await expect(canvas).toHaveAttribute(
+    "data-offset-diff-colors",
+    "#3ec8ff",
+  );
+  await page.getByTestId("offset-face-cancel").click();
+  expect(errors).toEqual([]);
+});
 
 test("offsets the exposed wall of a cylindrical boss", async ({ app: page }) => {
   const errors = collectErrors(page);

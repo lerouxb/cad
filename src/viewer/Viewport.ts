@@ -248,6 +248,10 @@ export class Viewport {
     this.rebuildSketchOverlay();
     this.setDatumPlanes(this.datumPlanes);
     this.setSupportPreview(this.supportPreviewFrame);
+    // Cut red and ghost ink are theme tokens, and the highlighter may be the
+    // same value in both modes; re-materialise the diff even when the colour
+    // effect below does not run.
+    this.setDiff(this.diff);
     this.dirty = true;
   }
 
@@ -693,14 +697,24 @@ export class Viewport {
     this.canvas.dataset.offsetDiffGhost = String(
       (ghost?.indices.length ?? 0) / 3,
     );
+    const addedColor = added ? this.highlightColor : "";
+    const removedColor = removed ? this.cutColor() : "";
+    const ghostColor = ghost ? this.ghostColor() : "";
+    this.canvas.dataset.offsetDiffColors = [
+      addedColor,
+      removedColor,
+      ghostColor,
+    ]
+      .filter(Boolean)
+      .join(",");
     if (added) {
-      this.addDiffMesh(added, this.highlightColor, 0.34, 3);
+      this.addDiffMesh(added, addedColor, 0.34, 3);
     }
     if (removed) {
-      this.addDiffMesh(removed, this.cutColor(), 0.3, 4);
+      this.addDiffMesh(removed, removedColor, 0.3, 4);
     }
     if (ghost) {
-      this.addDiffMesh(ghost, this.ghostColor(), 0.12, 2);
+      this.addDiffMesh(ghost, ghostColor, 0.12, 2);
     }
     this.dirty = true;
   }

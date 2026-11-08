@@ -1275,11 +1275,20 @@ function buildCylindricalOffset(
       mode = "fuse";
     }
   } else if (newRadius > info.radius) {
-    // Boss grows: add a larger cylinder over the existing boss.
-    tool = cylinder(newRadius, height, {
+    // Boss grows: add an annular shell, not a solid cylinder. A solid cylinder
+    // fills a coaxial bore (a revolve/tube) and turns a hollow boss into a
+    // solid plug. A small inward overlap makes the fuse clean against the
+    // existing wall; the union gain is still π(new² - old²)·height.
+    const overlap = Math.min(0.01, info.radius * 0.5);
+    const outer = cylinder(newRadius, height, {
       at: basePoint,
       axis: axis.direction,
     });
+    const inner = cylinder(info.radius - overlap, height, {
+      at: basePoint,
+      axis: axis.direction,
+    });
+    tool = unwrap(cut(outer, inner));
     mode = "fuse";
   } else {
     // Boss shrinks: remove its outer annular shell.

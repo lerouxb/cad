@@ -235,7 +235,8 @@ touched. The raw unify bug is still worth an upstream ticket.
 
 **Cylindrical slice:** one full 360° wall with `area ≈ 2πrh`. A through hole is
 enlarged with a larger cut cylinder and shrunk by fusing an annular tube; a boss
-is grown with a larger cylinder and shrunk by cutting an outer annular tube. The
+is grown by fusing an annular shell (a solid cylinder would fill a coaxial bore,
+e.g. a revolve tube) and shrunk by cutting an outer annular tube. The
 new wall keeps the old role, matched by its axis and new radius. Blind holes and
 partial cylinders are visible errors.
 
