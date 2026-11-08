@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { emptySketch } from "./create";
+import { addPoint, emptySketch } from "./create";
+import {
+  applicableConstraints,
+  constructionState,
+  toggleConstruction,
+} from "./constraints";
+import { regionsFromSketch } from "./loops";
 import {
   applyProjectionGeometry,
   projectPointToPlane,
@@ -40,6 +46,64 @@ describe("face projections", () => {
     expect(lines).toHaveLength(4);
     expect(points.every((point) => point.fixed && point.reference)).toBe(true);
     expect(lines.every((line) => line.reference && line.construction)).toBe(true);
+  });
+
+  it("toggles projected lines between construction and profile geometry", () => {
+    const sketch = applyProjectionGeometry(
+      emptySketch(),
+      "proj-1",
+      "Projected face",
+      [
+        [
+          [0, 0],
+          [10, 0],
+          [10, 10],
+          [0, 10],
+        ],
+      ],
+    );
+    if (!sketch) throw new Error("Expected the projection to apply");
+    const lineIds = sketch.references!.lines
+      .filter((line) => line.projectionId === "proj-1")
+      .map((line) => line.id);
+    expect(constructionState(sketch, lineIds)).toBe("all");
+    expect(regionsFromSketch(sketch)).toHaveLength(0);
+
+    const normal = toggleConstruction(sketch, lineIds);
+    expect(constructionState(normal, lineIds)).toBe("none");
+    const regions = regionsFromSketch(normal);
+    expect(regions).toHaveLength(1);
+    expect(regions[0]?.kind).toBe("material");
+    expect(regions[0]?.area).toBeCloseTo(100, 6);
+
+    const point = addPoint(normal, [5, 5]);
+    const pointId = point.points[point.points.length - 1]!.id;
+    expect(
+      applicableConstraints(point, [pointId, lineIds[0]!]).some(
+        (action) => action.type === "pointOnLine",
+      ),
+    ).toBe(true);
+
+    const moved = applyProjectionGeometry(
+      normal,
+      "proj-1",
+      "Projected face",
+      [
+        [
+          [4, 4],
+          [10, 4],
+          [10, 10],
+          [4, 10],
+        ],
+      ],
+      true,
+    );
+    if (!moved) throw new Error("Expected the updated projection");
+    expect(
+      moved.references!.lines
+        .filter((line) => line.projectionId === "proj-1")
+        .every((line) => line.construction === false),
+    ).toBe(true);
   });
 
   it("updates positions without losing ids when the topology is stable", () => {

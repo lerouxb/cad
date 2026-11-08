@@ -57,7 +57,7 @@ Two rules follow:
 | click a profile region | select the profile family; **do not start an extrude** |
 | double-click a dimension label | make it the sole selection and open the inline editor |
 | double-click a line/point/region | no special action (a feature is a chip, not a double-click) |
-| click a reference point/axis | select for constraints/dimensions; never deletable |
+| click a reference point/axis | select for constraints/dimensions; projected lines also toggle construction/normal and expose their source face; never deletable |
 
 **Selection order is preserved for the current gesture, not the document.** The
 symmetric constraint uses the last-selected line as its axis when no reference

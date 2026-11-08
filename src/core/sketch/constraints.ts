@@ -70,12 +70,22 @@ function isReferenceCurve(curve: SketchCurve): boolean {
   return curve.type === "line" && curve.reference === true;
 }
 
+function isProjectedLine(curve: SketchCurve): boolean {
+  return curve.type === "line" && curve.projectionId !== undefined;
+}
+
+function isToggleableCurve(curve: SketchCurve): boolean {
+  return !isReferenceCurve(curve) || isProjectedLine(curve);
+}
+
 function inspect(sketch: Sketch, ids: readonly string[]): Selection {
   const wanted = new Set(ids);
   const curves = allCurves(sketch).filter((curve) => wanted.has(curve.id));
   const points = allPoints(sketch).filter(
     (point) =>
-      wanted.has(point.id) && !point.construction && (!point.fixed || point.reference),
+      wanted.has(point.id) &&
+      (!point.construction || point.projectionId !== undefined) &&
+      (!point.fixed || point.reference),
   );
   return {
     curves,
@@ -375,7 +385,7 @@ export function constructionState(
 ): ConstructionState {
   const wanted = new Set(ids);
   const curves = allCurves(sketch).filter(
-    (curve) => wanted.has(curve.id) && !isReferenceCurve(curve),
+    (curve) => wanted.has(curve.id) && isToggleableCurve(curve),
   );
   if (curves.length === 0) return null;
   const count = curves.filter((curve) => curve.construction).length;
@@ -392,10 +402,22 @@ export function toggleConstruction(sketch: Sketch, ids: readonly string[]): Sket
   return {
     ...sketch,
     curves: sketch.curves.map((curve) =>
-      wanted.has(curve.id) && !isReferenceCurve(curve)
+      wanted.has(curve.id) && isToggleableCurve(curve)
         ? { ...curve, construction: makeConstruction }
         : curve,
     ),
+    ...(sketch.references
+      ? {
+          references: {
+            ...sketch.references,
+            lines: sketch.references.lines.map((line) =>
+              wanted.has(line.id) && line.projectionId !== undefined
+                ? { ...line, construction: makeConstruction }
+                : line,
+            ),
+          },
+        }
+      : {}),
   };
 }
 

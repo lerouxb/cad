@@ -1489,6 +1489,16 @@ export function App() {
     () => describeSelection(sketch, geometry, selection),
     [sketch, geometry, selection],
   );
+  const projectedSourceFace = useMemo(() => {
+    if (!activeSketchFeature || selection.length === 0) return null;
+    for (const projection of activeSketchFeature.projections ?? []) {
+      const prefix = `${projection.id}-`;
+      if (selection.some((id) => id.startsWith(prefix))) {
+        return projection.source;
+      }
+    }
+    return null;
+  }, [activeSketchFeature, selection]);
 
   const selectedConstraint = useMemo(
     () =>
@@ -3552,6 +3562,22 @@ export function App() {
 
   // Key handlers are registered once but must see the current selection and
   // active feature. Tool shortcuts enter the active sketch (or its source).
+  const pickProjectedSourceFace = (): void => {
+    if (!projectedSourceFace) return;
+    const pick = faceBodyPick(projectedSourceFace);
+    setMode("model");
+    setModelFilter("faces");
+    setSelection([]);
+    setSelectedConstraintId(null);
+    setProfileSelection([]);
+    setBodyPick(pick);
+    setFaceSelection([pick]);
+    setEdgeSelection([]);
+    setSelectOther(null);
+    viewportRef.current?.setFaceSelection([pick]);
+    viewportRef.current?.setPickedFace(pick);
+  };
+
   const deleteKey = useEffectEvent(() => deleteSelection());
   const enterSketchMode = useEffectEvent(() => {
     const { sketchFeature: target } = resolveCurrent();
@@ -6208,6 +6234,9 @@ export function App() {
                   onConstraint={handleConstraintAction}
                   onConstruction={handleConstruction}
                   onDelete={deleteSelection}
+                  onSourceFace={
+                    projectedSourceFace ? pickProjectedSourceFace : undefined
+                  }
                   deletable={
                     constraintSelected ||
                     selectedInfo.some((info) => info.kind !== "reference")

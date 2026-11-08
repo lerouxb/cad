@@ -744,9 +744,12 @@ docs/
   geometry and marks the projection `stale` instead of silently rewiring constraints.
   The live effect requests the face from the worker's cached prefix solid by `cacheKey`,
   `source` and `role`, so downstream booleans cannot move or split the reference
-  outline. Projected points and edges are snap targets; snapping a new vertex to a
-  projected edge adds an ordinary `pointOnLine` constraint, so the drawn geometry stays
-  attached when the body changes. `faceBoundary` chains wire edges by endpoint before
+  outline. Projected points and edges are snap targets and constraint participants;
+  snapping a new vertex to a projected edge adds an ordinary `pointOnLine` constraint, so
+  the drawn geometry stays attached when the body changes. Projected lines start as
+  construction; selecting one can toggle it to a normal profile boundary (it stays fixed
+  and derived) or use its source face chip. Arbitrary body-edge projection is still the
+  separate project-tool gap. `faceBoundary` chains wire edges by endpoint before
   returning a loop; never trust kernel edge order/orientation or a side face can project
   as two stray lines. Exact `resolveRef` and lost-support recovery are still
   pending M4 work.

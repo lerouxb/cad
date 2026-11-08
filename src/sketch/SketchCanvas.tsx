@@ -1926,9 +1926,17 @@ export function SketchCanvas({
               y1={a[1]}
               x2={b[0]}
               y2={b[1]}
-              stroke={projected ? palette.dimension : palette.axis}
+              stroke={
+                projected
+                  ? axis.construction
+                    ? palette.dimension
+                    : palette.ink
+                  : palette.axis
+              }
               strokeWidth={1}
-              strokeDasharray={projected ? "2 3" : undefined}
+              strokeDasharray={
+                projected && axis.construction ? "2 3" : undefined
+              }
               strokeLinecap={projected ? "round" : undefined}
               vectorEffect="non-scaling-stroke"
             />
@@ -2167,6 +2175,7 @@ export function SketchCanvas({
                 pointerEvents="stroke"
                 style={{ cursor: tool === "select" ? "pointer" : "pointer" }}
                 data-curve-id={axis.id}
+                data-projection-line-id={axis.projectionId}
                 onPointerDown={(event) => onCurvePointerDown(event, axis)}
               />
             );

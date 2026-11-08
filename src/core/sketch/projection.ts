@@ -52,6 +52,12 @@ export function applyProjectionGeometry(
   const points = references.points.filter(
     (point) => point.projectionId !== projectionId,
   );
+  const oldLines = references.lines.filter(
+    (line) => line.projectionId === projectionId,
+  );
+  const oldConstruction = new Map(
+    oldLines.map((line) => [line.id, line.construction]),
+  );
   const lines = references.lines.filter(
     (line) => line.projectionId !== projectionId,
   );
@@ -75,12 +81,13 @@ export function applyProjectionGeometry(
     });
     ids.forEach((id, index) => {
       const next = ids[(index + 1) % ids.length]!;
+      const lineId = `${projectionId}-l${loopIndex}-${index}`;
       lines.push({
-        id: `${projectionId}-l${loopIndex}-${index}`,
+        id: lineId,
         type: "line",
         a: id,
         b: next,
-        construction: true,
+        construction: oldConstruction.get(lineId) ?? true,
         reference: true,
         projectionId,
         referenceLabel: label,

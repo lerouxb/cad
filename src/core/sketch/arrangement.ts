@@ -106,7 +106,13 @@ export function planarArrangement(sketch: Sketch): PlanarArrangement {
   const usedPointIds = new Set<string>();
   const centerIds = new Set<string>();
 
-  for (const curve of sketch.curves) {
+  const profileCurves = [
+    ...sketch.curves,
+    ...(sketch.references?.lines.filter(
+      (line) => line.projectionId !== undefined && !line.construction,
+    ) ?? []),
+  ];
+  for (const curve of profileCurves) {
     if (curve.construction) continue;
     if (curve.type === "line") {
       const start = positions.get(curve.a);

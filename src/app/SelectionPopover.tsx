@@ -18,6 +18,8 @@ interface SelectionPopoverProps {
   onConstruction: () => void;
   onDelete: () => void;
   deletable: boolean;
+  /** The source face of the selected projected sketch reference. */
+  onSourceFace?: () => void;
   onOpenFillet?: () => void;
   dimension?: {
     label: string;
@@ -59,6 +61,7 @@ export function SelectionPopover({
   onConstruction,
   onDelete,
   deletable,
+  onSourceFace,
   onOpenFillet,
   dimension,
   trim,
@@ -102,6 +105,7 @@ export function SelectionPopover({
       </div>
       {actions.length > 0 ||
       construction !== null ||
+      onSourceFace ||
       onOpenFillet ||
       dimension ||
       trim ||
@@ -128,6 +132,16 @@ export function SelectionPopover({
               data-testid="toggle-construction"
             >
               {construction === "all" ? "Make normal" : "Construction"}
+            </button>
+          ) : null}
+          {onSourceFace ? (
+            <button
+              className="sc-chip"
+              type="button"
+              onClick={onSourceFace}
+              data-testid="projection-source-face"
+            >
+              source face
             </button>
           ) : null}
           {onOpenFillet ? (

@@ -113,6 +113,51 @@ test("changing the highlighter recolours an active selection", async ({
 });
 
 
+test("a projected face line can toggle construction and pick its source face", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await pickTopFace(page);
+  await page.getByTestId("face-new-sketch").click();
+  await page.getByTestId("new-sketch").click();
+  await expect(page.getByTestId("tool-select")).toBeVisible();
+
+  await expect
+    .poll(() => page.locator("[data-projection-line-id]").count())
+    .toBeGreaterThan(0);
+  const point = await page
+    .locator("[data-projection-line-id]")
+    .first()
+    .evaluate((element) => {
+      const line = element as SVGLineElement;
+      const svg = line.ownerSVGElement;
+      if (!svg) throw new Error("Projected line has no SVG");
+      const matrix = svg.getScreenCTM();
+      if (!matrix) throw new Error("Projected line has no CTM");
+      const x =
+        (Number(line.getAttribute("x1")) + Number(line.getAttribute("x2"))) / 2;
+      const y =
+        (Number(line.getAttribute("y1")) + Number(line.getAttribute("y2"))) / 2;
+      const screen = new DOMPoint(x, y).matrixTransform(matrix);
+      return { x: screen.x, y: screen.y };
+    });
+  await page.mouse.click(point.x, point.y);
+  await expect(page.getByTestId("selection-panel")).toBeVisible();
+  const construction = page.getByTestId("toggle-construction");
+  await expect(construction).toHaveText("Make normal");
+  await construction.click();
+  await expect(page.getByTestId("toggle-construction")).toHaveText(
+    "Construction",
+  );
+
+  await page.getByTestId("projection-source-face").click();
+  const face = page.getByTestId("face-selection-popover");
+  await expect(face).toBeVisible();
+  await expect(face).toHaveAttribute("data-count", "1");
+  expect(errors).toEqual([]);
+});
+
+
 test("a sketch marquee follows the filter and Backspace deletes the set", async ({
   app: page,
 }) => {

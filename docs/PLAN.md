@@ -496,10 +496,11 @@ with face sketches.
 - [x] Deterministic face frame (origin, x-axis) + cached frame fallback
 - [x] Sketch on a planar face of a solid; the 2D sketch surface uses the face frame and
       the model overlay/extrude map through it (no 3D camera turn needed)
-- [x] Project the supporting face's boundary into the sketch as fixed construction
-      geometry, and label it; projected geometry is dashed, fixed and never selectable
-      as user geometry (mockup 02). Outlines are cached on the sketch feature and
-      re-derived after every rebuild.
+- [x] Project the supporting face's boundary into the sketch as fixed reference
+      geometry, and label it. Projected lines are selectable and constrainable; they
+      start as construction, and a selected line can toggle to a normal profile boundary
+      (still fixed/derived) or use its `source face` chip. Outlines are cached on the
+      sketch feature and re-derived after every rebuild.
 - [x] **Live reference geometry**: projected point/line/face outlines store the `TopoRef`
       they came from, are re-derived from the source feature's cached prefix solid on
       every rebuild, and are kept as cached geometry (marked stale) if their topology
@@ -528,9 +529,9 @@ with face sketches.
 - [ ] Redefine/edit a sketch's support after creation, through the same support picker,
       keeping the cached frame until the new support resolves
 - [ ] Extrude to-object / to-next end condition, resolved through `TopoRef`
-- [ ] Project arbitrary edges/faces into a sketch in addition to the support boundary.
-      The full projection suite (project / include 3D / intersect / project-to-surface)
-      is deferred; see M9
+- [ ] Project arbitrary body edges/faces into a sketch with a `project` tool (the
+      support boundary above is automatic). The full projection suite (project / include
+      3D / intersect / project-to-surface) is deferred; see M9.
 - [x] Topological-naming regression test: change base height, boss on top face follows
 - [x] UI: unsupported (curved) face → clear explanation, no broken state
 - [x] **First slice landed:** face refs + deterministic cached frame, sketch on a planar
