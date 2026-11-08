@@ -1439,26 +1439,42 @@ export class Viewport {
     if (positions.length < 6) return;
 
     // WebGL ignores LineBasicMaterial.linewidth. Use Line2's screen-space
-    // quads so hover and selection match the studies' 5 px / 6 px strokes.
-    const geometry = new LineSegmentsGeometry();
-    geometry.setPositions(Array.from(positions));
-    const material = new LineMaterial({
-      color: this.highlightColor,
-      linewidth: selected ? 6 : 5,
-      transparent: true,
-      opacity: 1,
-      depthTest: false,
-      depthWrite: false,
-      resolution: new THREE.Vector2(
-        Math.max(1, this.canvas.clientWidth),
-        Math.max(1, this.canvas.clientHeight),
-      ),
-    });
-    this.overlayLineMaterials.add(material);
-    const overlay = new LineSegments2(geometry, material);
-    overlay.renderOrder = selected ? 6 : 5;
-    overlay.raycast = () => {};
-    group.add(overlay);
+    // quads. The selected edge is the same pair as a sketch line: a soft
+    // highlighter block under an ink centerline. Hover is the block alone, over
+    // the body ink that is already there.
+    const addLine = (
+      color: string | number,
+      width: number,
+      opacity: number,
+      renderOrder: number,
+    ): void => {
+      const geometry = new LineSegmentsGeometry();
+      geometry.setPositions(Array.from(positions));
+      const material = new LineMaterial({
+        color,
+        linewidth: width,
+        transparent: true,
+        opacity,
+        depthTest: false,
+        depthWrite: false,
+        resolution: new THREE.Vector2(
+          Math.max(1, this.canvas.clientWidth),
+          Math.max(1, this.canvas.clientHeight),
+        ),
+      });
+      this.overlayLineMaterials.add(material);
+      const overlay = new LineSegments2(geometry, material);
+      overlay.renderOrder = renderOrder;
+      overlay.raycast = () => {};
+      group.add(overlay);
+    };
+
+    if (selected) {
+      addLine(this.highlightColor, 9, 0.5, 5);
+      addLine(this.edgeColor(), 1.7, 1, 6);
+    } else {
+      addLine(this.highlightColor, 5, 0.7, 5);
+    }
   }
 
   private clearGroup(group: THREE.Group): void {

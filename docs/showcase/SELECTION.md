@@ -15,8 +15,8 @@ feature just because you clicked its input.**
 
 - Selecting a **profile** does not start an extrude. The profile popover offers
   `extrude`; choosing it starts the draft.
-- Selecting a **model face** never offers `extrude`. It offers `new sketch` and
-  `shell`; a face is a support, not a profile.
+- Selecting a **model face** never offers `extrude`. It offers `new sketch`,
+  `offset face…` and `shell…`; a face is a support, not a profile.
 - Selecting **edges** offers `fillet`/`chamfer`; choosing one starts the draft.
 - Selecting **geometry** offers constraints, dimensions and edit actions; the
   chips apply immediately.
@@ -114,7 +114,7 @@ selection
   ─ CONSTRAIN   immediate chips (horizontal, parallel, …)
   ─ MEASURE     dimension / radius / angle chips
   ─ EDIT        construction, fix, trim, fillet (sketch)
-  ─ FEATURE     extrude / new sketch / shell / fillet / chamfer (starts a draft)
+  ─ FEATURE     extrude / revolve / new sketch / offset face / shell / fillet / chamfer (starts a draft)
   ─ FOOTER      summary + quiet delete
 ```
 
@@ -134,9 +134,9 @@ selection
 | 1 dimension | — | edit / driving / reference | — | — |
 | 2+ dimensions | — | delete only (edit one at a time) | — | — |
 | geometry + dimensions | constraint/dimension chips on the geometry subset | one dimension row to edit | construction on geometry | — |
-| 1+ profiles | — | — | all / voids / auto (selection helpers) | **extrude…** |
-| 1 planar face | — | — | — | **new sketch**, **shell…** |
-| 2+ faces | — | — | — | **shell…** |
+| 1+ profiles | — | — | all / voids / auto (selection helpers) | **extrude…**, **revolve…** |
+| 1 face | — | — | — | **new sketch** (planar), **offset face…**, **shell…** |
+| 2+ faces | — | — | — | **offset face…** (parallel), **shell…** |
 | 1+ edges | — | — | — | **fillet…**, **chamfer…** |
 | body (future) | — | — | — | appearance / isolate |
 | constraint | — | — | reset position | — |
@@ -160,11 +160,14 @@ the selection popover closes. The draft owns its inputs until apply/cancel.
   clicking one does not start a draft.
 - The profile popover shows:
   - `REGIONS`: `all` / `voids` / `auto` (selection helpers; current region panel);
-  - `FEATURE`: `extrude…`;
+  - `FEATURE`: `extrude…`, `revolve…`;
   - footer: a summary of the region count; `clear` (clears the region selection).
 - `extrude…` starts the new-extrude draft with the selected region(s); the draft
   popover is the height/operation form. The draft's profile mode can add or remove
   regions with clicks or a marquee.
+- `revolve…` starts the revolve draft with the same profile; its form adds an
+  axis and an angle (see [`REVOLVE.md`](REVOLVE.md)). The region set is still the
+  one selection.
 - A **void** region is a valid profile: extruding it fills the negative space.
   The region parity is shown in the popover.
 - An **existing extrude's** profiles are edited from its timeline step (the
@@ -174,13 +177,16 @@ the selection popover closes. The draft owns its inputs until apply/cancel.
 ### Model face — this is a support, not a profile
 
 - A face selection offers **`new sketch`** (opens the support picker with the
-  face preselected) and **`shell…`** (one or more open faces). It **never**
-  offers `extrude`.
+  face preselected), **`offset face…`** (moves the face by a distance; see
+  [`OFFSET_FACES.md`](OFFSET_FACES.md)) and **`shell…`** (one or more open
+  faces). It **never** offers `extrude`.
 - To extrude from a face: `new sketch` on the face, draw a profile, select the
   profile, `extrude…`. This is the same path as any other sketch.
 - A curved face is not a valid sketch support in v1; `new sketch` is not offered
-  for it (the support picker says why).
-- Multi-face selection is for shell/multi-face work; `new sketch` requires one
+  for it (the support picker says why). Offset face v1 accepts planar/prismatic
+  faces and full cylindrical through holes/bosses; partial cylinders, blind holes
+  and non-prismatic neighbours are surfaced as errors.
+- Multi-face selection is for offset/shell work; `new sketch` requires one
   planar face.
 
 ### Model edge — a blend input
@@ -221,7 +227,38 @@ the selection popover closes. The draft owns its inputs until apply/cancel.
 - A mixed selection hides actions that do not apply to the whole relevant
   subset; it never shows a wall of disabled chips.
 
-## 8. The popover anatomy
+## 8. One selection language
+
+Selection means the same thing in the sketch and the model. The highlighter is a
+**block mark**, not a blur or a neon glow; the ink is what makes the line read.
+
+| Selection | Sketch | Model |
+| --- | --- | --- |
+| **line / edge** | highlighter block (soft token, ~12 px) under an ink centerline (~1.6 px) | the **same pair**: highlighter block (~8 px) under an ink centerline (~1.6 px) |
+| **face / region** | highlighter wash fill; the ink boundary stays visible | highlighter wash fill; the body edge ink stays visible |
+| **point** | marker fill + ink ring | no vertex selection yet |
+| **constraint** | its own mark, ink/paper; participants washed | — |
+| **dimension** | label editor at the label | — |
+
+- **Hover is the same block at lower opacity**, with the base ink line still
+  visible. Selection is the full block plus the ink centerline.
+  - line/edge hover: glow ~5 px, ~0.7 opacity, no ink change;
+  - line/edge selected: glow ~8–12 px, ~0.45 opacity, ink ~1.6 px.
+- **Never a highlighter-only edge.** A model edge is a line; it gets the same
+  ink centerline as a sketch line. A single opaque marker line that hides the
+  body edge is the current model bug, not the style.
+- **The pair is drawn above the body** so the glow reads against the solid; the
+  ink centerline is what survives a screenshot and a highlighter change.
+- **Faces/regions are washes**, not marker outlines. The existing ink edge is
+  the boundary; do not paint a second marker outline over it.
+- **Multiple edges** each get the pair; a hover highlights one edge only.
+- **The selection popover chip** uses the highlighter fill; the edge/line itself
+  is never a chip.
+- The same tokens are used in both stages: the highlighter's soft/wash variant
+  for the block, the theme ink for the centerline. The timeline's active marker
+  is not a selection and does not use this grammar.
+
+## 9. The popover anatomy
 
 ```
 ┌──────────────────────────────────────────────┐
@@ -253,7 +290,7 @@ the selection popover closes. The draft owns its inputs until apply/cancel.
 - The chip row is the same `.sc-chip` grammar as constraints; applied constraints
   are active chips and clicking one releases it.
 
-## 9. Selection state
+## 10. Selection state
 
 - Selection is **ephemeral**: not in the document, not undoable, not persisted.
 - It is cleared on tool change, Escape, delete, timeline navigation, entering a
@@ -266,15 +303,15 @@ the selection popover closes. The draft owns its inputs until apply/cancel.
 - The stage renders only the selected prefix; selecting a step is the history
   cursor, not a selection.
 
-## 10. Decisions
+## 11. Decisions
 
 | # | Decision | Why |
 | --- | --- | --- |
 | S1 | **Select first, action second.** Clicking a profile/face/edge never starts a feature. | A click must be reversible and inspectable. |
 | S2 | One family at a time; geometry + dimensions is the one allowed mix. | The popover stays coherent; delete can still span the allowed pair. |
 | S3 | Box/lasso select the current filter; Backspace deletes the resulting set. | A marquee is a selection, not a profile shortcut. |
-| S4 | Profile selection is its own family and `extrude…` is a feature chip. | The profile is the input; the feature is a decision. |
-| S5 | A model face offers `new sketch` / `shell`, never `extrude`. | A face is a support; a profile is what extrudes. |
+| S4 | Profile selection is its own family and `extrude…` / `revolve…` are feature chips. | The profile is the input; the feature is a decision. |
+| S5 | A model face offers `new sketch` / `offset face…` / `shell`, never `extrude`. | A face is a support; a profile is what extrudes. |
 | S6 | Feature chips start drafts/editors; they never apply immediately. | Consistent with the feature popovers' apply/cancel. |
 | S7 | Geometry + dimensions mix for selection and deletion; constraints/dimensions apply to the geometry subset. | One box-select/delete path; actions stay truthful. |
 | S8 | A constraint is a single selection and replaces everything else. | It is one object with one delete/reset. |
@@ -284,13 +321,14 @@ the selection popover closes. The draft owns its inputs until apply/cancel.
 | S12 | Selection stays ephemeral, order only for the gesture. | Matches the existing document rule. |
 | S13 | Profile mode owns marquee region selection; normal sketch marquees geometry/dimensions. | Remove the "box selects profiles" surprise. |
 | S14 | No feature on double-click. | Double-click is edit/rename, not create. |
+| S15 | **One selection language.** A selected line/edge is a highlighter **block** under an ink centerline; a face/region is a highlighter wash; hover is the same block at lower opacity. Never a single opaque highlighter line. | Sketch and model must read the same, and the ink keeps the geometry legible. |
 
-## 11. Open questions
+## 12. Open questions
 
 | # | Question | Current proposal | Status |
 | --- | --- | --- | --- |
 | O1 | Add a `regions` filter to the tool options row? | No; profile mode owns regions, normal select owns geometry. | Proposed |
-| O2 | Can a box/lasso select profiles outside profile mode? | No; enter via a region click (single/multi) or the `extrude…` chip then marquee in the draft. | Proposed |
+| O2 | Can a box/lasso select profiles outside profile mode? | No; enter via a region click (single/multi) or a feature chip (`extrude…`/`revolve…`), then marquee in the draft. | Proposed |
 | O3 | Double-click one dimension inside a multi-selection? | Make it the sole selection and open the editor. | Proposed |
 | O4 | Show an inapplicable feature chip disabled or hide it? | Hide it; the hint explains when nothing applies. | Proposed |
 | O5 | Is `new sketch` also in the face popover, or only the insert gap? | Both; the face popover is the direct path. | Proposed |
@@ -304,14 +342,14 @@ the selection popover closes. The draft owns its inputs until apply/cancel.
 | O13 | Does a single click on a dimension open the editor? | No; double-click edits, the popover offers edit. | Proposed |
 | O14 | Can a reference-only selection be deleted? | No; the row says `fixed`; Delete is a no-op. | Proposed |
 
-## 12. Current implementation and gap
+## 13. Current implementation and gap
 
 Implemented (2026-11-08):
 
 - **Profiles are a selection family.** A filled region selects the profile and
-  opens `profile-popover` (`all / voids / auto`, `extrude…`, `clear`); it never
-  starts a draft. `extrude…` starts the new-extrude draft with the chosen
-  regions.
+  opens `profile-popover` (`all / voids / auto`, `extrude…`, `revolve…`,
+  `clear`); it never starts a draft. `extrude…` starts the new-extrude draft with
+  the chosen regions; `revolve…` starts the revolve form with the same profile.
 - **Normal sketch marquees select geometry and dimensions through the filter.**
   Box is fully inside, lasso is touched/crossing; empty is a no-op, Shift toggles,
   references are excluded. Profile mode (a draft or an existing extrude editor)
@@ -319,12 +357,22 @@ Implemented (2026-11-08):
 - **Delete spans the allowed mix.** Geometry + dimensions delete in one undo;
   profile regions clear; a constraint removes itself; references are skipped;
   model edge/face/body delete stays a no-op.
-- **Feature chips:** profile `extrude…`, face `new sketch` (one planar face) and
-  `shell…`, edge `fillet…`/`chamfer…`. A face never offers extrude.
+- **Feature chips:** profile `extrude…`/`revolve…`, face `new sketch` (one
+  planar face), `offset face…` and `shell…`, edge `fillet…`/`chamfer…`. A face
+  never offers extrude. The offset chip opens the draft from
+  [`OFFSET_FACES.md`](OFFSET_FACES.md); v1 accepts planar faces whose neighbours
+  the move preserves plus full cylindrical through holes/bosses, and surfaces
+  the rest as errors. Revolve starts the form in
+  [`REVOLVE.md`](REVOLVE.md) with the same profile.
 - **Mixed geometry + dimensions:** the popover lists both, constraints apply to
   the geometry subset, and one selected dimension has an `edit` chip (the label
   still supports double-click).
 - In-app hints no longer say a region click starts an extrude.
+- **Selection uses the pair in both stages.** `SketchCanvas.tsx` draws the soft
+  marker at ~12 px under the ~1.6 px ink curve, with a ~5 px hover glow at 0.7.
+  `Viewport.addOverlay` draws a selected model edge as a ~9 px block at 0.5 under
+  a ~1.7 px ink centerline, and hover as the ~5 px block at 0.7; it never uses a
+  single opaque marker line.
 
 Remaining / open:
 
