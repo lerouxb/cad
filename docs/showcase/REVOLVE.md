@@ -268,8 +268,9 @@ Implemented (2026-11-08):
 - Schema v14 `RevolveFeature` (`sketchId`, `regions`, explicit `axis`, 1–360° `angle`,
   partial `direction`, `operation`, `suppressed`), validation and migration.
 - `revolve…` in the profile selection popover starts a UI-only draft. The form has the
-  sketch/profile rows, explicit X/Y/sketch-line **axis chips**, the shared `MeasureField`
-  angle, ccw/cw for partial angles, and new/join/cut.
+  sketch/profile rows, explicit X/Y/sketch-line **axis chips**, and clicking a sketch line
+  or the X/Y reference in the stage sets the same axis; the shared `MeasureField` angle,
+  ccw/cw for partial angles, and new/join/cut follow.
 - The engine resolves the axis against the solved sketch, rejects a missing/degenerate
   axis and a profile that crosses the infinite axis, and the worker builds each region
   with `brepjs.revolve`, fuses multiple regions, applies the sketch frame and runs the
@@ -281,8 +282,8 @@ Implemented (2026-11-08):
 
 Still open:
 
-- **stage axis pick** with candidate-line highlighting; v1 uses explicit axis chips,
-  which is still an explicit decision but not a stage pick.
+- **candidate highlighting during axis pick**; the stage click and chips already select
+  the axis, but candidates are not pre-highlighted.
 - **intersect** (the shared four-way boolean row is not in extrude either yet).
 - the start-profile ghost and angle-arc preview; v1 previews the result body.
 - **BOOLEANS.md** preview language for cut/intersect (the same gap as extrude).

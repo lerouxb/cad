@@ -427,6 +427,21 @@ function faceBodyPick(ref: TopoRef): BodyPick {
   };
 }
 
+function revolveAxisForPick(
+  sketch: Sketch,
+  entityId: string,
+): RevolveAxis | null {
+  if (entityId === "axis-x") return { kind: "reference", axis: "x" };
+  if (entityId === "axis-y") return { kind: "reference", axis: "y" };
+  const curve = sketch.curves.find(
+    (candidate) =>
+      candidate.id === entityId &&
+      candidate.type === "line" &&
+      candidate.reference !== true,
+  );
+  return curve ? { kind: "line", curveId: entityId } : null;
+}
+
 function resolveRevolveAxis(
   sketch: Sketch,
   axis: RevolveAxis,
@@ -3430,6 +3445,21 @@ export function App() {
 
   const handleSelect = (entityId: string | null, additive: boolean): void => {
     clearTransientSolve();
+    if (revolveDraft) {
+      // The revolve form is the active surface. A sketch line or the X/Y
+      // reference sets the axis; every other sketch click is swallowed so a
+      // second selection popover cannot stack over the form.
+      if (entityId) {
+        const axis = revolveAxisForPick(revolveSketch ?? sketch, entityId);
+        if (axis) {
+          updateRevolveDraft((draft) => ({ ...draft, axis }));
+        }
+      }
+      setSelection([]);
+      setSelectedConstraintId(null);
+      setProfileSelection([]);
+      return;
+    }
     if (additive && (profileSelection.length > 0 || selectedConstraintId)) {
       return;
     }
@@ -6159,7 +6189,7 @@ export function App() {
               />
             ) : null}
 
-            {popoverInfo.length > 0 ? (
+            {popoverInfo.length > 0 && !revolveDraft ? (
               !constraintSelected && filletOpen && filletSelection ? (
                 <FilletPopover
                   radius={filletRadius}

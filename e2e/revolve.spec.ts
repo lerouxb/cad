@@ -28,8 +28,11 @@ test("revolves a rectangle around Y into a tube", async ({ app: page }) => {
   await expect(page.getByTestId("revolve-axis")).toContainText("pick one");
   await expect(page.getByTestId("revolve-apply")).toBeDisabled();
 
-  await page.getByTestId("revolve-axis-y").click();
+  // Clicking the Y reference in the sketch picks it without stacking the
+  // selection popover over the revolve form.
+  await clickSketch(page, 0, 5);
   await expect(page.getByTestId("revolve-axis")).toContainText("Y axis");
+  await expect(page.getByTestId("selection-panel")).toHaveCount(0);
   const full = 6000 * Math.PI;
   await expect.poll(() => volume(page)).toBeCloseTo(full, -1);
 
