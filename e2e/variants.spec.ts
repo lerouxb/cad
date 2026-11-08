@@ -52,7 +52,9 @@ test("collinear joins two lines' supporting line", async ({ app: page }) => {
   const group = page.locator('[data-constraint-type="collinear"]');
   await mark.hover();
   await expect(group).toHaveAttribute("data-hovered", "true");
-  await expect(page.getByTestId("constraint-tooltip")).toHaveText("Collinear");
+  await expect(page.getByTestId("constraint-tooltip")).toHaveText(
+    "Collinear · 2 curves",
+  );
   await mark.click();
   await expect(group).toHaveAttribute("data-selected", "true");
   await expect(page.getByTestId("selection-panel")).toContainText("Collinear");

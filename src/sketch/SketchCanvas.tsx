@@ -40,6 +40,7 @@ import { niceGridStep, type GridStep } from "../core/sketch/grid";
 import { constraintLabel } from "../core/sketch/constraints";
 import {
   constraintMarks,
+  constraintParticipantSummary,
   constraintParticipants,
   type ConstraintMark,
 } from "./constraintMarks";
@@ -280,6 +281,9 @@ export function SketchCanvas({
   const [hoveredConstraintId, setHoveredConstraintId] = useState<string | null>(
     null,
   );
+  const [tooltipConstraintId, setTooltipConstraintId] = useState<string | null>(
+    null,
+  );
   const [arcStart, setArcStart] = useState<DraftVertex | null>(null);
   const [arcEnd, setArcEnd] = useState<DraftVertex | null>(null);
   const [dimPoint, setDimPoint] = useState<string | null>(null);
@@ -354,6 +358,21 @@ export function SketchCanvas({
       ),
     [sketch, hoveredConstraintId],
   );
+  useEffect(() => {
+    if (!hoveredConstraintId || hoveredConstraintId === selectedConstraintId) {
+      return;
+    }
+    const timer = window.setTimeout(
+      () => setTooltipConstraintId(hoveredConstraintId),
+      120,
+    );
+    return () => window.clearTimeout(timer);
+  }, [hoveredConstraintId, selectedConstraintId]);
+  const visibleTooltipId =
+    tooltipConstraintId === hoveredConstraintId &&
+    tooltipConstraintId !== selectedConstraintId
+      ? tooltipConstraintId
+      : null;
   const selectedNow = (id: string): boolean =>
     selected.has(id) || selectedConstraintParticipants.has(id);
   const hoveredNow = (id: string): boolean =>
@@ -431,6 +450,7 @@ export function SketchCanvas({
     setArcTangent(null);
     setHover(null);
     setHoveredConstraintId(null);
+    setTooltipConstraintId(null);
     setDimPoint(null);
     setDimLine(null);
     setDimTarget(null);
@@ -2228,6 +2248,22 @@ export function SketchCanvas({
         </g>
       ) : null}
 
+      <ConstraintMarks
+        sketch={sketch}
+        points={points}
+        palette={palette}
+        px={px}
+        selected={selected}
+        hoveredCurveId={hoveredCurveId}
+        hoveredPointId={hoveredPointId}
+        viewBox={viewBox}
+        tooltipConstraintId={visibleTooltipId}
+        selectedConstraintId={selectedConstraintId}
+        hoveredConstraintId={hoveredConstraintId}
+        onHoverConstraint={setHoveredConstraintId}
+        onSelectConstraint={onSelectConstraint}
+      />
+
       <g>
         {sketch.constraints.map((constraint) => {
           if (constraint.type === "distance") {
@@ -2426,20 +2462,7 @@ export function SketchCanvas({
         </g>
       ) : null}
 
-      <ConstraintMarks
-        sketch={sketch}
-        points={points}
-        palette={palette}
-        px={px}
-        selected={selected}
-        hoveredCurveId={hoveredCurveId}
-        hoveredPointId={hoveredPointId}
-        viewBox={viewBox}
-        selectedConstraintId={selectedConstraintId}
-        hoveredConstraintId={hoveredConstraintId}
-        onHoverConstraint={setHoveredConstraintId}
-        onSelectConstraint={onSelectConstraint}
-      />
+
 
       <g pointerEvents="none">
           <line
@@ -3299,6 +3322,7 @@ function ConstraintMarks({
   hoveredCurveId,
   hoveredPointId,
   viewBox,
+  tooltipConstraintId,
   selectedConstraintId,
   hoveredConstraintId,
   onHoverConstraint,
@@ -3312,6 +3336,7 @@ function ConstraintMarks({
   hoveredCurveId: string | null;
   hoveredPointId: string | null;
   viewBox: ViewBox;
+  tooltipConstraintId: string | null;
   selectedConstraintId: string | null;
   hoveredConstraintId: string | null;
   onHoverConstraint?: (id: string | null) => void;
@@ -3551,20 +3576,27 @@ function ConstraintMarks({
     }
   };
 
-  const hoveredGroup = hoveredConstraintId
-    ? groups.get(hoveredConstraintId)
+  const tooltipGroup = tooltipConstraintId
+    ? groups.get(tooltipConstraintId)
     : null;
-  const hoveredAnchor = (() => {
-    if (!hoveredGroup) return null;
-    for (const mark of hoveredGroup.marks) {
+  const tooltipAnchor = (() => {
+    if (!tooltipGroup) return null;
+    for (const mark of tooltipGroup.marks) {
       const anchor = markAnchor(mark);
       if (anchor) return anchor;
     }
     return null;
   })();
-  const hoveredLabel = hoveredGroup
-    ? constraintLabel(hoveredGroup.type)
-    : "";
+  const tooltipLabel = (() => {
+    if (!tooltipGroup || !tooltipConstraintId) return "";
+    const participants = constraintParticipants(sketch, tooltipConstraintId);
+    return participants.length > 1
+      ? `${constraintLabel(tooltipGroup.type)} · ${constraintParticipantSummary(
+          sketch,
+          tooltipConstraintId,
+        )}`
+      : constraintLabel(tooltipGroup.type);
+  })();
 
   return (
     <g pointerEvents="none">
@@ -3593,9 +3625,9 @@ function ConstraintMarks({
                   mark.kind === "badge" ? (
                     <rect
                       x={anchor[0] - badgeWidth(mark.label) / 2}
-                      y={anchor[1] - 6 * px}
+                      y={anchor[1] - 7 * px}
                       width={badgeWidth(mark.label)}
-                      height={12 * px}
+                      height={14 * px}
                       fill="transparent"
                       pointerEvents="all"
                       data-mark-hit=""
@@ -3604,7 +3636,7 @@ function ConstraintMarks({
                     <circle
                       cx={anchor[0]}
                       cy={anchor[1]}
-                      r={6 * px}
+                      r={7 * px}
                       fill="transparent"
                       pointerEvents="all"
                       data-mark-hit=""
@@ -3616,16 +3648,16 @@ function ConstraintMarks({
           })}
         </g>
       ))}
-      {hoveredAnchor && hoveredLabel ? (
+      {tooltipAnchor && tooltipLabel ? (
         (() => {
-          const width = (hoveredLabel.length * 5 + 9) * px;
+          const width = (tooltipLabel.length * 5 + 9) * px;
           const height = 14 * px;
-          let x = hoveredAnchor[0] + 12 * px;
+          let x = tooltipAnchor[0] + 12 * px;
           if (x + width > viewBox.x + viewBox.w) {
-            x = hoveredAnchor[0] - 12 * px - width;
+            x = tooltipAnchor[0] - 12 * px - width;
           }
-          let y = hoveredAnchor[1] - 18 * px;
-          if (y < viewBox.y) y = hoveredAnchor[1] + 10 * px;
+          let y = tooltipAnchor[1] - 18 * px;
+          if (y < viewBox.y) y = tooltipAnchor[1] + 10 * px;
           return (
             <g pointerEvents="none">
               <rect
@@ -3647,7 +3679,7 @@ function ConstraintMarks({
                 textAnchor="middle"
                 data-testid="constraint-tooltip"
               >
-                {hoveredLabel}
+                {tooltipLabel}
               </text>
             </g>
           );

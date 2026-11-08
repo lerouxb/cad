@@ -252,6 +252,24 @@ export function constraintParticipants(
   }
 }
 
+/** "2 curves", "1 point + 1 curve", ... for the tooltip and popover. */
+export function constraintParticipantSummary(
+  sketch: Sketch,
+  constraintId: string,
+): string {
+  const participants = constraintParticipants(sketch, constraintId);
+  const curveIds = new Set([
+    ...sketch.curves.map((curve) => curve.id),
+    ...(sketch.references?.lines.map((line) => line.id) ?? []),
+  ]);
+  const curves = participants.filter((id) => curveIds.has(id)).length;
+  const points = participants.length - curves;
+  const parts: string[] = [];
+  if (curves > 0) parts.push(`${curves} curve${curves === 1 ? "" : "s"}`);
+  if (points > 0) parts.push(`${points} point${points === 1 ? "" : "s"}`);
+  return parts.join(" + ") || "constraint";
+}
+
 export function constraintMarks(
   sketch: Sketch,
   context: MarkContext,

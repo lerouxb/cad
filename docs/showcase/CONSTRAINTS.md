@@ -53,6 +53,9 @@ dimension.** A driving distance is not also an “equal” or “parallel” mar
 1. **One relationship, one mark per participant.** A parallel constraint puts a
    mark on each line, not two marks stacked at one midpoint. A symmetric
    constraint draws one connector with the pair, not a badge on each line.
+   A **single-participant badge** (H/V) sits *on* its line at the midpoint; a
+   multi-participant badge sits outside its entity so each participant can carry
+   its own mark without another offset.
 2. **The mark attaches to the thing it constrains.** It never floats in empty
    space, except a badge at a connector's midpoint when the pair has no natural
    home.
@@ -80,7 +83,7 @@ dimension.** A driving distance is not also an “equal” or “parallel” mar
 
 | Entity | Slots |
 | --- | --- |
-| line | 30 % (equal), 50 % (H/V or midpoint), 70 % (parallel/perpendicular); badges sit 7 px on the outside normal |
+| line | 30 % (equal), 50 % (H/V **on** the line, sliding if occupied; midpoint tick), 70 % (parallel/perpendicular, 7 px outside the normal) |
 | point | a ring or dot at the point; extra badges offset 8 px along the bisector away from the geometry |
 | circle | radial tick at the top; a second equal group at −30°; a badge at 210° |
 | arc | radial tick at the arc midpoint; badges at the arc midpoint |
@@ -117,8 +120,8 @@ changes on hover/selection.
 
 | Constraint | Selection | Mark | Where | On a vertical / horizontal line | Notes |
 | --- | --- | --- | --- | --- | --- |
-| **Horizontal** | one line | `H` badge | line midpoint, 7 px outside the normal | upright; the line may be vertical in the sketch, the badge never rotates | `H` cannot coexist with `V` on the same line |
-| **Vertical** | one line | `V` badge | as above | upright | — |
+| **Horizontal** | one line | `H` badge | line midpoint, **on** the line; its paper fill interrupts the line; slides along the line if a point/mark occupies the midpoint | upright; the line may be vertical in the sketch, the badge never rotates | single-participant badge: no outside offset; H cannot coexist with V on the same line |
+| **Vertical** | one line | `V` badge | as above | upright | single-participant badge: no outside offset |
 | **Parallel** | two lines | `∥` badge on each + a faint dashed tie on hover | 70 % along each line | badges stay upright; the tie follows the pair | do not use two full arrows; the tie is what says *which* lines |
 | **Perpendicular** | two lines | right-angle square at the intersection; `⊥` badges + tie when they do not intersect | the intersection, or 70 % on each | the square rotates with the corner | one square, not two; the square sits in the angle that is inside the profile when known |
 | **Collinear** | two lines | `≡` at the join + a dashed tie across the gap | the gap midpoint | the tie runs along the common line | a shared endpoint needs no tie; the `≡` alone. The solver's internal point-on-line is not a second mark. |
@@ -290,9 +293,9 @@ angle.
   token as the dimension labels. Delay ~120 ms so dragging across the sketch does
   not flash it. On touch there is no hover: a tap selects and the popover supplies
   the name.
-- **Hit target.** About a 12 px target around the mark (its label box for a
-  badge, a 6 px radius for a glyph), above the geometry (24 px on coarse
-  pointers). A click on a mark selects the constraint, not the line under it. A
+- **Hit target.** A 14 px target around the mark (its label box for a badge, a
+  7 px radius for a glyph), above the geometry (24 px on coarse pointers is
+  still to do). A click on a mark selects the constraint, not the line under it. A
   midpoint badge sits off the line, so the line itself stays selectable under
   it; a tick that sits on a line is the one place where the mark wins.
 - **Keyboard/a11y.** Marks are not in the tab order in v1 (too many, too close
@@ -401,6 +404,7 @@ are still proposed.
 | C18 | Dragging a mark pins it; all marks of one constraint move together. A pinned mark keeps a dotted leader and can be reset. | Association survives the move; the user is never stuck with a bad auto-position. |
 | C19 | Mark hit targets are 14 px (24 px coarse) and sit above geometry; overlapping targets open a chooser, not a lottery. | Small icons should still be predictable to click. |
 | C20 | Constraint selection is ephemeral and single: one constraint at a time, mutually exclusive with geometry/dimension selection. | Matches the existing “selection is not document state” rule. |
+| C21 | A single-participant badge (H/V) sits **on** its line at the midpoint, sliding along the line if a point or another mark is there; multi-participant badges sit outside. | One mark does not need another offset; the paper fill interrupts the line cleanly and keeps the sketch quiet. |
 
 ## 9. Open questions
 
@@ -422,7 +426,7 @@ are still proposed.
 | Q14 | Do dimension labels avoid collisions automatically? | No; draggable with staggered defaults. | Deferred |
 | Q15 | Should the reference dimension readout use parentheses or a `REF` tag? | Parentheses + italic. | Proposed |
 | Q16 | What is the angle editor unit? | `°` via `editor.unit`; implemented — verify the angle path. | **Done** |
-| Q17 | Can the constraint name badge show the full name on hover? | Yes: `parallel`, `symmetric`, etc.; the symbol stays on the mark. | Proposed |
+| Q17 | Can the constraint name badge show the full name on hover? | Yes: `parallel`, `symmetric`, etc.; the symbol stays on the mark. | **Done** (2026-11-08) |
 | Q18 | Do constraints and dimensions appear in the timeline detail? | No; the sketch step lists sketch objects, not every constraint. | Proposed |
 | Q19 | Should a constraint mark be focusable / announced by a screen reader? | No individual focus; the applied chips in the selection popover are the accessible path. | Proposed |
 | Q20 | What is the touch path when there is no hover? | Tap the mark to select; the selection popover supplies the name. No tooltip. | Proposed |
@@ -432,7 +436,7 @@ are still proposed.
 | Q24 | Cluster list or cursor chooser? | Both: a cluster opens its list; two overlapping free marks open a chooser at the cursor. | Proposed |
 | Q25 | Does clicking an applied chip select or remove? | Remove immediately; the mark is the selectable handle. | Proposed |
 | Q26 | Can several constraints be selected at once? | No in v1; one constraint at a time, like a dimension. | Proposed |
-| Q27 | How long is the tooltip delay, and does it show for a selected constraint? | ~120 ms on hover; selection shows the popover, not a tooltip. | Proposed |
+| Q27 | How long is the tooltip delay, and does it show for a selected constraint? | ~120 ms on hover; selection shows the popover, not a tooltip. | **Done** (2026-11-08) |
 | Q28 | How is a pinned mark reset? | A quiet `reset position` in the constraint's selection popover (not double-click, which already means edit/rename elsewhere). | Proposed |
 
 ### Change log
@@ -472,17 +476,18 @@ Implemented (2026-11-08):
 
 Remaining:
 
-- **Phase 2a — finder chrome**: the tooltip (name + participant count, ~120 ms
-  delay), the constraint selection popover (name, participants, `delete`,
-  `reset position` when pinned), and the conflict ghost + `!` for the checked
+- **Phase 2a — finder chrome**: the conflict ghost + `!` for the checked
   preview. `pendingConstraint` is not yet passed into the canvas, so the conflict
-  preview is still a chip only.
+  preview is still a chip only. The tooltip (name + participant count, ~120 ms
+  delay) and the constraint selection popover (name, participants, `delete`) are
+  implemented; `reset position` waits for pinned marks.
 - **Phase 2b — collisions**: stacking slots/LOD clusters, the hover fan, the
   cursor chooser for overlapping hit targets, the pinned drag with a dotted
   leader, and the label-priority rule. None of these exist yet; current marks
-  are automatically placed with no cluster or user offset. The current render
-  order also places `ConstraintMarks` after every dimension, so a mark can cover
-  a value label; move the mark layer between the dimension lines and the labels.
+  are automatically placed with no cluster or user offset. The mark layer now
+  renders before the dimension lines and labels, so it cannot cover a value.
+  H/V currently offset one mark to the side; sit them on the line midpoint
+  instead (C21).
 - **Phase 3 — measurements**: open arrowheads on angle/radius/diameter leaders,
   the through-line/leader choice for diameter, witness-line gaps, label collision
   defaults, and the 0° angle behaviour.

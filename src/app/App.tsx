@@ -169,7 +169,7 @@ import {
 import { trimCurveAt } from "../core/sketch/trim";
 import { findSketchPoint, type Sketch } from "../core/sketch/types";
 import type { PlaneFrame, ProfileLoop, Vec2, Vec3 } from "../core/types";
-import { constraintParticipants } from "../sketch/constraintMarks";
+import { constraintParticipantSummary } from "../sketch/constraintMarks";
 import {
   SketchCanvas,
   type ArcSpec,
@@ -1162,25 +1162,12 @@ export function App() {
   );
   const constraintSelectionInfo = useMemo(() => {
     if (!selectedConstraint) return [];
-    const participants = constraintParticipants(
-      sketch,
-      selectedConstraint.id,
-    );
-    const curveIds = new Set([
-      ...sketch.curves.map((curve) => curve.id),
-      ...(sketch.references?.lines.map((line) => line.id) ?? []),
-    ]);
-    const curves = participants.filter((id) => curveIds.has(id)).length;
-    const points = participants.length - curves;
-    const parts: string[] = [];
-    if (curves > 0) parts.push(`${curves} curve${curves === 1 ? "" : "s"}`);
-    if (points > 0) parts.push(`${points} point${points === 1 ? "" : "s"}`);
     return [
       {
         id: selectedConstraint.id,
         kind: "constraint",
         label: constraintLabel(selectedConstraint.type),
-        detail: parts.join(" + ") || "constraint",
+        detail: constraintParticipantSummary(sketch, selectedConstraint.id),
       },
     ];
   }, [selectedConstraint, sketch]);
