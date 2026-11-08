@@ -13,6 +13,7 @@ html[data-theme="day"] {
   --marker-wash: rgba(221, 255, 0, 0.46);
   --marker-fill: rgba(221, 255, 0, 0.28);
   --marker-ink: #101010;
+  --cut: #b83b3b;
   --danger: var(--ink);
   --overlay: rgba(251, 251, 249, 0.91);
   --overlay-soft: rgba(251, 251, 249, 0.55);
@@ -90,6 +91,7 @@ html[data-theme="night"] {
   --marker-wash: rgba(216, 255, 62, 0.3);
   --marker-fill: rgba(216, 255, 62, 0.5);
   --marker-ink: #101010;
+  --cut: #e26a6a;
   --danger: var(--ink);
   --overlay: rgba(17, 17, 16, 0.92);
   --overlay-soft: rgba(17, 17, 16, 0.55);
@@ -3296,6 +3298,41 @@ body {
   flex-direction: column;
   gap: 9px;
   padding: 10px 0;
+}
+
+.seg {
+  display: flex;
+  min-width: 0;
+  border: 1px solid var(--rule);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.seg-option {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 7px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-size: var(--type-label);
+  letter-spacing: var(--tracking-label);
+  line-height: var(--leading-label);
+  white-space: nowrap;
+}
+
+.seg-option + .seg-option {
+  border-left: 1px solid var(--rule);
+}
+
+.seg-option.is-active {
+  background: var(--marker-fill);
+  color: var(--ink);
+}
+
+.seg-option:disabled {
+  opacity: 0.38;
 }
 
 .feature-error {

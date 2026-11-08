@@ -1,6 +1,7 @@
-import type { RevolveAxis } from "../core/doc/types";
+import type { ExtrudeOperation, RevolveAxis } from "../core/doc/types";
 import type { SketchCurve } from "../core/sketch/types";
 import { MeasureField } from "./MeasureField";
+import { OPERATION_LABELS, OperationRow } from "./OperationRow";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
 
 interface RevolvePopoverProps {
@@ -10,7 +11,8 @@ interface RevolvePopoverProps {
   axisCandidates: readonly SketchCurve[];
   angles: number;
   direction: "ccw" | "cw";
-  operation: "new" | "join" | "cut";
+  operation: ExtrudeOperation;
+  hasBase: boolean;
   isDraft: boolean;
   error?: string | null;
   position: PopoverPosition;
@@ -19,7 +21,7 @@ interface RevolvePopoverProps {
   onAngle: (value: number) => void;
   onAngleEnd: () => void;
   onDirection: (direction: "ccw" | "cw") => void;
-  onOperation: (operation: "new" | "join" | "cut") => void;
+  onOperation: (operation: ExtrudeOperation) => void;
   onApply: () => void;
   onCancel: () => void;
 }
@@ -40,6 +42,7 @@ export function RevolvePopover({
   angles,
   direction,
   operation,
+  hasBase,
   isDraft,
   error,
   position,
@@ -68,7 +71,7 @@ export function RevolvePopover({
             },
             axisCandidates.findIndex((curve) => curve.id === axis.curveId),
           ) ?? "line");
-  const summary = `${profileCount} profile${profileCount === 1 ? "" : "s"} · ${angles}° · ${operation === "new" ? "new body" : operation}`;
+  const summary = `${profileCount} profile${profileCount === 1 ? "" : "s"} · ${angles}° · ${OPERATION_LABELS[operation]}`;
   return (
     <StagePopover
       kicker={isDraft ? "new feature" : "revolve feature"}
@@ -195,20 +198,12 @@ export function RevolvePopover({
 
       <div className="feature-row">
         <span className="detail-key">operation</span>
-        <span className="sc-chip-row">
-          {(["new", "join", "cut"] as const).map((value) => (
-            <button
-              className={`sc-chip${operation === value ? " is-active" : ""}`}
-              type="button"
-              key={value}
-              onClick={() => onOperation(value)}
-              data-testid={`revolve-operation-${value}`}
-              aria-pressed={operation === value}
-            >
-              {value === "new" ? "new body" : value}
-            </button>
-          ))}
-        </span>
+        <OperationRow
+          value={operation}
+          onChange={onOperation}
+          hasBase={hasBase}
+          testIdPrefix="revolve-operation"
+        />
       </div>
 
       {error ? (

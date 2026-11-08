@@ -1,5 +1,6 @@
 import type { ExtrudeFeature, SketchFeature } from "../core/doc/types";
 import { MeasureField } from "./MeasureField";
+import { OPERATION_LABELS, OperationRow } from "./OperationRow";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
 
 interface FeaturePopoverProps {
@@ -16,6 +17,7 @@ interface FeaturePopoverProps {
   onSketchChange?: (sketchId: string) => void;
   onToggleSymmetric: () => void;
   onOperation: (operation: ExtrudeFeature["operation"]) => void;
+  hasBase?: boolean;
   onEnd: (end: ExtrudeFeature["end"]) => void;
   onSelectProfiles: () => void;
   /** Popover chrome. Drafts use the same form with different wording/test ids. */
@@ -49,6 +51,7 @@ export function FeaturePopover({
   onSketchChange,
   onToggleSymmetric,
   onOperation,
+  hasBase = true,
   onEnd,
   onSelectProfiles,
   kicker = "extrude feature",
@@ -66,8 +69,8 @@ export function FeaturePopover({
   const summary =
     summaryOverride ??
     (feature.end === "throughAll"
-      ? `through all · ${feature.operation} · ${profiles}`
-      : `${feature.height} mm · ${feature.operation}${
+      ? `through all · ${OPERATION_LABELS[feature.operation]} · ${profiles}`
+      : `${feature.height} mm · ${OPERATION_LABELS[feature.operation]}${
           feature.symmetric ? " · symmetric" : ""
         } · ${profiles}`);
 
@@ -134,22 +137,15 @@ export function FeaturePopover({
         </button>
       </div>
 
-      <label className="feature-row">
+      <div className="feature-row">
         <span className="detail-key">operation</span>
-        <select
-          className="detail-select"
+        <OperationRow
           value={feature.operation}
-          onChange={(event) =>
-            onOperation(event.target.value as ExtrudeFeature["operation"])
-          }
-          aria-label="Extrude operation"
-          data-testid="extrude-operation"
-        >
-          <option value="new">new</option>
-          <option value="join">join</option>
-          <option value="cut">cut</option>
-        </select>
-      </label>
+          onChange={onOperation}
+          hasBase={hasBase}
+          testIdPrefix="extrude-operation"
+        />
+      </div>
 
       <label className="feature-row">
         <span className="detail-key">end</span>
@@ -163,7 +159,9 @@ export function FeaturePopover({
           data-testid="extrude-end"
         >
           <option value="blind">blind</option>
-          <option value="throughAll">through all</option>
+          <option value="throughAll" disabled={feature.operation !== "cut"}>
+            through all
+          </option>
         </select>
       </label>
 

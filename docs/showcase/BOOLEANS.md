@@ -1,7 +1,6 @@
 # Boolean operations
 
-> Status: **active contract**, 2026-11-08 (intersect is specified but not yet
-> implemented). The visual companion is the “One boolean language” section of
+> Status: **active contract**, 2026-11-08 (implemented for extrude/revolve). The visual companion is the “One boolean language” section of
 > [`booleans.html`](booleans.html). This is the source of truth for the operation
 > row on extrude, revolve and future features, and for the cut/intersect preview
 > language. It complements [`OFFSET_FACES.md`](OFFSET_FACES.md) (the
@@ -239,35 +238,29 @@ body (`→ body`). Do not add four boolean options to the offset form.
 
 Implemented today:
 
-- The document/kernel support `new` / `join` / `cut` only; there is no
-  `intersect` in `ExtrudeOperation`, `KernelOperation`, the worker or the UI.
-- Extrude uses a `<select>` with `new` / `join` / `cut`; the summary and timeline
-  meta say `new`, not `new body`.
-- The offset-face draft already returns **added/removed diff meshes**; the viewer
-  renders added in the highlighter and removed in cut red over a faint ghost of
-  the pre-offset body. **That is the reference implementation of the preview
-  grammar.**
-- Extrude/revolve previews render the resulting body only. A join does not
-  highlight the material it adds; a cut shows the body with the hole but no red
-  removed volume; an intersect (when it lands) must use the ghost/kept grammar,
-  not a red one.
-- The timeline output chip is `+`/`→` and the meta carries the operation word.
-- The studies now follow this contract: `booleans.html` is the visual companion,
-  `extrude.html` highlights the material a join adds, shows cut in red and
-  intersect as ghost/overlap, and `body-ops.html` shows combine join/intersect
-  with the same grammar.
+- `ExtrudeOperation`/`KernelOperation` include `new`, `join`, `cut` and
+  `intersect`; migrations accept all four. The worker uses
+  `fuseWithEvolution`/`cutWithEvolution`/`intersectWithEvolution`.
+- Extrude and revolve use the same four-way segmented `OperationRow` in the
+  document order `new body · join · cut · intersect`. `cut`/`intersect` are
+  disabled on a first feature, through-all is cut-only, and changing away from
+  cut restores blind.
+- Extrude and revolve drafts/edits request the boolean diff: join shows the added
+  tool material in the highlighter, cut shows removed material in cut red plus a
+  ghost cutter, intersect ghosts the discarded target/tool and keeps the overlap
+  normal. The result body is not repainted. Offset faces uses the same
+  added/removed grammar.
+- `--cut` is a palette token; the viewer reads it (with a theme fallback).
+- Cut with no overlap and intersect with an empty result are visible errors.
+- Timeline meta uses `new body`; the output chip stays `+`/`→`.
 
 Remaining:
 
-- Add `intersect` to the document type, migration, rebuild/worker protocol and
-  worker boolean, with the empty/no-overlap errors.
-- Replace the extrude operation select with the four-way segmented row; update
-  the labels and summaries to `new body`.
-- Request the added/removed diff for extrude/revolve drafts, and use the ghost
-  layer for intersect, so the preview matches offset faces.
-- Add the cut/intersect preview to the revolve form when it lands.
-- Add a `--cut` (removed-material) token to the app palette; the viewer currently
-  hardcodes the day/night red.
+- A disjoint `join` still relies on the current worker behaviour; the contract
+  does not decide whether it becomes a second body or an error (O2).
+- Combine/Split Body and `intersect` between bodies remain M6 work.
+- Move/share the tool/result ghost treatment with `booleans.html` when the
+  visual companion is finalized.
 
 Code map for the implementation session:
 

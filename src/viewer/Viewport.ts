@@ -677,9 +677,12 @@ export class Viewport {
     this.clearGroup(this.diffGroup);
     const added = diff?.added ?? null;
     const removed = diff?.removed ?? null;
-    const kinds = [added ? "added" : "", removed ? "removed" : ""].filter(
-      Boolean,
-    );
+    const ghost = diff?.ghost ?? null;
+    const kinds = [
+      added ? "added" : "",
+      removed ? "removed" : "",
+      ghost ? "ghost" : "",
+    ].filter(Boolean);
     this.canvas.dataset.offsetDiff = kinds.join(",");
     this.canvas.dataset.offsetDiffAdded = String(
       (added?.indices.length ?? 0) / 3,
@@ -687,18 +690,33 @@ export class Viewport {
     this.canvas.dataset.offsetDiffRemoved = String(
       (removed?.indices.length ?? 0) / 3,
     );
+    this.canvas.dataset.offsetDiffGhost = String(
+      (ghost?.indices.length ?? 0) / 3,
+    );
     if (added) {
       this.addDiffMesh(added, this.highlightColor, 0.34, 3);
     }
     if (removed) {
-      this.addDiffMesh(
-        removed,
-        this.theme === "night" ? "#e26a6a" : "#b83b3b",
-        0.3,
-        4,
-      );
+      this.addDiffMesh(removed, this.cutColor(), 0.3, 4);
+    }
+    if (ghost) {
+      this.addDiffMesh(ghost, this.ghostColor(), 0.12, 2);
     }
     this.dirty = true;
+  }
+
+  private cutColor(): string {
+    const value = getComputedStyle(this.canvas)
+      .getPropertyValue("--cut")
+      .trim();
+    return value || (this.theme === "night" ? "#e26a6a" : "#b83b3b");
+  }
+
+  private ghostColor(): string {
+    const value = getComputedStyle(this.canvas)
+      .getPropertyValue("--ink-3")
+      .trim();
+    return value || (this.theme === "night" ? "#807d72" : "#87847a");
   }
 
   private addDiffMesh(

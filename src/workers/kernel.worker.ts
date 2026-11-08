@@ -30,6 +30,7 @@ import {
   fuse,
   fuseAll,
   fuseWithEvolution,
+  intersectWithEvolution,
   getBounds,
   getCurveType,
   getEdges,
@@ -422,7 +423,9 @@ function buildFeatures(features: KernelFeature[]): {
   let cacheInvalid = false;
 
   for (const feature of features) {
-    const cached = solidCache.get(feature.cacheKey);
+    // Preview diffs are request-time state, not solid state. Never satisfy a
+    // preview from the prefix cache: the cached solid has no diff meshes.
+    const cached = feature.preview ? undefined : solidCache.get(feature.cacheKey);
     if (cached) {
       base = cached.solid;
       baseRoles = cached.roles;
@@ -466,11 +469,13 @@ function buildFeatures(features: KernelFeature[]): {
         baseRoles = result.roles;
         baseKey = feature.cacheKey;
         protectedKeys.add(feature.cacheKey);
-        pending.push({
-          key: feature.cacheKey,
-          solid: result.solid,
-          roles: result.roles,
-        });
+        if (!feature.preview) {
+          pending.push({
+            key: feature.cacheKey,
+            solid: result.solid,
+            roles: result.roles,
+          });
+        }
         statuses.push({
           featureId: feature.featureId,
           status: "ok",
@@ -511,14 +516,17 @@ function buildFeatures(features: KernelFeature[]): {
 
     try {
       if (!base) {
-        if (feature.operation === "cut") {
+        if (feature.operation === "cut" || feature.operation === "intersect") {
           tool.delete();
           cacheInvalid = true;
           statuses.push({
             featureId: feature.featureId,
             status: "error",
             cached: false,
-            message: "Nothing exists to cut.",
+            message:
+              feature.operation === "cut"
+                ? "Nothing exists to cut."
+                : "Nothing exists to intersect.",
           });
           continue;
         }
@@ -544,11 +552,13 @@ function buildFeatures(features: KernelFeature[]): {
         ]);
         baseKey = feature.cacheKey;
         protectedKeys.add(feature.cacheKey);
-        pending.push({
-          key: feature.cacheKey,
-          solid: tool,
-          roles: baseRoles,
-        });
+        if (!feature.preview) {
+          pending.push({
+            key: feature.cacheKey,
+            solid: tool,
+            roles: baseRoles,
+          });
+        }
         statuses.push({
           featureId: feature.featureId,
           status: "ok",
@@ -578,7 +588,9 @@ function buildFeatures(features: KernelFeature[]): {
       const result = unwrap(
         feature.operation === "cut"
           ? cutWithEvolution(base, tool)
-          : fuseWithEvolution(base, tool),
+          : feature.operation === "intersect"
+            ? intersectWithEvolution(base, tool)
+            : fuseWithEvolution(base, tool),
       );
       // Advance every origin's role table through the boolean. This is what
       // keeps a face's role stable when an upstream join/cut re-hashes it.
@@ -589,6 +601,27 @@ function buildFeatures(features: KernelFeature[]): {
       // A boolean of two solids is a solid; brepjs's widest overload returns
       // Shape3D, so narrow it here before caching.
       const resultSolid = result.shape as Solid;
+      if (feature.operation === "cut") {
+        const before = unwrap(measureVolume(base));
+        const after = isEmpty(resultSolid)
+          ? 0
+          : unwrap(measureVolume(resultSolid));
+        if (isEmpty(resultSolid) || after >= before - 1e-7) {
+          throw new Error("The cutter does not intersect the body.");
+        }
+      }
+      if (feature.operation === "intersect") {
+        if (
+          isEmpty(resultSolid) ||
+          getSolids(resultSolid).length === 0 ||
+          unwrap(measureVolume(resultSolid)) <= 1e-9
+        ) {
+          throw new Error("The intersection is empty.");
+        }
+      }
+      if (feature.preview) {
+        diff = buildBooleanDiff(base, tool, resultSolid, feature.operation);
+      }
       // OCCT does not report every boolean-made face as "modified": a tool wall
       // that keeps only part of its length (or a cut's new hole wall) can arrive
       // with no role at all. Name those faces against the tool they lie on, so
@@ -606,11 +639,13 @@ function buildFeatures(features: KernelFeature[]): {
       baseRoles = roles;
       baseKey = feature.cacheKey;
       protectedKeys.add(feature.cacheKey);
-      pending.push({
-        key: feature.cacheKey,
-        solid: resultSolid,
-        roles,
-      });
+      if (!feature.preview) {
+        pending.push({
+          key: feature.cacheKey,
+          solid: resultSolid,
+          roles,
+        });
+      }
       statuses.push({
         featureId: feature.featureId,
         status: "ok",
@@ -2125,6 +2160,54 @@ function extentAlongFrame(
   return Number.isFinite(min) && Number.isFinite(max)
     ? { min, max }
     : { min: 0, max: 1 };
+}
+
+/** Mesh the diff language for a previewed join/cut/intersect. */
+function buildBooleanDiff(
+  before: Solid,
+  tool: Solid,
+  after: Solid,
+  operation: "join" | "cut" | "intersect",
+): BodyDiff | null {
+  let added: Solid | null = null;
+  let removed: Solid | null = null;
+  let ghost: Solid | null = null;
+  let ghostA: Solid | null = null;
+  let ghostB: Solid | null = null;
+  try {
+    if (operation === "join") {
+      added = unwrap(cut(tool, before)) as Solid;
+    } else if (operation === "cut") {
+      removed = unwrap(cut(before, after)) as Solid;
+      ghost = unwrap(cut(tool, after)) as Solid;
+    } else {
+      ghostA = unwrap(cut(before, after)) as Solid;
+      ghostB = unwrap(cut(tool, after)) as Solid;
+      if (isEmpty(ghostA)) {
+        ghost = ghostB;
+        ghostB = null;
+      } else if (isEmpty(ghostB)) {
+        ghost = ghostA;
+        ghostA = null;
+      } else {
+        ghost = unwrap(fuse(ghostA, ghostB)) as Solid;
+      }
+    }
+    const result: BodyDiff = {
+      added: added && !isEmpty(added) ? diffMesh(added) : null,
+      removed: removed && !isEmpty(removed) ? diffMesh(removed) : null,
+      ghost: ghost && !isEmpty(ghost) ? diffMesh(ghost) : null,
+    };
+    return result.added || result.removed || result.ghost ? result : null;
+  } catch {
+    return null;
+  } finally {
+    added?.delete();
+    removed?.delete();
+    ghost?.delete();
+    ghostA?.delete();
+    ghostB?.delete();
+  }
 }
 
 /**

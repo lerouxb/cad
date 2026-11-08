@@ -236,7 +236,7 @@ test("new extrude picks profiles from the selected sketch", async ({ app: page }
   await expect(page.getByTestId("region-panel")).toContainText("2 of 2 regions");
   await expect(page.getByTestId("extrude-apply")).toBeEnabled();
 
-  await page.getByTestId("extrude-operation").selectOption("cut");
+  await page.getByTestId("extrude-operation-cut").click();
   await page.getByTestId("extrude-end").selectOption("throughAll");
   await page.getByTestId("extrude-apply").click();
 
@@ -266,9 +266,9 @@ test("edits, suppresses and deletes an extrude", async ({ app: page }) => {
   await expect(page.getByTestId("extrude-symmetric")).toContainText("symmetric");
   await expect.poll(() => meshBounds(page)).toBe("-30,-20,-15,30,20,15");
 
-  await page.getByTestId("extrude-operation").selectOption("join");
+  await page.getByTestId("extrude-operation-join").click();
   await expect.poll(() => volume(page)).toBeCloseTo(plate30, -1);
-  await page.getByTestId("extrude-operation").selectOption("new");
+  await page.getByTestId("extrude-operation-new").click();
 
   await page.getByTestId("feature-popover-apply").click();
   await page.getByTestId("feature-suppress").click();
@@ -304,7 +304,7 @@ test("cancel restores the previous extrude and discards a draft", async ({
   const plate30 = examplePlateVolume(30);
   await expect.poll(() => volume(page)).toBeCloseTo(plate30, -1);
   await expect(page.getByTestId("feature-popover")).toContainText(
-    "30 mm · new · symmetric · 1 region",
+    "30 mm · new body · symmetric · 1 region",
   );
 
   await page.getByTestId("feature-popover-cancel").click();

@@ -1224,8 +1224,70 @@ export function App() {
           )}`,
           params: revolvePreviewParams,
           operation: draft.operation,
+          preview: true,
         },
       ];
+    }
+    if (
+      extrudeDraft &&
+      extrudeDraft.regions.length > 0 &&
+      (extrudeDraft.height > 0 || extrudeDraft.end === "throughAll")
+    ) {
+      const wanted = new Set(extrudeDraft.regions);
+      const selected = (activeSketchBuild?.regions ?? regions).filter((region) =>
+        wanted.has(region.id),
+      );
+      if (selected.length > 0) {
+        features = [
+          ...features,
+          {
+            kind: "extrude",
+            featureId: "extrude-draft",
+            cacheKey: `extrude-draft-${stableHash(
+              canonicalJson({
+                regions: extrudeDraft.regions,
+                height: extrudeDraft.height,
+                operation: extrudeDraft.operation,
+                symmetric: extrudeDraft.symmetric,
+                end: extrudeDraft.end,
+                frame: activeSketchBuild?.frame ?? null,
+                upstream: features.map((feature) => feature.cacheKey),
+              }),
+            )}`,
+            params: extrudeParams(selected, extrudeDraft.height, {
+              symmetric: extrudeDraft.symmetric,
+              end: extrudeDraft.end,
+              frame: activeSketchBuild?.frame,
+            }),
+            operation: extrudeDraft.operation,
+            preview: true,
+          },
+        ];
+      }
+    }
+    if (editorOpen && activeFeature?.type === "extrude") {
+      features = features.map((feature) =>
+        feature.kind === "extrude" &&
+        feature.featureId === activeFeature.id
+          ? {
+              ...feature,
+              preview: true,
+              cacheKey: `${feature.cacheKey}|preview`,
+            }
+          : feature,
+      );
+    }
+    if (revolveDraft?.mode === "edit" && revolveDraft.featureId) {
+      features = features.map((feature) =>
+        feature.kind === "revolve" &&
+        feature.featureId === revolveDraft.featureId
+          ? {
+              ...feature,
+              preview: true,
+              cacheKey: `${feature.cacheKey}|preview`,
+            }
+          : feature,
+      );
     }
     if (offsetDraft?.mode === "edit" && offsetDraft.featureId) {
       const id = offsetDraft.featureId;
@@ -1240,11 +1302,16 @@ export function App() {
     rebuild,
     fallbackParams,
     activeExtrude,
+    activeFeature,
+    activeSketchBuild,
     blendDraft,
-    shellDraft,
+    editorOpen,
+    extrudeDraft,
     offsetDraft,
+    regions,
     revolveDraft,
     revolvePreviewParams,
+    shellDraft,
   ]);
   // The final solid in the rendered prefix, for export. Drafts are not in the
   // document, so they are excluded: export is always the applied body.
@@ -1325,6 +1392,25 @@ export function App() {
     solidFeatures.length,
     supportOpen,
   ]);
+
+  const hasBaseForForm = useMemo(() => {
+    const exclude =
+      activeFeature &&
+      (activeFeature.type === "extrude" || activeFeature.type === "revolve")
+        ? activeFeature.id
+        : null;
+    return buildDoc.features.some(
+      (feature) =>
+        feature.id !== exclude &&
+        feature.suppressed !== true &&
+        (isExtrudeFeature(feature) ||
+          isRevolveFeature(feature) ||
+          isFilletFeature(feature) ||
+          isChamferFeature(feature) ||
+          isShellFeature(feature) ||
+          isOffsetFaceFeature(feature)),
+    );
+  }, [buildDoc, activeFeature]);
 
   // While editing a sketch on a world or datum plane there is no supporting
   // face to project. Show the body that exists at this step as faint projected
@@ -6166,6 +6252,7 @@ export function App() {
                 angles={revolveDraft.angle}
                 direction={revolveDraft.direction}
                 operation={revolveDraft.operation}
+                hasBase={hasBaseForForm}
                 isDraft={revolveDraft.mode === "new"}
                 error={revolveDraftError ?? revolvePreviewError}
                 position={popoverPosition}
@@ -6600,6 +6687,7 @@ export function App() {
                   end: operation === "cut" ? draft.end : "blind",
                 }))
               }
+              hasBase={hasBaseForForm}
               onEnd={(end) =>
                 updateExtrudeDraft((draft) =>
                   end === "throughAll"
@@ -6744,6 +6832,7 @@ export function App() {
               onToggleSymmetric={handleToggleSymmetric}
               onOperation={handleExtrudeOperation}
               onEnd={handleExtrudeEnd}
+              hasBase={hasBaseForForm}
               onSelectProfiles={selectExtrudeProfiles}
             />
           ) : null}

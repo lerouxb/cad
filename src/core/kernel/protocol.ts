@@ -170,6 +170,8 @@ export interface DiffMesh {
 export interface BodyDiff {
   added: DiffMesh | null;
   removed: DiffMesh | null;
+  /** Material a boolean discards without cutting: intersect context/tool. */
+  ghost?: DiffMesh | null;
 }
 
 /** Renderable output of one rebuild. Typed arrays are transferred, not copied. */
@@ -185,12 +187,14 @@ export interface BodyMesh {
   stats: BodyStats;
 }
 
-export type KernelOperation = "new" | "join" | "cut";
+export type KernelOperation = "new" | "join" | "cut" | "intersect";
 
 interface KernelFeatureBase {
   featureId: string;
   /** hash(canonical(feature) + upstreamKey); also the worker cache key. */
   cacheKey: string;
+  /** Ask the worker for the added/removed/ghost boolean-difference meshes. */
+  preview?: boolean;
 }
 
 /** One resolved extrude in history order, with the main-thread cache key. */
@@ -233,8 +237,6 @@ export interface KernelOffsetFaceFeature extends KernelFeatureBase {
   kind: "offsetFace";
   faces: TopoRef[];
   distance: number;
-  /** Ask the worker to return the added/removed boolean-difference meshes. */
-  preview?: boolean;
 }
 
 export type KernelEdgeBlendFeature =

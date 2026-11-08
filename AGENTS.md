@@ -250,7 +250,8 @@ docs/
   added/removed/ghost preview. Cut/intersect need a base and a non-empty result;
   no base/no overlap is a visible error, never an empty step or a silent operation
   change. Through all is cut-only. The timeline chip stays `+`/`→`; `−` means
-  consumes. The offset-face added/removed diff is the reference preview.
+  consumes. Extrude/revolve and offset now share the added/removed/ghost preview;
+  the offset-face diff remains the simplest reference implementation.
 - **Offset faces v1 is planar/prismatic plus full cylindrical holes and bosses.**
   `docs/showcase/OFFSET_FACES.md` is the contract. `OffsetFaceFeature` (schema v13) stores
   face refs and a signed distance. The planar path sweeps a face and fuses/cuts it; it

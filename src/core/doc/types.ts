@@ -63,7 +63,7 @@ export interface FaceProjection {
   stale?: boolean;
 }
 
-export type ExtrudeOperation = "new" | "join" | "cut";
+export type ExtrudeOperation = "new" | "join" | "cut" | "intersect";
 
 /** A revolve is a profile swept around an in-plane sketch axis. */
 export type RevolveAxis =

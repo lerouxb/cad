@@ -710,35 +710,35 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
 size and the fillets survive. The printer export page reports real checks and produces
 an STL derived from the current history.
 
-## Next: Boolean operations (M5.x; [BOOLEANS.md](showcase/BOOLEANS.md))
+## Boolean operations (M5.x; [BOOLEANS.md](showcase/BOOLEANS.md), done)
 
-This is the next implementation step. The offset-face diff is the reference preview; the
-operation vocabulary and colour language are already specified.
+The shared boolean contract landed. The offset-face diff was the reference preview; the
+operation vocabulary and colour language are now shared by extrude, revolve and offset.
 
-- [ ] Add `intersect` to `ExtrudeOperation`/`KernelOperation`, the document validation and
+- [x] Add `intersect` to `ExtrudeOperation`/`KernelOperation`, the document validation and
       the worker boolean branch (`intersect`/`intersectWithEvolution`), with visible
       no-base and empty-overlap errors.
-- [ ] Replace the extrude `<select>` with one segmented row on extrude **and** revolve:
+- [x] Replace the extrude `<select>` with one segmented row on extrude **and** revolve:
       `new body · join · cut · intersect`, always in that order, all four visible.
       `new` stays the document key; the visible label is `new body`.
-- [ ] Default the draft to `new body` with no body and `join` with a body. Never switch an
+- [x] Default the draft to `new body` with no body and `join` with a body. Never switch an
       operation silently after the draft opens.
-- [ ] Preview grammar:
+- [x] Preview grammar:
       - `new body`: result body normal, no diff;
       - `join`: added material (result minus target) in the highlighter;
       - `cut`: removed material in cut red; ghost the tool outside the target;
       - `intersect`: keep the overlap normal and ghost the discarded target/tool volume;
         never red.
       The result body itself is never repainted.
-- [ ] Add a `--cut` removed-material token to the app palette and extend the viewer's diff
+- [x] Add a `--cut` removed-material token to the app palette and extend the viewer's diff
       layer to support the ghost state (the offset preview currently hardcodes the red).
-- [ ] Request diff meshes for extrude/revolve previews only (like `offset-draft`), not for
+- [x] Request diff meshes for extrude/revolve previews only (like `offset-draft`), not for
       committed steps or export.
-- [ ] Through-all remains cut-only. Cut/intersect need a base and a non-empty result;
+- [x] Through-all remains cut-only. Cut/intersect need a base and a non-empty result;
       no-overlap/no-base are visible errors, never empty steps.
-- [ ] Timeline: operation in the meta (`12 mm · cut`), output chip stays `+`/`→`; `−` is
+- [x] Timeline: operation in the meta (`12 mm · cut`), output chip stays `+`/`→`; `−` is
       reserved for consumes. Re-edit restores the baseline operation.
-- [ ] Tests: new body/join/cut/intersect volumes, diff triangle sides, no-base and
+- [x] Tests: new body/join/cut/intersect volumes, diff triangle sides, no-base and
       no-overlap errors, through-all cut-only, edit/cancel, and the segmented row in both
       feature forms.
 

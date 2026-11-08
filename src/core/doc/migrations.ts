@@ -249,7 +249,7 @@ function validateFeature(raw: unknown): Feature | null {
       return null;
     }
     if (raw.direction !== "ccw" && raw.direction !== "cw") return null;
-    if (raw.operation !== "new" && raw.operation !== "join" && raw.operation !== "cut") {
+    if (isOperation(raw.operation) === false) {
       return null;
     }
     return {
@@ -552,7 +552,12 @@ function isWorldPlane(value: unknown): value is WorldPlane {
 }
 
 function isOperation(value: unknown): value is ExtrudeOperation {
-  return value === "new" || value === "join" || value === "cut";
+  return (
+    value === "new" ||
+    value === "join" ||
+    value === "cut" ||
+    value === "intersect"
+  );
 }
 
 function isEnd(value: unknown): value is "blind" | "throughAll" {
