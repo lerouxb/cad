@@ -3651,7 +3651,7 @@ function ConstraintMarks({
   const renderMark = (mark: ConstraintMark, index: number) => {
     const color =
       mark.style === "active"
-        ? palette.ink
+        ? palette.marker
         : mark.style === "hover"
           ? palette.hover
           : palette.badge;
@@ -3672,7 +3672,7 @@ function ConstraintMarks({
               width={width}
               height={height}
               rx={2 * px}
-              fill={palette.halo}
+              fill={mark.style === "active" ? palette.marker : palette.halo}
               stroke={color}
               strokeWidth={1}
               vectorEffect="non-scaling-stroke"
@@ -3680,23 +3680,13 @@ function ConstraintMarks({
             <text
               x={mark.x}
               y={mark.y + 3 * px}
-              fill={color}
+              fill={mark.style === "active" ? palette.markerInk : color}
               fontSize={8 * px}
               textAnchor="middle"
               pointerEvents="none"
             >
               {mark.label}
             </text>
-            {mark.style === "active" ? (
-              <rect
-                x={mark.x - width / 2}
-                y={mark.y + height / 2 + 0.5 * px}
-                width={width}
-                height={1.6 * px}
-                rx={0.8 * px}
-                fill={palette.marker}
-              />
-            ) : null}
           </g>
         );
       }
@@ -3880,6 +3870,7 @@ function ConstraintMarks({
           key={id}
           data-constraint-id={id}
           data-constraint-type={group.type}
+          data-mark-style={group.marks[0]?.style}
           data-selected={selectedConstraintId === id ? "true" : undefined}
           data-hovered={hoveredConstraintId === id ? "true" : undefined}
           style={interactive ? { cursor: "pointer" } : undefined}

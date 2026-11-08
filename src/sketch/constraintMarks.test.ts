@@ -155,9 +155,10 @@ describe("constraint mark geometry", () => {
     };
     const marks = constraintMarks(sketch, {
       points,
-      selected: new Set(["a", "e"]),
+      selected: new Set(),
       hoveredCurveId: null,
       hoveredPointId: null,
+      selectedConstraintId: "mirror",
       px: 0.1,
     });
     expect(marks.some((mark) => mark.kind === "tick")).toBe(true);
@@ -168,5 +169,43 @@ describe("constraint mark geometry", () => {
     expect(
       marks.some((mark) => mark.type === "collinear" && mark.kind === "segment"),
     ).toBe(true);
+    expect(
+      marks.filter((mark) => mark.type === "symmetric").every((mark) => mark.style === "active"),
+    ).toBe(true);
+  });
+
+  it("does not restyle constraints when their geometry is selected", () => {
+    const points = {
+      a: [0, 0] as [number, number],
+      b: [10, 0] as [number, number],
+      c: [0, 10] as [number, number],
+      d: [10, 10] as [number, number],
+    };
+    const sketch: Sketch = {
+      points: Object.entries(points).map(([id, [x, y]]) => ({ id, x, y })),
+      curves: [
+        { id: "l1", type: "line", a: "a", b: "b" },
+        { id: "l2", type: "line", a: "c", b: "d" },
+      ],
+      constraints: [{ id: "eq", type: "equal", a: "l1", b: "l2" }],
+    };
+    const quiet = constraintMarks(sketch, {
+      points,
+      selected: new Set(["l1", "l2"]),
+      hoveredCurveId: null,
+      hoveredPointId: null,
+      px: 0.1,
+    });
+    expect(quiet.every((mark) => mark.style === "quiet")).toBe(true);
+
+    const active = constraintMarks(sketch, {
+      points,
+      selected: new Set(),
+      hoveredCurveId: null,
+      hoveredPointId: null,
+      selectedConstraintId: "eq",
+      px: 0.1,
+    });
+    expect(active.every((mark) => mark.style === "active")).toBe(true);
   });
 });

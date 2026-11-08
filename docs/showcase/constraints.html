@@ -8,7 +8,7 @@
     <meta http-equiv="Expires" content="0" />
     <title>cad studies — constraints &amp; measurements</title>
     <link rel="stylesheet" href="../mockups/mockup.css" />
-    <link rel="stylesheet" href="showcase.css?v=constraint-selected-2026-11-08-2" />
+    <link rel="stylesheet" href="showcase.css?v=constraint-selected-2026-11-08-3" />
     <script src="../mockups/theme-init.js"></script>
   </head>
   <body>
@@ -145,11 +145,9 @@
             <section class="study-section" id="states">
               <h2>States</h2>
               <p class="study-lede">
-                The same mark moves from quiet to hover to selected. On a selected
-                line the highlighter is a wash under the geometry; the mark itself
-                stays ink on paper with a marker underline. A conflict is a dashed
-                ghost plus a checked chip; the geometry does not move, and nothing
-                is written until the user confirms.
+                The same mark moves from quiet to hover to selected. A conflict is a
+                dashed ghost plus a checked chip; the geometry does not move, and
+                nothing is written until the user confirms.
               </p>
               <div class="con-grid" id="con-states"></div>
             </section>
@@ -193,7 +191,6 @@
                 <li><b>Geometry first.</b> Constraint marks are quiet; dimensions are one step louder; the highlighter is only “current”.</li>
                 <li><b>One mark per participant.</b> Parallel puts a badge on each line; symmetric puts one connector between them.</li>
                 <li><b>Hover is a preview, click is a selection.</b> Hover lights every companion mark and the participants; click selects the whole constraint; Backspace deletes it.</li>
-                <li><b>Selection is a wash under the marks, never their ink.</b> A selected line gets the highlighter; its constraints stay ink on paper with a marker underline.</li>
                 <li><b>A hovered mark explains itself.</b> A small tooltip names the constraint and its participant count; touch uses the selection popover instead.</li>
                 <li><b>Collision order is auto → cluster → chooser → drag.</b> Position automatically, collapse into a count, choose when hits overlap, and pin only when the first three cannot resolve it.</li>
                 <li><b>Orientation follows the geometry.</b> Equal ticks are perpendicular to the line; the perpendicular square turns with the corner; symmetric chevrons are perpendicular to the axis.</li>
@@ -257,7 +254,6 @@
       <ul>
         <li><b>Hover links the whole constraint.</b> Every companion mark and the participants highlight together; the tooltip names the mark. A parallel is one object, not two independent icons.</li>
         <li><b>Click selects; Backspace deletes.</b> A constraint mark is a handle. The selection popover shows its name, participants and delete; the applied chip remains the fast remove.</li>
-        <li><b>Selection is a wash under the marks.</b> A selected line gets the highlighter; its H, tick or ring stays ink on a paper badge with a marker underline, so it never disappears into the same colour.</li>
         <li><b>Symmetric rotates with the axis.</b> A connector perpendicular to the axis, with two inward chevrons. Vertical axis → left/right; horizontal axis → up/down.</li>
         <li><b>Equal is a tick, not an equals sign.</b> One tick per group; two ticks for a second group. On a circle the tick is radial.</li>
         <li><b>H/V stay upright and sit on the line.</b> The line can be vertical; the badge is a label, not a picture of the line. A single-participant badge sits at the midpoint, with its paper fill interrupting the line; multi-participant badges sit outside.</li>
@@ -286,6 +282,6 @@
     </aside>
 
     <script src="../mockups/mockups.js"></script>
-    <script src="showcase-constraints.js?v=constraint-selected-2026-11-08-2"></script>
+    <script src="showcase-constraints.js?v=constraint-selected-2026-11-08-3"></script>
   </body>
 </html>

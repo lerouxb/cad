@@ -227,8 +227,9 @@ docs/
   visual atlas. A new constraint or measurement updates both, and the marks stay a derived
   UI layer — never document state. A mark is the handle for its constraint: hover links the
   companions and participants, click selects the whole constraint, Backspace/Delete removes
-  it. Constraint selection is ephemeral UI state. Selected marks stay ink on paper — the
-  highlighter is a wash under the geometry, never the mark's stroke or badge fill.
+  it. Constraint selection is ephemeral UI state. Selecting a constraint highlights its
+  own mark (badge background/glyph) and participants; selecting geometry washes only the
+  geometry and leaves its constraints quiet.
 - **Selection families and actions are in `docs/showcase/SELECTION.md`.** A click selects;
   feature actions are chips in the same selection popover (a profile offers `extrude`, a
   face offers `new sketch`/`shell`, edges offer `fillet`/`chamfer`). No click starts a

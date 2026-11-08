@@ -276,7 +276,6 @@ export function constraintMarks(
 ): ConstraintMark[] {
   const {
     points,
-    selected,
     hoveredCurveId,
     hoveredPointId,
     selectedConstraintId,
@@ -297,7 +296,9 @@ export function constraintMarks(
     } as ConstraintMark);
   };
   const styleFor = (ids: readonly string[]): MarkStyle => {
-    if (ids.some((id) => selected.has(id))) return "active";
+    // Selecting geometry does not restyle its constraints. Only the mark's
+    // own selection (post-processed below) activates it; hovering a
+    // participant is a preview.
     if (
       ids.some(
         (id) =>
@@ -695,7 +696,12 @@ export function constraintMarks(
           y: chevrons.b.y,
           angle: chevrons.b.angle,
         });
-        if (style !== "quiet" && !activeAxes.has(axis.id)) {
+        if (
+          (style !== "quiet" ||
+            selectedConstraintId === constraint.id ||
+            hoveredConstraintId === constraint.id) &&
+          !activeAxes.has(axis.id)
+        ) {
           activeAxes.set(axis.id, constraint.id);
         }
         break;

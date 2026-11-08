@@ -1788,22 +1788,13 @@
   stroke: var(--ink);
 }
 
-.con-badge-underline {
-  display: none;
-  fill: var(--marker);
-}
-
 .con-badge.is-selected .con-badge-box {
-  fill: var(--bg);
-  stroke: var(--ink);
+  fill: var(--marker);
+  stroke: var(--marker);
 }
 
 .con-badge.is-selected .con-badge-text {
-  fill: var(--ink);
-}
-
-.con-badge.is-selected .con-badge-underline {
-  display: block;
+  fill: var(--marker-ink);
 }
 
 .con-badge.is-preview .con-badge-box {
@@ -1832,16 +1823,12 @@
 }
 
 .con-card.is-selected .con-badge-box {
-  fill: var(--bg);
-  stroke: var(--ink);
+  fill: var(--marker);
+  stroke: var(--marker);
 }
 
 .con-card.is-selected .con-badge-text {
-  fill: var(--ink);
-}
-
-.con-card.is-selected .con-badge-underline {
-  display: block;
+  fill: var(--marker-ink);
 }
 
 .con-card.is-selected .con-name {
@@ -2029,16 +2016,12 @@
 }
 
 .con-finder [data-constraint].is-selected .con-badge-box {
-  fill: var(--bg);
-  stroke: var(--ink);
+  fill: var(--marker);
+  stroke: var(--marker);
 }
 
 .con-finder [data-constraint].is-selected .con-badge-text {
-  fill: var(--ink);
-}
-
-.con-finder [data-constraint].is-selected .con-badge-underline {
-  display: block;
+  fill: var(--marker-ink);
 }
 
 .con-link-wash {

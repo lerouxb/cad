@@ -80,8 +80,6 @@
       '<g class="con-badge ' + (cls || "") + '">' +
       '<rect class="con-badge-box" x="' + f(x - w / 2) + '" y="' + f(y - 6) +
       '" width="' + f(w) + '" height="12" rx="2"/>' +
-      '<rect class="con-badge-underline" x="' + f(x - w / 2) + '" y="' + f(y + 6.5) +
-      '" width="' + f(w) + '" height="1.6" rx="0.8"/>' +
       text(x, y + 3, label, "con-badge-text") +
       "</g>"
     );
@@ -763,17 +761,6 @@
     );
   }
 
-  function stateSelectedLine() {
-    var a = [-30, 0];
-    var b = [30, 0];
-    return (
-      wash(a, b) +
-      L(a, b) +
-      badge(X(0), Y(0), "H") +
-      tick(a, b, 0.3, 1)
-    );
-  }
-
   function stateConflict() {
     var l1 = [[-32, -16], [8, 16]];
     var l2 = [[-8, -16], [32, 16]];
@@ -1231,8 +1218,7 @@
     var states = [
       card("Quiet", "ink-3, no fill", stateQuiet(), { toggle: true }),
       card("Hover", "ink-2 + the name", stateHover(), { toggle: true }),
-      card("Selected", "ink + paper badge + marker underline", stateSelected(), { mods: "is-selected", toggle: true }),
-      card("Selected line", "the wash goes under the marks", stateSelectedLine(), { mods: "is-selected", toggle: true }),
+      card("Selected", "highlighter + name", stateSelected(), { mods: "is-selected", toggle: true }),
       card("Conflict", "dashed ghost + ! + a checked chip", stateConflict(), {
         toggle: true,
         chip: '<span class="con-chip is-preview">parallel</span>' +

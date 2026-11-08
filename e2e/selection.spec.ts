@@ -58,6 +58,36 @@ test("profile helpers switch material/void and Shift cannot mix families", async
 });
 
 
+test("a selected line leaves constraints quiet; a selected mark highlights its badge", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+  await page.getByTestId("tool-rect").click();
+  await dragSketch(page, [-40, -30], [40, 30]);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("tool-select").click();
+
+  // The bottom edge is selected away from its midpoint H badge.
+  await clickSketch(page, -20, -30);
+  await expect(page.getByTestId("selection-panel")).toHaveAttribute(
+    "data-count",
+    "1",
+  );
+  const horizontal = page
+    .locator('[data-constraint-type="horizontal"]')
+    .first();
+  await expect(horizontal).toHaveAttribute("data-mark-style", "quiet");
+
+  // Clicking the mark selects the constraint and highlights its badge.
+  await horizontal.locator("[data-mark-hit]").last().click();
+  await expect(horizontal).toHaveAttribute("data-mark-style", "active");
+  await expect(page.getByTestId("selection-panel")).toContainText("Horizontal");
+  expect(errors).toEqual([]);
+});
+
+
 test("a sketch marquee follows the filter and Backspace deletes the set", async ({
   app: page,
 }) => {

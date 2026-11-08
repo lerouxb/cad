@@ -184,7 +184,7 @@ quietly close, apply a default, or fall through to "finish sketch".
 | --- | --- | --- | --- | --- | --- | --- |
 | S0 | Idle · `select` · nothing selected | finish sketch → model D2 | — | — | `nav` | — |
 | S1 | Sketch geometry / dimensions selected (any mix; `selection-panel`) | — | clear selection / close popover | `clear` | `nav` | delete the selected geometry/dimensions (references skipped; one undo) |
-| S1b | **Constraint mark selected** (companion marks stay ink on paper; participant geometry is washed; constraint popover) | — | clear selection / close popover | `clear` | `nav` · clear | remove the constraint (one undo; no geometry change) |
+| S1b | **Constraint mark selected** (the constraint's marks highlight; participant geometry is washed; constraint popover) | — | clear selection / close popover | `clear` | `nav` · clear | remove the constraint (one undo; no geometry change) |
 | S1c | **Profile selected** (normal sketch select; profile popover) | — | clear profile selection / close popover | `clear` | `nav` · clear | clear the profile selection; no geometry change |
 | S2 | Tool armed, no gesture (`line`/`rect`/`circle`/`arc`/`dimension`/`trim`/`box`/`lasso`) | end tool → `select` D3 | → `select` | `input` (see S3–S6) | `nav` · abort | — |
 | S3 | Line draft · 1 point | — | drop draft, stay in `line` D1 | `input` · add vertex | `nav` · drop draft | — D11 |

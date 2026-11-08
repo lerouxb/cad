@@ -78,10 +78,9 @@ dimension.** A driving distance is not also an “equal” or “parallel” mar
    dimension lines, but below the value labels; labels carry a paper-coloured
    halo so they stay readable over a dimension line or a constraint.
 8. **Never encode a constraint by colour alone.** Shape and position carry the
-   meaning. The highlighter means “current / selected”, never “constrained”.
-   The highlighter never becomes the mark's ink: on a selected line the marks
-   stay ink on paper, with a marker underline, so they read against the same
-   wash that selects the line.
+   meaning. The highlighter means “current / selected”, never “constrained”. A
+   selected constraint highlights its own mark and participants; a selected
+   line washes only the geometry and leaves its constraints quiet.
 
 ### Slots on an entity
 
@@ -101,7 +100,7 @@ Do not place a mark on top of a dimension line.
 | --- | --- | --- | --- |
 | **quiet** (default) | `--ink-3`, 1 px, no fill | line `--ink-3`, label `--ink-2` | ink, unchanged |
 | **hover** | the hovered mark **and all of its companions** go `--ink-2`, 1.4 px; a name tooltip appears | line 1.2 px, measured entities get a faint wash | the participants get a **0.35 marker wash** |
-| **selected** | every mark of the constraint goes ink; its badge gets a **paper fill + ink text + a marker underline**; the selection popover opens | the label is replaced by the inline editor | highlighter wash at 0.55 |
+| **selected** | every mark of the constraint gets the highlighter; its badge fills with it; the selection popover opens | the label is replaced by the inline editor | highlighter wash at 0.55 |
 | **conflict preview** | dashed ink + a small `!` badge | dashed preview dimension | **does not move** |
 | **reference** | — | italic `--ink-3`, parentheses, no highlighter | unchanged |
 | **fully constrained** | no per-constraint colour change | — | no wash; the foot says `0 DOF · fully constrained` |
@@ -275,12 +274,11 @@ angle.
   lines; hovering the symmetric connector lights both chevrons, the axis and the
   pair.
 - **Click any mark to select the whole constraint.** All of its marks and
-  participants stay highlighted at selection strength (0.55 wash). The marks
-  themselves go **ink on paper** — a badge gets a paper fill, ink text and a
-  marker underline — so they never disappear into the same highlighter wash as
-  the selected line. The selection popover opens with the constraint name, its
-  participants and a quiet `delete` in the footer. A companion mark is an
-  equally valid handle.
+  participants stay highlighted at selection strength (0.55 wash); the badge
+  itself fills with the highlighter. The selection popover opens with the
+  constraint name, its participants and a quiet `delete` in the footer. A
+  companion mark is an equally valid handle. Selecting geometry does not
+  restyle its constraints; only the mark's own selection does.
 - **Backspace/Delete removes the selected constraint** in one undo entry.
   Escape clears the selection; a background click clears it; selecting geometry
   or another constraint replaces it. A text field owns Backspace while it has
@@ -407,14 +405,14 @@ are still proposed.
 | C12 | Visibility toggles are deferred to M9. | They are a separate surface, not a per-constraint control. |
 | C13 | Automatic constraints use the same marks as manually applied ones. | There is one visual language, not an auto/manual split. |
 | C14 | Deleting geometry removes its marks. | Cascade-pruning is the source of truth; no orphan annotations. |
-| C15 | Hover lights the whole constraint at a 0.35 participant wash; selection at 0.55. The marks themselves stay ink; one highlighter, two intensities on the geometry. | The relation is visible before you commit to it; selection persists without swallowing the annotation. |
+| C15 | Hover lights the whole constraint at 0.35; selection at 0.55. One highlighter, two intensities. | The relation is visible before you commit to it; selection persists. |
 | C16 | A hovered mark names itself in a small paper tooltip (name + participant count). | The icon is learnable without a legend; touch uses the popover. |
 | C17 | Collision order: auto slots → cluster/fan → constraint chooser → drag. | Auto-position is the default; drag is the escape hatch, not the first answer. |
 | C18 | Dragging a mark pins it; all marks of one constraint move together. A pinned mark keeps a dotted leader and can be reset. | Association survives the move; the user is never stuck with a bad auto-position. |
 | C19 | Mark hit targets are 14 px (24 px coarse) and sit above geometry; overlapping targets open a chooser, not a lottery. | Small icons should still be predictable to click. |
 | C20 | Constraint selection is ephemeral and single: one constraint at a time, mutually exclusive with geometry/dimension selection. | Matches the existing “selection is not document state” rule. |
 | C21 | A single-participant badge (H/V) sits **on** its line at the midpoint, sliding along the line if a point or another mark is there; multi-participant badges sit outside. | One mark does not need another offset; the paper fill interrupts the line cleanly and keeps the sketch quiet. |
-| C22 | Selection is a **wash under** the geometry plus a marker underline on badges; it never becomes the mark's stroke or badge fill. Selected marks stay ink on paper. | A green/blue/pink mark on a same-colour transparent wash is unreadable. The annotation must survive the selection of the line it annotates. |
+| C22 | Selecting a constraint highlights its own mark (badge background/glyph) and its participants. Selecting geometry washes only the geometry; its constraints stay quiet. | The mark is the handle for the constraint; a line selection must not paint a second highlight under its annotations. |
 
 ## 9. Open questions
 
@@ -454,6 +452,7 @@ are still proposed.
 | Date | Decision | Change |
 | --- | --- | --- |
 | 2026-11-08 | C6, Q2 | Mark changed from read-only annotation to the constraint's handle: hover/click/delete. The applied chip remains an alternate removal path. |
+| 2026-11-08 | C22 | Clarified after review: constraint selection highlights the mark itself; line selection leaves constraints quiet. |
 
 ## 10. Current implementation and gap
 
@@ -485,9 +484,9 @@ Implemented (2026-11-08):
   geometry and shows the name tooltip; click selects the constraint (ephemeral
   state) and opens its selection popover; Backspace/Delete removes it. The
   applied chip remains an alternate removal path.
-- Selected marks stay ink on paper (C22): the active mark stroke and badge text
-  are ink, the badge keeps its paper fill, and a marker underline sits under it.
-  The highlighter is the participant geometry wash, never the mark's ink.
+- Constraint selection highlights the mark itself (badge background/glyph) and
+  its participants. Selecting geometry washes only the geometry; its
+  constraints stay quiet (C22).
 
 Remaining:
 - **Phase 2a — finder chrome**: the conflict ghost + `!` for the checked
