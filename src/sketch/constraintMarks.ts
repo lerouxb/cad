@@ -261,6 +261,7 @@ export function constraintParticipantSummary(
   const curveIds = new Set([
     ...sketch.curves.map((curve) => curve.id),
     ...(sketch.references?.lines.map((line) => line.id) ?? []),
+    ...(sketch.references?.circles?.map((circle) => circle.id) ?? []),
   ]);
   const curves = participants.filter((id) => curveIds.has(id)).length;
   const points = participants.length - curves;
@@ -282,7 +283,19 @@ export function constraintMarks(
     hoveredConstraintId,
     px,
   } = context;
-  const curves = new Map(sketch.curves.map((curve) => [curve.id, curve]));
+  // Include projected references, but not the fixed X/Y axes: axis marks are
+  // drawn at the same midpoints as ordinary geometry and would steal its click.
+  const curves = new Map(
+    [
+      ...sketch.curves,
+      ...(sketch.references?.lines.filter(
+        (line) => line.projectionId !== undefined,
+      ) ?? []),
+      ...(sketch.references?.circles?.filter(
+        (circle) => circle.projectionId !== undefined,
+      ) ?? []),
+    ].map((curve) => [curve.id, curve]),
+  );
   const marks: ConstraintMark[] = [];
   type MarkDraft = ConstraintMark extends infer T
     ? T extends ConstraintMark

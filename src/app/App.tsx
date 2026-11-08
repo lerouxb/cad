@@ -152,6 +152,7 @@ import {
 } from "../core/sketch/constraints";
 import {
   addDimension,
+  dimensionCanDrive,
   dimensionTargetForSelection,
   removeConstraint,
   setDimensionDriving,
@@ -489,6 +490,7 @@ interface OffsetDraft {
 interface ProjectDraft {
   sketchId: string;
   faces: TopoRef[];
+  edges: EdgeRef[];
   returnMode: "model" | "sketch";
 }
 
@@ -734,6 +736,10 @@ export function App() {
     new Map<string, { frame: PlaneFrame; loops: Vec3[][] }>(),
   );
   const faceBoundaryPending = useRef(new Set<string>());
+  const edgeBoundaryCache = useRef(
+    new Map<string, { points: Vec3[]; closed: boolean }>(),
+  );
+  const edgeBoundaryPending = useRef(new Set<string>());
   const [rebuildCache] = useState(() => new RebuildCache());
 
   const geometry = useMemo(() => sketchGeometry(sketch), [sketch]);
@@ -2213,11 +2219,12 @@ export function App() {
     setProjectDraft({
       sketchId: target.id,
       faces: [],
+      edges: [],
       returnMode: mode,
     });
     setMode("model");
     setModelTool("select");
-    setModelFilter("faces");
+    setModelFilter("all");
     setSelection([]);
     setFaceSelection([]);
     setEdgeSelection([]);
@@ -2237,7 +2244,9 @@ export function App() {
     setProjectBusy(false);
     setProjectError(null);
     setFaceSelection([]);
+    setEdgeSelection([]);
     viewportRef.current?.setFaceSelection([]);
+    viewportRef.current?.setEdgeSelection([]);
     setBodyPick(null);
     setSelectOther(null);
     viewportRef.current?.clearPick();
@@ -2265,10 +2274,33 @@ export function App() {
     };
   };
 
+  const projectEdgeLoop = async (
+    client: KernelClient,
+    cacheKey: string,
+    edge: EdgeRef,
+    frame: PlaneFrame,
+  ): Promise<{ edge: EdgeRef; points: Vec2[]; closed: boolean }> => {
+    const boundary = await client.requestEdgeBoundary(cacheKey, edge);
+    return {
+      edge,
+      points: boundary.points.map((point) =>
+        projectPointToPlane(point, frame),
+      ),
+      closed: boundary.closed,
+    };
+  };
+
   const applyProjectDraft = (): void => {
     const draft = projectDraft;
     const client = clientRef.current;
-    if (!draft || draft.faces.length === 0 || !client || projectBusy) return;
+    if (
+      !draft ||
+      (draft.faces.length === 0 && draft.edges.length === 0) ||
+      !client ||
+      projectBusy
+    ) {
+      return;
+    }
     const seq = ++projectApplySeq.current;
     const latest = getState();
     const target = findFeature(latest.doc, draft.sketchId);
@@ -2284,33 +2316,26 @@ export function App() {
     setProjectBusy(true);
     setProjectError(null);
 
-    const sources = new Map<string, string>();
-    for (const face of draft.faces) {
-      const source = rebuild?.features.find(
-        (result) =>
-          result.featureId === face.source &&
-          result.status === "ok" &&
-          result.cacheKey,
-      );
-      if (!source?.cacheKey) {
-        setProjectBusy(false);
-        setProjectError("That face's source step is not built at this point.");
-        return;
-      }
-      sources.set(faceRefKey(face), source.cacheKey);
+    // Project the body as it exists at this sketch's step, not the source
+    // feature: a later boolean may have trimmed or split it.
+    const bodyKey = activeCacheKey;
+    if (!bodyKey) {
+      setProjectBusy(false);
+      setProjectError("There is no body at this step to project.");
+      return;
     }
 
-    void Promise.all(
-      draft.faces.map((face) =>
-        projectLoop(
-          client,
-          sources.get(faceRefKey(face))!,
-          face,
-          frame,
+    void Promise.all([
+      Promise.all(
+        draft.faces.map((face) => projectLoop(client, bodyKey, face, frame)),
+      ),
+      Promise.all(
+        draft.edges.map((edge) =>
+          projectEdgeLoop(client, bodyKey, edge, frame),
         ),
       ),
-    )
-      .then((results) => {
+    ])
+      .then(([faceResults, edgeResults]) => {
         if (seq !== projectApplySeq.current) return null;
         const current = getState();
         const sketchFeature = findFeature(current.doc, draft.sketchId);
@@ -2318,7 +2343,7 @@ export function App() {
         let sketch = sketchFeature.sketch;
         const projections = [...(sketchFeature.projections ?? [])];
         const added: string[] = [];
-        for (const result of results) {
+        for (const result of faceResults) {
           if (result.loops.length === 0) continue;
           const id = newProjectionId();
           const label = `Projected ${result.face.role}`;
@@ -2334,8 +2359,33 @@ export function App() {
           });
           added.push(id);
         }
+        for (const result of edgeResults) {
+          if (result.points.length < 2) continue;
+          const id = newProjectionId();
+          const label = "Projected edge";
+          const next = applyProjectionGeometry(
+            sketch,
+            id,
+            label,
+            [result.points],
+            false,
+            result.closed,
+          );
+          if (!next) continue;
+          sketch = next;
+          projections.push({
+            id,
+            kind: "edgeBoundary",
+            source: result.edge.faces[0],
+            edge: result.edge,
+            label,
+            loops: [result.points],
+            closed: result.closed,
+          });
+          added.push(id);
+        }
         if (added.length === 0) {
-          throw new Error("No boundary could be projected from those faces.");
+          throw new Error("No boundary could be projected from that selection.");
         }
         const outcome = isSolverReady() ? solveSketch(sketch) : null;
         const nextDoc = {
@@ -2363,7 +2413,9 @@ export function App() {
         setProjectBusy(false);
         setProjectError(null);
         setFaceSelection([]);
+        setEdgeSelection([]);
         viewportRef.current?.setFaceSelection([]);
+        viewportRef.current?.setEdgeSelection([]);
         setBodyPick(null);
         setSelectOther(null);
         viewportRef.current?.clearPick();
@@ -2561,23 +2613,40 @@ export function App() {
       setSelectOther(null);
       setBodyPick(null);
       if (!pick) return;
-      if (pick.kind !== "face" || !pick.ref) return;
-      if (!sourceKnown(pick.ref.source)) return;
-      const key = faceRefKey(pick.ref);
-      const selected = projectDraft.faces.some(
-        (face) => faceRefKey(face) === key,
-      );
-      const faces = selected
-        ? projectDraft.faces.filter((face) => faceRefKey(face) !== key)
-        : [...projectDraft.faces, pick.ref];
-      setProjectDraft({ ...projectDraft, faces });
+      let faces = projectDraft.faces;
+      let edges = projectDraft.edges;
+      if (pick.kind === "face" && pick.ref) {
+        if (!sourceKnown(pick.ref.source)) return;
+        const key = faceRefKey(pick.ref);
+        const selected = faces.some((face) => faceRefKey(face) === key);
+        faces = selected
+          ? faces.filter((face) => faceRefKey(face) !== key)
+          : [...faces, pick.ref];
+      } else if (pick.kind === "edge" && pick.edgeRef) {
+        const ref = pick.edgeRef;
+        if (
+          !sourceKnown(ref.faces[0].source) ||
+          !sourceKnown(ref.faces[1].source)
+        ) {
+          return;
+        }
+        const key = edgeRefKey(ref);
+        const selected = edges.some((edge) => edgeRefKey(edge) === key);
+        edges = selected
+          ? edges.filter((edge) => edgeRefKey(edge) !== key)
+          : [...edges, ref];
+      } else {
+        return;
+      }
+      setProjectDraft({ ...projectDraft, faces, edges });
       setProjectError(null);
-      const picks = faces.map(faceBodyPick);
-      setFaceSelection(picks);
-      viewportRef.current?.setFaceSelection(picks);
+      const facePicks = faces.map(faceBodyPick);
+      const edgePicks = edges.map(edgeBodyPick);
+      setFaceSelection(facePicks);
+      viewportRef.current?.setFaceSelection(facePicks);
+      setEdgeSelection(edgePicks);
+      viewportRef.current?.setEdgeSelection(edgePicks);
       viewportRef.current?.setPickedFace(null);
-      setEdgeSelection([]);
-      viewportRef.current?.setEdgeSelection([]);
       return;
     }
     setSelectOther(
@@ -2768,13 +2837,14 @@ export function App() {
         setProjectDraft({ ...projectDraft, faces });
         setProjectError(null);
         const picks = faces.map(faceBodyPick);
+        const edgePicks = projectDraft.edges.map(edgeBodyPick);
         setBodyPick(null);
         setSelectOther(null);
         setFaceSelection(picks);
         viewportRef.current?.setFaceSelection(picks);
         viewportRef.current?.setPickedFace(null);
-        setEdgeSelection([]);
-        viewportRef.current?.setEdgeSelection([]);
+        setEdgeSelection(edgePicks);
+        viewportRef.current?.setEdgeSelection(edgePicks);
         return;
       }
       const merged = new Map<string, BodyPick>();
@@ -2820,6 +2890,28 @@ export function App() {
         sourceKnown(pick.edgeRef.faces[1].source),
     );
     if (usable.length === 0) return;
+    if (projectDraft) {
+      const merged = new Map<string, EdgeRef>();
+      if (additive) {
+        for (const edge of projectDraft.edges) {
+          merged.set(edgeRefKey(edge), edge);
+        }
+      }
+      for (const item of usable) merged.set(edgeRefKey(item.edgeRef), item.edgeRef);
+      const edges = [...merged.values()];
+      setProjectDraft({ ...projectDraft, edges });
+      setProjectError(null);
+      const facePicks = projectDraft.faces.map(faceBodyPick);
+      const edgePicks = edges.map(edgeBodyPick);
+      setBodyPick(null);
+      setSelectOther(null);
+      setFaceSelection(facePicks);
+      viewportRef.current?.setFaceSelection(facePicks);
+      viewportRef.current?.setPickedFace(null);
+      setEdgeSelection(edgePicks);
+      viewportRef.current?.setEdgeSelection(edgePicks);
+      return;
+    }
     const merged = new Map<string, BodyPick>();
     // A blend form always accumulates: losing inputs mid-edit is never useful.
     if (additive || blendDraft) {
@@ -4215,6 +4307,263 @@ export function App() {
           }
         });
     }
+
+    /**
+     * User projections are derived references too: re-resolve them against the
+     * body as it exists at that sketch's step. The support projection above is
+     * owned by the support effect, so the first projection matching the
+     * support face is skipped.
+     */
+    const markProjectionStale = (
+      featureId: string,
+      projectionId: string,
+    ): void => {
+      const latest = getState();
+      const target = findFeature(latest.doc, featureId);
+      if (!target || !isSketchFeature(target)) return;
+      const projection = target.projections?.find(
+        (candidate) => candidate.id === projectionId,
+      );
+      if (!projection || projection.stale) return;
+      replace({
+        doc: {
+          ...latest.doc,
+          features: latest.doc.features.map((feature) =>
+            feature.id === target.id
+              ? {
+                  ...target,
+                  projections: target.projections?.map((candidate) =>
+                    candidate.id === projectionId
+                      ? { ...candidate, stale: true }
+                      : candidate,
+                  ),
+                }
+              : feature,
+          ),
+        },
+        solved: latest.solved,
+        solvedFor: latest.solvedFor,
+      });
+    };
+
+    const applyUserProjection = (
+      featureId: string,
+      projectionId: string,
+      worldLoops: Vec3[][],
+      closed: boolean,
+    ): void => {
+      const latest = getState();
+      const target = findFeature(latest.doc, featureId);
+      if (!target || !isSketchFeature(target) || target.suppressed) return;
+      const projection = target.projections?.find(
+        (candidate) => candidate.id === projectionId,
+      );
+      if (!projection) return;
+      const frame =
+        rebuild.sketchById.get(featureId)?.frame ??
+        (isDefaultSupport(target.support)
+          ? worldPlaneFrame("XY")
+          : supportFrame(target.support));
+      const loops = worldLoops.map((loop) =>
+        loop.map((point) => projectPointToPlane(point, frame)),
+      );
+      const same = sameProjectedLoops(projection.loops, loops);
+      const wantsCircle =
+        closed &&
+        loops.some((loop) => projectedCircle(loop) !== null);
+      const hasCircle = (target.sketch.references?.circles ?? []).some(
+        (circle) => circle.projectionId === projectionId,
+      );
+      const representationStale = closed && wantsCircle !== hasCircle;
+      if (same && !representationStale) return;
+      let sketch: Sketch | null = null;
+      if (
+        representationStale &&
+        !projectionHasDependents(target.sketch, projectionId)
+      ) {
+        sketch = applyProjectionGeometry(
+          target.sketch,
+          projectionId,
+          projection.label,
+          loops,
+          false,
+          closed,
+        );
+      } else if (!same) {
+        sketch = applyProjectionGeometry(
+          target.sketch,
+          projectionId,
+          projection.label,
+          loops,
+          true,
+          closed,
+        );
+      }
+      if (!sketch) {
+        if (!same) markProjectionStale(featureId, projectionId);
+        return;
+      }
+      const nextProjection = { ...projection, loops, stale: undefined };
+      const outcome = isSolverReady() ? solveSketch(sketch) : null;
+      replace({
+        doc: {
+          ...latest.doc,
+          features: latest.doc.features.map((feature) =>
+            feature.id === target.id
+              ? {
+                  ...target,
+                  sketch: outcome?.ok ? applySolution(sketch, outcome) : sketch,
+                  projections:
+                    target.projections?.map((candidate) =>
+                      candidate.id === projectionId
+                        ? nextProjection
+                        : candidate,
+                    ) ?? [nextProjection],
+                }
+              : feature,
+          ),
+        },
+        solved: outcome,
+        solvedFor: target.id,
+      });
+    };
+
+    const isSolidOutput = (kind: string | undefined): boolean =>
+      kind === "extrude" ||
+      kind === "revolve" ||
+      kind === "fillet" ||
+      kind === "chamfer" ||
+      kind === "shell" ||
+      kind === "offsetFace";
+
+    // The body available to each sketch: the last solid result before it. A
+    // sketch after the history cursor is not in `rebuild`, so it is skipped
+    // rather than marked stale.
+    const prefixBySketch = new Map<string, string | null>();
+    let prefixKey: string | null = null;
+    for (const result of rebuild.features) {
+      if (result.output?.kind === "sketch") {
+        prefixBySketch.set(result.featureId, prefixKey);
+      } else if (
+        result.status === "ok" &&
+        result.cacheKey &&
+        isSolidOutput(result.output?.kind)
+      ) {
+        prefixKey = result.cacheKey;
+      }
+    }
+
+    for (const feature of current.doc.features) {
+      if (!isSketchFeature(feature) || feature.suppressed) continue;
+      const projections = feature.projections ?? [];
+      if (projections.length === 0) continue;
+      if (!prefixBySketch.has(feature.id)) continue;
+      const bodyKey = prefixBySketch.get(feature.id);
+      if (!bodyKey) continue;
+      const supportKey =
+        feature.support.kind === "face"
+          ? faceRefKey(feature.support.ref)
+          : null;
+      let supportProjectionId: string | null = null;
+      if (supportKey) {
+        supportProjectionId =
+          projections.find(
+            (projection) =>
+              projection.kind === "faceBoundary" &&
+              faceRefKey(projection.source) === supportKey,
+          )?.id ?? null;
+      }
+      for (const projection of projections) {
+        if (projection.id === supportProjectionId) continue;
+        if (projection.kind === "edgeBoundary") {
+          if (!projection.edge) continue;
+          const key = `${bodyKey}|edge|${edgeRefKey(projection.edge)}`;
+          const cached = edgeBoundaryCache.current.get(key);
+          if (cached) {
+            queueMicrotask(() =>
+              applyUserProjection(
+                feature.id,
+                projection.id,
+                [cached.points],
+                cached.closed,
+              ),
+            );
+            continue;
+          }
+          if (edgeBoundaryPending.current.has(key)) continue;
+          edgeBoundaryPending.current.add(key);
+          client
+            .requestEdgeBoundary(bodyKey, projection.edge)
+            .then((result) => {
+              edgeBoundaryPending.current.delete(key);
+              edgeBoundaryCache.current.set(key, {
+                points: result.points,
+                closed: result.closed,
+              });
+              applyUserProjection(
+                feature.id,
+                projection.id,
+                [result.points],
+                result.closed,
+              );
+            })
+            .catch((error: unknown) => {
+              edgeBoundaryPending.current.delete(key);
+              if (
+                error instanceof Error &&
+                !error.message.includes("no longer cached")
+              ) {
+                markProjectionStale(feature.id, projection.id);
+              }
+            });
+          continue;
+        }
+        const key = `${bodyKey}|${faceRefKey(projection.source)}`;
+        const cached = faceBoundaryCache.current.get(key);
+        if (cached) {
+          queueMicrotask(() =>
+            applyUserProjection(
+              feature.id,
+              projection.id,
+              cached.loops,
+              true,
+            ),
+          );
+          continue;
+        }
+        if (faceBoundaryPending.current.has(key)) continue;
+        faceBoundaryPending.current.add(key);
+        client
+          .requestFaceBoundary(bodyKey, projection.source)
+          .then((result) => {
+            faceBoundaryPending.current.delete(key);
+            const frame = frameFromNormalAndOrigin(
+              result.normal,
+              result.centroid,
+            );
+            if (!frame) return;
+            faceBoundaryCache.current.set(key, {
+              frame,
+              loops: result.loops,
+            });
+            applyUserProjection(
+              feature.id,
+              projection.id,
+              result.loops,
+              true,
+            );
+          })
+          .catch((error: unknown) => {
+            faceBoundaryPending.current.delete(key);
+            if (
+              error instanceof Error &&
+              !error.message.includes("no longer cached")
+            ) {
+              markProjectionStale(feature.id, projection.id);
+            }
+          });
+      }
+    }
   }, [rebuild, kernelVersion, getState, replace, markFaceRefLost]);
 
   // Datum planes can be based on a face. Resolve those frames from the source
@@ -4898,8 +5247,11 @@ export function App() {
     driving: boolean,
   ): void => {
     let next = currentSketch();
-    if (driving) next = updateConstraintValue(next, id, value);
-    next = setDimensionDriving(next, id, driving);
+    // A measurement made only of fixed/projected geometry can be a reference
+    // annotation but never a driving constraint.
+    const canDrive = driving && dimensionCanDrive(next, id);
+    if (canDrive) next = updateConstraintValue(next, id, value);
+    next = setDimensionDriving(next, id, canDrive);
     if (next === currentSketch()) return;
     solveAndCommit(next);
   };
@@ -4988,6 +5340,8 @@ export function App() {
     rebuildCache.clear();
     faceBoundaryCache.current.clear();
     faceBoundaryPending.current.clear();
+    edgeBoundaryCache.current.clear();
+    edgeBoundaryPending.current.clear();
     setLostFaceRefs(new Set());
     setDatumDraft(null);
     reset({ doc: next, solved: null, solvedFor: null });
@@ -5019,6 +5373,8 @@ export function App() {
     rebuildCache.clear();
     faceBoundaryCache.current.clear();
     faceBoundaryPending.current.clear();
+    edgeBoundaryCache.current.clear();
+    edgeBoundaryPending.current.clear();
     setLostFaceRefs(new Set());
     setDatumDraft(null);
     resetSelectionFilters();
@@ -5070,6 +5426,8 @@ export function App() {
     rebuildCache.clear();
     faceBoundaryCache.current.clear();
     faceBoundaryPending.current.clear();
+    edgeBoundaryCache.current.clear();
+    edgeBoundaryPending.current.clear();
     setLostFaceRefs(new Set());
     setDatumDraft(null);
     reset({ doc: next, solved: null, solvedFor: null });
@@ -5445,7 +5803,10 @@ export function App() {
           return;
         }
         if (projectDraft) {
-          if (!projectBusy && projectDraft.faces.length > 0) {
+          if (
+            !projectBusy &&
+            projectDraft.faces.length + projectDraft.edges.length > 0
+          ) {
             applyProjectDraft();
           }
           return;
@@ -7034,6 +7395,7 @@ export function App() {
           {projectDraft ? (
             <ProjectPopover
               faces={projectDraft.faces}
+              edges={projectDraft.edges}
               busy={projectBusy}
               error={projectError}
               position={popoverPosition}
@@ -7047,6 +7409,16 @@ export function App() {
                 const picks = faces.map(faceBodyPick);
                 setFaceSelection(picks);
                 viewportRef.current?.setFaceSelection(picks);
+              }}
+              onRemoveEdge={(index) => {
+                const edges = projectDraft.edges.filter(
+                  (_, at) => at !== index,
+                );
+                setProjectDraft({ ...projectDraft, edges });
+                setProjectError(null);
+                const picks = edges.map(edgeBodyPick);
+                setEdgeSelection(picks);
+                viewportRef.current?.setEdgeSelection(picks);
               }}
               onApply={applyProjectDraft}
               onCancel={cancelProjectDraft}
@@ -7709,7 +8081,7 @@ function describeSelection(
         id,
         kind: "circle",
         label: referenceCircle.referenceLabel ?? "Projected circle",
-        detail: `⌀ ${formatLength(referenceCircle.radius * 2)} mm · fixed${
+        detail: `⌀ ${formatLength(referenceCircle.radius * 2)} mm · fixed · projected${
           referenceCircle.construction ? " · construction" : ""
         }`,
       });

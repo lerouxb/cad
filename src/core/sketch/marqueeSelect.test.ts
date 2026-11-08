@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { emptySketch } from "./create";
 import { marqueeSketchSelection } from "./marqueeSelect";
+import { applyProjectionGeometry } from "./projection";
 import type { Sketch } from "./types";
 
 const points = {
@@ -80,6 +82,63 @@ describe("sketch marquee selection", () => {
     expect(
       marqueeSketchSelection(sketch, points, {}, box, "curves"),
     ).toEqual(["circle"]);
+  });
+
+  it("marquees projected reference points and curves like sketch geometry", () => {
+    const projected = applyProjectionGeometry(
+      emptySketch(),
+      "proj",
+      "Projected face",
+      [
+        [
+          [0, 0],
+          [10, 0],
+          [10, 10],
+          [0, 10],
+        ],
+      ],
+    );
+    if (!projected) throw new Error("Expected the projection to apply");
+    const box = {
+      kind: "box" as const,
+      minX: -1,
+      minY: -1,
+      maxX: 11,
+      maxY: 11,
+    };
+    const pointIds = projected.references!.points
+      .filter((point) => point.projectionId === "proj")
+      .map((point) => point.id);
+    const lineIds = projected.references!.lines
+      .filter((line) => line.projectionId === "proj")
+      .map((line) => line.id);
+    const projectedPositions = Object.fromEntries(
+      projected.references!.points.map((point) => [
+        point.id,
+        [point.x, point.y] as [number, number],
+      ]),
+    );
+    const geometryPoints = { ...points, ...projectedPositions };
+    const all = marqueeSketchSelection(
+      projected,
+      geometryPoints,
+      {},
+      box,
+      "all",
+    );
+    expect(all).toEqual(expect.arrayContaining([...pointIds, ...lineIds]));
+    const curves = marqueeSketchSelection(
+      projected,
+      geometryPoints,
+      {},
+      box,
+      "curves",
+    );
+    expect(curves).toEqual(expect.arrayContaining(lineIds));
+    expect(curves).not.toEqual(expect.arrayContaining(pointIds));
+    expect(
+      marqueeSketchSelection(projected, geometryPoints, {}, box, "points"),
+    ).toEqual(expect.arrayContaining(pointIds));
   });
 
   it("is a no-op for an empty or too-short lasso", () => {

@@ -174,6 +174,50 @@ describe("constraint mark geometry", () => {
     ).toBe(true);
   });
 
+  it("marks constraints attached to projected reference geometry", () => {
+    const sketch: Sketch = {
+      points: [{ id: "p", x: 0, y: 8 }],
+      curves: [],
+      constraints: [
+        { id: "on", type: "pointOnCircle", point: "p", circle: "pc" },
+      ],
+      references: {
+        origin: { id: "origin", x: 0, y: 0, fixed: true, reference: true },
+        points: [
+          {
+            id: "pc-center",
+            x: 0,
+            y: 0,
+            fixed: true,
+            reference: true,
+            construction: true,
+            projectionId: "proj",
+          },
+        ],
+        lines: [],
+        circles: [
+          {
+            id: "pc",
+            type: "circle",
+            center: "pc-center",
+            radius: 8,
+            construction: true,
+            reference: true,
+            projectionId: "proj",
+          },
+        ],
+      },
+    };
+    const marks = constraintMarks(sketch, {
+      points: { p: [0, 8], "pc-center": [0, 0] },
+      selected: new Set(),
+      hoveredCurveId: null,
+      hoveredPointId: null,
+      px: 0.1,
+    });
+    expect(marks.some((mark) => mark.type === "pointOnCircle")).toBe(true);
+  });
+
   it("does not restyle constraints when their geometry is selected", () => {
     const points = {
       a: [0, 0] as [number, number],

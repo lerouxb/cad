@@ -1,6 +1,11 @@
 import type { Vec2 } from "../types";
 import { arcGeometry, arcPointAt } from "./geometry";
-import type { Sketch, SketchConstraint, SketchCurve } from "./types";
+import {
+  allCurves,
+  type Sketch,
+  type SketchConstraint,
+  type SketchCurve,
+} from "./types";
 
 export type SketchMarquee =
   | { kind: "box"; minX: number; minY: number; maxX: number; maxY: number }
@@ -158,14 +163,30 @@ export function marqueeSketchSelection(
   const selectedCurves = new Set<string>();
 
   if (filter === "all" || filter === "points") {
-    for (const point of sketch.points) {
-      if (point.fixed || point.construction) continue;
+    const projectedPoints =
+      sketch.references?.points.filter(
+        (point) => point.projectionId !== undefined,
+      ) ?? [];
+    for (const point of [...sketch.points, ...projectedPoints]) {
+      // Projected references are fixed but selectable; the fixed axes/origin
+      // are not.
+      if (point.projectionId === undefined && (point.fixed || point.construction)) {
+        continue;
+      }
       const position = points[point.id] ?? [point.x, point.y];
       if (pointHits(position, marquee)) selectedPoints.add(point.id);
     }
   }
   if (filter === "all" || filter === "curves") {
-    for (const curve of sketch.curves) {
+    const projectedCurves = [
+      ...(sketch.references?.lines.filter(
+        (line) => line.projectionId !== undefined,
+      ) ?? []),
+      ...(sketch.references?.circles?.filter(
+        (circle) => circle.projectionId !== undefined,
+      ) ?? []),
+    ];
+    for (const curve of [...sketch.curves, ...projectedCurves]) {
       if (curveSelected(curve, points, radii, marquee)) {
         selectedCurves.add(curve.id);
       }
@@ -194,7 +215,7 @@ export function marqueeSketchSelection(
         if (selectedPoints.has(id) || selectedCurves.has(id)) return true;
         // A dimension can reference a complete line/circle without that
         // entity's endpoints being inside; test the entity itself.
-        const curve = sketch.curves.find((candidate) => candidate.id === id);
+        const curve = allCurves(sketch).find((candidate) => candidate.id === id);
         if (curve) {
           return curveSelected(curve, points, radii, marquee);
         }

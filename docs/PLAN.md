@@ -506,9 +506,10 @@ with face sketches.
       point can take `pointOnCircle` and slide around it. Elliptical/non-circular
       projections remain polylines.
 - [x] **Live reference geometry**: projected point/line/face outlines store the `TopoRef`
-      they came from, are re-derived from the source feature's cached prefix solid on
-      every rebuild, and are kept as cached geometry (marked stale) if their topology
-      changes. Downstream booleans cannot move or split them.
+      they came from and are re-derived on every rebuild. The automatic support boundary
+      resolves against the source feature's prefix (downstream booleans cannot move or
+      split it); user projections resolve against the body at their sketch's step. Both
+      keep cached geometry (marked stale) on a topology change.
 - [x] **Line/circle snapping regression:** every existing line is a snap target (ordinary
       sketch edges, the fixed X/Y axes and projected boundaries), with points, crossings,
       lines, circles and the grid in that order. A snapped vertex gets a `pointOnLine` for
@@ -534,11 +535,16 @@ with face sketches.
 - [ ] Redefine/edit a sketch's support after creation, through the same support picker,
       keeping the cached frame until the new support resolves
 - [ ] Extrude to-object / to-next end condition, resolved through `TopoRef`
-- [x] Project arbitrary body **faces** into a sketch with the `project` tool (the
-      support boundary above is automatic): face picks drive a `ProjectPopover`, the
-      result is one sketch edit (one undo entry) with fixed reference loops, and the app
-      returns to the sketch. Arbitrary body-edge projection, `include 3D`, intersect and
-      project-to-surface are deferred; see M9.
+- [x] Project arbitrary body **faces and edges** into a sketch with the `project` tool
+      (the support boundary above is automatic): picks drive a `ProjectPopover`, the
+      result is one sketch edit (one undo entry) with fixed reference loops/open paths,
+      and the app returns to the sketch. Faces project as closed loops (analytic circles
+      when circular); edges project as open reference paths, with a closed circular edge
+      kept analytic. `include 3D`, intersect and project-to-surface are deferred; see M9.
+- [x] **Projection parity:** projected points/lines/circles are marquee-selectable,
+      render their constraint marks, snap (lines, circles and points), dimension (forced
+      to reference when only fixed/projected geometry is measured), and refresh live from
+      the body at their sketch's step.
 - [x] Topological-naming regression test: change base height, boss on top face follows
 - [x] UI: unsupported (curved) face → clear explanation, no broken state
 - [x] **First slice landed:** face refs + deterministic cached frame, sketch on a planar
@@ -971,8 +977,8 @@ milestone, an ADR if it changes a design decision, and numeric tests.
 - Drawings, STEP import, sheet metal, curved-face sketches, collaboration and a plugin API
   (M8).
 - Full projection/import of arbitrary solid geometry; M4 projects the supporting face
-  boundary, picked body faces and body edges (the full project/include-3D/intersect
-  suite remains here).
+  boundary, picked body faces and picked body edges (the `include 3D`/intersect/
+  project-to-surface suite remains here).
 - Assemblies and joints (M8).
 
 ### Dropped

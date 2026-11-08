@@ -169,6 +169,38 @@ async function handle(request: KernelRequest): Promise<void> {
       return;
     }
 
+    if (request.type === "edgeBoundary") {
+      const entry = solidCache.get(request.cacheKey);
+      if (!entry) {
+        reply({
+          type: "edgeBoundary",
+          requestId: request.requestId,
+          ok: false,
+          message: "The source prefix solid is no longer cached.",
+        });
+        return;
+      }
+      const boundary = edgeBoundary(entry.solid, entry.roles, request.ref);
+      if (!boundary || "broken" in boundary) {
+        reply({
+          type: "edgeBoundary",
+          requestId: request.requestId,
+          ok: false,
+          message:
+            boundary?.broken ??
+            "The referenced edge was not found on the source body.",
+        });
+        return;
+      }
+      reply({
+        type: "edgeBoundary",
+        requestId: request.requestId,
+        ok: true,
+        ...boundary,
+      });
+      return;
+    }
+
     if (request.type === "measure") {
       const entry = solidCache.get(request.cacheKey);
       if (!entry) {
@@ -869,6 +901,50 @@ function matchFaceByHint(
 }
 
 /** Sample a face's outer and inner wires into world-space boundary loops. */
+/** Sample an edge as a world-space polyline for a sketch projection. */
+function edgeBoundary(
+  solid: Solid,
+  roles: RoleTable,
+  ref: EdgeRef,
+):
+  | { points: [number, number, number][]; closed: boolean }
+  | { broken: string } {
+  try {
+    const resolved = resolveEdgeOnSolid(solid, roles, ref);
+    if ("broken" in resolved) return { broken: resolved.broken };
+    const edge = resolved.edge;
+    if (getCurveType(edge) === "LINE") {
+      const start = curvePointAt(edge, 0);
+      const end = curvePointAt(edge, 1);
+      return {
+        points: [
+          [start[0], start[1], start[2]],
+          [end[0], end[1], end[2]],
+        ],
+        closed: false,
+      };
+    }
+    const length = curveLength(edge);
+    const steps = Math.max(8, Math.min(64, Math.ceil(length / 1.5)));
+    const points: [number, number, number][] = [];
+    for (let index = 0; index <= steps; index += 1) {
+      const point = curvePointAt(edge, index / steps);
+      points.push([point[0], point[1], point[2]]);
+    }
+    const first = points[0]!;
+    const last = points[points.length - 1]!;
+    const closed =
+      Math.hypot(first[0] - last[0], first[1] - last[1], first[2] - last[2]) <
+      1e-6;
+    if (closed) points.pop();
+    return { points, closed };
+  } catch {
+    return {
+      broken: "The selected edge no longer exists on the source body.",
+    };
+  }
+}
+
 function faceBoundary(
   solid: Solid,
   roles: RoleTable,

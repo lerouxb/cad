@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { addCircle, addRectangle, emptySketch } from "./create";
+import { addCircle, addPoint, addRectangle, emptySketch } from "./create";
 import {
   addDimension,
+  dimensionCanDrive,
   removeConstraint,
   setDimensionDriving,
   setDimensionPlacement,
 } from "./dimensions";
+import { applyProjectionGeometry } from "./projection";
 
 describe("dimensions", () => {
   const rectangle = addRectangle(emptySketch(), [0, 0], [60, 40]);
@@ -122,6 +124,72 @@ describe("dimensions", () => {
       value: 18,
       driving: false,
       angle: 30,
+    });
+  });
+
+  it("dimensions projected geometry as a reference", () => {
+    const circleLoop = Array.from({ length: 24 }, (_, index) => {
+      const angle = (index / 24) * Math.PI * 2;
+      return [Math.cos(angle) * 8, Math.sin(angle) * 8] as [number, number];
+    });
+    const projected = applyProjectionGeometry(
+      emptySketch(),
+      "proj-dim",
+      "Projected circle",
+      [circleLoop],
+    );
+    if (!projected) throw new Error("Expected the projection to apply");
+    const circle = projected.references!.circles![0]!;
+    const sketched = addDimension(
+      projected,
+      { kind: "diameter", circle: circle.id },
+      true,
+      {},
+    );
+    const diameter = sketched.constraints.find(
+      (constraint) => constraint.type === "diameter",
+    )!;
+    expect(diameter).toMatchObject({
+      circle: circle.id,
+      value: 16,
+      driving: false,
+    });
+    expect(dimensionCanDrive(sketched, diameter.id)).toBe(false);
+
+    const rect = applyProjectionGeometry(
+      emptySketch(),
+      "proj-line",
+      "Projected face",
+      [
+        [
+          [0, 0],
+          [10, 0],
+          [10, 10],
+          [0, 10],
+        ],
+      ],
+    );
+    if (!rect) throw new Error("Expected the projection to apply");
+    const line = rect.references!.lines.find(
+      (candidate) => candidate.projectionId === "proj-line",
+    )!;
+    const withPoint = addPoint(rect, [5, 5]);
+    const point = withPoint.points[withPoint.points.length - 1]!.id;
+    const pointDim = addDimension(
+      withPoint,
+      { kind: "pointLineDistance", point, line: line.id },
+      true,
+      {},
+    );
+    const distance = pointDim.constraints.find(
+      (constraint) => constraint.type === "pointLineDistance",
+    )!;
+    // A free point measured against fixed projected geometry can still drive.
+    expect(distance).toMatchObject({
+      point,
+      line: line.id,
+      value: 5,
+      driving: true,
     });
   });
 

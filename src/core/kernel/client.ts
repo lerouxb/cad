@@ -8,7 +8,7 @@ import type {
   KernelRequest,
   KernelResponse,
 } from "./protocol";
-import type { TopoRef } from "./protocol";
+import type { EdgeRef, TopoRef } from "./protocol";
 import type { Vec3 } from "../types";
 
 export interface KernelClientHandlers {
@@ -49,6 +49,14 @@ export class KernelClient {
     }
   >();
   private nextBoundaryId = 1;
+  private edgeBoundaryRequests = new Map<
+    number,
+    {
+      resolve: (value: { points: Vec3[]; closed: boolean }) => void;
+      reject: (error: Error) => void;
+    }
+  >();
+  private nextEdgeBoundaryId = 1;
   private exportRequests = new Map<
     number,
     {
@@ -109,6 +117,22 @@ export class KernelClient {
   }
 
   /**
+   * Resolve an edge as a world-space polyline. A picked edge is projected into
+   * a sketch as fixed reference lines; circular edges come back closed so the
+   * sketch can keep them analytic.
+   */
+  requestEdgeBoundary(
+    cacheKey: string,
+    ref: EdgeRef,
+  ): Promise<{ points: Vec3[]; closed: boolean }> {
+    const requestId = this.nextEdgeBoundaryId++;
+    return new Promise((resolve, reject) => {
+      this.edgeBoundaryRequests.set(requestId, { resolve, reject });
+      this.post({ type: "edgeBoundary", requestId, cacheKey, ref });
+    });
+  }
+
+  /**
    * Export the cached prefix solid as a file. The caller passes the final
    * feature's cacheKey from the rendered rebuild, so the file always matches
    * the body on screen (not a stale or in-flight mesh).
@@ -144,6 +168,10 @@ export class KernelClient {
   }
 
   dispose(): void {
+    for (const pending of this.edgeBoundaryRequests.values()) {
+      pending.reject(new Error("The geometry worker was disposed."));
+    }
+    this.edgeBoundaryRequests.clear();
     for (const pending of this.exportRequests.values()) {
       pending.reject(new Error("The geometry worker was disposed."));
     }
@@ -202,6 +230,22 @@ export class KernelClient {
         } else {
           pending.reject(
             new Error(message.message ?? "The face boundary could not be resolved."),
+          );
+        }
+        break;
+      }
+      case "edgeBoundary": {
+        const pending = this.edgeBoundaryRequests.get(message.requestId);
+        if (!pending) break;
+        this.edgeBoundaryRequests.delete(message.requestId);
+        if (message.ok && message.points && message.points.length >= 2) {
+          pending.resolve({
+            points: message.points,
+            closed: message.closed === true,
+          });
+        } else {
+          pending.reject(
+            new Error(message.message ?? "The edge boundary could not be resolved."),
           );
         }
         break;

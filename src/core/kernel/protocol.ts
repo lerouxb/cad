@@ -297,6 +297,12 @@ export type KernelRequest =
       ref: TopoRef;
     }
   | {
+      type: "edgeBoundary";
+      requestId: number;
+      cacheKey: string;
+      ref: EdgeRef;
+    }
+  | {
       type: "export";
       requestId: number;
       format: ExportFormat;
@@ -333,6 +339,14 @@ export type KernelResponse =
       centroid?: Vec3;
       loops?: Vec3[][];
       confidence?: "exact" | "geometric-fallback";
+      message?: string;
+    }
+  | {
+      type: "edgeBoundary";
+      requestId: number;
+      ok: boolean;
+      points?: Vec3[];
+      closed?: boolean;
       message?: string;
     }
   | {

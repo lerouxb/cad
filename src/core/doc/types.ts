@@ -3,7 +3,7 @@ import type { PlaneFrame, Vec2 } from "../types";
 import type { EdgeRef, TopoRef } from "../kernel/protocol";
 
 /** The document schema version. Bump this on every shape change. */
-export const CURRENT_SCHEMA_VERSION = 15;
+export const CURRENT_SCHEMA_VERSION = 16;
 
 export type WorldPlane = "XY" | "XZ" | "YZ";
 
@@ -54,12 +54,18 @@ export interface SketchFeature {
 
 export interface FaceProjection {
   id: string;
-  kind: "faceBoundary";
+  /** A face boundary (one or more closed loops) or a picked edge path. */
+  kind: "faceBoundary" | "edgeBoundary";
+  /** For an edge, its first adjacent face; it drives the source-face action. */
   source: TopoRef;
+  /** The picked edge, when kind is edgeBoundary. */
+  edge?: EdgeRef;
   label: string;
-  /** Projected loops in sketch-local millimetres; the last known cache. */
+  /** Projected loops/paths in sketch-local millimetres; the last known cache. */
   loops: Vec2[][];
-  /** True when the live face changed topologically and the cache was kept. */
+  /** An edge path is open unless the edge is a full closed curve. */
+  closed?: boolean;
+  /** True when the live source changed topologically and the cache was kept. */
   stale?: boolean;
 }
 

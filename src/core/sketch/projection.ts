@@ -23,6 +23,13 @@ function uniqueLoop(loop: ReadonlyArray<Vec2>): Vec2[] {
     : [...loop];
 }
 
+function pathPoints(
+  loop: ReadonlyArray<Vec2>,
+  closed: boolean,
+): Vec2[] {
+  return closed ? uniqueLoop(loop) : [...loop];
+}
+
 /**
  * A projected face boundary sampled from a circular edge is a dense, closed,
  * equidistant polygon. Keep that analytic so a point can be constrained with
@@ -57,11 +64,14 @@ export function projectedCircle(
   return { center, radius };
 }
 
-function projectionPointCount(loops: ReadonlyArray<ReadonlyArray<Vec2>>): number {
+function projectionPointCount(
+  loops: ReadonlyArray<ReadonlyArray<Vec2>>,
+  closed: boolean,
+): number {
   return loops.reduce(
     (count, loop) =>
       count +
-      (projectedCircle(loop) ? 1 : uniqueLoop(loop).length),
+      (closed && projectedCircle(loop) ? 1 : pathPoints(loop, closed).length),
     0,
   );
 }
@@ -79,13 +89,17 @@ export function applyProjectionGeometry(
   label: string,
   loops: ReadonlyArray<ReadonlyArray<Vec2>>,
   preserveCount = false,
+  closed = true,
 ): Sketch | null {
   const base = sketch.references ? sketch : withReferences(sketch);
   const references = base.references!;
   const oldPoints = references.points.filter(
     (point) => point.projectionId === projectionId,
   );
-  if (preserveCount && oldPoints.length !== projectionPointCount(loops)) {
+  if (
+    preserveCount &&
+    oldPoints.length !== projectionPointCount(loops, closed)
+  ) {
     return null;
   }
 
@@ -112,9 +126,9 @@ export function applyProjectionGeometry(
   );
 
   loops.forEach((source, loopIndex) => {
-    const loop = uniqueLoop(source);
+    const loop = pathPoints(source, closed);
     if (loop.length < 2) return;
-    const analytic = projectedCircle(loop);
+    const analytic = closed ? projectedCircle(loop) : null;
     if (analytic) {
       const centerId = `${projectionId}-c${loopIndex}`;
       const circleId = `${projectionId}-circle${loopIndex}`;
@@ -156,7 +170,9 @@ export function applyProjectionGeometry(
       });
       return id;
     });
-    ids.forEach((id, index) => {
+    const segmentCount = closed ? ids.length : ids.length - 1;
+    for (let index = 0; index < segmentCount; index += 1) {
+      const id = ids[index]!;
       const next = ids[(index + 1) % ids.length]!;
       const lineId = `${projectionId}-l${loopIndex}-${index}`;
       lines.push({
@@ -169,7 +185,7 @@ export function applyProjectionGeometry(
         projectionId,
         referenceLabel: label,
       });
-    });
+    }
   });
 
   return {

@@ -760,14 +760,26 @@ docs/
   projection count/topology check counts a circle as one point so live updates keep
   their identities.
 - **The `project` sketch tool is an edit, not a history feature.** It switches to the
-  model stage with the `faces` filter, collects picked faces in `ProjectPopover`
-  (plain click toggles, Shift adds), resolves each face's source prefix `cacheKey`,
-  asks the worker for its boundary, projects the loops into the active sketch's frame,
-  and commits one history entry before returning to the sketch. It is distinct from the
-  automatic support-face projection: the live support effect matches its projection by
+  model stage with the `all` filter, collects picked faces and edges in
+  `ProjectPopover` (plain click toggles, Shift adds), resolves their boundaries against
+  the **body at that sketch step** (the last solid result before the sketch, not the
+  face's originating feature), projects them into the active sketch's frame, and
+  commits one history entry before returning to the sketch. A face becomes closed
+  loops; an edge becomes an open path (`kind: "edgeBoundary"`, `edge`, `closed`), and a
+  closed circular edge stays an analytic circle. It is distinct from the automatic
+  support-face projection: the live support effect matches its projection by
   `faceRefKey(support.ref)`, so a user projection of another face is never overwritten.
   `faceBoundary` chains wire edges by endpoint before returning a loop; never trust
   kernel edge order/orientation or a side face can project as two stray lines.
+- **Every projection is live and behaves like sketch geometry.** User projections are
+  refreshed on rebuild from the prefix body at their sketch's step (never from a
+  downstream or source-only body); a topology change keeps the cached geometry and sets
+  `stale`. Projected points/lines/circles are marquee-selectable, participate in
+  constraint marks (not only in the solver), snap targets and profiles (when normal), and
+  can be dimensioned. A measurement made only of fixed/projected geometry is forced to a
+  reference dimension; a free point measured against projected geometry can still drive.
+  `circleLike` and the constraint-mark lookup use the projected-reference curves, not
+  only `sketch.curves`, or projected circles would render no dimension/mark.
 - **Box/lasso selection is a sketch tool, not a pan gesture.** `tool === "box"` uses
   `regionsFullyInside` (fully enclosed); `tool === "lasso"` uses
   `regionsIntersectingPolygon` (touched/crossing, including a freehand loop inside a

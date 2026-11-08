@@ -89,6 +89,71 @@ export interface DimensionPlacement {
   distance?: number;
 }
 
+function isFreePoint(sketch: Sketch, id: string): boolean {
+  const point = findSketchPoint(sketch, id);
+  return Boolean(
+    point && !point.fixed && !point.reference && !point.construction,
+  );
+}
+
+function isReferenceCurve(sketch: Sketch, id: string): boolean {
+  const curve = findSketchCurve(sketch, id);
+  if (!curve) return true;
+  if (curve.type === "line") return curve.reference === true;
+  if (curve.type === "circle") {
+    return curve.reference === true || curve.projectionId !== undefined;
+  }
+  return false;
+}
+
+/**
+ * A dimension can drive only when it measures at least one degree of freedom.
+ * A measurement of a projected circle, or between two projected points, is a
+ * reference annotation; a free point measured against a fixed projected line
+ * can still be driven.
+ */
+export function dimensionTargetCanDrive(
+  sketch: Sketch,
+  target: DimensionTarget,
+): boolean {
+  switch (target.kind) {
+    case "distance":
+      return isFreePoint(sketch, target.a) || isFreePoint(sketch, target.b);
+    case "pointLineDistance":
+      return isFreePoint(sketch, target.point);
+    case "angle":
+      return (
+        !isReferenceCurve(sketch, target.a) ||
+        !isReferenceCurve(sketch, target.b)
+      );
+    case "diameter":
+    case "radius":
+      return !isReferenceCurve(sketch, target.circle);
+  }
+}
+
+export function dimensionCanDrive(sketch: Sketch, id: string): boolean {
+  const constraint = sketch.constraints.find((candidate) => candidate.id === id);
+  if (!constraint) return false;
+  switch (constraint.type) {
+    case "distance":
+      return (
+        isFreePoint(sketch, constraint.a) || isFreePoint(sketch, constraint.b)
+      );
+    case "pointLineDistance":
+      return isFreePoint(sketch, constraint.point);
+    case "angle":
+      return (
+        !isReferenceCurve(sketch, constraint.a) ||
+        !isReferenceCurve(sketch, constraint.b)
+      );
+    case "diameter":
+      return !isReferenceCurve(sketch, constraint.circle);
+    default:
+      return true;
+  }
+}
+
 /**
  * Create a dimension, or update the one already measuring the same entities.
  * The value captured is the current measurement, which is what a sketcher does
@@ -101,6 +166,7 @@ export function addDimension(
   placement: DimensionPlacement,
 ): Sketch {
   const existing = findDimension(sketch, target);
+  const effectiveDriving = driving && dimensionTargetCanDrive(sketch, target);
 
   if (target.kind === "distance") {
     const a = findSketchPoint(sketch, target.a);
@@ -113,7 +179,7 @@ export function addDimension(
       a: target.a,
       b: target.b,
       value: distance([a.x, a.y], [b.x, b.y]),
-      driving,
+      driving: effectiveDriving,
       offset: placement.offset ?? 12,
       ...(placement.along !== undefined ? { along: placement.along } : {}),
     });
@@ -131,7 +197,7 @@ export function addDimension(
       point: target.point,
       line: target.line,
       value,
-      driving,
+      driving: effectiveDriving,
       offset: placement.offset ?? 10,
       ...(placement.along !== undefined ? { along: placement.along } : {}),
     });
@@ -149,12 +215,12 @@ export function addDimension(
       a: target.a,
       b: target.b,
       value,
-      driving,
+      driving: effectiveDriving,
       offset: placement.offset ?? 30,
     });
   }
 
-  const circle = sketch.curves.find(
+  const circle = allCurves(sketch).find(
     (curve): curve is SketchCircle | SketchArc =>
       curve.id === target.circle &&
       (curve.type === "circle" || curve.type === "arc"),
@@ -165,8 +231,12 @@ export function addDimension(
     circle.type === "circle"
       ? circle.radius
       : (() => {
-          const center = sketch.points.find((point) => point.id === circle.center);
-          const start = sketch.points.find((point) => point.id === circle.start);
+          const center = allPoints(sketch).find(
+            (point) => point.id === circle.center,
+          );
+          const start = allPoints(sketch).find(
+            (point) => point.id === circle.start,
+          );
           return center && start
             ? distance([center.x, center.y], [start.x, start.y])
             : null;
@@ -178,7 +248,7 @@ export function addDimension(
     type: "diameter",
     circle: target.circle,
     value: radius * 2,
-    driving,
+    driving: effectiveDriving,
     angle: placement.angle ?? 45,
     ...(placement.distance !== undefined
       ? { distance: placement.distance }

@@ -310,6 +310,37 @@ describe("face projections", () => {
     expect(projectionHasDependents(constrained, "proj-rep")).toBe(true);
   });
 
+  it("projects an edge as an open reference path", () => {
+    const sketch = applyProjectionGeometry(
+      emptySketch(),
+      "proj-edge",
+      "Projected edge",
+      [
+        [
+          [0, 0],
+          [10, 5],
+        ],
+      ],
+      false,
+      false,
+    );
+    if (!sketch) throw new Error("Expected the edge projection to apply");
+    const points = sketch.references!.points.filter(
+      (point) => point.projectionId === "proj-edge",
+    );
+    const lines = sketch.references!.lines.filter(
+      (line) => line.projectionId === "proj-edge",
+    );
+    expect(points).toHaveLength(2);
+    // An open path has one fewer segment: no line closes back to the start.
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      a: "proj-edge-p0-0",
+      b: "proj-edge-p0-1",
+    });
+    expect(sketch.references!.circles).toHaveLength(0);
+  });
+
   it("leaves a non-circular projected boundary as a polyline", () => {
     const ellipse = circleLoop(8).map(([x, y]) => [x, y * 0.5] as [number, number]);
     expect(projectedCircle(ellipse)).toBeNull();

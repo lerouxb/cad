@@ -1,7 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { collectErrors, resetExample, test } from "./support/app";
-import { fitView } from "./support/model";
-import { clickSketch } from "./support/sketch";
+import { fitView, scanVisibleEdges } from "./support/model";
+import { clickSketch, dragSketch } from "./support/sketch";
 
 test.beforeEach(async ({ app: page }) => {
   await resetExample(page);
@@ -53,13 +53,13 @@ test("projects a picked face into the active sketch and returns to it", async ({
   await page.getByTestId("tool-project").click();
   await expect(page.getByTestId("project-popover")).toBeVisible();
   await expect(page.getByTestId("project-apply")).toBeDisabled();
-  await expect(page.getByTestId("model-filter-faces")).toHaveAttribute(
+  await expect(page.getByTestId("model-filter-all")).toHaveAttribute(
     "aria-pressed",
     "true",
   );
 
   await clickAFace(page);
-  await expect(page.getByTestId("project-popover")).toContainText("1 face");
+  await expect(page.getByTestId("project-popover")).toContainText("1 selected");
   await expect(page.getByTestId("project-apply")).toBeEnabled();
   await page.getByTestId("project-apply").click();
 
@@ -68,6 +68,48 @@ test("projects a picked face into the active sketch and returns to it", async ({
   await expect
     .poll(async () => (await projectionIds(page)).length)
     .toBeGreaterThan(before.length);
+  expect(errors).toEqual([]);
+});
+
+test("projects a picked body edge as an open reference line", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await page
+    .locator('[data-feature-type="sketch"]')
+    .filter({ hasText: "Mounting holes" })
+    .click();
+  await expect
+    .poll(async () => (await projectionIds(page)).length)
+    .toBeGreaterThan(0);
+  const before = await projectionIds(page);
+
+  await page.getByTestId("tool-project").click();
+  await expect(page.getByTestId("project-popover")).toBeVisible();
+  await fitView(page);
+  const edges = await scanVisibleEdges(page);
+  expect(edges.length).toBeGreaterThan(0);
+  const [edge] = edges;
+  await page.mouse.click(edge!.x, edge!.y);
+  await expect(page.getByTestId("project-popover")).toContainText("Edge 1");
+  await page.getByTestId("project-apply").click();
+
+  await expect(page.getByTestId("project-popover")).toHaveCount(0);
+  await expect(page.getByTestId("tool-select")).toBeVisible();
+  await expect
+    .poll(async () => (await projectionIds(page)).length)
+    .toBeGreaterThan(before.length);
+  const added = (await projectionIds(page)).find(
+    (id) => !before.includes(id),
+  )!;
+  const projected = page.locator(`[data-projection-id="${added}"]`);
+  await expect(projected.first()).toBeAttached();
+  // A picked straight edge is materialized as one open reference line, not a
+  // closed loop with a doubled-back segment.
+  expect(await projected.count()).toBe(1);
+  expect(await projected.first().evaluate((element) => element.tagName)).toBe(
+    "line",
+  );
   expect(errors).toEqual([]);
 });
 
@@ -178,6 +220,41 @@ test("a new point snaps onto a projected circle", async ({ app: page }) => {
   expect(errors).toEqual([]);
 });
 
+test("projected circles marquee and dimension like sketch geometry", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await page
+    .locator('[data-feature-type="sketch"]')
+    .filter({ hasText: "Mounting holes" })
+    .click();
+  const referenceCircle = page.locator("circle[data-projection-id]");
+  await expect
+    .poll(async () => referenceCircle.count())
+    .toBeGreaterThan(0);
+  const radius = Number(
+    await referenceCircle.first().getAttribute("r"),
+  );
+
+  await page.getByTestId("tool-box").click();
+  await dragSketch(page, [-10, -10], [10, 10]);
+  await expect(page.getByTestId("selection-panel")).toContainText("⌀ 16 mm");
+
+  await page.getByTestId("tool-select").click();
+  await clickSketch(page, radius / Math.SQRT2, radius / Math.SQRT2);
+  await expect(page.getByTestId("selection-panel")).toContainText("⌀ 16 mm");
+  const before = await page.locator("[data-dimension-id]").count();
+  await page.getByTestId("tool-dimension").click();
+  await clickSketch(page, 12, 12);
+  await expect
+    .poll(async () => page.locator("[data-dimension-id]").count())
+    .toBe(before + 1);
+  await expect(page.locator("[data-dimension-id]").last()).toContainText(
+    "(⌀ 16)",
+  );
+  expect(errors).toEqual([]);
+});
+
 test("cancelling the project picker leaves the sketch untouched", async ({
   app: page,
 }) => {
@@ -194,7 +271,7 @@ test("cancelling the project picker leaves the sketch untouched", async ({
   await page.getByTestId("tool-project").click();
   await expect(page.getByTestId("project-popover")).toBeVisible();
   await clickAFace(page);
-  await expect(page.getByTestId("project-popover")).toContainText("1 face");
+  await expect(page.getByTestId("project-popover")).toContainText("1 selected");
   await page.getByTestId("project-cancel").click();
 
   await expect(page.getByTestId("project-popover")).toHaveCount(0);

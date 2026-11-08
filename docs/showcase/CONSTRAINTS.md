@@ -428,7 +428,7 @@ are still proposed.
 | Q8 | Circle vs arc default: diameter or radius? | Circle → diameter, arc → radius; both chips available. | Proposed |
 | Q9 | Diameter through-line or leader? | Through-line when it fits; leader when it does not. | Open |
 | Q10 | Are constraints shown on construction geometry? | Same marks, quietly; construction is already dashed. | Proposed |
-| Q11 | Are constraints shown on projected/reference geometry? | Yes, but a constraint that cannot move the reference is still a normal mark. | Open |
+| Q11 | Are constraints shown on projected/reference geometry? | Yes, but a constraint that cannot move the reference is still a normal mark. A dimension of only fixed/projected geometry is a reference dimension; a free point measured against it can still drive. | **Done** (2026-11-08) |
 | Q12 | Do filters hide or merely gate picks? | Gate picks only. | Proposed |
 | Q13 | Do we add concentric / arc–arc tangent / symmetric about a point / fix a line? | Not in v1; add with the same grammar when the solver supports them. | Deferred |
 | Q14 | Do dimension labels avoid collisions automatically? | No; draggable with staggered defaults. | Deferred |

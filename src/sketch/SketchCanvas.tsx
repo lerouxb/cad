@@ -18,7 +18,11 @@ import {
 } from "../core/sketch/loops";
 import type { SketchPalette } from "../app/theme";
 import type { DraftVertex } from "../core/sketch/create";
-import type { DimensionPlacement, DimensionTarget } from "../core/sketch/dimensions";
+import {
+  dimensionCanDrive,
+  type DimensionPlacement,
+  type DimensionTarget,
+} from "../core/sketch/dimensions";
 import type { DragTarget } from "../core/sketch/solver";
 import {
   allCurves,
@@ -314,6 +318,8 @@ export function SketchCanvas({
      */
     measured: number;
     reference: boolean;
+    /** False when the measurement is entirely fixed/projected geometry. */
+    canDrive: boolean;
     asRadius?: boolean;
     /** Length or angle: the editor unit must match the dimension. */
     unit: "mm" | "°";
@@ -836,7 +842,8 @@ export function SketchCanvas({
       id,
       value: formatEditable(measured),
       measured,
-      reference,
+      reference: reference || (constraint ? !dimensionCanDrive(sketch, id) : false),
+      canDrive: constraint ? dimensionCanDrive(sketch, id) : true,
       asRadius,
       unit: constraint?.type === "angle" ? "°" : "mm",
       x,
@@ -908,7 +915,7 @@ export function SketchCanvas({
     startAngle?: number;
     sweep?: number;
   } | null => {
-    const curve = sketch.curves.find((candidate) => candidate.id === id);
+    const curve = allCurves(sketch).find((candidate) => candidate.id === id);
     if (!curve) return null;
     if (curve.type === "circle") {
       const center = points[curve.center];
@@ -3200,8 +3207,15 @@ export function SketchCanvas({
               type="button"
               className={!editor.reference ? "is-selected" : ""}
               aria-pressed={!editor.reference}
+              disabled={!editor.canDrive}
+              title={
+                editor.canDrive
+                  ? undefined
+                  : "Projected/fixed geometry measures as a reference"
+              }
               data-testid="dimension-kind-driving"
               onClick={(event) => {
+                if (!editor.canDrive) return;
                 setEditor({
                   ...editor,
                   reference: false,
