@@ -34,6 +34,12 @@ test("offsets the top face out and in as a history step", async ({
   await expect
     .poll(() => volume(page))
     .toBeCloseTo(examplePlateVolume(17), -1);
+  await expect(canvas).toHaveAttribute("data-offset-diff", "added");
+  await expect
+    .poll(async () =>
+      Number(await canvas.getAttribute("data-offset-diff-added")),
+    )
+    .toBeGreaterThan(0);
 
   await page.getByTestId("offset-face-apply").click();
   const step = page.locator('[data-feature-type="offset"]');
@@ -42,6 +48,7 @@ test("offsets the top face out and in as a history step", async ({
   await expect(step.locator(".tree-meta")).toContainText("5 mm · out");
   await expect(page.getByTestId("offset-face-popover")).toHaveCount(0);
   await expect(canvas).toHaveAttribute("data-offset-ghost", "");
+  await expect(canvas).toHaveAttribute("data-offset-diff", "");
   await expect
     .poll(() => volume(page))
     .toBeCloseTo(examplePlateVolume(17), -1);
@@ -123,6 +130,8 @@ test("offsets a through hole wall and shows the diameter change", async ({
   );
   const shrunk = plate + Math.PI * (64 - 36) * 12;
   await expect.poll(() => volume(page)).toBeCloseTo(shrunk, -1);
+  const canvas = page.locator("canvas.viewport-canvas");
+  await expect(canvas).toHaveAttribute("data-offset-diff", "added");
   await page.getByTestId("offset-face-apply").click();
 
   const step = page.locator('[data-feature-type="offset"]');
@@ -145,6 +154,10 @@ test("offsets a through hole wall and shows the diameter change", async ({
   await page.getByTestId("offset-face-in").click();
   await expect(page.getByTestId("offset-face-diameter")).toContainText(
     "Ø 16.0 → 20.0 mm",
+  );
+  await expect(page.locator("canvas.viewport-canvas")).toHaveAttribute(
+    "data-offset-diff",
+    "removed",
   );
   const grown = plate - Math.PI * (100 - 64) * 12;
   await expect.poll(() => volume(page)).toBeCloseTo(grown, -1);

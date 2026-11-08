@@ -1063,8 +1063,17 @@ export function App() {
           )}`,
           faces: draft.faces,
           distance: draft.distance,
+          preview: true,
         },
       ];
+    }
+    if (offsetDraft?.mode === "edit" && offsetDraft.featureId) {
+      const id = offsetDraft.featureId;
+      features = features.map((feature) =>
+        feature.kind === "offsetFace" && feature.featureId === id
+          ? { ...feature, preview: true }
+          : feature,
+      );
     }
     return features;
   }, [

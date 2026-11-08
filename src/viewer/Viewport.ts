@@ -5,7 +5,7 @@ import { LineGeometry } from "three/addons/lines/LineGeometry.js";
 import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
-import type { BodyMesh } from "../core/kernel/protocol";
+import type { BodyDiff, BodyMesh } from "../core/kernel/protocol";
 import {
   edgeFaceKey,
   edgeRefKey,
@@ -135,6 +135,9 @@ export class Viewport {
   /** The pre-offset body shown as a ghost under an offset draft. */
   private ghostGroup = new THREE.Group();
   private ghostMesh: BodyMesh | null = null;
+  /** Added/removed material for an offset preview. */
+  private diffGroup = new THREE.Group();
+  private diff: BodyDiff | null = null;
   private theme: ViewportTheme;
   private highlightColor: string;
   private readonly onPick?: (
@@ -220,6 +223,7 @@ export class Viewport {
     this.scene.add(this.faceSelectionGroup);
     this.scene.add(this.featureGroup);
     this.scene.add(this.ghostGroup);
+    this.scene.add(this.diffGroup);
     this.addEnvironment();
 
     this.resizeObserver = new ResizeObserver(() => this.resize());
@@ -258,6 +262,7 @@ export class Viewport {
     this.rebuildSelectionOverlays();
     this.rebuildSketchOverlay();
     this.setSupportPreview(this.supportPreviewFrame);
+    this.setDiff(this.diff);
     this.dirty = true;
   }
 
@@ -469,6 +474,7 @@ export class Viewport {
       this.selectedPick = null;
       this.onPick?.(null, false);
     }
+    this.setDiff(mesh.diff ?? null);
     this.dirty = true;
   }
 
@@ -665,6 +671,61 @@ export class Viewport {
     this.dirty = true;
   }
 
+  /** Show the material an offset preview adds and removes. */
+  setDiff(diff: BodyDiff | null): void {
+    this.diff = diff;
+    this.clearGroup(this.diffGroup);
+    const added = diff?.added ?? null;
+    const removed = diff?.removed ?? null;
+    const kinds = [added ? "added" : "", removed ? "removed" : ""].filter(
+      Boolean,
+    );
+    this.canvas.dataset.offsetDiff = kinds.join(",");
+    this.canvas.dataset.offsetDiffAdded = String(
+      (added?.indices.length ?? 0) / 3,
+    );
+    this.canvas.dataset.offsetDiffRemoved = String(
+      (removed?.indices.length ?? 0) / 3,
+    );
+    if (added) {
+      this.addDiffMesh(added, this.highlightColor, 0.34, 3);
+    }
+    if (removed) {
+      this.addDiffMesh(
+        removed,
+        this.theme === "night" ? "#e26a6a" : "#b83b3b",
+        0.3,
+        4,
+      );
+    }
+    this.dirty = true;
+  }
+
+  private addDiffMesh(
+    mesh: { positions: Float32Array; indices: Uint32Array },
+    color: string,
+    opacity: number,
+    renderOrder: number,
+  ): void {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(mesh.positions, 3),
+    );
+    geometry.setIndex(new THREE.BufferAttribute(mesh.indices, 1));
+    const material = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const overlay = new THREE.Mesh(geometry, material);
+    overlay.renderOrder = renderOrder;
+    overlay.raycast = () => {};
+    this.diffGroup.add(overlay);
+  }
+
   /** Show the pre-offset body as a wireframe/translucent ghost. */
   setGhostMesh(mesh: BodyMesh | null): void {
     if (this.ghostMesh === mesh && (mesh !== null || this.ghostGroup.children.length === 0)) {
@@ -744,6 +805,7 @@ export class Viewport {
     this.cancelMarquee();
     this.clearBody();
     this.clearGroup(this.ghostGroup);
+    this.clearGroup(this.diffGroup);
     this.clearSketchOverlay();
     this.clearEnvironment();
     this.renderer.dispose();
@@ -1672,6 +1734,8 @@ export class Viewport {
     this.mesh = null;
     this.solid = null;
     this.edges = null;
+    this.diff = null;
+    this.clearGroup(this.diffGroup);
     this.hoverPick = null;
     this.selectedPick = null;
     this.edgePicks = [];

@@ -823,9 +823,9 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       with face refs and a signed distance. The plan path sweeps planar faces with
       parallel normals and neighbours the sweep preserves; the cylindrical path moves one
       full 360° hole/boss wall with a concentric cylinder/tube boolean (through holes
-      only). The popover shows `Ø old → new`, the draft previews live with a ghost of the
-      pre-offset body, apply inserts a history step, edit commits live and cancel restores
-      the baseline. Roles carry through, and same-domain faces merge on an isolated BREP
+      only). The popover shows `Ø old → new`, the draft previews live with true
+      added/removed boolean-difference meshes over a faint ghost of the pre-offset body,
+      apply inserts a history step, edit commits live and cancel restores the baseline. Roles carry through, and same-domain faces merge on an isolated BREP
       copy so a cube keeps six faces and a plate keeps its wall/hole faces. Partial
       cylinders, blind holes, non-parallel sets and no-op results are visible errors.
       Design: `docs/showcase/OFFSET_FACES.md` + `offset-faces.html`; decision:

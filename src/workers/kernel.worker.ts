@@ -79,7 +79,9 @@ import {
 import { OcctKernel } from "occt-wasm";
 import type { PlaneFrame, Vec3 } from "../core/types";
 import type {
+  BodyDiff,
   BodyMesh,
+  DiffMesh,
   EdgeRef,
   ExtrudeParams,
   FeatureBuildStatus,
@@ -247,14 +249,23 @@ async function handle(request: KernelRequest): Promise<void> {
     }
     const mesh = built.mesh;
     mesh.stats.buildMs = performance.now() - started;
+    const transfer: ArrayBuffer[] = [
+      mesh.positions.buffer as ArrayBuffer,
+      mesh.normals.buffer as ArrayBuffer,
+      mesh.indices.buffer as ArrayBuffer,
+      mesh.edgePositions.buffer as ArrayBuffer,
+    ];
+    for (const part of [mesh.diff?.added, mesh.diff?.removed]) {
+      if (!part) continue;
+      transfer.push(
+        part.positions.buffer as ArrayBuffer,
+        part.normals.buffer as ArrayBuffer,
+        part.indices.buffer as ArrayBuffer,
+      );
+    }
     reply(
       { type: "result", gen: request.gen, mesh, features: built.features },
-      [
-        mesh.positions.buffer as ArrayBuffer,
-        mesh.normals.buffer as ArrayBuffer,
-        mesh.indices.buffer as ArrayBuffer,
-        mesh.edgePositions.buffer as ArrayBuffer,
-      ],
+      transfer,
     );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -400,6 +411,7 @@ function buildFeatures(features: KernelFeature[]): {
   features: FeatureBuildStatus[];
 } {
   const statuses: FeatureBuildStatus[] = [];
+  let diff: BodyDiff | null = null;
   const protectedKeys = new Set<string>();
   const pending: Array<PrefixEntry & { key: string }> = [];
   let base: Solid | null = null;
@@ -445,6 +457,9 @@ function buildFeatures(features: KernelFeature[]): {
             : feature.kind === "offsetFace"
               ? buildOffsetFaceFeature(feature, base, baseRoles)
               : buildEdgeBlendFeature(feature, base, baseRoles);
+        if (feature.kind === "offsetFace" && feature.preview) {
+          diff = buildOffsetDiff(base, result.solid);
+        }
         base = result.solid;
         baseRoles = result.roles;
         baseKey = feature.cacheKey;
@@ -622,6 +637,7 @@ function buildFeatures(features: KernelFeature[]): {
     solidCache.trim(protectedKeys);
   }
 
+  if (mesh && diff) mesh.diff = diff;
   return { mesh, features: statuses };
 }
 
@@ -2046,6 +2062,46 @@ function extentAlongFrame(
   return Number.isFinite(min) && Number.isFinite(max)
     ? { min, max }
     : { min: 0, max: 1 };
+}
+
+/**
+ * Mesh the two sides of an offset preview: material the result adds over the
+ * prefix and material it removes. Empty sides are omitted.
+ */
+function buildOffsetDiff(before: Solid, after: Solid): BodyDiff | null {
+  let added: Solid | null = null;
+  let removed: Solid | null = null;
+  try {
+    added = unwrap(cut(after, before)) as Solid;
+    removed = unwrap(cut(before, after)) as Solid;
+    const result: BodyDiff = {
+      added: diffMesh(added),
+      removed: diffMesh(removed),
+    };
+    return result.added || result.removed ? result : null;
+  } catch {
+    return null;
+  } finally {
+    added?.delete();
+    removed?.delete();
+  }
+}
+
+function diffMesh(solid: Solid): DiffMesh | null {
+  try {
+    if (isEmpty(solid)) return null;
+    clearMeshCache();
+    const mesh = shape(solid).mesh({ tolerance: 0.05 });
+    const data = toBufferGeometryData(mesh);
+    if (data.index.length === 0) return null;
+    return {
+      positions: data.position,
+      normals: data.normal,
+      indices: data.index,
+    };
+  } catch {
+    return null;
+  }
 }
 
 function meshSolid(solid: Solid, roles: RoleTable): BodyMesh {

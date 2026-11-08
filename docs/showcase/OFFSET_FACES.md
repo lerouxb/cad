@@ -151,9 +151,11 @@ shell and blend drafts. The preview body is the result, not a new pick surface.
 
 - The input faces keep a **highlighter wash** on the source prefix; the normal
   arrow and distance sit on the face.
-- The **preview body** shows the result. A dashed **ghost of the input face**
-  shows where it came from, and a thin leader/arrow shows the move. The ghost is
-  a preview, never a pick target.
+- The **preview body** shows the result. The worker returns two boolean-difference
+  meshes: added material in the highlighter and removed material in red, over a
+  faint ghost of the pre-offset body. The ghost and difference are previews,
+  never pick targets. A dashed **ghost of the input face** and normal arrow are
+  still open.
 - The selected face rows in the popover are the source of truth for the input
   set; stage clicks toggle that set.
 - On apply the preview becomes the step's body. On cancel the original body
@@ -295,8 +297,9 @@ Landed (schema v12):
   hole/boss slice from §9, re-derives roles, carries the moved face's role, and
   surfaces invalid/empty/no-op results in the popover and the stage status.
 - The `Ø old → new` readout is derived from `TopoRef.hint.radius`/`radialSign`.
-- The draft shows a ghost of the whole pre-offset body, so added/removed volume
-  is visible while the form is open.
+- The draft shows true added/removed boolean-difference meshes (added in the
+  highlighter, removed in red) over a faint ghost of the whole pre-offset body,
+  so the material change is visible while the form is open.
 - Editing an existing step commits live; `cancel` restores the baseline.
 
 Still missing:
@@ -304,7 +307,8 @@ Still missing:
 - blind holes and partial cylindrical faces;
 - adjacent non-parallel face sets (they are rejected in v1);
 - the tangent-chain toggle;
-- the normal arrow and dashed source-face ghost (the whole-body ghost is in);
+- the normal arrow and dashed source-face ghost (the whole-body ghost and
+  boolean-difference overlays are in);
 - the adaptive slider ceiling from the shortest adjacent dimension (the current
   ceiling is the body's shortest dimension).
 

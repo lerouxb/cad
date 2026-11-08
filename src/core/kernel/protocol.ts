@@ -148,6 +148,19 @@ export interface BodyStats {
   bounds: [number, number, number, number, number, number];
 }
 
+/** One side of an offset draft's boolean difference. */
+export interface DiffMesh {
+  positions: Float32Array;
+  normals: Float32Array;
+  indices: Uint32Array;
+}
+
+/** Material the preview adds and removes relative to the prefix body. */
+export interface BodyDiff {
+  added: DiffMesh | null;
+  removed: DiffMesh | null;
+}
+
 /** Renderable output of one rebuild. Typed arrays are transferred, not copied. */
 export interface BodyMesh {
   positions: Float32Array;
@@ -156,6 +169,8 @@ export interface BodyMesh {
   faceGroups: FaceGroup[];
   edgePositions: Float32Array;
   edgeGroups: EdgeGroup[];
+  /** Only present for a previewed offset draft. */
+  diff?: BodyDiff;
   stats: BodyStats;
 }
 
@@ -200,6 +215,8 @@ export interface KernelOffsetFaceFeature extends KernelFeatureBase {
   kind: "offsetFace";
   faces: TopoRef[];
   distance: number;
+  /** Ask the worker to return the added/removed boolean-difference meshes. */
+  preview?: boolean;
 }
 
 export type KernelEdgeBlendFeature =

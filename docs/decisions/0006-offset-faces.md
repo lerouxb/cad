@@ -140,7 +140,9 @@ fault.
 - Cylindrical hole/boss walls (the tolerance/fit case) are **not** done yet; they need a
   separate rebuild (for example a concentric-tube boolean) and remain the next kernel
   slice.
-- The tangent-chain toggle and the preview ghost/normal arrow are not implemented.
-- Tests assert volume, bounds, validity and the hole, and failure tests cover a curved
-  face and an inward collapse. The multi-face L-step and undercut are rejected by the
+- The tangent-chain toggle, normal arrow and dashed input-face ghost are not
+  implemented. The draft shows true added/removed boolean-difference meshes (added in the
+  highlighter, removed in red) over a faint ghost of the whole pre-offset body.
+- Tests assert volume, bounds, validity and the hole, and failure tests cover a partial
+  cylinder and an inward collapse. The multi-face L-step and undercut are rejected by the
   adjacency checks.
