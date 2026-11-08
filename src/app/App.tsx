@@ -30,6 +30,8 @@ import {
   applyProjectionGeometry,
   newProjectionId,
   projectPointToPlane,
+  projectedCircle,
+  projectionHasDependents,
   sameProjectedLoops,
 } from "../core/sketch/projection";
 import {
@@ -4065,7 +4067,31 @@ export function App() {
       let nextProjection = projection;
       let projections = target.projections;
       if (projection) {
-        if (!sameProjectedLoops(projection.loops, loops)) {
+        // Documents projected before v15 cache polyline chords for circular
+        // boundaries. Upgrade the representation once, unless a user already
+        // constrained geometry to those chords.
+        const wantsCircle = loops.some(
+          (loop) => projectedCircle(loop) !== null,
+        );
+        const hasCircle = (sketch.references?.circles ?? []).some(
+          (circle) => circle.projectionId === projection.id,
+        );
+        const representationStale = wantsCircle !== hasCircle;
+        if (
+          representationStale &&
+          !projectionHasDependents(sketch, projection.id)
+        ) {
+          const next = applyProjectionGeometry(
+            sketch,
+            projection.id,
+            projection.label,
+            loops,
+          );
+          if (next) {
+            sketch = next;
+            nextProjection = { ...projection, loops, stale: undefined };
+          }
+        } else if (!sameProjectedLoops(projection.loops, loops)) {
           const next = applyProjectionGeometry(
             sketch,
             projection.id,

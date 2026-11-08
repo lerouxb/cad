@@ -183,6 +183,50 @@ export function applyProjectionGeometry(
   };
 }
 
+/**
+ * Does any user geometry or constraint already refer to this projection's
+ * materialized ids? Such a projection cannot be re-represented (polyline to
+ * circle) without dropping those references, so it stays as it is.
+ */
+export function projectionHasDependents(
+  sketch: Sketch,
+  projectionId: string,
+): boolean {
+  const ids = new Set<string>();
+  for (const point of sketch.references?.points ?? []) {
+    if (point.projectionId === projectionId) ids.add(point.id);
+  }
+  for (const line of sketch.references?.lines ?? []) {
+    if (line.projectionId === projectionId) ids.add(line.id);
+  }
+  for (const circle of sketch.references?.circles ?? []) {
+    if (circle.projectionId === projectionId) ids.add(circle.id);
+  }
+  if (ids.size === 0) return false;
+  for (const constraint of sketch.constraints) {
+    for (const value of Object.values(constraint)) {
+      if (typeof value === "string" && ids.has(value)) return true;
+    }
+  }
+  for (const point of sketch.points) {
+    if (ids.has(point.id)) return true;
+  }
+  for (const curve of sketch.curves) {
+    if (curve.type === "line") {
+      if (ids.has(curve.a) || ids.has(curve.b)) return true;
+    } else if (curve.type === "circle") {
+      if (ids.has(curve.center)) return true;
+    } else if (
+      ids.has(curve.center) ||
+      ids.has(curve.start) ||
+      ids.has(curve.end)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function newProjectionId(): string {
   return newId("proj");
 }

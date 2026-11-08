@@ -11,6 +11,7 @@ import {
   applyProjectionGeometry,
   projectPointToPlane,
   projectedCircle,
+  projectionHasDependents,
   sameProjectedLoops,
 } from "./projection";
 import { initSolver, solveSketch } from "./solver";
@@ -253,6 +254,25 @@ describe("face projections", () => {
     expect(outcome.ok).toBe(true);
     const solved = outcome.points[pointId]!;
     expect(Math.hypot(solved[0] - 3, solved[1] + 2)).toBeCloseTo(8, 3);
+  });
+
+  it("knows when a projection is safe to re-represent", () => {
+    const sketch = applyProjectionGeometry(
+      emptySketch(),
+      "proj-rep",
+      "Projected circle",
+      [circleLoop(8)],
+    );
+    if (!sketch) throw new Error("Expected the projection to apply");
+    expect(projectionHasDependents(sketch, "proj-rep")).toBe(false);
+    const circle = sketch.references!.circles![0]!;
+    const withPoint = addPoint(sketch, [20, 0]);
+    const pointId = withPoint.points[withPoint.points.length - 1]!.id;
+    const constrained = applyConstraint(withPoint, "pointOnCircle", [
+      pointId,
+      circle.id,
+    ]);
+    expect(projectionHasDependents(constrained, "proj-rep")).toBe(true);
   });
 
   it("leaves a non-circular projected boundary as a polyline", () => {
