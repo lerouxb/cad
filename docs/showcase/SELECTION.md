@@ -168,6 +168,9 @@ the selection popover closes. The draft owns its inputs until apply/cancel.
 - `revolve…` starts the revolve draft with the same profile; its form adds an
   axis and an angle (see [`REVOLVE.md`](REVOLVE.md)). The region set is still the
   one selection.
+- The form's **operation row** (`new body` / `join` / `cut` / `intersect`) is the
+  shared contract in [`BOOLEANS.md`](BOOLEANS.md). The selection popover starts
+  the feature; it never chooses the boolean itself.
 - A **void** region is a valid profile: extruding it fills the negative space.
   The region parity is shown in the popover.
 - An **existing extrude's** profiles are edited from its timeline step (the
@@ -247,8 +250,10 @@ Selection means the same thing in the sketch and the model. The highlighter is a
 - **Never a highlighter-only edge.** A model edge is a line; it gets the same
   ink centerline as a sketch line. A single opaque marker line that hides the
   body edge is the current model bug, not the style.
-- **The pair is drawn above the body** so the glow reads against the solid; the
-  ink centerline is what survives a screenshot and a highlighter change.
+- **The pair is drawn above the selected face** (polygon offset) so the glow
+  reads against the solid, but it is still depth-tested against other geometry:
+  a selected back edge stays hidden behind a boss or cylinder. The ink
+  centerline is what survives a screenshot and a highlighter change.
 - **Faces/regions are washes**, not marker outlines. The existing ink edge is
   the boundary; do not paint a second marker outline over it.
 - **Multiple edges** each get the pair; a hover highlights one edge only.

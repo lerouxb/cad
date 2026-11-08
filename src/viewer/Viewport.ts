@@ -1455,8 +1455,14 @@ export class Viewport {
         linewidth: width,
         transparent: true,
         opacity,
-        depthTest: false,
+        // The pair sits slightly in front of the body so it reads on its own
+        // face, but it still respects other geometry: a selected edge behind a
+        // cylinder must not paint over it.
+        depthTest: true,
         depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1,
         resolution: new THREE.Vector2(
           Math.max(1, this.canvas.clientWidth),
           Math.max(1, this.canvas.clientHeight),
