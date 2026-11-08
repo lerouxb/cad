@@ -374,14 +374,9 @@ export function constraintMarks(
         const curve = line(constraint.line);
         const base = curve ? lineBase(curve) : null;
         if (!curve || !base) break;
-        const side =
-          constraint.type === "horizontal"
-            ? ([0, -1] as Vec2)
-            : ([1, 0] as Vec2);
-        const point: Vec2 = [
-          base.mid[0] + side[0] * MARK * px,
-          base.mid[1] + side[1] * MARK * px,
-        ];
+        // A single-participant badge sits on the line at its midpoint; its
+        // paper fill interrupts the line (CONSTRAINTS.md C21).
+        const point = base.mid;
         badge(
           constraint.id,
           constraint.type,

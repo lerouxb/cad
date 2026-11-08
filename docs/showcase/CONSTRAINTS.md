@@ -465,7 +465,9 @@ Implemented (2026-11-08):
   a tie across a gap. Tangent draws the contact diamond + tangent tick, with `T`
   badges as the fallback.
 - H/V/∥/⊥/≡ stay badges; equal/point/tangent/symmetric glyphs replace the old
-  letters. Marks are screen-space and derived, never document state; they use
+  letters. H/V are single-participant badges and sit on the line at its
+  midpoint, their paper fill interrupting it; multi-participant badges stay
+  outside. Marks are screen-space and derived, never document state; they use
   quiet / hover / selected colours from the participant ids.
 - The angle inline editor now shows `°`; linear slash ticks, the radial leader
   and reference parentheses were already in place.
@@ -486,8 +488,8 @@ Remaining:
   leader, and the label-priority rule. None of these exist yet; current marks
   are automatically placed with no cluster or user offset. The mark layer now
   renders before the dimension lines and labels, so it cannot cover a value.
-  H/V currently offset one mark to the side; sit them on the line midpoint
-  instead (C21).
+  H/V sit on the line midpoint (C21); sliding them when a point or another mark
+  occupies that midpoint is the remaining collision rule.
 - **Phase 3 — measurements**: open arrowheads on angle/radius/diameter leaders,
   the through-line/leader choice for diameter, witness-line gaps, label collision
   defaults, and the 0° angle behaviour.

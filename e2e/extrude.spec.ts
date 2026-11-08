@@ -111,9 +111,9 @@ test("extrudes a filleted profile with a circular hole", async ({ app: page }) =
   await dragSketch(page, [-40, -30], [40, 30]);
   await page.keyboard.press("Escape");
 
-  await clickSketch(page, -40, 0);
+  await clickSketch(page, -40, -10);
   await page.keyboard.down("Shift");
-  await clickSketch(page, 0, -30);
+  await clickSketch(page, -20, -30);
   await page.keyboard.up("Shift");
   await page.getByTestId("open-fillet").click();
   await page.getByTestId("fillet-radius").fill("10");

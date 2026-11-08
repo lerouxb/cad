@@ -131,7 +131,12 @@ test("creates, edits and deletes parametric dimensions", async ({ app: page }) =
   await expect(page.getByTestId("dof")).toContainText("4 DOF");
 
   await page.getByTestId("tool-select").click();
-  await clickSketch(page, (before.minX + before.maxX) / 2, before.minY);
+  // Off the midpoint: the H badge sits on the line there and is its own handle.
+  await clickSketch(
+    page,
+    before.minX + (before.maxX - before.minX) * 0.25,
+    before.minY,
+  );
   await page.getByTestId("tool-dimension").click();
   await expect(page.getByTestId("reference-toggle")).toBeVisible();
   await clickSketch(page, (before.minX + before.maxX) / 2 + 10, before.minY + 14);
@@ -151,7 +156,11 @@ test("creates, edits and deletes parametric dimensions", async ({ app: page }) =
   expect(resized.maxY - resized.minY).toBeCloseTo(height, 0);
 
   // A reference dimension measures without constraining.
-  await clickSketch(page, resized.maxX, (resized.minY + resized.maxY) / 2);
+  await clickSketch(
+    page,
+    resized.maxX,
+    resized.minY + (resized.maxY - resized.minY) * 0.75,
+  );
   await page.getByTestId("tool-dimension").click();
   await expect(page.getByTestId("reference-toggle")).toBeVisible();
   await page.getByTestId("reference-toggle").click();
@@ -232,7 +241,8 @@ test("a reference readout formats the same measurement as its label", async ({
   await clickSketch(page, 0, 0);
   await page.keyboard.press("Enter");
   await page.getByTestId("tool-select").click();
-  await clickSketch(page, -14, 0);
+  // 75 % along the line, away from the H badge on its midpoint.
+  await clickSketch(page, -7, 0);
   await page.getByTestId("tool-dimension").click();
   await clickSketch(page, -14, 14);
 
@@ -397,10 +407,10 @@ test("rounds a rectangle corner with a parametric fillet", async ({ app: page })
   await dragSketch(page, [-40, -30], [40, 30]);
   await page.keyboard.press("Escape");
 
-  // Select the left and bottom edges: they share the bottom-left corner.
-  await clickSketch(page, -40, 0);
+  // Select the left and bottom edges away from their midpoint badges.
+  await clickSketch(page, -40, -10);
   await page.keyboard.down("Shift");
-  await clickSketch(page, 0, -30);
+  await clickSketch(page, -20, -30);
   await page.keyboard.up("Shift");
   await expect(page.getByTestId("selection-panel")).toHaveAttribute("data-count", "2");
 
@@ -434,7 +444,7 @@ test("drives an angle dimension and a radius dimension", async ({ app: page }) =
   await page.keyboard.press("Escape");
 
   await page.getByTestId("tool-select").click();
-  await clickSketch(page, 30, 0);
+  await clickSketch(page, 45, 0);
   await page.keyboard.down("Shift");
   await clickSketch(page, 25, 15);
   await page.keyboard.up("Shift");
@@ -535,7 +545,7 @@ test("drags dimension labels along a line and by radial distance", async ({
   await page.keyboard.press("Escape");
 
   await page.getByTestId("tool-select").click();
-  await clickSketch(page, 30, 0);
+  await clickSketch(page, 45, 0);
   await page.getByTestId("tool-dimension").click();
   await expect(page.getByTestId("reference-toggle")).toBeVisible();
   await clickSketch(page, 30, 15);

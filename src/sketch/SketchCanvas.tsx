@@ -2258,6 +2258,7 @@ export function SketchCanvas({
         hoveredPointId={hoveredPointId}
         viewBox={viewBox}
         tooltipConstraintId={visibleTooltipId}
+        interactive={tool === "select"}
         selectedConstraintId={selectedConstraintId}
         hoveredConstraintId={hoveredConstraintId}
         onHoverConstraint={setHoveredConstraintId}
@@ -3323,6 +3324,7 @@ function ConstraintMarks({
   hoveredPointId,
   viewBox,
   tooltipConstraintId,
+  interactive,
   selectedConstraintId,
   hoveredConstraintId,
   onHoverConstraint,
@@ -3337,6 +3339,7 @@ function ConstraintMarks({
   hoveredPointId: string | null;
   viewBox: ViewBox;
   tooltipConstraintId: string | null;
+  interactive: boolean;
   selectedConstraintId: string | null;
   hoveredConstraintId: string | null;
   onHoverConstraint?: (id: string | null) => void;
@@ -3607,21 +3610,29 @@ function ConstraintMarks({
           data-constraint-type={group.type}
           data-selected={selectedConstraintId === id ? "true" : undefined}
           data-hovered={hoveredConstraintId === id ? "true" : undefined}
-          style={{ cursor: "pointer" }}
-          onPointerEnter={() => onHoverConstraint?.(id)}
-          onPointerLeave={() => onHoverConstraint?.(null)}
-          onPointerDown={(event) => {
-            event.stopPropagation();
-            event.preventDefault();
-            onSelectConstraint?.(id);
-          }}
+          style={interactive ? { cursor: "pointer" } : undefined}
+          onPointerEnter={
+            interactive ? () => onHoverConstraint?.(id) : undefined
+          }
+          onPointerLeave={
+            interactive ? () => onHoverConstraint?.(null) : undefined
+          }
+          onPointerDown={
+            interactive
+              ? (event) => {
+                  event.stopPropagation();
+                  event.preventDefault();
+                  onSelectConstraint?.(id);
+                }
+              : undefined
+          }
         >
           {group.marks.map((mark, index) => {
             const anchor = markAnchor(mark);
             return (
               <g key={index}>
                 {renderMark(mark, index)}
-                {anchor ? (
+                {interactive && anchor ? (
                   mark.kind === "badge" ? (
                     <rect
                       x={anchor[0] - badgeWidth(mark.label) / 2}

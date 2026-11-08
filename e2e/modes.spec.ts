@@ -119,9 +119,9 @@ test("Escape on the sketch fillet restores the radius", async ({ app: page }) =>
   await dragSketch(page, [-40, -30], [40, 30]);
   await page.keyboard.press("Escape");
 
-  await clickSketch(page, -40, 0);
+  await clickSketch(page, -40, -10);
   await page.keyboard.down("Shift");
-  await clickSketch(page, 0, -30);
+  await clickSketch(page, -20, -30);
   await page.keyboard.up("Shift");
   await expect(page.getByTestId("selection-panel")).toHaveAttribute(
     "data-count",

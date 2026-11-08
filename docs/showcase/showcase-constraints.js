@@ -355,13 +355,13 @@
   function horizontal() {
     var a = [-32, 0];
     var b = [32, 0];
-    return L(a, b) + badge(X(0), Y(0) - 11, "H");
+    return L(a, b) + badge(X(0), Y(0), "H");
   }
 
   function vertical() {
     var a = [0, -26];
     var b = [0, 26];
-    return L(a, b) + badge(X(0) + 12, Y(0), "V");
+    return L(a, b) + badge(X(0), Y(0), "V");
   }
 
   function parallel() {
@@ -828,7 +828,8 @@
     s += line(255, 75, 255, 310, "con-axis");
 
     // the constraint marks
-    s += finderMark("h1", 255, 254, "horizontal", badge(255, 254, "H"));
+    s += finderMark("h1", 255, 270, "horizontal", badge(255, 270, "H"));
+    s += finderMark("v1", 420, 195, "vertical", badge(420, 195, "V"));
     s += finderMark("par1", 321, 284, "parallel", badge(321, 284, "∥"));
     s += finderMark("par1", 321, 106, "parallel", badge(321, 106, "∥"));
     s += finderMark("eq1", 90, 225, "equal", line(86, 225, 94, 225, "con-mark"));
@@ -844,7 +845,7 @@
     s += finderMark("fix1", 590, 300, "fix", pin(590, 293));
 
     return (
-      '<svg viewBox="0 0 640 380" role="img" aria-label="A sample sketch with seven constraints. Hover a mark to preview the constraint; click to select it; Backspace deletes it.">' +
+      '<svg viewBox="0 0 640 380" role="img" aria-label="A sample sketch with eight constraints. Hover a mark to preview the constraint; click to select it; Backspace deletes it.">' +
       s +
       "</svg>"
     );
@@ -861,6 +862,7 @@
 
     var INFO = {
       h1: { title: "horizontal", tip: "horizontal", rows: "bottom line" },
+      v1: { title: "vertical", tip: "vertical", rows: "right line" },
       par1: { title: "parallel", tip: "parallel · 2 lines", rows: "bottom line · top line" },
       eq1: { title: "equal", tip: "equal · 2 lines", rows: "left line · right line" },
       pol1: { title: "point on line", tip: "point on line · 2 objects", rows: "P1 · bottom line" },
@@ -870,6 +872,7 @@
     };
     var GEO = {
       h1: ["bottom"],
+      v1: ["right"],
       par1: ["bottom", "top"],
       eq1: ["left", "right"],
       pol1: ["p1", "bottom"],
@@ -1182,8 +1185,8 @@
 
   function build() {
     var constraints = [
-      card("Horizontal", "H at the midpoint, upright", horizontal(), { toggle: true }),
-      card("Vertical", "V at the midpoint, upright", vertical(), { toggle: true }),
+      card("Horizontal", "H on the line, upright", horizontal(), { toggle: true }),
+      card("Vertical", "V on the line, upright", vertical(), { toggle: true }),
       card("Parallel", "a badge on each line; the tie is the pair", parallel(), { toggle: true }),
       card("Perpendicular", "one square at the corner", perpendicular(), { toggle: true }),
       card("Perpendicular, apart", "badges + a tie when they do not touch", perpendicularNoTouch(), { toggle: true }),

@@ -158,7 +158,7 @@
               </p>
               <div class="con-finder" id="con-finder">
                 <div class="con-finder-head">
-                  <span>sample sketch · seven constraints</span>
+                  <span>sample sketch · eight constraints</span>
                   <span>hover · click · Backspace</span>
                   <button class="text-action is-quiet" type="button" data-finder-reset>reset demo</button>
                 </div>
@@ -190,7 +190,7 @@
                 <li><b>A hovered mark explains itself.</b> A small tooltip names the constraint and its participant count; touch uses the selection popover instead.</li>
                 <li><b>Collision order is auto → cluster → chooser → drag.</b> Position automatically, collapse into a count, choose when hits overlap, and pin only when the first three cannot resolve it.</li>
                 <li><b>Orientation follows the geometry.</b> Equal ticks are perpendicular to the line; the perpendicular square turns with the corner; symmetric chevrons are perpendicular to the axis.</li>
-                <li><b>Badges stay upright.</b> A vertical line still says <b>V</b>, not a rotated V.</li>
+                <li><b>Badges stay upright; single-participant badges sit on the line.</b> A vertical line still says <b>V</b>, not a rotated V. H/V sit at the midpoint with their paper fill interrupting the line; multi-participant badges sit outside.</li>
                 <li><b>Marks are screen-space.</b> They never scale with zoom; short entities collapse to a cluster.</li>
                 <li><b>Slot, don’t stack.</b> 30 / 50 / 70 % along a line; a ring on a point; a radial tick on a circle.</li>
                 <li><b>Clicking a constraint is not the removal path.</b> The applied chip in the selection popover is.</li>
@@ -252,7 +252,7 @@
         <li><b>Click selects; Backspace deletes.</b> A constraint mark is a handle. The selection popover shows its name, participants and delete; the applied chip remains the fast remove.</li>
         <li><b>Symmetric rotates with the axis.</b> A connector perpendicular to the axis, with two inward chevrons. Vertical axis → left/right; horizontal axis → up/down.</li>
         <li><b>Equal is a tick, not an equals sign.</b> One tick per group; two ticks for a second group. On a circle the tick is radial.</li>
-        <li><b>H/V stay upright.</b> The line can be vertical; the badge is a label, not a picture of the line.</li>
+        <li><b>H/V stay upright and sit on the line.</b> The line can be vertical; the badge is a label, not a picture of the line. A single-participant badge sits at the midpoint, with its paper fill interrupting the line; multi-participant badges sit outside.</li>
         <li><b>Point-on-line and point-on-circle are rings.</b> A shared endpoint is coincident; it does not need a second ring.</li>
         <li><b>Fix is a pin.</b> F reads like a label; a pin reads like a lock.</li>
         <li><b>Linear spans use slashes; angular and radial leaders use arrows.</b> The arrow says “this line points at the thing it measures”.</li>
