@@ -1,7 +1,7 @@
 import { expect } from "@playwright/test";
 import { collectErrors, resetExample, test } from "./support/app";
 import { clickSketch, dragSketch, enterSketch } from "./support/sketch";
-import { fitView } from "./support/model";
+import { fitView, pickTopFace } from "./support/model";
 
 test.beforeEach(async ({ app: page }) => {
   await resetExample(page);
@@ -84,6 +84,31 @@ test("a selected line leaves constraints quiet; a selected mark highlights its b
   await horizontal.locator("[data-mark-hit]").last().click();
   await expect(horizontal).toHaveAttribute("data-mark-style", "active");
   await expect(page.getByTestId("selection-panel")).toContainText("Horizontal");
+  expect(errors).toEqual([]);
+});
+
+
+test("changing the highlighter recolours an active selection", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await pickTopFace(page);
+  await expect(page.getByTestId("face-selection-popover")).toHaveAttribute(
+    "data-count",
+    "1",
+  );
+  const canvas = page.locator("canvas.viewport-canvas");
+  const before = await canvas.getAttribute("data-highlight-color");
+  expect(before).toBeTruthy();
+
+  await page.getByTestId("highlight-pink").click();
+  const after = await canvas.getAttribute("data-highlight-color");
+  expect(after).toBeTruthy();
+  expect(after).not.toBe(before);
+  await expect(page.getByTestId("face-selection-popover")).toHaveAttribute(
+    "data-count",
+    "1",
+  );
   expect(errors).toEqual([]);
 });
 

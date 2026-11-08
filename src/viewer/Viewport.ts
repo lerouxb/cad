@@ -180,6 +180,7 @@ export class Viewport {
     this.canvas = canvas;
     this.theme = options.theme ?? "night";
     this.highlightColor = options.highlightColor ?? "#ddff00";
+    this.canvas.dataset.highlightColor = this.highlightColor;
     this.onPick = options.onPick;
     this.onMarquee = options.onMarquee;
     this.renderer = new THREE.WebGLRenderer({
@@ -249,8 +250,15 @@ export class Viewport {
   setHighlightColor(color: string): void {
     if (this.highlightColor === color || this.disposed) return;
     this.highlightColor = color;
+    this.canvas.dataset.highlightColor = color;
+    // Every highlighter-coloured overlay is reconstructed from the new colour.
+    // A face pick or a step's generated-face wash would otherwise keep the old
+    // material until the selection or mesh changed.
+    this.rebuildFeatureHighlight();
     this.rebuildSelectionOverlays();
     this.rebuildSketchOverlay();
+    this.setSupportPreview(this.supportPreviewFrame);
+    this.dirty = true;
   }
 
   /**
