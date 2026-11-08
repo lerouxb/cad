@@ -748,6 +748,9 @@ test("the global clear resets the whole file to an empty document", async ({
 
   await page.getByTestId("clear-document").click();
   await expect(page.locator("[data-feature-id]")).toHaveCount(0);
+  await expect(page.getByTestId("no-solid-message")).toContainText(
+    "Start with a sketch",
+  );
   await expect(page.getByTestId("timeline-extrude")).toHaveCount(0);
   await expect(page.getByTestId("timeline-detail")).not.toContainText(
     "No features",
@@ -759,7 +762,11 @@ test("the global clear resets the whole file to an empty document", async ({
   await page.getByTestId("insert-gap-start").click();
   await page.getByTestId("insert-sketch").click();
   await expect(page.getByTestId("support-popover")).toBeVisible();
+  // Creating the sketch is the fix; the empty-state callout must not sit
+  // behind the support picker or the new sketch.
+  await expect(page.getByTestId("no-solid-message")).toHaveCount(0);
   await page.getByTestId("new-sketch").click();
+  await expect(page.getByTestId("no-solid-message")).toHaveCount(0);
   await expect(page.locator("[data-feature-id]")).toHaveCount(1);
   await expect(page.locator("[data-feature-id]").first()).toHaveAttribute(
     "data-feature-type",
@@ -772,6 +779,28 @@ test("the global clear resets the whole file to an empty document", async ({
   await clickSketch(page, 0, 0);
   await clickSketch(page, 10, 0);
   await expect(page.locator("[data-region-id]")).toHaveCount(1);
+  expect(errors).toEqual([]);
+});
+
+
+test("the no-solid callout returns after a sketch-only history", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await page.getByTestId("clear-document").click();
+  await page.getByTestId("insert-gap-start").click();
+  await page.getByTestId("insert-sketch").click();
+  await page.getByTestId("new-sketch").click();
+  await page.getByTestId("finish-sketch").click();
+
+  await expect(page.getByTestId("no-solid-message")).toBeVisible();
+  await expect(page.getByTestId("no-solid-message")).toContainText(
+    "Draw a closed loop or select a region",
+  );
+  // Selecting the sketch opens the sketch stage, where the model callout is
+  // not rendered at all.
+  await page.getByTestId("timeline-sketch").click();
+  await expect(page.getByTestId("no-solid-message")).toHaveCount(0);
   expect(errors).toEqual([]);
 });
 

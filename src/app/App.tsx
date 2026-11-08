@@ -1104,6 +1104,65 @@ export function App() {
     return null;
   }, [rebuild]);
 
+  /**
+   * The model-stage empty state. It is only meaningful when the model stage is
+   * idle: an open sketch, support picker, insert menu or feature editor is the
+   * user actively fixing the missing solid, so the callout would sit behind
+   * their work. The copy distinguishes an empty document from a failed feature.
+   */
+  const noSolidMessage = useMemo(() => {
+    if (kernelState === "loading" || kernelError) return null;
+    if (mode !== "model" || sketchGesture) return null;
+    if (solidFeatures.length > 0) return null;
+    if (
+      supportOpen ||
+      datumDraft !== null ||
+      editorOpen ||
+      extrudeDraft !== null ||
+      blendDraft !== null ||
+      shellDraft !== null ||
+      offsetDraft !== null ||
+      insertMenu !== null ||
+      exportOpen ||
+      measureOpen
+    ) {
+      return null;
+    }
+    if (doc.features.length === 0) {
+      return {
+        title: "No solid",
+        body: "Start with a sketch: draw a closed loop to create the first solid.",
+      };
+    }
+    const hasError = rebuild?.features.some(
+      (feature) => feature.status === "error",
+    );
+    return {
+      title: "No solid",
+      body: hasError
+        ? "Draw a closed loop, select a region, or fix the feature errors in the history."
+        : "Draw a closed loop or select a region to create a solid.",
+    };
+  }, [
+    blendDraft,
+    datumDraft,
+    doc.features.length,
+    editorOpen,
+    exportOpen,
+    extrudeDraft,
+    insertMenu,
+    kernelError,
+    kernelState,
+    measureOpen,
+    mode,
+    offsetDraft,
+    rebuild,
+    shellDraft,
+    sketchGesture,
+    solidFeatures.length,
+    supportOpen,
+  ]);
+
   // While editing a sketch on a world or datum plane there is no supporting
   // face to project. Show the body that exists at this step as faint projected
   // edges, so the sketch has a spatial reference. Face sketches already get
@@ -5453,13 +5512,13 @@ export function App() {
               </div>
             ) : null}
 
-            {solidFeatures.length === 0 && kernelState !== "loading" ? (
-              <div className="viewport-message subtle">
-                <strong>No solid</strong>
-                <span>
-                  Draw a closed loop, select a region, or fix the feature errors
-                  in the history.
-                </span>
+            {noSolidMessage ? (
+              <div
+                className="viewport-message subtle"
+                data-testid="no-solid-message"
+              >
+                <strong>{noSolidMessage.title}</strong>
+                <span>{noSolidMessage.body}</span>
               </div>
             ) : null}
 
