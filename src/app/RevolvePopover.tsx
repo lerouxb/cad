@@ -69,6 +69,11 @@ export function RevolvePopover({
   onCancel,
 }: RevolvePopoverProps) {
   const profileCount = profiles.length;
+  const axisIndex =
+    axis?.kind === "line"
+      ? axisCandidates.findIndex((curve) => curve.id === axis.curveId)
+      : -1;
+  const axisLost = axis?.kind === "line" && axisIndex < 0;
   const axisLabel =
     axis === null
       ? "pick one"
@@ -76,15 +81,18 @@ export function RevolvePopover({
         ? axis.axis === "x"
           ? "X axis"
           : "Y axis"
-        : (lineLabel(
-            axisCandidates.find((curve) => curve.id === axis.curveId) ?? {
-              id: axis.curveId,
-              type: "line",
-              a: "",
-              b: "",
-            },
-            axisCandidates.findIndex((curve) => curve.id === axis.curveId),
-          ) ?? "line");
+        : axisLost
+          ? "lost · line removed"
+          : lineLabel(axisCandidates[axisIndex]!, axisIndex);
+  const hint = axisPicking
+    ? "click a sketch line or the X/Y reference · Esc exits the pick"
+    : axisLost
+      ? "the stored axis line was deleted; pick another axis"
+      : profileCount === 0
+        ? "pick at least one profile with select"
+        : axis === null
+          ? "pick an axis: a sketch line or X/Y"
+          : "the profile must stay on one side of the axis";
   const summary = `${formatEditable(angles)}° · ${OPERATION_LABELS[operation]} · ${profileCount} profile${profileCount === 1 ? "" : "s"}`;
   return (
     <StagePopover
@@ -93,15 +101,7 @@ export function RevolvePopover({
       testId="revolve-popover"
       position={position}
       onMove={onMove}
-      hint={
-        axisPicking
-          ? "click a sketch line or the X/Y reference · Esc exits the pick"
-          : profileCount === 0
-            ? "pick at least one profile with select"
-            : axis === null
-              ? "pick an axis: a sketch line or X/Y"
-              : "the profile must stay on one side of the axis"
-      }
+      hint={hint}
       summary={summary}
       cancel={{
         label: "cancel",

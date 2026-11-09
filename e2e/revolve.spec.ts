@@ -81,6 +81,43 @@ test("rejects a profile that crosses the axis", async ({ app: page }) => {
   expect(errors).toEqual([]);
 });
 
+test("shows a deleted axis line as lost, not as line 0", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await newSketch(page);
+  await page.getByTestId("tool-rect").click();
+  await dragSketch(page, [10, -10], [20, 10]);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("tool-select").click();
+  await clickSketch(page, 15, 5);
+  await page.getByTestId("profile-revolve").click();
+  await page.getByTestId("revolve-axis-pick").click();
+  await clickSketch(page, 10, 5);
+  await expect(page.getByTestId("revolve-axis")).toContainText("line");
+  await page.getByTestId("revolve-apply").click();
+  await expect(page.locator('[data-feature-type="revolve"]')).toHaveAttribute(
+    "data-status",
+    "ok",
+  );
+
+  // Delete the stored axis line out of its sketch, then reopen the feature.
+  await page.locator('[data-feature-type="sketch"]').first().click();
+  await clickSketch(page, 10, 5);
+  await expect(page.getByTestId("selection-panel")).toContainText("Line");
+  await page.keyboard.press("Delete");
+  await page.locator('[data-feature-type="revolve"]').click();
+
+  // PICKS P14 / REVOLVE O12: a lost input is named; it never silently falls
+  // back to another line or reads as a made-up ordinal.
+  await expect(page.getByTestId("revolve-axis")).toContainText(
+    "lost · line removed",
+  );
+  await expect(page.getByTestId("revolve-popover")).toContainText(
+    "the stored axis line was deleted; pick another axis",
+  );
+  await page.getByTestId("revolve-cancel").click();
+  expect(errors).toEqual([]);
+});
+
 test("uses a sketch line as the axis", async ({ app: page }) => {
   const errors = collectErrors(page);
   await newSketch(page);
