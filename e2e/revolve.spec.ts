@@ -45,6 +45,9 @@ test("revolves a rectangle around Y into a tube", async ({ app: page }) => {
 
   await step.click();
   await expect(page.getByTestId("revolve-popover")).toBeVisible();
+  await expect(page.getByTestId("revolve-select-profiles")).toHaveText(
+    "pick in sketch",
+  );
   await page.getByTestId("revolve-angle").fill("180");
   await expect
     .poll(() => volume(page))

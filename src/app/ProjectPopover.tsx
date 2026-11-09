@@ -1,6 +1,8 @@
+import { formatArea, formatLength } from "../core/format";
 import type { EdgeRef, TopoRef } from "../core/kernel/protocol";
 import { faceRefKey } from "../core/doc/datum";
 import { edgeRefKey } from "../core/kernel/protocol";
+import { countLabel, InputRow, PickList } from "./PickRows";
 import { StagePopover, type PopoverPosition } from "./StagePopover";
 
 interface ProjectPopoverProps {
@@ -22,13 +24,13 @@ function faceDetail(face: TopoRef): string {
     : "face";
   return face.hint.area === undefined
     ? surface
-    : `${surface} · ${Math.round(face.hint.area)} mm²`;
+    : `${surface} · ${formatArea(face.hint.area)} mm²`;
 }
 
 function edgeDetail(edge: EdgeRef): string {
   return edge.hint.length === undefined
     ? "edge"
-    : `edge · ${Math.round(edge.hint.length)} mm`;
+    : `${formatLength(edge.hint.length)} mm`;
 }
 
 /**
@@ -65,36 +67,37 @@ export function ProjectPopover({
         disabled: count === 0 || busy,
       }}
     >
-      <div className="selection-list">
-        {faces.map((face, index) => (
-          <div className="selection-item" key={faceRefKey(face)}>
-            <span>Face {index + 1}</span>
-            <span className="mono">{faceDetail(face)}</span>
-            <button
-              className="text-action is-quiet"
-              type="button"
-              onClick={() => onRemoveFace(index)}
-              data-testid={`project-remove-face-${index}`}
-            >
-              remove
-            </button>
-          </div>
-        ))}
-        {edges.map((edge, index) => (
-          <div className="selection-item" key={edgeRefKey(edge)}>
-            <span>Edge {index + 1}</span>
-            <span className="mono">{edgeDetail(edge)}</span>
-            <button
-              className="text-action is-quiet"
-              type="button"
-              onClick={() => onRemoveEdge(index)}
-              data-testid={`project-remove-edge-${index}`}
-            >
-              remove
-            </button>
-          </div>
-        ))}
-      </div>
+      <InputRow
+        label="faces"
+        value={countLabel(faces.length)}
+        valueTestId="project-faces"
+      />
+      <PickList
+        rows={faces.map((face, index) => ({
+          id: faceRefKey(face),
+          label: `Face ${index + 1}`,
+          detail: faceDetail(face),
+        }))}
+        onRemove={onRemoveFace}
+        removeTestId="project-remove-face"
+        testId="project-face-list"
+      />
+
+      <InputRow
+        label="edges"
+        value={countLabel(edges.length)}
+        valueTestId="project-edges"
+      />
+      <PickList
+        rows={edges.map((edge, index) => ({
+          id: edgeRefKey(edge),
+          label: `Edge ${index + 1}`,
+          detail: edgeDetail(edge),
+        }))}
+        onRemove={onRemoveEdge}
+        removeTestId="project-remove-edge"
+        testId="project-edge-list"
+      />
       {error ? (
         <p className="feature-error" data-testid="project-error">
           {error}

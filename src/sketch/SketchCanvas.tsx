@@ -559,6 +559,7 @@ export function SketchCanvas({
       if (!stageActive || event.key !== "Enter" || event.defaultPrevented) {
         return;
       }
+      if (event.isComposing || event.keyCode === 229) return;
       const target = event.target as HTMLElement | null;
       if (
         target &&
@@ -897,6 +898,9 @@ export function SketchCanvas({
     if (!editor) return;
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key !== "Enter" && event.key !== "Escape") return;
+      // MODES §7: Enter that confirms an IME composition must not commit the
+      // field; the composition's own Enter is consumed by the input method.
+      if (event.isComposing || event.keyCode === 229) return;
       event.preventDefault();
       event.stopPropagation();
       if (event.key === "Enter") {
@@ -4410,6 +4414,7 @@ function PointInlineEditor({
           aria-label="Point X"
           onChange={(event) => setXText(event.target.value)}
           onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) return;
             if (event.key === "Enter") {
               event.preventDefault();
               commit();
@@ -4429,6 +4434,7 @@ function PointInlineEditor({
           aria-label="Point Y"
           onChange={(event) => setYText(event.target.value)}
           onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) return;
             if (event.key === "Enter") {
               event.preventDefault();
               commit();

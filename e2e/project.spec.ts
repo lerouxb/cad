@@ -21,6 +21,31 @@ async function projectionIds(page: Page): Promise<string[]> {
     );
 }
 
+async function clickEmptyStage(page: Page): Promise<void> {
+  const canvas = page.locator("canvas.viewport-canvas");
+  const box = (await canvas.boundingBox())!;
+  const popover = await page.getByTestId("project-popover").boundingBox();
+  for (let y = box.y + 40; y < box.y + box.height - 40; y += 30) {
+    for (let x = box.x + 40; x < box.x + box.width - 40; x += 30) {
+      if (
+        popover &&
+        x >= popover.x &&
+        x <= popover.x + popover.width &&
+        y >= popover.y &&
+        y <= popover.y + popover.height
+      ) {
+        continue;
+      }
+      await page.mouse.move(x, y);
+      if (!(await canvas.getAttribute("data-hover-kind"))) {
+        await page.mouse.click(x, y);
+        return;
+      }
+    }
+  }
+  throw new Error("No empty stage point was found");
+}
+
 async function clickAFace(page: Page): Promise<void> {
   const canvas = page.locator("canvas.viewport-canvas");
   await fitView(page);
@@ -252,6 +277,31 @@ test("projected circles marquee and dimension like sketch geometry", async ({
   await expect(page.locator("[data-dimension-id]").last()).toContainText(
     "(⌀ 16)",
   );
+  expect(errors).toEqual([]);
+});
+
+test("an empty model click cancels the project picker", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await page
+    .locator('[data-feature-type="sketch"]')
+    .filter({ hasText: "Mounting holes" })
+    .click();
+  await expect
+    .poll(async () => (await projectionIds(page)).length)
+    .toBeGreaterThan(0);
+  const before = await projectionIds(page);
+
+  await page.getByTestId("tool-project").click();
+  await expect(page.getByTestId("project-popover")).toBeVisible();
+  await clickAFace(page);
+  await expect(page.getByTestId("project-popover")).toContainText("1 selected");
+  // PICKS O1 / MODES D8: a model form with no valid pick surface left to
+  // click cancels rather than keeping an empty form open.
+  await clickEmptyStage(page);
+
+  await expect(page.getByTestId("project-popover")).toHaveCount(0);
+  await expect(page.getByTestId("tool-select")).toBeVisible();
+  expect(await projectionIds(page)).toEqual(before);
   expect(errors).toEqual([]);
 });
 

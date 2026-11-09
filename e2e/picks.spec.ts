@@ -99,6 +99,11 @@ test("a revolve form lists profiles and Escape exits the axis pick first", async
   await expect(
     page.getByTestId("revolve-profile-list").locator(".selection-item"),
   ).toHaveCount(1);
+  // A new draft opens over the sketch stage, so the row offers the stage
+  // switch; editing the committed step switches back to the model label.
+  await expect(page.getByTestId("revolve-select-profiles")).toHaveText(
+    "pick in sketch",
+  );
 
   await page.getByTestId("revolve-axis-pick").click();
   await expect(page.getByTestId("revolve-axis-pick")).toHaveAttribute(

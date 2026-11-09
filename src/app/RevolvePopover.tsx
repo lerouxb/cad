@@ -13,6 +13,8 @@ interface RevolvePopoverProps {
   axis: RevolveAxis | null;
   axisCandidates: readonly SketchCurve[];
   axisPicking: boolean;
+  /** The stage the form is currently picking on. */
+  mode: "model" | "sketch";
   angles: number;
   direction: "ccw" | "cw";
   operation: ExtrudeOperation;
@@ -47,6 +49,7 @@ export function RevolvePopover({
   axis,
   axisCandidates,
   axisPicking,
+  mode,
   angles,
   direction,
   operation,
@@ -126,7 +129,7 @@ export function RevolvePopover({
         value={countLabel(profileCount)}
         valueTestId="revolve-profiles"
         action={{
-          label: "select",
+          label: mode === "sketch" ? "pick in sketch" : "select",
           onClick: onSelectProfiles,
           testId: "revolve-select-profiles",
           active: false,

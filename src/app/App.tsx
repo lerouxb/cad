@@ -608,6 +608,8 @@ export function App() {
     seq: number;
   } | null>(null);
   const [trimNotice, setTrimNotice] = useState<string | null>(null);
+  /** Result of a delete that skipped fixed reference geometry (SELECTION O9). */
+  const [deleteNotice, setDeleteNotice] = useState<string | null>(null);
   const [solverState, setSolverState] = useState<LoadState>("loading");
   const [solverError, setSolverError] = useState<string | null>(null);
   const [mesh, setMesh] = useState<BodyMesh | null>(null);
@@ -2616,10 +2618,15 @@ export function App() {
     }
     if (projectDraft) {
       // The project form is a multi-face input: every click toggles a face in
-      // its list; the canvas stays a pick surface until the form closes.
+      // its list; the canvas stays a pick surface until the form closes. An
+      // empty click has nothing left to apply, so it cancels the form (PICKS
+      // O1 / MODES D8) instead of silently keeping an empty picker.
       setSelectOther(null);
       setBodyPick(null);
-      if (!pick) return;
+      if (!pick) {
+        cancelProjectDraft();
+        return;
+      }
       let faces = projectDraft.faces;
       let edges = projectDraft.edges;
       if (pick.kind === "face" && pick.ref) {
@@ -3987,6 +3994,7 @@ export function App() {
       setFilletRadiusBefore(null);
     }
     const deletable = selectedInfo.filter((info) => info.kind !== "reference");
+    const skippedReferences = selectedInfo.length - deletable.length;
     if (deletable.length === 0) return;
     const base = currentSketch();
     let next = deleteEntities(
@@ -4002,7 +4010,20 @@ export function App() {
     }
     if (next === base) return;
     setSelection([]);
-    solveAndCommit(next);
+    setDeleteNotice(null);
+    if (!solveAndCommit(next)) return;
+    setTrimNotice(null);
+    // SELECTION O9: a mixed selection deletes the user geometry but leaves
+    // fixed references alone; say so instead of silently doing less than asked.
+    if (skippedReferences > 0) {
+      setDeleteNotice(
+        `${deletable.length} user object${
+          deletable.length === 1 ? "" : "s"
+        } · ${skippedReferences} reference${
+          skippedReferences === 1 ? "" : "s"
+        } skipped`,
+      );
+    }
   };
 
   // Key handlers are registered once but must see the current selection and
@@ -4842,6 +4863,12 @@ export function App() {
   }, [trimNotice]);
 
   useEffect(() => {
+    if (!deleteNotice) return;
+    const timer = window.setTimeout(() => setDeleteNotice(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [deleteNotice]);
+
+  useEffect(() => {
     if (!historyNotice) return;
     const timer = window.setTimeout(() => setHistoryNotice(null), 5000);
     return () => window.clearTimeout(timer);
@@ -5039,6 +5066,7 @@ export function App() {
     if (!result.removed) return;
     setSelection([]);
     if (!solveAndCommit(result.sketch)) return;
+    setDeleteNotice(null);
     setTrimNotice(
       result.droppedConstraints > 0
         ? `Trim removed ${result.droppedConstraints} constraint${
@@ -5716,6 +5744,9 @@ export function App() {
   // listeners only handle the line draft and the two inline editors.
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
+      // MODES §7: an Enter that confirms an IME composition is the input
+      // method's, not a form primary or a sketch commit.
+      if (event.isComposing || event.keyCode === 229) return;
       const target = event.target as HTMLElement | null;
       const tag = target?.tagName;
       const textField = Boolean(
@@ -6263,6 +6294,7 @@ export function App() {
                   onChange={(event) => setDocRename(event.target.value)}
                   onBlur={commitDocumentRename}
                   onKeyDown={(event) => {
+                    if (event.nativeEvent.isComposing) return;
                     if (event.key === "Enter") {
                       event.preventDefault();
                       commitDocumentRename();
@@ -6998,6 +7030,16 @@ export function App() {
               </div>
             ) : null}
 
+            {deleteNotice ? (
+              <div
+                className="sketch-notice"
+                data-testid="delete-notice"
+                role="status"
+              >
+                {deleteNotice}
+              </div>
+            ) : null}
+
             {revolveDraft ? (
               <RevolvePopover
                 sketchName={
@@ -7007,6 +7049,7 @@ export function App() {
                 axis={revolveDraft.axis}
                 axisCandidates={revolveAxisCandidates}
                 axisPicking={revolveAxisPicking}
+                mode={mode}
                 angles={revolveDraft.angle}
                 direction={revolveDraft.direction}
                 operation={revolveDraft.operation}
@@ -7851,6 +7894,7 @@ export function App() {
                         onDoubleClick={(event) => event.stopPropagation()}
                         onKeyDown={(event) => {
                           event.stopPropagation();
+                          if (event.nativeEvent.isComposing) return;
                           if (event.key === "Enter") {
                             event.preventDefault();
                             commitRename();

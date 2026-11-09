@@ -1202,6 +1202,92 @@ test("uses the fixed origin and X axis as references", async ({ app: page }) => 
 });
 
 
+test("deleting a mixed selection reports the skipped references", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await page.getByTestId("clear-sketch").click();
+
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, 10, 10);
+  await dblclickSketch(page, 50, 10);
+  await page.keyboard.press("Escape");
+
+  await clickSketch(page, 20, 10);
+  await page.keyboard.down("Shift");
+  await clickSketch(page, 0, 0);
+  await page.keyboard.up("Shift");
+  await expect(page.getByTestId("selection-panel")).toContainText("Origin");
+
+  // SELECTION O9: the user object goes, the fixed reference stays, and the
+  // status line says what was skipped.
+  await page.keyboard.press("Delete");
+  await expect(page.getByTestId("delete-notice")).toContainText(
+    "1 user object · 1 reference skipped",
+  );
+  await expect(page.locator("[data-geometry-id]")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+test("Enter during IME composition does not commit an inline editor", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  const width = page
+    .locator("[data-dimension-id]")
+    .filter({ hasText: /^60$/ });
+  await width.first().dblclick();
+  await expect(page.getByTestId("dimension-input")).toBeVisible();
+
+  // MODES §7: the Enter that confirms a composition belongs to the input
+  // method; it must not close the editor or commit the value.
+  await page.evaluate(() => {
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", {
+        key: "Enter",
+        isComposing: true,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+  });
+  await expect(page.getByTestId("dimension-input")).toBeVisible();
+  await page.keyboard.press("Enter");
+  await expect(page.getByTestId("dimension-input")).toHaveCount(0);
+
+  await page.getByTestId("clear-sketch").click();
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, -40, -20);
+  await dblclickSketch(page, 40, 20);
+  await page.keyboard.press("Escape");
+  await clickSketch(page, 40, 20);
+  await expect(page.getByTestId("point-position")).toBeVisible();
+  await page.getByTestId("point-x").fill("60");
+  await page.getByTestId("point-x").dispatchEvent("keydown", {
+    key: "Enter",
+    isComposing: true,
+  });
+  await expect(page.getByTestId("point-position")).toBeVisible();
+  const end = await page.locator("[data-geometry-id]").evaluate((element) => [
+    Number(element.getAttribute("x2")),
+    Number(element.getAttribute("y2")),
+  ]);
+  expect(end).toEqual([40, 20]);
+  await page.getByTestId("point-x").press("Enter");
+  await expect
+    .poll(async () =>
+      page.locator("[data-geometry-id]").evaluate((element) => [
+        Number(element.getAttribute("x2")),
+        Number(element.getAttribute("y2")),
+      ]),
+    )
+    .toEqual([60, 20]);
+
+  expect(errors).toEqual([]);
+});
+
 test("box-selects profile regions", async ({ app: page }) => {
   const errors = collectErrors(page);
   await enterSketch(page);
