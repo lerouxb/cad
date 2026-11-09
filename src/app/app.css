@@ -481,6 +481,16 @@ body {
   user-select: none;
 }
 
+/* Invisible pick targets must stay invisible in forced-colors mode. Without
+   this, a transparent fill/stroke is repainted as a system colour and the
+   point/curve/badge hit halos show up as dark blocks over the sketch. */
+.sketch-canvas [fill="transparent"],
+.sketch-canvas [stroke="transparent"],
+.sketch-canvas [data-mark-hit],
+.sketch-canvas [data-constraint-id] {
+  forced-color-adjust: none;
+}
+
 .dimension-editor {
   position: absolute;
   z-index: 5;

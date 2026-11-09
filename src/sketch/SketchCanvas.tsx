@@ -2340,7 +2340,8 @@ export function SketchCanvas({
               cx={origin[0]}
               cy={origin[1]}
               r={hitRadius}
-              fill="transparent"
+              fill="none"
+              pointerEvents="all"
               style={{ cursor: tool === "select" ? "pointer" : "crosshair" }}
               data-point-id={sketch.references.origin.id}
               onPointerDown={(event) => {
@@ -2374,7 +2375,8 @@ export function SketchCanvas({
                   cx={position[0]}
                   cy={position[1]}
                   r={hitRadius}
-                  fill="transparent"
+                  fill="none"
+                  pointerEvents="all"
                   style={{ cursor: tool === "select" ? "pointer" : "crosshair" }}
                   data-reference-id={point.id}
                   data-projection-point-id={point.projectionId}
@@ -2867,7 +2869,8 @@ export function SketchCanvas({
                 cx={position[0]}
                 cy={position[1]}
                 r={hitRadius}
-                fill="transparent"
+                fill="none"
+                pointerEvents="all"
                 style={{ cursor: active ? "grabbing" : "grab" }}
                 data-point-id={point.id}
                 onPointerDown={(event) =>
@@ -3971,8 +3974,8 @@ function ConstraintMarks({
         const uy = Math.sin(mark.angle);
         const nx = -uy;
         const ny = ux;
-        const backX = mark.x - ux * 5 * px;
-        const backY = mark.y - uy * 5 * px;
+        const backX = mark.x - ux * 4 * px;
+        const backY = mark.y - uy * 4 * px;
         return (
           <g key={index} {...stroke} strokeWidth={1.2}>
             <line
@@ -4085,7 +4088,7 @@ function ConstraintMarks({
                       y={anchor[1] - 7 * px}
                       width={badgeWidth(mark.label)}
                       height={14 * px}
-                      fill="transparent"
+                      fill="none"
                       pointerEvents="all"
                       data-mark-hit=""
                     />
@@ -4097,7 +4100,7 @@ function ConstraintMarks({
                       // a 7 px halo would cover the axis crossing and steal a
                       // click meant for the geometry there.
                       r={(mark.kind === "chevron" ? 4 : 7) * px}
-                      fill="transparent"
+                      fill="none"
                       pointerEvents="all"
                       data-mark-hit=""
                     />

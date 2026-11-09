@@ -231,10 +231,13 @@ docs/
   own mark (badge background/glyph) and participants; selecting geometry washes only the
   geometry and leaves its constraints quiet. Connector segments and the active symmetric
   axis are visual only (`pointerEvents:none`); badges/glyphs are the hit targets. A
-  symmetric tie is dashed and its chevrons sit on the connector either side of the axis,
-  not out at the participants; a fix pin is lifted above the point on a stem. The
-  perpendicular mark is an offset L, not a closed square. The badge text uses the mono
-  token at 9 px, and point-on-line/midpoint/tangent ticks are longer than equal ticks.
+  symmetric tie is dashed and its chevrons sit on the connector about 10 screen px either
+  side of the axis crossing, not at the participants (at 6 px the pair reads as one
+  blob); a fix pin is lifted above the point on a stem. The perpendicular mark is an
+  offset L, not a closed square. The badge text uses the mono token at 9 px, and
+  point-on-line/midpoint/tangent ticks are longer than equal ticks. Invisible pick targets
+  use `fill="none"`/`pointer-events: all`, and the hit targets and constraint-mark layer
+  opt out of forced-colors repaint, so a hit halo can never show as a dark block.
 - **Selection families and actions are in `docs/showcase/SELECTION.md`.** A click selects;
   feature actions are chips in the same selection popover (a profile offers
   `extrude`/`revolve`, a face offers `new sketch`/`offset face`/`shell`, edges offer

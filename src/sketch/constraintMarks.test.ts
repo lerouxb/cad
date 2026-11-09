@@ -52,13 +52,13 @@ describe("constraint mark geometry", () => {
   });
 
   it("points symmetric chevrons toward a vertical and horizontal axis", () => {
-    const vertical = symmetricChevrons([-10, 5], [10, 5], [0, -20], [0, 20]);
+    const vertical = symmetricChevrons([-10, 5], [10, 5], [0, -20], [0, 20], 1);
     expect(vertical.a.angle).toBeCloseTo(0, 6);
     expect(Math.abs(vertical.b.angle)).toBeCloseTo(Math.PI, 6);
     // The chevrons sit on the connector either side of the axis, not on the
     // participants.
-    expect(vertical.a.x).toBeLessThan(0);
-    expect(vertical.b.x).toBeGreaterThan(0);
+    expect(vertical.a.x).toBeCloseTo(-1, 6);
+    expect(vertical.b.x).toBeCloseTo(1, 6);
     expect(vertical.a.y).toBeCloseTo(5, 6);
 
     const horizontal = symmetricChevrons([-10, 5], [-10, -5], [-20, 0], [20, 0]);

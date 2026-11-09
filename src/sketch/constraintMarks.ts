@@ -720,7 +720,7 @@ export function constraintMarks(
           b,
           axisBase.a,
           axisBase.b,
-          6 * px,
+          10 * px,
         );
         push({
           kind: "chevron",
