@@ -441,7 +441,7 @@ test("offsets the top face of a vertically filleted plate", async ({
   // The four rounds continue through the new height; no straight cap ring.
   await expect(page.getByTestId("mesh-stats")).toHaveAttribute(
     "data-faces",
-    "12",
+    "11",
   );
   expect(errors).toEqual([]);
 });

@@ -100,6 +100,7 @@ import type {
   ProfileLoop,
   TopoRef,
 } from "../core/kernel/protocol";
+import { faceRefKey } from "../core/kernel/protocol";
 
 // This file only runs inside a dedicated worker.
 declare const self: DedicatedWorkerGlobalScope;
@@ -2366,33 +2367,74 @@ function meshSolid(solid: Solid, roles: RoleTable): BodyMesh {
   const valid = isValid(solid);
   const refs = topoRefs(solid, roles);
   const edgeRefs = topoEdgeRefs(solid, refs);
+  const faceGroups = mesh.faceGroups.map((group) => {
+    const ref = refs.get(group.faceId);
+    return {
+      start: group.start,
+      count: group.count,
+      faceId: group.faceId,
+      origin: group.origin,
+      ...(ref ? { ref } : {}),
+    };
+  });
+  const faceKeys = new Set(
+    faceGroups.map((group) =>
+      group.ref ? faceRefKey(group.ref) : `face:${group.faceId}`,
+    ),
+  );
+
+  // Drop periodic/seam edges (no ref) and the edge between two same-domain
+  // faces that now share one ref. Normalise the kept groups to segment units
+  // so the viewer's heuristics stay unambiguous.
+  const totalSegments = Math.floor(edgeMesh.lines.length / 6);
+  const originalMaxEnd = edgeMesh.edgeGroups.length
+    ? Math.max(...edgeMesh.edgeGroups.map((group) => group.start + group.count))
+    : 0;
+  const originalUnit: "segment" | "vertex" =
+    edgeMesh.edgeGroups.length > 0 && originalMaxEnd > totalSegments
+      ? "vertex"
+      : "segment";
+  const edgePositions: number[] = [];
+  const edgeGroups: typeof edgeMesh.edgeGroups = [];
+  let segmentStart = 0;
+  for (const group of edgeMesh.edgeGroups) {
+    const ref = edgeRefs.get(group.edgeId);
+    const seam =
+      !ref ||
+      (ref.faces[0].source === ref.faces[1].source &&
+        ref.faces[0].role === ref.faces[1].role);
+    if (seam) continue;
+    const range =
+      originalUnit === "segment"
+        ? { start: group.start * 2, count: group.count * 2 }
+        : { start: group.start, count: group.count };
+    for (let index = range.start; index < range.start + range.count; index += 1) {
+      edgePositions.push(
+        edgeMesh.lines[index * 3]!,
+        edgeMesh.lines[index * 3 + 1]!,
+        edgeMesh.lines[index * 3 + 2]!,
+      );
+    }
+    const count =
+      originalUnit === "segment" ? group.count : Math.floor(group.count / 2);
+    edgeGroups.push({
+      ...group,
+      start: segmentStart,
+      count,
+      ...(ref ? { ref } : {}),
+    });
+    segmentStart += count;
+  }
   return {
     positions: data.position,
     normals: data.normal,
     indices: data.index,
-    faceGroups: mesh.faceGroups.map((group) => {
-      const ref = refs.get(group.faceId);
-      return {
-        start: group.start,
-        count: group.count,
-        faceId: group.faceId,
-        origin: group.origin,
-        ...(ref ? { ref } : {}),
-      };
-    }),
-    edgePositions: edgeMesh.lines,
-    edgeGroups: edgeMesh.edgeGroups.map((group) => {
-      const ref = edgeRefs.get(group.edgeId);
-      return {
-        start: group.start,
-        count: group.count,
-        edgeId: group.edgeId,
-        ...(ref ? { ref } : {}),
-      };
-    }),
+    faceGroups,
+    edgePositions: new Float32Array(edgePositions),
+    edgeGroups,
     stats: {
-      faces: mesh.faceGroups.length,
-      edges: edgeMesh.edgeGroups.length,
+      faces: faceKeys.size,
+      edges: edgeGroups.length,
       triangles: data.index.length / 3,
       volume,
       buildMs: 0,
@@ -2486,6 +2528,65 @@ function cylinderHint(
   };
 }
 
+/** Same analytic surface: a split face that `unifySameDomain` left behind. */
+function sameDomainFace(
+  a: Parameters<typeof captureHint>[0],
+  b: Parameters<typeof captureHint>[0],
+): boolean {
+  const typeA = String(faceGeomType(a as Face)).toUpperCase();
+  const typeB = String(faceGeomType(b as Face)).toUpperCase();
+  if (typeA.includes("CYL") && typeB.includes("CYL")) {
+    const ca = cylinderHint(a);
+    const cb = cylinderHint(b);
+    if (
+      ca.radius === undefined ||
+      cb.radius === undefined ||
+      Math.abs(ca.radius - cb.radius) > 1e-3 ||
+      ca.radialSign !== cb.radialSign
+    ) {
+      return false;
+    }
+    const axisA = faceAxis(a as Face);
+    const axisB = faceAxis(b as Face);
+    if (!axisA || !axisB) return false;
+    const directionA = unit(axisA.direction);
+    const directionB = unit(axisB.direction);
+    if (Math.abs(dot(directionA, directionB)) < 0.999) return false;
+    const relative: Vec3 = [
+      axisB.origin[0] - axisA.origin[0],
+      axisB.origin[1] - axisA.origin[1],
+      axisB.origin[2] - axisA.origin[2],
+    ];
+    const axial = dot(relative, directionA);
+    const radial: Vec3 = [
+      relative[0] - directionA[0] * axial,
+      relative[1] - directionA[1] * axial,
+      relative[2] - directionA[2] * axial,
+    ];
+    return Math.hypot(radial[0], radial[1], radial[2]) < 1e-3;
+  }
+  if (typeA.includes("PLANE") && typeB.includes("PLANE")) {
+    const hintA = captureHint(a);
+    const hintB = captureHint(b);
+    if (
+      !hintA.normal ||
+      !hintB.normal ||
+      !hintA.centroid ||
+      !hintB.centroid ||
+      Math.abs(dot(unit(hintA.normal), unit(hintB.normal))) < 0.999
+    ) {
+      return false;
+    }
+    const relative: Vec3 = [
+      hintB.centroid[0] - hintA.centroid[0],
+      hintB.centroid[1] - hintA.centroid[1],
+      hintB.centroid[2] - hintA.centroid[2],
+    ];
+    return Math.abs(dot(unit(hintA.normal), relative)) < 1e-3;
+  }
+  return false;
+}
+
 /** Turn the propagated role table into JSON-safe refs for the final body. */
 function topoRefs(solid: Solid, roles: RoleTable): Map<number, TopoRef> {
   const refs = new Map<number, TopoRef>();
@@ -2529,6 +2630,63 @@ function topoRefs(solid: Solid, roles: RoleTable): Map<number, TopoRef> {
           });
         }
       }
+    }
+    // `unifySameDomain` occasionally leaves one same-domain cylindrical face
+    // split after a planar offset. Coalesce adjacent same-surface faces so the
+    // two groups share one ref, the seam edge is hidden, and the face count is
+    // the logical one. The larger face supplies the canonical role.
+    const parent = new Map<number, number>();
+    for (const hash of faceByHash.keys()) parent.set(hash, hash);
+    const find = (hash: number): number => {
+      const up = parent.get(hash);
+      if (up === undefined || up === hash) {
+        parent.set(hash, hash);
+        return hash;
+      }
+      const root = find(up);
+      parent.set(hash, root);
+      return root;
+    };
+    const union = (a: number, b: number): void => {
+      const ra = find(a);
+      const rb = find(b);
+      if (ra !== rb) parent.set(ra, rb);
+    };
+    for (const edge of getEdges(solid)) {
+      const faces = facesOfEdge(solid, edge);
+      if (faces.length !== 2) continue;
+      const a = faces[0]!;
+      const b = faces[1]!;
+      if (
+        !sameDomainFace(a as unknown as Face, b as unknown as Face)
+      ) {
+        continue;
+      }
+      union(getHashCode(a), getHashCode(b));
+    }
+    const groups = new Map<number, number[]>();
+    for (const hash of faceByHash.keys()) {
+      const root = find(hash);
+      const list = groups.get(root) ?? [];
+      list.push(hash);
+      groups.set(root, list);
+    }
+    for (const hashes of groups.values()) {
+      if (hashes.length < 2) continue;
+      let canonical: number | null = null;
+      let canonicalArea = -Infinity;
+      for (const hash of hashes) {
+        const ref = refs.get(hash);
+        if (!ref) continue;
+        const area = captureHint(faceByHash.get(hash)!).area ?? 0;
+        if (area > canonicalArea) {
+          canonical = hash;
+          canonicalArea = area;
+        }
+      }
+      if (canonical === null) continue;
+      const ref = refs.get(canonical)!;
+      for (const hash of hashes) refs.set(hash, ref);
     }
   } catch {
     // Refs are additive metadata; a role failure must never break the mesh.

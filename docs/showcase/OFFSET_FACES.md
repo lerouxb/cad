@@ -314,4 +314,7 @@ Still missing:
   ceiling is the body's shortest dimension).
 
 Same-domain merging landed through an isolated BREP copy; the raw
-`unifySameDomain` prefix bug is documented for an upstream ticket.
+`unifySameDomain` prefix bug is documented for an upstream ticket. A kernel build can
+still leave one adjacent cylinder split after a planar offset on a filleted plate; the
+worker coalesces adjacent same-surface faces for refs, hides the seam edge and reports
+the logical face count, leaving the B-rep itself untouched.

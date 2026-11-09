@@ -272,7 +272,10 @@ docs/
   sets are visible errors. `TopoRef.hint.radius`/`radialSign` feed the `Ø old → new`
   readout. Same-domain faces are merged through `unifySameDomain` on an isolated BREP
   copy: calling it directly on a shape that shares subshapes with the cached prefix
-  corrupts a later fuse. The draft returns true added/removed boolean-difference meshes
+  corrupts a later fuse. If a kernel build still leaves one adjacent cylinder split (seen
+  on a filleted plate after a top-face offset), `topoRefs` coalesces adjacent same-surface
+  faces for refs, the seam edge is not drawn and the face count is the logical one; the
+  B-rep itself is untouched. The draft returns true added/removed boolean-difference meshes
   (added in the highlighter, removed in red) over a faint ghost of the pre-offset body.
   Do not replace the feature with a whole-body `offset`, a shell or a scale. Blind/partial cylinders, the tangent-chain expansion and the normal arrow/dashed
   input-face ghost are still open; do not claim them.
