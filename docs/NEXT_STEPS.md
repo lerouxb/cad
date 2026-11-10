@@ -43,9 +43,10 @@ Items 1–3 are done (`a67c044`, `496b42c`, `b58f5d7`); item 4 is next.
   - [x] Normal arrow + dashed source-face ghost (`3108cce`).
   - [ ] Adaptive slider ceiling from the shortest **adjacent** dimension
     (currently the body’s shortest dimension).
-  - Tangent-chain selection helper (expand to tangent faces; distinct from the
-    tangent-fillet geometry in item 4).
-  - Faces on a shelled body (OFFSET_FACES O8).
+  - [ ] Tangent-chain selection helper (expand to tangent faces; distinct from
+    the tangent-fillet geometry in item 4).
+  - [x] Faces on a shelled body (OFFSET_FACES O8): an inner planar wall offsets
+    into the cavity and stays watertight (`5580fe3`).
 
 ## Candidates (not ordered)
 
@@ -67,6 +68,8 @@ Move it under **Now** when it becomes the next priority.
 
 ## Done
 
+- 2026-11-10 — offset an inner wall of a shelled body, covering O8's planar
+  case (`5580fe3`).
 - 2026-11-10 — offset draft shows the dashed source face and normal arrows
   (`3108cce`).
 - 2026-11-10 — offset faces support blind holes and partial cylinders with
