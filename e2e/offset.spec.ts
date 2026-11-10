@@ -6,6 +6,7 @@ import {
   volume,
 } from "./support/app";
 import {
+  addVisibleEdges,
   fitView,
   pickCylindricalFace,
   pickRightFace,
@@ -347,13 +348,87 @@ test("rejects a partial cylindrical face in the draft preview", async ({
   await page.getByTestId("start-offset-face").click();
   await page.getByTestId("offset-face-distance").fill("1");
   await expect(page.getByTestId("offset-face-error")).toContainText(
+    "partial wall",
+  );
+  await expect(page.getByTestId("offset-face-error")).toContainText(
     "full cylindrical holes and bosses only",
+  );
+  await expect(page.getByTestId("offset-face-error")).toContainText(
+    "move this offset before the fillet/slot",
   );
   await expect(page.getByTestId("offset-face-apply")).toBeDisabled();
   await page.getByTestId("offset-face-cancel").click();
   expect(errors).toEqual([]);
 });
 
+
+test("names a top-edge fillet when the offset would undercut it", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await fitView(page);
+  // Filleting a long top edge makes the top face tangent to a horizontal
+  // cylinder; moving the top face along Z would leave that round behind.
+  const selected = await addVisibleEdges(
+    page,
+    (ref) =>
+      Math.abs((ref.hint?.length ?? 0) - 60) < 0.6 &&
+      (ref.hint?.midpoint?.[2] ?? 0) > 10,
+  );
+  expect(selected.length).toBeGreaterThan(0);
+  await page.getByTestId("start-fillet").click();
+  await expect(page.getByTestId("fillet-feature-popover")).toBeVisible();
+  await page.getByTestId("fillet-feature-radius").fill("2");
+  await page.getByTestId("fillet-feature-apply").click();
+  await page.keyboard.press("Escape");
+
+  await pickTopFace(page);
+  await page.getByTestId("start-offset-face").click();
+  await page.getByTestId("offset-face-distance").fill("1");
+  await expect(page.getByTestId("offset-face-error")).toContainText(
+    "top-edge fillet",
+  );
+  await expect(page.getByTestId("offset-face-error")).toContainText(
+    "Move this offset before the fillet",
+  );
+  await expect(page.getByTestId("offset-face-apply")).toBeDisabled();
+  await page.getByTestId("offset-face-cancel").click();
+  expect(errors).toEqual([]);
+});
+
+test("names a slanted wall when the offset cannot follow it", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await fitView(page);
+  // Chamfering a long top edge leaves a slanted planar neighbour. Moving the
+  // top face along Z would step against it.
+  const selected = await addVisibleEdges(
+    page,
+    (ref) =>
+      Math.abs((ref.hint?.length ?? 0) - 60) < 0.6 &&
+      (ref.hint?.midpoint?.[2] ?? 0) > 10,
+  );
+  expect(selected.length).toBeGreaterThan(0);
+  await page.getByTestId("start-chamfer").click();
+  await expect(page.getByTestId("chamfer-feature-popover")).toBeVisible();
+  await page.getByTestId("chamfer-feature-distance").fill("2");
+  await page.getByTestId("chamfer-feature-apply").click();
+  await page.keyboard.press("Escape");
+
+  await pickTopFace(page);
+  await page.getByTestId("start-offset-face").click();
+  await page.getByTestId("offset-face-distance").fill("1");
+  await expect(page.getByTestId("offset-face-error")).toContainText(
+    "slanted wall",
+  );
+  await expect(page.getByTestId("offset-face-error")).toContainText(
+    "edit the wall so it is perpendicular",
+  );
+  await expect(page.getByTestId("offset-face-apply")).toBeDisabled();
+  await page.getByTestId("offset-face-cancel").click();
+  expect(errors).toEqual([]);
+});
 
 test("rejects an inward offset that removes the whole body", async ({
   app: page,

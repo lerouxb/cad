@@ -101,6 +101,17 @@ import type {
   TopoRef,
 } from "../core/kernel/protocol";
 import { faceRefKey } from "../core/kernel/protocol";
+import {
+  offsetBlindCylinderMessage,
+  offsetCurvedNeighbourMessage,
+  offsetHorizontalCylinderMessage,
+  offsetMultipleCylinderSelectionMessage,
+  offsetNonParallelSelectionMessage,
+  offsetPartialCylinderMessage,
+  offsetSelectedSurfaceMessage,
+  offsetSlantedWallMessage,
+  offsetTangentFilletMessage,
+} from "../core/features/offsetDiagnostics";
 
 // This file only runs inside a dedicated worker.
 declare const self: DedicatedWorkerGlobalScope;
@@ -1207,6 +1218,28 @@ function mergeSameDomain(solid: Solid): Solid | null {
  * an annular tube; a boss is grown with a bigger cylinder and shrunk by cutting
  * an annular tube. The wall itself keeps its role and downstream refs.
  */
+/**
+ * True when two adjacent faces meet tangentially along their shared edge. This
+ * distinguishes a top-edge fillet (the fillet normal matches the face normal at
+ * the edge) from a hole/boss wall that crosses the face at an angle.
+ */
+function tangentNeighbour(
+  selected: Parameters<typeof captureHint>[0],
+  neighbour: Parameters<typeof captureHint>[0],
+): boolean {
+  try {
+    for (const edge of sharedEdges(selected as Face, neighbour as Face)) {
+      const point = curvePointAt(edge, 0.5);
+      const a = unit(normalAt(selected as Face, point));
+      const b = unit(normalAt(neighbour as Face, point));
+      if (Math.abs(dot(a, b)) > 0.999) return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 function buildCylindricalOffset(
   feature: KernelOffsetFaceFeature,
   base: Solid,
@@ -1233,14 +1266,14 @@ function buildCylindricalOffset(
     Math.abs(area - fullArea) > Math.max(1e-3, fullArea * 0.01)
   ) {
     throw new Error(
-      "Offset faces supports full cylindrical holes and bosses only.",
+      offsetPartialCylinderMessage(area === undefined ? 1 : area / fullArea),
     );
   }
   const [bodyLo, bodyHi] = solidAxialExtent(base, axis);
   const through =
     Math.abs(lo - bodyLo) < 1e-2 && Math.abs(hi - bodyHi) < 1e-2;
   if (info.radialSign < 0 && !through) {
-    throw new Error("Offset faces supports through holes only.");
+    throw new Error(offsetBlindCylinderMessage());
   }
 
   const distance = feature.distance;
@@ -1508,9 +1541,7 @@ function buildOffsetFaceFeature(
   );
   if (cylinderFaces.length > 0) {
     if (resolvedFaces.length !== 1) {
-      throw new Error(
-        "Select one full cylindrical hole or boss at a time.",
-      );
+      throw new Error(offsetMultipleCylinderSelectionMessage());
     }
     return buildCylindricalOffset(
       feature,
@@ -1537,7 +1568,7 @@ function buildOffsetFaceFeature(
     const face = resolved.face as Face3D;
     const type = String(faceGeomType(face as Face)).toUpperCase();
     if (!type.includes("PLANE")) {
-      throw new Error("Offset faces supports planar faces only.");
+      throw new Error(offsetSelectedSurfaceMessage(type));
     }
     const center = faceCenter(face as Face);
     const normal = unit(normalAt(face as Face, center));
@@ -1547,9 +1578,7 @@ function buildOffsetFaceFeature(
   const first = selected[0]!;
   for (const entry of selected.slice(1)) {
     if (Math.abs(dot(entry.normal, first.normal)) < 0.999) {
-      throw new Error(
-        "Select parallel faces to offset; adjacent non-parallel faces are not supported yet.",
-      );
+      throw new Error(offsetNonParallelSelectionMessage());
     }
   }
 
@@ -1560,9 +1589,7 @@ function buildOffsetFaceFeature(
       if (type.includes("PLANE")) {
         const normal = unit(normalAt(neighbour, faceCenter(neighbour)));
         if (Math.abs(dot(normal, sweep)) > 0.01) {
-          throw new Error(
-            "The offset would leave a step because a neighbouring face is not perpendicular to the move.",
-          );
+          throw new Error(offsetSlantedWallMessage());
         }
         continue;
       }
@@ -1570,13 +1597,18 @@ function buildOffsetFaceFeature(
         const axis = faceAxis(neighbour);
         if (!axis || Math.abs(dot(unit(axis.direction), sweep)) < 0.99) {
           throw new Error(
-            "The offset would leave an undercut because a neighbouring curved face is not parallel to the move.",
+            tangentNeighbour(
+              entry.face as Parameters<typeof captureHint>[0],
+              neighbour as Parameters<typeof captureHint>[0],
+            )
+              ? offsetTangentFilletMessage()
+              : offsetHorizontalCylinderMessage(),
           );
         }
         continue;
       }
       throw new Error(
-        "Offset faces supports faces bounded by straight walls or parallel cylinders.",
+        offsetCurvedNeighbourMessage(String(faceGeomType(neighbour))),
       );
     }
   }
