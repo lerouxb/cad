@@ -1,4 +1,4 @@
-import { expect } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import {
   collectErrors,
   resetExample,
@@ -13,6 +13,7 @@ import {
   pickTopFace,
 } from "./support/model";
 import { clickSketch, dragSketch } from "./support/sketch";
+import { createSketch } from "./support/workflow";
 import {
   exampleBounds,
   examplePlateVolume,
@@ -21,6 +22,46 @@ import {
 test.beforeEach(async ({ app: page }) => {
   await resetExample(page);
 });
+
+/**
+ * Plug the lower 7 mm of the example's central through hole, leaving a blind
+ * Ø16 × 5 hole with a planar bottom cap. The wall is large enough to pick
+ * reliably with the shared face scan.
+ */
+async function createBlindCentralHole(page: Page): Promise<void> {
+  await createSketch(page);
+  await page.getByTestId("tool-circle").click();
+  await clickSketch(page, 0, 0);
+  await clickSketch(page, 8.1, 0);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("finish-sketch").click();
+  await page.getByTestId("new-extrude").click();
+  await clickSketch(page, 0, 0);
+  await page.getByTestId("extrude-height").fill("7");
+  await page.getByTestId("extrude-apply").click();
+}
+
+/** A D-shaped boss: a Ø20 half-cylinder with a flat radial back wall. */
+async function createDHalfBoss(page: Page): Promise<void> {
+  await page.getByTestId("clear-document").click();
+  await page.getByTestId("insert-gap-start").click();
+  await page.getByTestId("insert-sketch").click();
+  await expect(page.getByTestId("support-popover")).toBeVisible();
+  await page.getByTestId("new-sketch").click();
+  await page.getByTestId("tool-arc").click();
+  await clickSketch(page, 10, 0);
+  await clickSketch(page, -10, 0);
+  await clickSketch(page, 0, 10);
+  await page.getByTestId("tool-line").click();
+  await clickSketch(page, -10, 0);
+  await clickSketch(page, 10, 0);
+  await page.keyboard.press("Enter");
+  await page.getByTestId("finish-sketch").click();
+  await page.getByTestId("new-extrude").click();
+  await clickSketch(page, 0, 5);
+  await page.getByTestId("extrude-height").fill("10");
+  await page.getByTestId("extrude-apply").click();
+}
 
 test("offsets the top face out and in as a history step", async ({
   app: page,
@@ -228,6 +269,97 @@ test("offsets a through hole wall and shows the diameter change", async ({
 });
 
 
+test("offsets a blind hole with a planar bottom cap", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await createBlindCentralHole(page);
+  const blind = examplePlateVolume() + Math.PI * 64 * 7;
+  await expect.poll(() => volume(page)).toBeCloseTo(blind, -1);
+
+  await pickCylindricalFace(page, (ref) => ref.hint?.radius === 8);
+  await page.getByTestId("start-offset-face").click();
+  await page.getByTestId("offset-face-distance").fill("1");
+  await expect(page.getByTestId("offset-face-diameter")).toContainText(
+    "Ø 16.0 → 14.0 mm",
+  );
+  // `out` shrinks a hole: the annular tube ends at the blind bottom.
+  const shrunk = blind + Math.PI * (64 - 49) * 5;
+  await expect.poll(() => volume(page)).toBeCloseTo(shrunk, -1);
+  await page.getByTestId("offset-face-apply").click();
+  const step = page.locator('[data-feature-type="offset"]').last();
+  await expect(step).toHaveAttribute("data-status", "ok");
+  await expect.poll(() => volume(page)).toBeCloseTo(shrunk, -1);
+
+  // `in` grows the blind hole with a larger cut; the bottom stays at z=7.
+  await step.click();
+  await expect(page.getByTestId("offset-face-popover")).toBeVisible();
+  await page.getByTestId("offset-face-in").click();
+  const grown = blind - Math.PI * (81 - 64) * 5;
+  await expect(page.getByTestId("offset-face-diameter")).toContainText(
+    "Ø 16.0 → 18.0 mm",
+  );
+  await expect.poll(() => volume(page)).toBeCloseTo(grown, -1);
+  await page.getByTestId("offset-face-cancel").click();
+  await expect.poll(() => volume(page)).toBeCloseTo(shrunk, -1);
+  await expect(page.getByTestId("mesh-stats")).toHaveAttribute(
+    "data-bbox",
+    exampleBounds(),
+  );
+  expect(errors).toEqual([]);
+});
+
+test("offsets a partial cylindrical boss with planar radial caps", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await createDHalfBoss(page);
+  const before = (Math.PI * 100) / 2 * 10;
+  await expect.poll(() => volume(page)).toBeCloseTo(before, -1);
+
+  await pickCylindricalFace(
+    page,
+    (ref) => Math.abs((ref.hint?.radius ?? 0) - 10) < 0.1,
+  );
+  await page.getByTestId("start-offset-face").click();
+  await page.getByTestId("offset-face-distance").fill("1");
+  await expect(page.getByTestId("offset-face-diameter")).toContainText(
+    "Ø 20.0 → 22.0 mm",
+  );
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(((Math.PI * 121) / 2) * 10, -1);
+  await page.getByTestId("offset-face-apply").click();
+  const step = page.locator('[data-feature-type="offset"]').last();
+  await expect(step).toHaveAttribute("data-status", "ok");
+  const bounds = (
+    (await page.getByTestId("mesh-stats").getAttribute("data-bbox")) ?? ""
+  )
+    .split(",")
+    .map(Number);
+  // The arc tessellates just inside the true radius; compare it loosely.
+  expect(bounds[0]).toBeCloseTo(-11, 1);
+  expect(bounds[1]).toBeCloseTo(0, 1);
+  expect(bounds[2]).toBeCloseTo(0, 1);
+  expect(bounds[3]).toBeCloseTo(11, 1);
+  expect(bounds[4]).toBeCloseTo(11, 1);
+  expect(bounds[5]).toBeCloseTo(10, 1);
+
+  // `in` shrinks the half-cylinder; the radial back wall stays put.
+  await step.click();
+  await expect(page.getByTestId("offset-face-popover")).toBeVisible();
+  await page.getByTestId("offset-face-in").click();
+  await expect(page.getByTestId("offset-face-diameter")).toContainText(
+    "Ø 20.0 → 18.0 mm",
+  );
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(((Math.PI * 81) / 2) * 10, -1);
+  await page.getByTestId("offset-face-cancel").click();
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(((Math.PI * 121) / 2) * 10, -1);
+  expect(errors).toEqual([]);
+});
+
 test("offsets a cylindrical wall of a revolve and keeps its preview colours", async ({
   app: page,
 }) => {
@@ -328,7 +460,7 @@ test("offsets the exposed wall of a cylindrical boss", async ({ app: page }) => 
 });
 
 
-test("rejects a partial cylindrical face in the draft preview", async ({
+test("rejects a partial cylinder with tangent walls in the draft preview", async ({
   app: page,
 }) => {
   const errors = collectErrors(page);
@@ -348,13 +480,13 @@ test("rejects a partial cylindrical face in the draft preview", async ({
   await page.getByTestId("start-offset-face").click();
   await page.getByTestId("offset-face-distance").fill("1");
   await expect(page.getByTestId("offset-face-error")).toContainText(
-    "partial wall",
+    "not bounded by two straight radial caps",
   );
   await expect(page.getByTestId("offset-face-error")).toContainText(
-    "full cylindrical holes and bosses only",
+    "partial cylinders with planar radial caps only",
   );
   await expect(page.getByTestId("offset-face-error")).toContainText(
-    "move this offset before the fillet/slot",
+    "before the fillet",
   );
   await expect(page.getByTestId("offset-face-apply")).toBeDisabled();
   await page.getByTestId("offset-face-cancel").click();

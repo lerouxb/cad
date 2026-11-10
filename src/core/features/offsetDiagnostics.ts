@@ -62,13 +62,16 @@ export function offsetHoleWallMessage(): string {
   return "A hole in the selected face has a slanted wall, so the hole would change shape. v1.5 translates holes only through straight or parallel-cylindrical walls; move this offset before that feature, or edit it.";
 }
 
-export function offsetPartialCylinderMessage(fraction: number): string {
-  const percent = Math.min(100, Math.max(1, Math.round(fraction * 100)));
-  return `The selected cylindrical face is a partial wall (${percent}% of a full circle), typically a fillet or slot. Offset faces v1 supports full cylindrical holes and bosses only; move this offset before the fillet/slot, or edit that feature.`;
+export function offsetPartialCapMessage(): string {
+  return "The selected partial cylindrical face is not bounded by two straight radial caps. Offset faces v1.5 supports partial cylinders with planar radial caps only; offset the face before the fillet or edit that feature.";
 }
 
-export function offsetBlindCylinderMessage(): string {
-  return "The selected cylindrical face is a blind hole. Offset faces v1 supports through holes only; drill it through or edit the hole feature.";
+export function offsetSealedCylinderMessage(): string {
+  return "The selected cylindrical hole does not open on the body. Offset faces needs an opening to rebuild the wall; reselect the hole or edit the feature.";
+}
+
+export function offsetBlindCapMessage(): string {
+  return "The selected blind hole has a non-planar bottom. Offset faces v1.5 supports blind holes with planar caps only; edit the hole feature or offset it before the cap is created.";
 }
 
 export function offsetMultipleCylinderSelectionMessage(): string {

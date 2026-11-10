@@ -1,13 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  offsetBlindCylinderMessage,
+  offsetBlindCapMessage,
+  offsetSealedCylinderMessage,
   offsetCurvedNeighbourMessage,
   offsetHoleWallMessage,
   offsetMixedSlantedCurvedMessage,
   offsetMultipleCylinderSelectionMessage,
   offsetNonConvexFaceMessage,
   offsetNonParallelSelectionMessage,
-  offsetPartialCylinderMessage,
+  offsetPartialCapMessage,
   offsetSelectedSurfaceMessage,
   offsetSurfaceLabel,
   offsetTangentFilletMessage,
@@ -48,11 +49,9 @@ describe("offset diagnostics", () => {
     );
   });
 
-  it("distinguishes a partial and a blind cylinder", () => {
-    const partial = offsetPartialCylinderMessage(0.25);
-    expect(partial).toContain("partial wall (25% of a full circle)");
-    expect(partial).toContain("full cylindrical holes and bosses only");
-    expect(offsetBlindCylinderMessage()).toContain("blind hole");
+  it("distinguishes sealed and blind cylinders", () => {
+    expect(offsetSealedCylinderMessage()).toContain("does not open");
+    expect(offsetBlindCapMessage()).toContain("non-planar bottom");
   });
 
   it("names the slanted-move limits", () => {
@@ -64,5 +63,8 @@ describe("offset diagnostics", () => {
     );
     expect(offsetNonConvexFaceMessage()).toContain("non-convex");
     expect(offsetHoleWallMessage()).toContain("hole");
+    expect(offsetPartialCapMessage()).toContain(
+      "partial cylinders with planar radial caps only",
+    );
   });
 });

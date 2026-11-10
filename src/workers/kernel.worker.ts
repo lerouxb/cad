@@ -107,7 +107,8 @@ import type {
 } from "../core/kernel/protocol";
 import { faceRefKey } from "../core/kernel/protocol";
 import {
-  offsetBlindCylinderMessage,
+  offsetBlindCapMessage,
+  offsetSealedCylinderMessage,
   offsetCurvedNeighbourMessage,
   offsetHoleWallMessage,
   offsetHorizontalCylinderMessage,
@@ -115,7 +116,7 @@ import {
   offsetMultipleCylinderSelectionMessage,
   offsetNonConvexFaceMessage,
   offsetNonParallelSelectionMessage,
-  offsetPartialCylinderMessage,
+  offsetPartialCapMessage,
   offsetSelectedSurfaceMessage,
   offsetTangentFilletMessage,
 } from "../core/features/offsetDiagnostics";
@@ -1516,6 +1517,148 @@ function buildPlanarMoveTool(
   });
 }
 
+/**
+ * A partial cylindrical wall bounded by two radial planar caps. The tool is an
+ * annular sector revolved around the same axis; the cap planes stay fixed, so
+ * the boolean extends/trims them just like the planar-move case.
+ */
+function buildPartialCylinderTool(
+  base: Solid,
+  selectedFace: Parameters<typeof captureHint>[0],
+  axis: { origin: Vec3; direction: Vec3 },
+  radius: number,
+  newRadius: number,
+  lo: number,
+  hi: number,
+  radialSign: 1 | -1,
+  extendLo: boolean,
+  extendHi: boolean,
+): { tool: Solid; mode: "fuse" | "cut" } {
+  const w = unit(axis.direction);
+  const reference: Vec3 = Math.abs(w[0]) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+  const u = unit(add(reference, scale(w, -dot(reference, w))));
+  const v = cross3(w, u);
+  const radialAt = (theta: number): Vec3 =>
+    add(scale(u, Math.cos(theta)), scale(v, Math.sin(theta)));
+  const angleOf = (point: Vec3): number => {
+    const relative = add(point, scale(axis.origin, -1));
+    const axial = dot(relative, w);
+    const radial = add(relative, scale(w, -axial));
+    return Math.atan2(dot(radial, v), dot(radial, u));
+  };
+
+  const selectedHash = getHashCode(selectedFace as Face);
+  const endAngles: number[] = [];
+  for (const edge of getEdges(selectedFace as Face)) {
+    if (String(getCurveType(edge)).toUpperCase() !== "LINE") continue;
+    const start = curvePointAt(edge, 0);
+    const end = curvePointAt(edge, 1);
+    const direction = unit([
+      end[0] - start[0],
+      end[1] - start[1],
+      end[2] - start[2],
+    ]);
+    // The end caps are the generatrices: straight edges parallel to the axis.
+    if (Math.abs(dot(direction, w)) < 0.99) continue;
+    const neighbour = otherFaceOnEdge(base, edge, selectedHash);
+    if (!String(faceGeomType(neighbour)).toUpperCase().includes("PLANE")) {
+      throw new Error(offsetPartialCapMessage());
+    }
+    const plane = facePlane(neighbour);
+    const relative = add(start, scale(axis.origin, -1));
+    const axial = dot(relative, w);
+    const radial = add(relative, scale(w, -axial));
+    const radialUnit = unit(radial);
+    // A radial cap contains the axis and the radius: its normal is tangential.
+    if (
+      Math.abs(dot(plane.normal, w)) > 0.01 ||
+      Math.abs(dot(plane.normal, radialUnit)) > 0.01
+    ) {
+      throw new Error(offsetPartialCapMessage());
+    }
+    endAngles.push(angleOf(start));
+  }
+  if (endAngles.length !== 2) {
+    throw new Error(offsetPartialCapMessage());
+  }
+
+  const tau = Math.PI * 2;
+  const normalize = (angle: number): number =>
+    ((angle % tau) + tau) % tau;
+  const a = normalize(endAngles[0]!);
+  const b = normalize(endAngles[1]!);
+  const ccw = normalize(b - a);
+  const mid = normalize(angleOf(faceCenter(selectedFace as Face)));
+  const midDelta = normalize(mid - a);
+  const start = midDelta <= ccw + 1e-6 ? a : b;
+  const span = midDelta <= ccw + 1e-6 ? ccw : tau - ccw;
+  if (!(span > 1e-6) || span > tau - 1e-6) {
+    throw new Error(offsetPartialCapMessage());
+  }
+
+  const grows = newRadius > radius;
+  const mode: "fuse" | "cut" =
+    radialSign < 0 ? (grows ? "cut" : "fuse") : grows ? "fuse" : "cut";
+  const radialOverlap = 0.01;
+  const inner =
+    radialSign < 0
+      ? grows
+        ? radius - radialOverlap
+        : newRadius
+      : grows
+        ? radius - radialOverlap
+        : newRadius;
+  const outer =
+    radialSign < 0
+      ? grows
+        ? newRadius
+        : radius + radialOverlap
+      : grows
+        ? newRadius
+        : radius + radialOverlap;
+  const pad = 0.25;
+  const zLo = lo - (extendLo ? pad : 0);
+  const zHi = hi + (extendHi ? pad : 0);
+  const radial = radialAt(start);
+  const point = (r: number, z: number): Vec3 =>
+    add(add(axis.origin, scale(w, z)), scale(radial, r));
+  const profilePoints = [
+    point(inner, zLo),
+    point(outer, zLo),
+    point(outer, zHi),
+    point(inner, zHi),
+  ];
+
+  return withScope((scope) => {
+    const wire = scope.track(wireFromPoints(profilePoints));
+    const profile = scope.track(unwrap(face(wire)));
+    const shape = scope.track(
+      unwrap(
+        revolve(
+          profile as unknown as Parameters<typeof revolve>[0],
+          { axis: w, at: axis.origin, angle: span },
+        ),
+      ),
+    );
+    let tool: Solid;
+    if (isSolid(shape)) {
+      tool = shape;
+    } else if (isShell(shape)) {
+      tool = scope.track(unwrap(solidFromShell(shape)));
+    } else {
+      throw new Error(
+        "The offset could not build a valid sector; edit the wall or split the face into simpler steps.",
+      );
+    }
+    if (!isValid(tool)) {
+      throw new Error(
+        "The offset did not produce a valid closed body; edit the walls or split the face into simpler steps.",
+      );
+    }
+    return { tool: unwrap(clone(tool)), mode };
+  });
+}
+
 function buildCylindricalOffset(
   feature: KernelOffsetFaceFeature,
   base: Solid,
@@ -1537,19 +1680,23 @@ function buildCylindricalOffset(
   }
   const area = captureHint(face).area;
   const fullArea = 2 * Math.PI * info.radius * height;
-  if (
-    area === undefined ||
-    Math.abs(area - fullArea) > Math.max(1e-3, fullArea * 0.01)
-  ) {
-    throw new Error(
-      offsetPartialCylinderMessage(area === undefined ? 1 : area / fullArea),
-    );
+  if (area === undefined) {
+    throw new Error("The selected cylindrical face has no usable area.");
   }
+  const full =
+    Math.abs(area - fullArea) <= Math.max(1e-3, fullArea * 0.01);
   const [bodyLo, bodyHi] = solidAxialExtent(base, axis);
-  const through =
-    Math.abs(lo - bodyLo) < 1e-2 && Math.abs(hi - bodyHi) < 1e-2;
+  const openAtLo = Math.abs(lo - bodyLo) < 1e-2;
+  const openAtHi = Math.abs(hi - bodyHi) < 1e-2;
+  const through = openAtLo && openAtHi;
+  if (info.radialSign < 0 && !openAtLo && !openAtHi) {
+    throw new Error(offsetSealedCylinderMessage());
+  }
   if (info.radialSign < 0 && !through) {
-    throw new Error(offsetBlindCylinderMessage());
+    const blindAxial = openAtHi ? lo : hi;
+    if (!blindEndIsPlanar(base, face, axis, blindAxial)) {
+      throw new Error(offsetBlindCapMessage());
+    }
   }
 
   const distance = feature.distance;
@@ -1561,13 +1708,37 @@ function buildCylindricalOffset(
   const basePoint = add(axis.origin, scale(axis.direction, lo));
   let tool: Solid;
   let mode: "fuse" | "cut";
-  if (info.radialSign < 0) {
+  if (!full) {
+    const grows = newRadius > info.radius;
+    const holeGrows = info.radialSign < 0 && grows;
+    const partial = buildPartialCylinderTool(
+      base,
+      face,
+      axis,
+      info.radius,
+      newRadius,
+      lo,
+      hi,
+      info.radialSign,
+      holeGrows && openAtLo,
+      holeGrows && openAtHi,
+    );
+    tool = partial.tool;
+    mode = partial.mode;
+  } else if (info.radialSign < 0) {
     if (newRadius > info.radius) {
-      // Hole grows: cut a larger cylinder; through holes get a small pad so the
-      // cut is clean at both open ends.
-      const pad = through ? 0.25 : 0;
-      tool = cylinder(newRadius, height + 2 * pad, {
-        at: add(basePoint, scale(axis.direction, -pad)),
+      // Hole grows: cut a larger cylinder. Pad only the open end(s), so a
+      // blind hole keeps its bottom cap at the same depth.
+      const pad = 0.25;
+      // The open end is at hi when openAtHi, otherwise at lo. The blind end
+      // (lo or hi) stays exactly where it is.
+      const from =
+        through || openAtLo
+          ? add(basePoint, scale(axis.direction, -pad))
+          : basePoint;
+      const cutHeight = through ? height + 2 * pad : height + pad;
+      tool = cylinder(newRadius, cutHeight, {
+        at: from,
         axis: axis.direction,
       });
       mode = "cut";
@@ -1663,6 +1834,35 @@ function buildCylindricalOffset(
     solid.delete();
     throw error;
   }
+}
+
+/** A blind hole is supported only when its closed end is a planar cap. */
+function blindEndIsPlanar(
+  base: Solid,
+  face: Parameters<typeof captureHint>[0],
+  axis: { origin: Vec3; direction: Vec3 },
+  endAxial: number,
+): boolean {
+  const faceAsFace = face as Face;
+  for (const edge of getEdges(faceAsFace)) {
+    const point = curvePointAt(edge, 0.5);
+    const axial = dot(
+      add(point, scale(axis.origin, -1)),
+      axis.direction,
+    );
+    if (Math.abs(axial - endAxial) > 1e-2) continue;
+    const neighbours = facesOfEdge(base, edge).filter(
+      (candidate) => getHashCode(candidate) !== getHashCode(faceAsFace),
+    );
+    if (
+      neighbours.some((candidate) =>
+        String(faceGeomType(candidate)).toUpperCase().includes("PLANE"),
+      )
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function faceAxialExtent(
