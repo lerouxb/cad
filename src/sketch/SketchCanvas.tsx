@@ -3890,6 +3890,7 @@ function ConstraintMarks({
                   y1={cy - uy * half}
                   x2={cx + ux * half}
                   y2={cy + uy * half}
+                  vectorEffect="non-scaling-stroke"
                 />
               );
             })}
@@ -3920,7 +3921,12 @@ function ConstraintMarks({
       case "halfDot":
         return (
           <g key={index} {...stroke} strokeWidth={1.1}>
-            <circle cx={mark.x} cy={mark.y} r={mark.r} />
+            <circle
+              cx={mark.x}
+              cy={mark.y}
+              r={mark.r}
+              vectorEffect="non-scaling-stroke"
+            />
             <path
               d={`M ${mark.x} ${mark.y - mark.r} A ${mark.r} ${mark.r} 0 0 1 ${mark.x} ${mark.y + mark.r} Z`}
               fill={color}
@@ -3967,9 +3973,11 @@ function ConstraintMarks({
               width={6.8 * px}
               height={5.2 * px}
               rx={1 * px}
+              vectorEffect="non-scaling-stroke"
             />
             <path
               d={`M ${mark.x - 2 * px} ${mark.y - 1 * px} V ${mark.y - 3.4 * px} A ${2 * px} ${2 * px} 0 0 1 ${mark.x + 2 * px} ${mark.y - 3.4 * px} V ${mark.y - 1 * px}`}
+              vectorEffect="non-scaling-stroke"
             />
           </g>
         );
@@ -3987,12 +3995,14 @@ function ConstraintMarks({
               y1={backY + ny * 3 * px}
               x2={mark.x}
               y2={mark.y}
+              vectorEffect="non-scaling-stroke"
             />
             <line
               x1={backX - nx * 3 * px}
               y1={backY - ny * 3 * px}
               x2={mark.x}
               y2={mark.y}
+              vectorEffect="non-scaling-stroke"
             />
           </g>
         );

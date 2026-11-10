@@ -89,6 +89,43 @@ test("a selected line leaves constraints quiet; a selected mark highlights its b
 });
 
 
+test("constraint mark strokes stay screen-space at every zoom", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  // The example's symmetric marks have chevrons; zooming in used to scale
+  // their stroke width with the viewBox and turn each chevron into a huge X.
+  const canvas = page.locator("svg.sketch-canvas");
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  for (let index = 0; index < 8; index += 1) {
+    await page.mouse.wheel(0, -120);
+  }
+  const strokes = await page
+    .locator("[data-constraint-id]")
+    .evaluateAll((groups) =>
+      groups.flatMap((group) =>
+        Array.from(
+          group.querySelectorAll("line,path,circle,rect,polyline,polygon"),
+        )
+          .filter((element) => {
+            const stroke = getComputedStyle(element).stroke;
+            return stroke !== "none" && stroke !== "";
+          })
+          .map((element) => ({
+            tag: element.tagName,
+            vectorEffect: getComputedStyle(element).vectorEffect,
+          })),
+      ),
+    );
+  expect(strokes.length).toBeGreaterThan(0);
+  expect(strokes.filter((stroke) => stroke.vectorEffect !== "non-scaling-stroke"))
+    .toEqual([]);
+  expect(errors).toEqual([]);
+});
+
+
 test("changing the highlighter recolours an active selection", async ({
   app: page,
 }) => {
