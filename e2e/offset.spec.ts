@@ -11,12 +11,15 @@ import {
   pickCylindricalFace,
   pickRightFace,
   pickTopFace,
+  scanVisibleFaces,
+  selectedFaceRefs,
 } from "./support/model";
 import { clickSketch, dragSketch } from "./support/sketch";
 import { createSketch } from "./support/workflow";
 import {
   exampleBounds,
   examplePlateVolume,
+  exampleShelledPlateVolume,
 } from "../src/core/doc/exampleMetrics";
 
 test.beforeEach(async ({ app: page }) => {
@@ -39,6 +42,26 @@ async function createBlindCentralHole(page: Page): Promise<void> {
   await clickSketch(page, 0, 0);
   await page.getByTestId("extrude-height").fill("7");
   await page.getByTestId("extrude-apply").click();
+}
+
+/** Pick the shell-generated +X inner wall of the shelled plate. */
+async function pickShellInnerWall(page: Page) {
+  await fitView(page);
+  for (const candidate of await scanVisibleFaces(page)) {
+    await page.mouse.click(candidate.x, candidate.y);
+    const refs = await selectedFaceRefs(page);
+    const ref = refs[refs.length - 1];
+    if (
+      ref?.role?.startsWith("shell:") &&
+      ref.hint?.surfaceType === "PLANE" &&
+      (ref.hint.normal?.[0] ?? 0) > 0.9
+    ) {
+      return ref;
+    }
+    const clear = page.getByTestId("clear-face-selection");
+    if (await clear.count()) await clear.click();
+  }
+  throw new Error("No shell inner wall found");
 }
 
 /** A D-shaped boss: a Ø20 half-cylinder with a flat radial back wall. */
@@ -187,6 +210,40 @@ test("keeps the offset preview colour when the highlighter changes", async ({
     "#3ec8ff",
   );
   await page.getByTestId("offset-face-cancel").click();
+  expect(errors).toEqual([]);
+});
+
+test("offsets an inner wall of a shelled body", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  await pickTopFace(page);
+  await page.getByTestId("start-shell").click();
+  await page.getByTestId("shell-feature-thickness").fill("2");
+  await page.getByTestId("shell-feature-apply").click();
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(exampleShelledPlateVolume(), -1);
+  const before = await volume(page);
+
+  const face = await pickShellInnerWall(page);
+  const area = face.hint?.area ?? 0;
+  expect(area).toBeGreaterThan(0);
+  await page.getByTestId("start-offset-face").click();
+  await page.getByTestId("offset-face-distance").fill("1");
+  await expect(page.getByTestId("offset-face-error")).toHaveCount(0);
+  // Moving the inner wall into the cavity thickens the 2 mm wall.
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(before + area, -1);
+  await page.getByTestId("offset-face-apply").click();
+  const step = page.locator('[data-feature-type="offset"]').last();
+  await expect(step).toHaveAttribute("data-status", "ok");
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(before + area, -1);
+  const health = page.getByTestId("body-health");
+  await expect(health).toHaveAttribute("data-bodies", "1");
+  await expect(health).toHaveAttribute("data-shells", "1");
+  await expect(health).toHaveAttribute("data-valid", "true");
   expect(errors).toEqual([]);
 });
 
