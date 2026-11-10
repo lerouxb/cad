@@ -1,6 +1,6 @@
 # Tool showcase
 
-Interactive design targets for tools that do not exist yet, split into thirteen pages.
+Interactive design targets for tools and input surfaces, including ones not built yet, split into sixteen pages.
 
 This folder and [`../mockups/`](../mockups/) are the two halves of one design
 system:
@@ -18,7 +18,11 @@ bodies, groups and insertion — has its own contract in
 timeline click do in every mode is in [`MODES.md`](MODES.md); how every sketch
 constraint and dimension is drawn is in [`CONSTRAINTS.md`](CONSTRAINTS.md); what
 a selection means and where its actions live is in
-[`SELECTION.md`](SELECTION.md).
+[`SELECTION.md`](SELECTION.md); the offset-face study is in
+[`OFFSET_FACES.md`](OFFSET_FACES.md), the revolve study in
+[`REVOLVE.md`](REVOLVE.md), the operation/preview language in
+[`BOOLEANS.md`](BOOLEANS.md), and the form input pickers in
+[`PICKS.md`](PICKS.md).
 
 | Study | Page | What it covers | Milestone |
 | --- | --- | --- | --- |
@@ -26,14 +30,17 @@ a selection means and where its actions live is in
 | **Sketch selection** | [`sketch-edit.html`](sketch-edit.html) | selection popover (constraints), inline dimension editor | app consistency (see INTERACTION.md) |
 | **Dimension kind** | [`dimension.html`](dimension.html) | driving vs reference: the value as a field or a readout, a segmented kind control | M5 sketch polish |
 | **Constraints & measurements** | [`constraints.html`](constraints.html) | every constraint mark, hover/select/delete, symmetric on vertical/horizontal axes, collisions, dimensions and the inline editor | app consistency (see CONSTRAINTS.md) |
-| **Selection rules** | [`selection.html`](selection.html) | selection families, mixed sets, box/lasso + Backspace, and feature actions in the popover | app consistency (see SELECTION.md) |
+| **Selection rules** | [`selection.html`](selection.html) | selection families, mixed sets, box/lasso + Backspace, feature actions, and form input pickers | app consistency (see SELECTION.md and PICKS.md) |
 | **Sketch create** | [`sketch-create.html`](sketch-create.html) | rectangle / circle / arc variants, polygon | M6.0-era sketch polish |
 | **Selection filters** | [`select.html`](select.html) | a contextual **tool options row**: selection filters, create variants, select other | M5 selection UX |
 | **Model selection** | [`select-model.html`](select-model.html) | the same row on the model: **edges** / **faces** / **bodies** filters, one at a time | M5 selection UX |
 | **Body ops** | [`body-ops.html`](body-ops.html) | **combine** (join/cut/intersect, keep tools), **split body** | M6 |
+| **Booleans** | [`booleans.html`](booleans.html) | the four operations (`new body` / `join` / `cut` / `intersect`), the shared preview grammar, cut vs intersect, offset out/in, errors | see BOOLEANS.md |
+| **Offset faces** | [`offset-faces.html`](offset-faces.html) | model face operation: move selected faces, distance/direction, hole/boss readout, chain, failure, history step | M5 v1 (see OFFSET_FACES.md) |
 | **Bodies** | [`bodies.html`](bodies.html) | several bodies in one timeline, inline with the step that made them | M3/M6 (document model) |
 | **Body transforms** | [`transform.html`](transform.html) | **move / copy**, **align** | M6 |
 | **Extrude options** | [`extrude.html`](extrude.html) | start offset, to-object / to-next / all, taper, operation | **M3/M4** |
+| **Revolve** | [`revolve.html`](revolve.html) | profile + in-plane axis, 1–360°, cylinder/tube/cone/sphere/torus, partial end faces, history step | M5 v1 (see REVOLVE.md) |
 | **Inspect** | [`inspect.html`](inspect.html) | **section analysis** | M5 |
 
 The decisions behind these (what to keep, drop, defer) are in
@@ -164,6 +171,7 @@ sketch-create.html   sketch create variants: rectangle / circle / arc / polygon
 select.html          selection filters as a tool options row
 select-model.html    model selection: edge / face / body filters
 body-ops.html        combine + split body
+booleans.html        the four operations + the shared add/remove/ghost preview
 bodies.html          multiple bodies inline in one timeline
 transform.html       move / copy + align
 extrude.html         extrude options (start, end, taper, operation)
@@ -182,6 +190,10 @@ INTERACTION.md       the interaction contract (popover, actions, foot)
 MODES.md             the input contract (modes × Enter / Escape / background / timeline)
 CONSTRAINTS.md       the constraint and measurement contract (marks, dimensions, states)
 SELECTION.md         the selection contract (families, actions, marquee, delete)
+PICKS.md             the form input contract (row + list, model/sketch/single pick patterns)
+OFFSET_FACES.md      the offset-face contract (history step, distance, failure, kernel)
+BOOLEANS.md          the boolean contract (new body, join, cut, intersect, preview, errors)
+REVOLVE.md           the revolve contract (profile, axis, angle, history, kernel)
 TIMELINE.md          the timeline contract (steps, bodies, groups, insert)
 BACKLOG.md           the gap decisions (keep / drop / defer) and their homes
 README.md            this file

@@ -51,6 +51,11 @@
     );
   }
 
+  // the shared operation vocabulary (BOOLEANS.md): the state key stays "new"
+  function opLabel(op) {
+    return op === "new" ? "new body" : op;
+  }
+
   function clipX(ring, x, keepLess) {
     var out = [];
     var n = ring.length;
@@ -303,6 +308,14 @@
     }
     spec.rows.forEach(function (row) {
       if (row.when && !row.when(p)) return;
+      if (row.type === "sub") {
+        html +=
+          '<div class="input-list"><div class="input-row">' +
+          '<span class="input-kind">' + row.kind + "</span>" +
+          '<span class="input-detail">' + row.detail + "</span>" +
+          '<span class="input-remove">remove</span></div></div>';
+        return;
+      }
       var v = p[row.key];
       var ctrl = "";
       if (row.type === "seg") {
@@ -335,6 +348,9 @@
           '<span class="unit">' + (row.unit || "") + "</span></label>";
       } else if (row.type === "static") {
         ctrl = '<span class="tool-note">' + row.value + "</span>";
+      } else if (row.type === "action") {
+        ctrl = '<span class="tool-note">' + row.value +
+          '</span><button class="text-action" type="button">' + row.action + "</button>";
       }
       html +=
         '<div class="tool-row"><span class="tool-label">' + row.label +
@@ -476,16 +492,24 @@
       var op = p.op;
       if (op === "join") {
         html += drawBox(iso, PLATE, null, false);
-        html += cylinderSolid(iso, CYL.x, CYL.y, CYL.r, PLATE.z1, CYL.z1, "bo-face-x", "bo-face-top");
+        // only the boss above the plate is added material (BOOLEANS.md)
+        html += cylinderSolid(iso, CYL.x, CYL.y, CYL.r, PLATE.z1, CYL.z1, "op-add-side", "op-add-top");
       } else if (op === "cut") {
-        // a real bore through the top face, and the tool ghosted above the plate
+        // a real bore through the top face; the removed plug is cut red, the
+        // tool above is a ghost (BOOLEANS.md)
         html += boreWall(iso, CYL.x, CYL.y, CYL.r, PLATE.z1, PLATE.z0);
         html += drawBoxHole(iso, PLATE, { x: CYL.x, y: CYL.y, r: CYL.r });
+        html += cylinderSolid(iso, CYL.x, CYL.y, CYL.r, PLATE.z0, PLATE.z1, "op-remove", "op-remove");
         html += p.keepTools
           ? cylinderSolid(iso, CYL.x, CYL.y, CYL.r, PLATE.z1, CYL.z1, "bo-tool-kept", "bo-tool-kept")
           : cylinderGhost(iso, CYL.x, CYL.y, CYL.r, PLATE.z1, CYL.z1, "bo-ghost");
       } else {
+        // intersect: the plate is context (ghost); only the shared cylinder
+        // segment is a real result; the rest of the tool is discarded (ghost)
         html += drawBox(iso, PLATE, null, true);
+        if (!p.keepTools) {
+          html += cylinderGhost(iso, CYL.x, CYL.y, CYL.r, PLATE.z1, CYL.z1, "bo-ghost");
+        }
         html += cylinderSolid(iso, CYL.x, CYL.y, CYL.r, PLATE.z0, PLATE.z1, "bo-face-x", "bo-face-top");
         if (p.keepTools) {
           html += cylinderSolid(iso, CYL.x, CYL.y, CYL.r, PLATE.z1, CYL.z1, "bo-tool-kept", "bo-tool-kept");
@@ -519,7 +543,7 @@
   var BD_HOLE = { x: 95, y: 30, r: 7 };
 
   var bd = {
-    active: 8,
+    active: null,
     connected: false,
     selected: null,
     order: [1, 2, 3, 4, 5, 6, 7, 8],
@@ -905,7 +929,6 @@
 
   function bdGroupHtml(g) {
     var members = bdMembersInOrder(g);
-    var activeIn = members.indexOf(bd.active) !== -1;
     var editing = bd.editing && bd.editing.kind === "group" && bd.editing.id === g.id;
     var name = editing
       ? '<input class="chip-input" data-rename="__group:' + g.id + '" value="' +
@@ -926,11 +949,9 @@
       inner += bdStepHtml(bdStep(n), n);
       if (idx < members.length - 1) inner += bdGapButton(n);
     });
-    var collapseBtn = activeIn
-      ? '<button class="group-btn" type="button" disabled ' +
-        'title="the active step is inside this group \u2014 roll back first">\u2212</button>'
-      : '<button class="group-btn" type="button" data-collapse="' + g.id +
-        '" title="Collapse group" aria-label="Collapse group">\u2212</button>';
+    var collapseBtn =
+      '<button class="group-btn" type="button" data-collapse="' + g.id +
+      '" title="Collapse group" aria-label="Collapse group">\u2212</button>';
     return (
       '<div class="step-group" data-group="' + g.id + '">' +
       '<div class="group-head">' +
@@ -1249,7 +1270,18 @@
       var collapse = e.target.closest("[data-collapse]");
       if (collapse) {
         var gc = bdGroup(collapse.getAttribute("data-collapse"));
-        if (gc) gc.collapsed = true;
+        if (gc) {
+          // Collapsing is always allowed. If the cursor is inside the group it
+          // would disappear with the steps, so move to the end with no active
+          // step — exactly like clicking the empty tail.
+          if (gc.ids.indexOf(bd.active) !== -1) {
+            bd.active = null;
+            bd.selected = null;
+            bd.insertMenu = false;
+            bd.insertStart = false;
+          }
+          gc.collapsed = true;
+        }
         render();
         return;
       }
@@ -1753,12 +1785,15 @@
     kicker: "sketch feature",
     title: "extrude",
     rows: [
+      { type: "static", label: "sketch", value: "Sketch 1" },
+      { type: "action", label: "profile", value: "1 selected", action: "select" },
+      { type: "sub", kind: "Profile 1", detail: "1,200 mm²" },
       { type: "seg", key: "start", label: "start", options: [["plane", "profile"], ["offset", "offset"]] },
       { type: "input", key: "startOffset", label: "start offset", unit: "mm", when: function (p) { return p.start === "offset"; } },
       { type: "seg", key: "end", label: "end", options: [["blind", "blind"], ["object", "to object"], ["next", "to next"], ["all", "all"]] },
       { type: "input", key: "distance", label: "distance", unit: "mm", when: function (p) { return p.end === "blind"; } },
       { type: "input", key: "taper", label: "taper", unit: "deg" },
-      { type: "seg", key: "op", label: "operation", options: [["new", "new"], ["join", "join"], ["cut", "cut"], ["intersect", "intersect"]] },
+      { type: "seg", key: "op", label: "operation", options: [["new", "new body"], ["join", "join"], ["cut", "cut"], ["intersect", "intersect"]] },
       { type: "static", label: "target", value: "block", when: function (p) { return p.op !== "new"; } }
     ],
     hint: "start offset and to-object are the two that are used most",
@@ -1773,32 +1808,89 @@
               ? "to next"
               : "all";
       var t = p.taper ? " \u00b7 taper " + fmt1(p.taper) + "\u00b0" : "";
-      return s + " \u00b7 " + e + t + " \u00b7 " + p.op;
+      return s + " \u00b7 " + e + t + " \u00b7 " + opLabel(p.op);
     }
   };
+
+  // a prism segment of the extrude footprint between two z values
+  function exSegmentCorners(p, z0, z1) {
+    var b = EX_PROFILE;
+    var h = z1 - z0;
+    var inset = h * Math.tan(((p.taper || 0) * Math.PI) / 180);
+    var lim = Math.min(b.x1 - b.x0, b.y1 - b.y0) / 2 - 1;
+    inset = Math.max(-lim, Math.min(lim, inset));
+    return [
+      [b.x0, b.y0, z0],
+      [b.x1, b.y0, z0],
+      [b.x1, b.y1, z0],
+      [b.x0, b.y1, z0],
+      [b.x0 + inset, b.y0 + inset, z1],
+      [b.x1 - inset, b.y0 + inset, z1],
+      [b.x1 - inset, b.y1 - inset, z1],
+      [b.x0 + inset, b.y1 - inset, z1]
+    ];
+  }
+
+  function exOverlap(p) {
+    var e = exExtents(p);
+    var z0 = Math.max(e[0], EX_TARGET.z0);
+    var z1 = Math.min(e[1], EX_TARGET.z1);
+    return z1 > z0 + 0.2 ? [z0, z1] : null;
+  }
 
   function exRender(iso, layer, footEl) {
     var p = ex;
     var e = exExtents(p);
+    var overlap = p.op === "cut" || p.op === "intersect" || p.op === "join" ? exOverlap(p) : null;
     var html = "";
     // the sketch profile, and the start position when offset
     html += profileQuad(iso, EX_PROFILE, 0, "bo-profile");
     if (p.start === "offset") {
       html += profileQuad(iso, EX_PROFILE, p.startOffset, "bo-profile-ghost");
     }
-    if (p.op !== "new") {
-      html += drawBox(iso, EX_TARGET, null, p.op === "intersect");
-    }
-    var solid = drawBoxCorners(iso, exCorners(p), "bo-result", false);
-    if (p.op === "cut") {
-      // the extruded solid is the cutter
-      html += drawBoxCorners(iso, exCorners(p), null, true);
+    if (p.op === "new") {
+      // no diff tint: the whole body is new (BOOLEANS.md)
+      html += drawBoxCorners(iso, exCorners(p), "bo-result", false);
+    } else if (p.op === "join") {
+      // the target stays normal; highlight only material the join adds, i.e.
+      // the tool outside the target. The tool∩target overlap is already material.
+      html += drawBox(iso, EX_TARGET, null, false);
+      if (overlap) {
+        if (e[0] < overlap[0] - 0.2) html += drawBoxCorners(iso, exSegmentCorners(p, e[0], overlap[0]), "op-add", false);
+        if (e[1] > overlap[1] + 0.2) html += drawBoxCorners(iso, exSegmentCorners(p, overlap[1], e[1]), "op-add", false);
+      } else {
+        html += drawBoxCorners(iso, exCorners(p), "op-add", false);
+      }
+    } else if (p.op === "cut") {
+      // the target stays normal; the removed overlap is cut red; the tool
+      // outside the target is a ghost
+      html += drawBox(iso, EX_TARGET, null, false);
+      if (overlap) {
+        if (e[0] < overlap[0] - 0.2) html += drawBoxCorners(iso, exSegmentCorners(p, e[0], overlap[0]), null, true);
+        if (e[1] > overlap[1] + 0.2) html += drawBoxCorners(iso, exSegmentCorners(p, overlap[1], e[1]), null, true);
+        html += drawBoxCorners(iso, exSegmentCorners(p, overlap[0], overlap[1]), "op-remove", false);
+      } else {
+        html += drawBoxCorners(iso, exCorners(p), null, true);
+      }
     } else {
-      html += solid;
+      // intersect: the target is context; only the overlap is a result; the
+      // rest of the tool is discarded. Never red (BOOLEANS.md).
+      html += drawBox(iso, EX_TARGET, null, true);
+      if (overlap) {
+        if (e[0] < overlap[0] - 0.2) html += drawBoxCorners(iso, exSegmentCorners(p, e[0], overlap[0]), null, true);
+        if (e[1] > overlap[1] + 0.2) html += drawBoxCorners(iso, exSegmentCorners(p, overlap[1], e[1]), null, true);
+        html += drawBoxCorners(iso, exSegmentCorners(p, overlap[0], overlap[1]), "op-normal", false);
+      } else {
+        html += drawBoxCorners(iso, exCorners(p), null, true);
+      }
     }
     layer.innerHTML = html;
+    var noOverlap =
+      (p.op === "cut" || p.op === "intersect") && !overlap
+        ? " \u00b7 no overlap: set end to all"
+        : "";
     footEl.innerHTML = "<b>extrude</b> \u00b7 " + EX_SPEC.summary(p) +
-      (ex.msg ? " \u00b7 " + ex.msg : "");
+      noOverlap + (ex.msg ? " \u00b7 " + ex.msg : "");
   }
 
   function bootExtrude() {

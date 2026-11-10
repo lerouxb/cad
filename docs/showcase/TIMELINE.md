@@ -34,8 +34,14 @@ exists at that step*. So:
   | Op | Meaning | Example |
   | --- | --- | --- |
   | `+` | the step **creates** it | `+ ○ body` (extrude new body), `+ ⊡ base profiles` (sketch) |
-  | `→` | the step **references** it | `→ ○ body` (join), `→ ○ lid` (cut) |
+  | `→` | the step **references** it | `→ ○ body` (join), `→ ○ body` (cut/intersect) |
   | `−` | the step **consumes** it | `− ○ ~~lid~~` (merge lid into body) |
+
+  The chip does **not** encode which boolean ran. A cut and an intersect both
+  reference the surviving body with `→`; the operation word lives in the step
+  meta (`through all · cut`, `12.0 mm · intersect`). Do not use `−` for a cut:
+  that glyph already means “consumes this body”. See
+  [`BOOLEANS.md`](BOOLEANS.md).
 
 - The **type icon** is a small dot before the name: dashed square = sketch /
   profile, circle = body, diamond = midplane / datum plane. It is centred on the
@@ -87,8 +93,11 @@ exists at that step*. So:
   A collapsed group's whole point is to take less width.
 - **The collapsed chip sits below the top rule** (a margin, not a border) so it
   does not touch the line.
-- **Collapse is refused while the active step is inside** the group — roll back
-  first. The `−` is disabled and says so in its tooltip.
+- **Collapse is allowed while the active step is inside** the group. The cursor
+  moves to the end with no step active, exactly like clicking the empty tail —
+  the step cannot stay selected once its row is gone. Collapsing with the cursor
+  outside the group just collapses it and leaves the cursor alone. The `−` is
+  never disabled.
 - **Groups are flat.** No nesting.
 - **Groups are not selectable.** Only steps are. A group can be **named**
   (double-click), **collapsed**, **expanded** or **ungrouped** — nothing else.
@@ -196,10 +205,10 @@ The mockup's numbers, for translation into app tokens — not law:
 | --- | --- |
 | Multiple bodies inline in the timeline | designed (`bodies.html`) |
 | Groups (bracket, collapse, drag to group) | designed |
-| Insert affordance (gap columns, menu) | designed |
+| Insert affordance (gap columns, menu) | landed |
 | Body chips (`+` / `→` / `−`, rename, highlight, lost) | designed |
-| Step head `NN · KIND`, position numbering | designed |
-| Bottom status line (status note / lost error) | designed |
+| Step head `NN · KIND`, position numbering | landed |
+| Bottom status line (status note / lost error) | landed |
 
 ## Decided
 
@@ -207,11 +216,12 @@ The mockup's numbers, for translation into app tokens — not law:
   `join` with nothing to join, a reference that lost its body — say so. Do not
   quietly change the operation or retarget the reference. There may be rare
   exceptions, but none have been found; assume "surface it" until one is.
-- **A join that cannot join does not silently change the operation.** When a join
-  is impossible (nothing to join, or a disjoint result) the operation control
-  selects `new body` and the draft/preview says so — Fusion does the same. Because
-  the draft states the operation explicitly, this is not a hidden fallback. An
-  applied feature still reports a *lost reference* rather than retargeting.
+- **A join that cannot join does not silently change the operation.** The draft's
+  default is `new body` when there is nothing to join and `join` when there is a
+  body; that default is visible in the operation row. Once the user has chosen an
+  operation, an impossible join is a visible error — the control does not move to
+  `new body` behind their back. An applied feature still reports a *lost
+  reference* rather than retargeting.
 - **Lost-body recovery offers follow-the-merge.** When a merge steals a downstream
   step's body, `reselect` alone is a dead end — the body it wanted is gone. Offer
   to retarget the reference to the surviving body, with `reselect` as the escape
@@ -239,9 +249,13 @@ The mockup's numbers, for translation into app tokens — not law:
   [`select-model.html`](select-model.html) for the model one.
 - **A collapsed group needs only mark + name + count.** No peek (a body count, a
   mini stack). It is your own project, so the name is enough context.
-- **The active-step-inside-a-group double rule stays.** The bottom-line marker
-  under the step and the group bracket above it are two close horizontal rules,
-  and that is fine.
+- **Collapsing a group with the cursor inside is allowed, and clears the
+  cursor.** The old "roll back first" refusal forced a pointless extra step;
+  moving to the end is the same state as clicking the empty tail, so nothing is
+  hidden or applied. This supersedes the earlier refusal rule.
+- **The active-step-inside-a-group double rule stays while the group is
+  expanded.** The bottom-line marker under the step and the group bracket above
+  it are two close horizontal rules, and that is fine.
 - **Divider vs `+` inset is settled by the current design.** The divider is a
   permanent full-height line; the `+` is a separate mark inset 6px top and bottom
   so it never collides with the active marker. Nothing to change.

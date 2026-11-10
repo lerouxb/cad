@@ -54,34 +54,6 @@ The app should feel like an annotated drawing on paper, not a dashboard.
 reserved for the active choice. A failed step stays in history and the last good body
 stays on the page.
 
-## Current state (2026-11-08)
-
-The core loop is real and edited through history: sketch → solid → sketch on a face →
-downstream rebuild.
-
-- **Sketching:** constrained lines/points/rectangles/circles/arcs and a corner fillet, a
-  full constraint set with dragging projected onto the constraint tangent space, regions
-  (material/void), trim, grid/snap, construction geometry, undo/redo.
-- **Document and rebuild:** plain-JSON schema (now v14), migrations, autosave, a cached
-  ordered rebuild, visible per-feature status/diagnostics and a worker protocol.
-- **Timeline:** create/edit/reorder/suppress/delete, selection as the history cursor, the
-  no-step load/empty-tail/Escape-at-rest contract and insert gaps.
-- **Selection:** one language across sketch and model; profile/face/edge families; box,
-  lasso and Select Other; contextual feature chips.
-- **Solid features:** extrude (new/join/cut), revolve, fillet, chamfer, shell, offset
-  faces (planar + full cylindrical through holes/bosses), datum planes, measure and
-  STL/STEP export from the rebuilt prefix.
-- **Recent:** offset added/removed diff previews, revolve, the selection pair for sketch
-  lines and model edges, and the sketch-creation-aware no-solid callout.
-- **Tests:** `npm run verify` (240 unit) and `npm run e2e` (142) are green.
-
-**Next:** the shared boolean contract in
-[`showcase/BOOLEANS.md`](showcase/BOOLEANS.md). Offset faces already implements its
-added/removed/ghost preview; extrude and revolve still have three operations, a select
-instead of the segmented row, and no diff preview.
-
----
-
 ## Done: M0 — Skeleton
 
 - [x] Vite + React + TS (`strict`, `noUncheckedIndexedAccess`), ESLint, Prettier
@@ -101,8 +73,6 @@ instead of the segmented row, and no diff preview.
       typed arrays, exact volume. Findings: use `wireLoop` → `face` → `extrude`; validate
       holes that cross the boundary (OCCT silently returns the hole cylinder).
 - [x] Wire it together: sketch edit → debounced rebuild → 3D update, with stats on screen.
-
----
 
 ## Done: M1 — The real sketcher
 
@@ -230,8 +200,8 @@ history/support/export UI has been added.
 
 ## M2.6 — Split at intersections / trim
 
-The biggest remaining profile-correctness gap: intersecting segments without a shared
-endpoint do not yet split the graph.
+The profile-correctness gap this closed: intersecting segments without a shared endpoint
+did not split the graph.
 
 - [x] Planar arrangement: split line/arc segments at intersections, create real vertices,
       and rebuild adjacency from the split segments
@@ -290,8 +260,9 @@ the shell (header, stage foot, timeline) first, then the sketch view controls.
       (`+`/`→`; sketch/plane/body), an active underline that reaches under the dividers,
       paused downstream steps, a hover-only drag grip, and hover-only insert gaps before
       the first step, after every step and after the last, with a `sketch`/`plane` menu.
-      The leading gap inserts at the very start without moving the cursor; the empty 44px
-      tails at both ends clear it. Design contract:
+      The leading gap inserts at the very start without moving the cursor; the empty
+      leading 44px tail and the trailing tail that fills the remaining track width clear
+      it. Design contract:
       `docs/showcase/TIMELINE.md` and `docs/showcase/bodies.html`; multiple bodies and
       groups are deferred to M6 below. Earlier baseline: numbered steps with type + serif
       name + meta, an active-step marker, and
@@ -315,12 +286,13 @@ the shell (header, stage foot, timeline) first, then the sketch view controls.
 - [x] Extend `check-typography.mjs` to audit `src/app/app.css` as well as the mockups;
       `npm run check:typography` is part of `npm run verify`
 - [x] Error styling everywhere: `--danger` is ink in both themes, with dotted rules for
-      error text; no red remains in the app
-- [ ] Header filename as the real file menu (M3 local files), not just a label
+      error text; no red error remains in the app. Removed material is the separate cut-red
+      material signal from `BOOLEANS.md`, never an error style.
+- [x] Header filename as the real file menu (M3 local files), not just a label
 
 ### Sketch view controls
 
-The sketch interaction and typography targets that are not yet in the app.
+The sketch interaction and typography targets for this pass.
 
 - [x] Grid step adapts to the zoom using a nice 1/2/5 × 10ⁿ sequence; the user can enter
       any spacing in mm. Major lines every five cells; the grid disappears when a manual
@@ -336,8 +308,7 @@ The sketch interaction and typography targets that are not yet in the app.
       action remains the explicit primary
 
 **Done.** The shell, adaptive grid, scale bar, zoom menu, selection line, no-red errors,
-typography audit and Enter-to-finish are in. The filename file-menu affordance is the only
-remaining item and lands with the M3 local-files work.
+typography audit, Enter-to-finish and the filename file menu are in.
 
 ## M2.9 — Sketch selection tools (done; superseded by SELECTION.md)
 
@@ -431,8 +402,8 @@ plumbing, and evolution-based role propagation through booleans are in.
       final body, carried through `FaceGroup`/`BodyPick` as JSON-safe refs
 - [x] Evolution-based `updateRoles` across fuse/cut; the worker keeps a role table per
       prefix solid alongside the solid cache
-- [ ] Store `TopoRef`s on features (`PlaneRef.kind = "face"`, face supports) — first M4
-      face-support task
+- [x] Store `TopoRef`s on features (`PlaneRef.kind = "face"`, face supports); the first
+      face-support slice landed in M4
 - [x] Rebuild test: edit the first sketch, assert downstream volume changes and undo
       restores it
 
@@ -442,8 +413,8 @@ undo/redo — with correct geometry every time.
 **Met.** The e2e suite edits the first sketch in a six-feature part, asserts the downstream
 solid changes, undoes it, reopens the autosaved part, downloads/opens `.cad`, reorders,
 suppresses, deletes and rolls back, and lists/copies/reopens local files. Role tables are
-now propagated through joins/cuts with `updateRoles`; the next step is storing face refs
-on features for M4.
+propagated through joins/cuts with `updateRoles`; face refs now live on sketch supports and
+on fillet, chamfer, shell and offset-face features.
 
 ## M4 — Sketch supports: datum planes and faces
 
@@ -510,13 +481,12 @@ with face sketches.
       resolves against the source feature's prefix (downstream booleans cannot move or
       split it); user projections resolve against the body at their sketch's step. Both
       keep cached geometry (marked stale) on a topology change.
-- [x] **Line/circle snapping regression:** every existing line is a snap target (ordinary
-      sketch edges, the fixed X/Y axes and projected boundaries), with points, crossings,
-      lines, circles and the grid in that order. A snapped vertex gets a `pointOnLine` for
-      every line it lies on or `pointOnCircle` for a circle/arc; at a crossing it attaches
-      to both lines, and snapping to an existing point reuses that point (coincident).
-      Drawing tools are not intercepted by existing curve hit targets. E2E covers off-grid
-      edge snapping, a crossing, and snapping a new point onto a projected circle.
+- [x] **Line snapping regression:** every existing line is a snap target (ordinary sketch
+      edges, the fixed X/Y axes and projected boundaries), with points, crossings, lines
+      and the grid in that order. A snapped vertex gets a `pointOnLine` for every line it
+      lies on; at a crossing it attaches to both lines, and snapping to an existing point
+      reuses that point (coincident). Drawing tools are not intercepted by existing curve
+      hit targets. E2E covers off-grid edge snapping and a crossing.
 - [x] Projected references participate in the solver as fixed (group-0-like) entities, so
       point-on-line / point-on-point / coincident constraints work against them. Points
       and edges are snap targets; snapping a vertex to a projected edge adds a
@@ -527,8 +497,7 @@ with face sketches.
 - [x] **Lost-support recovery surface (first slice):** failed face refs are tracked as
       derived `RebuildInputs.lostFaceRefs`, the step shows `lost · cached frame`, and the
       detail offers reselect (pick a face first) / open sketch / revert. Datum bases open
-      the datum editor for reselect. Exact `resolveRef` fallback and richer recovery are
-      still pending.
+      the datum editor for reselect. Broader recovery flows remain open.
 - [x] Handle flipped face normals and sketches created on the "back" of a face. Face
       frames preserve their original side when a live normal flips (up to sign), and the
       support popover has a `flip side` action for a face before creating the sketch.
@@ -560,7 +529,7 @@ with face sketches.
       propagate through datum chains and dependent sketches/extrudes, and follow base
       body edits.
 - [x] **Lost-support slice landed:** live face-ref failures mark the step and use the
-      cached frame, with reselect/open sketch/revert. Exact `resolveRef` fallback remains.
+      cached frame, with reselect/open sketch/revert.
 - [x] **Flip/normal slice landed:** live face frames stabilize against the side the sketch
       was created on, and `flip side` lets a face sketch start on the opposite side of the
       face. A base-height edit keeps the flipped frame stable.
@@ -572,11 +541,6 @@ with face sketches.
 **Done when:** sketch on an offset plane in empty space; sketch on a midplane between two
 faces; change the offset or the base plate height and every dependent sketch/feature
 follows; deleting a base face produces a visible, recoverable error.
-
-**Demo acceptance (with M1+M3):** build the angle bracket from the video — L profile →
-extrude → gusset triangle in the symmetry plane, anchored to projected inner edges →
-two-sided union extrude → two holes on the flange face, cut through — then edit the first
-sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correctly.
 
 ## M5 — Refinement features
 
@@ -602,8 +566,9 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       participants, click selects the constraint, Backspace/Delete removes it
       (constraint selection is ephemeral). The angle inline editor now shows `°`
       instead of `mm`.
-- [ ] **Constraint marks, Phase 2**: conflict ghost + `!`, stacking slots/LOD clusters,
-      coarse-pointer hit targets, and the remaining perpendicular/tangent fallback cases.
+- [ ] **Constraint marks, Phase 2**: conflict ghost + `!` for the checked preview
+      (2a); stacking slots/LOD clusters, the hover fan, the cursor chooser, pinned drag
+      with `reset position`, label priority and coarse-pointer hit targets (2b).
 - [ ] **Measurements, Phase 3**: open arrowheads on angle/radius leaders, the diameter
       through-line/leader choice, witness-line gaps, label collision defaults, and the
       0° angle behaviour.
@@ -635,20 +600,23 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
 - [x] **Revolve v1** — schema v14 `RevolveFeature` for a closed profile swept around an
       in-plane sketch line or X/Y axis. The profile popover's `revolve…` chip opens a form
       with explicit axis chips or a stage click on a sketch line/X/Y reference (no silent
-      default), 1–360° angle, ccw/cw for partial,
-      new/join/cut, live worker preview, re-editable history step and cancel/restore.
-      Regions must stay on one side of the infinite axis or touch it. The stage axis-pick
-      highlight, intersect, and the start-profile/angle-arc preview remain open.
-      Contract: `docs/showcase/REVOLVE.md`
-- [x] **Offset Faces v1 (planar + full cylinders)** — schema v13 `OffsetFaceFeature`
-      with face refs and a signed distance. The plan path sweeps planar faces with
-      parallel normals and neighbours the sweep preserves; the cylindrical path moves one
-      full 360° hole/boss wall with a concentric cylinder/tube boolean (through holes
-      only). The popover shows `Ø old → new`, the draft previews live with true
+      default), 1–360° angle, ccw/cw for partial, new/join/cut, live worker preview,
+      re-editable history step and cancel/restore.
+      Regions must stay on one side of the infinite axis or touch it. The PICKS profile
+      list and `axis · line N · construction · pick` candidate mode (with the candidate
+      highlight and Escape-first exit) are in. The start-profile/angle-arc preview and a
+      3D axis outside the sketch plane remain open. Contract: `docs/showcase/REVOLVE.md`
+- [x] **Offset Faces v1 (planar + full cylinders)** — schema v12 `OffsetFaceFeature`
+      with face refs and a signed distance (schema v13 adds the face-hint radius/
+      radial-sign data used by the cylindrical readout). The plan path sweeps planar
+      faces with parallel normals and neighbours the sweep preserves; the cylindrical path
+      moves one full 360° hole/boss wall with a concentric cylinder/tube boolean (through
+      holes only). The popover shows `Ø old → new`, the draft previews live with true
       added/removed boolean-difference meshes over a faint ghost of the pre-offset body,
-      apply inserts a history step, edit commits live and cancel restores the baseline. Roles carry through, and same-domain faces merge on an isolated BREP
-      copy so a cube keeps six faces and a plate keeps its wall/hole faces. Partial
-      cylinders, blind holes, non-parallel sets and no-op results are visible errors.
+      apply inserts a history step, edit commits live and cancel restores the baseline.
+      Roles carry through, and same-domain faces merge on an isolated BREP copy so a cube
+      keeps six faces and a plate keeps its wall/hole faces. Partial cylinders, blind holes,
+      non-parallel sets and no-op results are visible errors.
       Design: `docs/showcase/OFFSET_FACES.md` + `offset-faces.html`; decision:
       [ADR-0006](decisions/0006-offset-faces.md)
 - [ ] **Offset Faces v2** — blind and partial cylindrical faces, adjacent non-parallel
@@ -659,13 +627,15 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       vertex inside (window), lasso = touched/crossed; both select through the body,
       Shift adds, an empty marquee is a no-op, and the same jobs feed the fillet/chamfer
       set. Faces are a second multi-set: Shift-click and the marquee under the `faces`
-      filter collect them, the face popover offers `new sketch` / `shell…`, and a plain
-      pick replaces the other kind. Edge-chain selection is still open.
+      filter collect them, the face popover offers `new sketch` / `offset face…` /
+      `shell…`, and a plain pick replaces the other kind. Edge-chain selection is still
+      open.
 - [x] **Selection contract** (`docs/showcase/SELECTION.md`): click selects and feature
       chips start operations. A profile has its own popover (`all / voids / auto`,
-      `extrude…`, `clear`); a face offers `new sketch` / `shell…` and never extrude; edges
-      keep `fillet…` / `chamfer…`. Normal sketch marquees select geometry/dimensions
-      through the filter; only profile mode marquees regions. Geometry + dimensions mix,
+      `extrude…`, `revolve…`, `clear`); a face offers `new sketch` / `offset face…` /
+      `shell…` and never extrude; edges keep `fillet…` / `chamfer…`. Normal sketch
+      marquees select geometry/dimensions through the filter; only profile mode marquees
+      regions. Geometry + dimensions mix,
       delete spans the allowed pair in one undo, and a selected dimension can open its
       editor from the popover. Reference geometry stays click-only and model Delete stays
       a no-op.
@@ -681,12 +651,21 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       and cycles them on click. **Bodies wait for multi-body**. Sketch create variants
       (`rect`/`circle`/`arc`) are in this same row. Do not bolt filters into the
       selection popover.
+- [x] **Feature form inputs** (`docs/showcase/PICKS.md`): blends force the `edges`
+      filter (read-only) and restore `all` on close; Select Other is hidden while a form
+      is picking. Extrude/revolve list their profiles above the value; revolve has the
+      `select` row and `axis · line N · construction · pick` candidate mode instead of the
+      axis chip wall. Offset/shell/blend put their input row + list above the value, use
+      `N selected`, `value · input` summaries and a scrolling list. Selection rows use
+      ordinals (`Line 1`, `Face 1`).
+- [ ] Offset's adaptive slider ceiling from the shortest **adjacent** dimension (the
+      current ceiling is the body's shortest dimension).
 - [x] **Browser test architecture** (`docs/TESTING.md`): area-split specs with shared
       helpers in `e2e/support/`, one `resetExample` setup per test, fail-fast default,
       4 local workers (~1.2 min for the whole suite), the example's metrics in one
       module, and authoritative `data-*` readouts instead of guessed pixel state.
-      New ephemeral modes go into the shared reset, not individual tests. Shell lives in
-      `shell.spec.ts` (100 browser tests total as of the split).
+      New ephemeral modes go into the shared reset, not individual tests. Blends live in
+      `blends.spec.ts`.
 - [ ] Section Analysis: a view-only inspect overlay (never in history), with the
       visibility questions resolved first
 - [x] Feature selection highlights the geometry that feature created (mockup 03:
@@ -699,16 +678,15 @@ sketch (tangent arc + angle) and have the solid, gusset and holes rebuild correc
       area/perimeter, edge length/circular radius, two-target minimum distance and face/
       line angle). The popover is the readout; drawing the measurements *on* the model as
       annotations (mockup 03) is still open.
-- [x] Body health line: 1 body · 1 shell · N faces · watertight, alongside volume and
-      bounds (mockup 03/05). The worker reports `bodies`, `shells` and BRepCheck `valid`;
-      the foot's `body-health` readout exposes them. No raw open-edge count: seam edges
-      would be misreported (see AGENTS).
+- [x] Body health line: `1 body · 1 shell · watertight`, alongside the volume and
+      triangle readouts (mockup 03/05). The worker reports `bodies`, `shells` and BRepCheck
+      `valid`; the foot's `body-health` readout exposes them. No raw open-edge count: seam
+      edges would be misreported (see AGENTS).
 - [x] Export STL + STEP from the worker, derived from the current rebuild state (not a
       frozen mesh). The file menu exports the last successful solid of the rendered
       prefix by its `cacheKey`: binary STL (same 0.05 tolerance as the stage, so the
       triangle count matches the stats) and STEP (`ISO-10303-21;`). Disabled when the
-      cursor has no body; a cleared prefix cache is a visible error. The export *page*
-      below (checks, size, build-volume fit) remains.
+      cursor has no body; a cleared prefix cache is a visible error.
 - [x] Export page (mockup 05): visible model, body/watertight/shell/no-open-edges/outward
       normals, units/scale/triangles/file size, build-volume fit, one quiet export action.
       The file menu's `export…` opens it; checks gate the STL/STEP actions; the binary STL
@@ -760,12 +738,12 @@ added, removed and discarded material without repainting the result body.
 
 ## M6 — More shape
 
-Patterns, mirror, Combine and Split Body are real workflow items, not speculative.
-Timeline groups are used heavily and are added below.
+Patterns, mirror, Combine and Split Body are the next shape work. Timeline groups are
+added below.
 
 ### M6.0 — Sketch layout operations (pattern, mirror, offset)
 
-Design target: [`docs/showcase/`](../showcase/). These are **sketch-mode, parametric,
+Design target: [`showcase/`](showcase/). These are **sketch-mode, parametric,
 re-editable** operations, not one-shot copied geometry. See **ADR-0004**.
 
 - [ ] `SketchLayoutOperation` records on `SketchFeature` (plain JSON, schema bump):
@@ -816,8 +794,8 @@ boolean contract. Loft and sweep remain deferred until a real part needs them.
 
 ### Timeline: bodies and groups
 
-Design contract: [`docs/showcase/TIMELINE.md`](../showcase/TIMELINE.md) and
-[`bodies.html`](../showcase/bodies.html). The step block, output chip, insert gap,
+Design contract: [`showcase/TIMELINE.md`](showcase/TIMELINE.md) and
+[`bodies.html`](showcase/bodies.html). The step block, output chip, insert gap,
 selection-as-cursor and readout-only bottom line landed in M3. Bodies and groups wait for
 the multi-body work.
 
@@ -841,8 +819,8 @@ the multi-body work.
       exactly like the empty tail), drag-step-onto-adjacent-step to group,
       contiguous members only, a one-step group dissolves. The active-step-inside-group
       double rule (while expanded) and divider/`+` inset are decided (keep as designed).
-      Groups are used heavily (about ten in the target workflow). Pattern/mirror/offset are
-      sketch objects listed in the sketch step's detail, not timeline rows.
+      Pattern/mirror/offset are sketch objects listed in the sketch step's detail, not
+      timeline rows.
 - [x] **Bottom status line is readout-only**: lost support, the remaining actions and the
       autosave note; it does not repeat the step block. The lost-body message joins it
       when bodies land.
@@ -866,14 +844,13 @@ collaboration, plugin API.
 ### Assemblies (largest structural gap)
 
 Multi-component assemblies are the largest structural gap between the current single-body
-scope and the target workflow. This is a layer, not one feature, and needs its own design
-pass before scope is fixed.
+scope and the kind of part this app is for. This is a layer, not one feature, and needs
+its own design pass before scope is fixed.
 
 - [ ] Component / occurrence layer: insert parts, including STEP bodies, as components
       with stable instance identity; assemblies can contain assemblies
 - [ ] Rigid Group: fix a set of components together
-- [ ] Capture Position / Snapshot: record and restore component positions (previously
-      unplanned)
+- [ ] Capture Position / Snapshot: record and restore component positions
 - [ ] Assembly `TopoRef` addressing across instances; stable references through snapshot
       and rigid-group edits
 
@@ -966,7 +943,7 @@ milestone, an ADR if it changes a design decision, and numeric tests.
 - Free 3D sketch entities and 3D constraints; the document and solver are 2D-plane.
 - Sketch text/images.
 - Split-at-point / divide-into-N: only intersection splits and trim exist today.
-- Full sketch offset is part of M6.0; feature/face offset is the separate M5 offset step.
+- Full sketch offset is part of M6.0; offset faces is the separate M5 step.
 
 ### Features, bodies and assemblies
 
@@ -989,44 +966,35 @@ delete face · boundary fill · stitch/unstitch/simplify · direct modeling with
 
 ### Open design questions
 
-- **Combine / Split Body:** tool bodies as a selection in the feature form or a separate
-  document list; how split result bodies keep stable `TopoRef` identity.
 - **Section Analysis:** view-only overlay (never in history), and how it relates to the
   visibility/isolate surface.
-- **Move / Copy bodies:** persistent feature vs one-shot transform.
 - **Visibility toggles:** show/hide sketches, bodies, constraints, construction,
   dimensions; isolate/opacity as one coherent surface.
 - **Assemblies:** component/occurrence model and `TopoRef` addressing across instances.
 - **Timeline groups:** document data or presentation state; interaction with the cursor
   and suppression.
 - **Projection grammar:** projection feature, sketch import or view transform.
-
-## Sequencing notes
-
-- Do M3's `TopoRef` plumbing **before** M4 gets deep. Retrofitting stable references
-  after features already store indices is painful.
-- M5's fillet is a good forcing function for the error/diagnostics model.
-- Keep a `fixtures/` set of documents per milestone and run them in tests. Every bug
-  report becomes a fixture.
-- The spike's `core/kernel/protocol.ts` is the contract between the UI and the kernel;
-  evolve it deliberately, because the worker boundary is where debugging gets hard.
+- **Support picker:** `PICKS.md` says a single candidate support uses a row + `pick`,
+  while M4 and mockup 04 design a list of world/face/datum supports. Decide whether the
+  new-sketch picker is exempt or moves to the row + pick pattern.
+- **Disjoint join:** `BOOLEANS.md` leaves it open; M6 says the result must surface rather
+  than become a second body. Decide when multi-body/Combine lands.
 
 ## Risks
 
 | Risk | Mitigation |
 | --- | --- |
 | `brepjs` is young and its API may churn | Pin the version; keep the kernel adapter thin; keep `replicad` as the fallback (ADR-0001) |
-| Topological naming edge cases | Use `shapeRef` from day one; design the "selection lost" recovery UI; heavy tests |
+| Topological naming edge cases | `TopoRef` + geometric hints from day one; the lost-support surface (reselect/open sketch/revert) is in place; heavy tests around booleans and blends |
 | Rebuild latency | Prefix cache, debounce, one rebuild at a time, generation-based cancellation |
-| OCCT memory leaks | Disposal discipline (`withScope`) + a stress test that rebuilds 500× and checks memory |
-| Sketcher UX takes longer than expected | It always does. Budget 1.5×; the drag projection alone is a day or two |
-| WASM bundle size (8 MB + 21 MB) | Lazy-load both after first paint; gzip/brotli; loading state |
-| GPLv3 obligations | Publish source; include the license and a link to it in the app's About box |
+| OCCT memory leaks | Disposal discipline (`withScope`) and rebuild/eviction stress coverage |
+| WASM bundle size (8 MB + ~21 MB) | Lazy-load both after first paint; gzip/brotli; loading state |
+| GPLv3 obligations | Publish source; include the license and a link to it in the app (an About/help surface is still open) |
 
 ## Definition of done (every milestone)
 
 1. `npm run verify` and `npm run e2e` pass.
 2. New behaviour has tests (numeric assertions for geometry).
-3. Works after reload (persisted document rebuilds identically), once persistence exists.
+3. Works after reload: the persisted document rebuilds identically.
 4. No new `any`, no kernel imports outside `core/kernel`, no OCCT calls on the main thread.
 5. `docs/PLAN.md` checkboxes updated; new decisions recorded as ADRs.

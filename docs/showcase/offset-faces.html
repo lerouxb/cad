@@ -27,8 +27,9 @@
         <a href="bodies.html">bodies</a>
         <a href="transform.html">transform</a>
         <a href="extrude.html">extrude</a>
+        <a href="revolve.html">revolve</a>
+        <a href="booleans.html">booleans</a>
         <a href="inspect.html">inspect</a>
-        <a href="BACKLOG.md">backlog</a>
       </nav>
       <div class="mockbar-right">
         <a class="mockbar-btn" href="../mockups/index.html">studies</a>
@@ -98,7 +99,7 @@
                   <p>Select the top face. The face popover offers the feature actions; no click starts one.</p>
                   <div class="sel-scene">
                     <svg viewBox="0 0 320 112" role="img" aria-label="An isometric plate with its top face selected in the model.">
-                      <path d="M70 56 164 28 252 52 158 80Z" fill="var(--marker-fill)" stroke="var(--marker)" stroke-width="6"/>
+                      <path d="M70 56 164 28 252 52 158 80Z" fill="var(--marker-fill)" stroke="none"/>
                       <path d="M70 56 164 28 252 52 158 80Z" fill="none" stroke="var(--ink)" stroke-width="1.4"/>
                       <path d="M70 56 158 80 158 106 70 82Z" fill="none" stroke="var(--ink)" stroke-width="1.3"/>
                       <path d="M158 80 252 52 252 78 158 106Z" fill="none" stroke="var(--ink)" stroke-width="1.3"/>
@@ -157,7 +158,9 @@
                     </div>
                     <div class="tool-panel-body">
                       <div class="tool-row"><span class="tool-label">faces</span><span class="tool-note">1 selected</span></div>
-                      <div class="tool-row is-sub"><span class="tool-label">face 04</span><span class="tool-note">planar · 640 mm²</span></div>
+                      <div class="input-list">
+                        <div class="input-row"><span class="input-kind">Face 1</span><span class="input-detail">planar · 640 mm²</span><span class="input-remove">remove</span></div>
+                      </div>
                       <div class="tool-row"><span class="tool-label">distance</span><span class="tool-note">2.0 mm</span></div>
                       <input class="tool-range" type="range" min="0" max="10" value="2" aria-label="Offset distance" />
                       <div class="tool-row"><span class="tool-label">direction</span>
@@ -170,7 +173,7 @@
                       <p class="tool-hint">moves the selected faces along their normals; adjacent faces rebuild</p>
                     </div>
                     <div class="tool-panel-foot">
-                      <span class="tool-summary">1 face · +2.0 mm</span>
+                      <span class="tool-summary">+2.0 mm · 1 face</span>
                       <span class="tool-panel-actions">
                         <button class="text-action is-quiet" type="button">cancel</button>
                         <button class="text-action" type="button">apply</button>
@@ -199,7 +202,7 @@
                           <span class="step-kind">offset</span>
                         </div>
                         <span class="step-name">Offset 1</span>
-                        <span class="step-meta">1 face · +2.0 mm</span>
+                        <span class="step-meta">+2.0 mm · 1 face</span>
                         <span class="step-bodies">
                           <span class="body-chip"><span class="body-op">→</span><span class="body-name">body</span></span>
                         </span>
@@ -321,7 +324,7 @@
                       <p class="off-error"><b>The offset is too large for the adjacent faces.</b></p>
                     </div>
                     <div class="tool-panel-foot">
-                      <span class="tool-summary">1 face · +30.0 mm</span>
+                      <span class="tool-summary">+30.0 mm · 1 face</span>
                       <span class="tool-panel-actions">
                         <button class="text-action is-quiet" type="button">cancel</button>
                         <button class="text-action" type="button" disabled>apply</button>
@@ -381,9 +384,11 @@
       <ul>
         <li><b>Select first, offset second.</b> The face popover has `offset face…`; the chip starts the draft. No direct feature from a click.</li>
         <li><b>One positive distance + out/in.</b> `MeasureField`, an adaptive rail, and a number field that can exceed it to show a failure.</li>
+        <li><b>The face set is an input row + list.</b> `faces 2 selected`, then `Face 1 · planar · 640 mm² · remove`; the list is before the value and scrolls. See <a href="PICKS.md">PICKS.md</a>.</li>
         <li><b>A cylindrical face gets a diameter readout.</b> The hole/boss case is the tolerance/fit case; show `Ø old → new`.</li>
         <li><b>Chain is a selection helper.</b> Tangent-connected walls move together; the kernel support is open.</li>
         <li><b>History, roles, downstream.</b> The step is re-editable; face roles are re-derived; lost support is visible.</li>
+        <li><b>Not a boolean.</b> There is no operation row: out/in is a signed distance, and the preview reuses added/removed/ghost from <a href="BOOLEANS.md">BOOLEANS.md</a>.</li>
         <li><b>Failure is visible.</b> The last good body stays; apply is disabled; no whole-body offset or shell substitute.</li>
       </ul>
       <h3>Open questions</h3>

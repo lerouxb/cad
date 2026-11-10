@@ -117,10 +117,13 @@
   function drawItem(it, cls) {
     if (!it) return "";
     if (it.kind === "edge") {
-      return (
-        '<line class="' + cls + '-edge" x1="' + xs(it.a) + '" y1="' + ys(it.a) +
-        '" x2="' + xs(it.b) + '" y2="' + ys(it.b) + '"/>'
-      );
+      var a = 'x1="' + xs(it.a) + '" y1="' + ys(it.a) + '" x2="' + xs(it.b) +
+        '" y2="' + ys(it.b) + '"';
+      // hover is the block alone over the body's ink edge; selection adds the
+      // ink centerline on top, so the edge reads like a selected sketch line.
+      var out = '<line class="' + cls + '-edge" ' + a + "/>";
+      if (cls === "ms-sel") out += '<line class="ms-sel-ink" ' + a + "/>";
+      return out;
     }
     var faces = it.kind === "body"
       ? scene.filter(function (s) { return s.kind === "face" && s.body === it.body; })

@@ -22,12 +22,14 @@
         <a href="sketch-create.html">sketch create</a>
         <a href="select.html">select</a>
         <a href="select-model.html">model select</a>
+        <a href="offset-faces.html">offset</a>
         <a class="is-active" href="body-ops.html">body ops</a>
         <a href="bodies.html">bodies</a>
         <a href="transform.html">transform</a>
         <a href="extrude.html">extrude</a>
+        <a href="revolve.html">revolve</a>
+        <a href="booleans.html">booleans</a>
         <a href="inspect.html">inspect</a>
-        <a href="BACKLOG.md">backlog</a>
       </nav>
       <div class="mockbar-right">
         <a class="mockbar-btn" href="../mockups/index.html">studies</a>
@@ -90,7 +92,9 @@
             </div>
             <div class="stage-foot-right">
               <span class="sc-legend">
-                <span class="key"><span class="swatch is-selected"></span>target</span>
+                <span class="key"><span class="swatch"></span>target</span>
+                <span class="key"><span class="swatch is-selected"></span>added</span>
+                <span class="key"><span class="swatch is-remove"></span>removed</span>
                 <span class="key"><span class="swatch is-ghost"></span>tool body</span>
               </span>
             </div>
@@ -114,9 +118,9 @@
       </p>
       <h3>What each op does</h3>
       <ul>
-        <li><b>Combine · join</b> unions the tool into the target (here a boss on the plate).</li>
-        <li><b>Combine · cut</b> removes the tool from the target (here a through hole).</li>
-        <li><b>Combine · intersect</b> keeps only the overlap.</li>
+        <li><b>Combine · join</b> unions the tool into the target (here a boss on the plate); the boss is the added material and previews in the highlighter.</li>
+        <li><b>Combine · cut</b> removes the tool from the target (here a through hole); the removed material previews in cut red.</li>
+        <li><b>Combine · intersect</b> keeps only the overlap; everything outside it is ghosted, never red.</li>
         <li><b>Keep tool bodies</b> leaves the tool as a separate body; otherwise it is consumed. The kept tool is tinted, the consumed one is dashed.</li>
         <li><b>Split body</b> cuts one body into two with an <b>existing</b> splitting tool — a datum plane, a planar face, or another body — and <b>keep both</b> controls whether the far half survives.</li>
         <li><b>The position lives on the plane, not the split.</b> Choosing Plane 1 shows its exact offset (40.0 mm), editable as a number. If you want an arbitrary position, you create a datum plane there and split with it — the split never owns a free-form position.</li>
@@ -126,15 +130,19 @@
         <li><b>Target and tool are a selection in the feature popover</b>, not a second document list — the timeline stays the only structure.</li>
         <li><b>A split mints new body ids</b> carrying a role + geometry <span class="mono">TopoRef</span>, so downstream references can recover (see <a href="BACKLOG.md">BACKLOG.md</a>).</li>
         <li><b>A lost splitting plane or face follows the face-support precedent</b>: surfaced as an error with reselect / revert, never a silent fallback.</li>
+        <li><b>Intersect has its own preview grammar:</b> the kept overlap stays normal and the discarded target/tool are ghosts. It is not a cut with a different icon. See <a href="BOOLEANS.md">BOOLEANS.md</a>.</li>
       </ul>
       <h3>Open questions</h3>
       <ul>
-        <li>Does intersect need a distinct icon/colour so it is not mistaken for cut?</li>
         <li>Should the tool body stay ghosted after apply when it is consumed?</li>
+        <li>Do combine's keep-tools and the feature operation row share one segmented grammar, or does combine remain a two-body form?</li>
       </ul>
       <div class="mini-note">
         This is stylised geometry for a design decision, not a real B-rep. The
         point is the interaction: target, tool, operation, and a live preview.
+        The shared operation row and preview colours are in
+        <a href="BOOLEANS.md">BOOLEANS.md</a> and
+        <a href="booleans.html">booleans.html</a>.
       </div>
     </aside>
 

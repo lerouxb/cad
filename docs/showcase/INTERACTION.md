@@ -89,6 +89,14 @@ The one thing that stays anchored to its annotation rather than becoming a popov
 box is the **inline editor**: a single dimension value, edited where the dimension
 is. Everything else that a selection can do lives in the popover.
 
+**Selection looks the same in the sketch and the model.** A selected line or edge
+is a highlighter **block** (the soft wash token) under an ink centerline; a
+selected face or region is a highlighter wash with the ink boundary left visible;
+hover is the same block at lower opacity. Never draw a selection as one opaque
+highlighter line: the ink is what makes the geometry read, and the block is what
+makes it a selection. The pair lives above the body in model view. See
+[`SELECTION.md`](SELECTION.md) §8 and S15.
+
 ### 6. Hover is the dim highlighter
 
 Every *action* in the app chrome hovers with the same mark: the highlighter's
@@ -104,6 +112,27 @@ existing quiet styling. A new control that looks clickable must follow the
 hover rule, and the rule lives in one place (`src/app/app.css`) rather than in
 component-local styles.
 
+### 7. Inputs inside a form
+
+A feature form is a set of **inputs** and **values**. Inputs follow
+[`PICKS.md`](PICKS.md), not a per-feature invention:
+
+- **Model multi** (faces for offset/shell, edges for fillet/chamfer): the model
+  stage is always live. A click toggles an item; Shift adds; there is no pick
+  button. The form forces the matching filter and restores `all` on close.
+- **Sketch regions** (profiles): the row has `select` (or `pick in sketch`); it
+  switches to the sketch stage and makes region fills the targets. The form
+  stays open.
+- **Single candidate** (revolve axis, support): the row shows the current value
+  and a `pick` button; the stage enters a candidate pick. Escape exits the pick
+  first, then cancels.
+
+Every multi input has a row (`faces 2 selected`) and a list directly under it
+(`Face 1 · planar · 640 mm² · remove`), before the value row. The list is the
+truth; the stage and the list stay in sync. Empty inputs show `0 selected`, name
+the pick gesture, and disable the primary. No auto-pick, and a lost input is
+visible with reselect/revert.
+
 ## Action vocabulary
 
 Keep the set small. Every action is one of these:
@@ -112,7 +141,7 @@ Keep the set small. Every action is one of these:
 | --- | --- | --- |
 | Primary | `.text-action` | `apply`, `finish sketch`, `export` |
 | Secondary | `.text-action.is-quiet` | `cancel`, `delete`, `make reference` |
-| Inline in a row | `.seg button` | `X` / `Y`, `join` / `cut` / `intersect` |
+| Inline in a row | `.seg button` | `new body` / `join` / `cut` / `intersect`, `X` / `Y` |
 | Immediate action | `.sc-chip` | a constraint, `construction`, `fix` |
 | Stepper | `.stepper button` | `−` / `+` on a count |
 | Value | `.tool-input` | a number in `mm` or `deg` |
@@ -226,9 +255,9 @@ The kicker says what *kind* of thing this is (`sketch tool`, `body op`,
 | Surface | Input | Actions | Target |
 | --- | --- | --- | --- |
 | Sketch layout (`index.html`) | popover ✓ | popover footer + selection popover ✓ | keep |
-| Sketch constraints (app) | **selection card + constraint bar ✗** | immediate chips | **one selection popover** |
+| Sketch constraints (app) | one selection popover ✓ | immediate chips | keep |
 | Dimension edit (app, study 02) | inline editor ✓ | Enter / Escape, no buttons | keep |
-| Point X/Y (app) | **selection card ✗** | — | **inline editor, or rows in the selection popover** |
+| Point X/Y (app) | inline editor at the point ✓ | Enter / Escape, no buttons | keep |
 | Sketch create (`sketch-create.html`) | popover ✓ | popover footer ✓ | keep |
 | Body ops (`body-ops.html`) | popover ✓ | popover footer ✓ | keep |
 | Transforms (`transform.html`) | popover ✓ | popover footer ✓ | keep |
@@ -237,6 +266,33 @@ The kicker says what *kind* of thing this is (`sketch tool`, `body op`,
 | Grid / zoom (mockup 02) | foot menus | — | keep: the decision *is* the view |
 
 Every popover in this folder is draggable by its header.
+
+## Boolean operations
+
+Every solid feature that adds or removes material uses the same four operations,
+in the same order, with the same words: **`new body` · `join` · `cut` ·
+`intersect`**. The full contract is [`BOOLEANS.md`](BOOLEANS.md); the visual
+companion is [`booleans.html`](booleans.html).
+
+- The row is one **segmented control** in the feature form, with all four options
+  visible. It is not a dropdown and not a timeline control. `new body` is spelled
+  out; `new` alone is not a label.
+- **New body** keeps its result-body preview: the whole body is new, so tinting
+  it all would read as a selection. **Join** highlights the material it **adds**
+  (tool minus target) in the highlighter; the target and the overlap stay normal.
+  **Cut** removes material: the removed volume is **cut red**. **Intersect** keeps
+  only the overlap: everything outside it is a **ghost**, never red.
+- The result body is never repainted; only the diff layer is tinted. Added
+  material (join, offset `out`) uses the highlighter, removed material uses cut
+  red, context/discarded material uses the ink ghost.
+- **Offset faces is not a boolean row.** It always modifies the selected body;
+  `out`/`in` is a signed distance and reuses the same add/remove preview grammar.
+  Shell, fillet and chamfer are modifications too.
+- Cut and intersect need a base and a non-empty result. No base, no overlap or an
+  empty result is a visible error; the operation never silently becomes another
+  one. Through all is cut-only in v1.
+- The output chip stays `+ body` (new) / `→ body` (join, cut, intersect); `−`
+  keeps its timeline meaning of “consumes this body”.
 
 ## Guarding against the drift
 

@@ -8,15 +8,20 @@ dependencies. The shared files are plain HTML/CSS/JS and are **not imported by
 `src/`**; they exist to make design decisions visible before implementation.
 
 These are one half of the design system. The other half is
-[`../showcase/`](../showcase/): interactive pages for tools that do not exist yet
-(pattern, mirror, offset, move/copy, combine, split, transforms, extrude,
-inspect, and the sketch selection inputs). The
+[`../showcase/`](../showcase/): interactive pages for tools and input surfaces,
+including ones not built yet (pattern, mirror, offset, move/copy, combine,
+split, transforms, extrude, inspect, and the sketch selection inputs). The
 [study index](index.html) lists both, and the rules the two folders share are in
 [`../showcase/INTERACTION.md`](../showcase/INTERACTION.md). The sketch
 constraint and measurement marks are in
 [`../showcase/CONSTRAINTS.md`](../showcase/CONSTRAINTS.md); selection families
 and feature actions are in
-[`../showcase/SELECTION.md`](../showcase/SELECTION.md).
+[`../showcase/SELECTION.md`](../showcase/SELECTION.md), the offset-face
+study in [`../showcase/OFFSET_FACES.md`](../showcase/OFFSET_FACES.md), the
+revolve study in [`../showcase/REVOLVE.md`](../showcase/REVOLVE.md), the
+boolean operation contract in
+[`../showcase/BOOLEANS.md`](../showcase/BOOLEANS.md), and the form input
+pickers in [`../showcase/PICKS.md`](../showcase/PICKS.md).
 
 ## The eight studies
 

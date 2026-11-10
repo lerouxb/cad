@@ -22,12 +22,14 @@
         <a href="sketch-create.html">sketch create</a>
         <a href="select.html">select</a>
         <a href="select-model.html">model select</a>
+        <a href="offset-faces.html">offset</a>
         <a href="body-ops.html">body ops</a>
         <a href="bodies.html">bodies</a>
         <a href="transform.html">transform</a>
         <a href="extrude.html">extrude</a>
+        <a href="revolve.html">revolve</a>
+        <a href="booleans.html">booleans</a>
         <a href="inspect.html">inspect</a>
-        <a href="BACKLOG.md">backlog</a>
       </nav>
       <div class="mockbar-right">
         <a class="mockbar-btn" href="../mockups/index.html">studies</a>
@@ -84,22 +86,21 @@
             <section class="study-section" id="one-rule">
               <h2>Select first, action second</h2>
               <p class="study-lede">
-                A profile is the input to an extrude; a face is a support for a
-                sketch, not a profile. A feature chip starts a draft; it never
-                applies from a click. The panels below show the three feature
-                families side by side.
+                A profile is the input to a feature (extrude or revolve); a face is
+                a support for a sketch, not a profile. A feature chip starts a
+                draft; it never applies from a click. The panels below show the
+                three feature families side by side.
               </p>
 
               <div class="sel-grid">
                 <div class="sel-card">
                   <h3>Profile</h3>
-                  <p>A filled sketch region. Clicking one selects it; it does not start an extrude.</p>
+                  <p>A filled sketch region. Clicking one selects it; it does not start a feature.</p>
                   <div class="sel-scene">
                     <svg viewBox="0 0 320 112" role="img" aria-label="Two filled sketch regions, one selected.">
                       <rect x="52" y="20" width="96" height="72" fill="var(--marker-fill)" stroke="var(--ink)" stroke-width="1.4"/>
                       <rect x="156" y="20" width="112" height="72" fill="none" stroke="var(--ink)" stroke-width="1.4"/>
                       <path d="M156 20H268V92H156Z" fill="none" stroke="var(--ink-3)" stroke-width="1" stroke-dasharray="4 3"/>
-                      <path d="M52 20H148V92H52Z" fill="none" stroke="var(--marker)" stroke-width="6" opacity="0.45"/>
                       <text x="100" y="60" text-anchor="middle" class="constraint-label">material</text>
                       <text x="212" y="60" text-anchor="middle" class="constraint-label">void</text>
                     </svg>
@@ -124,9 +125,10 @@
                         <span class="tool-label">feature</span>
                         <div class="sc-chip-row">
                           <button class="sc-chip is-on" type="button">extrude…</button>
+                          <button class="sc-chip" type="button">revolve…</button>
                         </div>
                       </div>
-                      <p class="tool-hint">extrude opens the draft; it does not apply here</p>
+                      <p class="tool-hint">a feature chip opens the draft; it does not apply here</p>
                     </div>
                     <div class="tool-panel-foot">
                       <span class="tool-summary">2 profiles selected</span>
@@ -137,10 +139,10 @@
 
                 <div class="sel-card">
                   <h3>Face</h3>
-                  <p>A model face is a support. It offers a sketch or a shell — never an extrude.</p>
+                  <p>A model face is a support. It offers a sketch, an offset or a shell — never an extrude.</p>
                   <div class="sel-scene">
                     <svg viewBox="0 0 320 112" role="img" aria-label="A planar model face selected.">
-                      <path d="M74 82 164 52 246 74 156 104Z" fill="var(--marker-fill)" stroke="var(--marker)" stroke-width="6" opacity="0.9"/>
+                      <path d="M74 82 164 52 246 74 156 104Z" fill="var(--marker-fill)" stroke="none"/>
                       <path d="M74 82 164 52 246 74 156 104Z" fill="none" stroke="var(--ink)" stroke-width="1.5"/>
                       <path d="M164 52V20M246 74V42M156 104V72" stroke="var(--ink-3)" stroke-width="1" stroke-dasharray="4 3"/>
                       <text x="160" y="86" text-anchor="middle" class="constraint-label">planar face</text>
@@ -159,10 +161,11 @@
                         <span class="tool-label">feature</span>
                         <div class="sc-chip-row">
                           <button class="sc-chip" type="button">new sketch</button>
+                          <button class="sc-chip" type="button">offset face…</button>
                           <button class="sc-chip" type="button">shell…</button>
                         </div>
                       </div>
-                      <p class="tool-hint">a face has no extrude; sketch on it, then extrude the profile</p>
+                      <p class="tool-hint">a face has no extrude; sketch, offset or shell it</p>
                     </div>
                     <div class="tool-panel-foot">
                       <span class="tool-summary">1 face</span>
@@ -191,8 +194,8 @@
                       </div>
                     </div>
                     <div class="tool-panel-body">
-                      <div class="tool-row"><span class="tool-label">edge 04</span><span class="tool-note">18.0 mm</span></div>
-                      <div class="tool-row"><span class="tool-label">edge 07</span><span class="tool-note">22.4 mm</span></div>
+                      <div class="tool-row"><span class="tool-label">Edge 1</span><span class="tool-note">18.0 mm</span></div>
+                      <div class="tool-row"><span class="tool-label">Edge 2</span><span class="tool-note">22.4 mm</span></div>
                       <div class="sel-group">
                         <span class="tool-label">feature</span>
                         <div class="sc-chip-row">
@@ -236,6 +239,107 @@
               </table></div>
             </section>
 
+            <section class="study-section" id="selection-language">
+              <h2>One selection language</h2>
+              <p class="study-lede">
+                The sketch and the model are the same paper. A selected line or
+                edge is a highlighter <b>block</b> under an ink centerline — never
+                a single opaque highlighter line. A face or region is a wash with
+                the ink boundary still visible; a point is a marker fill with an
+                ink ring; hover is the same block at lower opacity.
+              </p>
+
+              <div class="sel-grid">
+                <div class="sel-card">
+                  <h3>Sketch line · selected</h3>
+                  <p>The reference style: a soft marker block under the ink curve. The line still reads as a line.</p>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 320 112" role="img" aria-label="A selected sketch line: highlighter block under an ink centerline.">
+                      <line x1="40" y1="80" x2="280" y2="44" class="sc-wash"/>
+                      <line x1="40" y1="80" x2="280" y2="44" class="sc-curve"/>
+                      <text x="160" y="96" text-anchor="middle" class="constraint-label">block + ink</text>
+                    </svg>
+                  </div>
+                  <p class="sel-note">Sketch hover is the same block at ~0.7 opacity; selection is the full block.</p>
+                </div>
+
+                <div class="sel-card">
+                  <h3>Model edge · selected</h3>
+                  <p>The same pair on the body. The edge is not repainted as a solid marker line.</p>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 320 112" role="img" aria-label="A selected model edge with a highlighter block under the ink edge.">
+                      <path d="M66 86 162 52 258 76 162 108Z" fill="var(--model-face-2)"/>
+                      <path d="M66 86 162 52 258 76 162 108Z" fill="none" stroke="var(--ink)" stroke-width="1.2" opacity="0.55"/>
+                      <path d="M66 86 162 52 258 76" fill="none" stroke="var(--marker)" stroke-width="9" stroke-linecap="round" opacity="0.5"/>
+                      <path d="M66 86 162 52 258 76" fill="none" stroke="var(--ink)" stroke-width="1.7" stroke-linecap="round"/>
+                      <text x="160" y="34" text-anchor="middle" class="constraint-label">selected edge</text>
+                    </svg>
+                  </div>
+                  <p class="sel-note">Draw the pair above the body: the block reads against the solid, the ink keeps the edge sharp.</p>
+                </div>
+
+                <div class="sel-card">
+                  <h3>Face / region · selected</h3>
+                  <p>A highlighter wash, with the ink boundary left alone. No second marker outline.</p>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 320 112" role="img" aria-label="A selected face as a highlighter wash with the ink boundary visible.">
+                      <path d="M74 82 164 52 246 74 156 104Z" fill="var(--marker-fill)" stroke="var(--ink)" stroke-width="1.4"/>
+                      <path d="M164 52V20M246 74V42M156 104V72" stroke="var(--ink-3)" stroke-width="1" stroke-dasharray="4 3"/>
+                      <text x="160" y="88" text-anchor="middle" class="constraint-label">wash, ink boundary</text>
+                    </svg>
+                  </div>
+                  <p class="sel-note">A profile and a model face use the same wash; only the support behind it differs.</p>
+                </div>
+
+                <div class="sel-card">
+                  <h3>Point · selected</h3>
+                  <p>A marker fill inside an ink ring. The ring is the ink half of the grammar.</p>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 320 112" role="img" aria-label="A selected sketch point: marker fill with an ink ring.">
+                      <line x1="40" y1="56" x2="280" y2="56" stroke="var(--ink-4)" stroke-width="1" stroke-dasharray="4 3"/>
+                      <circle cx="160" cy="56" r="9" fill="var(--marker)"/>
+                      <circle cx="160" cy="56" r="9" fill="none" stroke="var(--ink)" stroke-width="1.7"/>
+                      <text x="160" y="92" text-anchor="middle" class="constraint-label">marker fill + ink ring</text>
+                    </svg>
+                  </div>
+                  <p class="sel-note">The point sits above its curves; the ring keeps it from washing out on the block.</p>
+                </div>
+
+                <div class="sel-card">
+                  <h3>Hover vs selected</h3>
+                  <p>Hover is the block alone at lower opacity. Selection adds the ink centerline and the full block.</p>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 320 112" role="img" aria-label="A hovered line and a selected line sharing the same grammar.">
+                      <line x1="46" y1="38" x2="274" y2="38" stroke="var(--marker)" stroke-width="5" stroke-linecap="round" opacity="0.7"/>
+                      <line x1="46" y1="38" x2="274" y2="38" stroke="var(--ink)" stroke-width="1.4" opacity="0.6"/>
+                      <text x="160" y="24" text-anchor="middle" class="constraint-label">hover</text>
+                      <line x1="46" y1="82" x2="274" y2="82" stroke="var(--marker)" stroke-width="9" stroke-linecap="round" opacity="0.5"/>
+                      <line x1="46" y1="82" x2="274" y2="82" stroke="var(--ink)" stroke-width="1.7"/>
+                      <text x="160" y="102" text-anchor="middle" class="constraint-label">selected</text>
+                    </svg>
+                  </div>
+                  <p class="sel-note">Same block, two intensities. Selection never introduces a different colour family.</p>
+                </div>
+
+                <div class="sel-card is-wide">
+                  <h3>Never a highlighter-only edge</h3>
+                  <p>The current model bug on the left, the shared language on the right. The opaque marker line hides the edge it is supposed to reveal.</p>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 680 112" role="img" aria-label="A highlighter-only edge compared with the block plus ink edge.">
+                      <path d="M64 82 154 52 236 74 146 104Z" fill="var(--model-face-2)"/>
+                      <path d="M64 82 154 52 236 74" fill="none" stroke="var(--marker)" stroke-width="7" stroke-linecap="round"/>
+                      <text x="150" y="30" text-anchor="middle" class="constraint-label">✗ highlighter only</text>
+                      <path d="M404 82 494 52 576 74 486 104Z" fill="var(--model-face-2)"/>
+                      <path d="M404 82 494 52 576 74" fill="none" stroke="var(--marker)" stroke-width="9" stroke-linecap="round" opacity="0.5"/>
+                      <path d="M404 82 494 52 576 74" fill="none" stroke="var(--ink)" stroke-width="1.7" stroke-linecap="round"/>
+                      <text x="490" y="30" text-anchor="middle" class="constraint-label">✓ block + ink</text>
+                    </svg>
+                  </div>
+                  <p class="sel-note">The highlighter is a mark, not a paint. If the edge disappears when selected, the style is wrong.</p>
+                </div>
+              </div>
+            </section>
+
             <section class="study-section" id="actions">
               <h2>What appears for a selection</h2>
               <p class="study-lede">
@@ -260,14 +364,226 @@
                   <tr><td>line + arc</td><td>tangent</td><td>—</td><td>construction</td><td>—</td></tr>
                   <tr><td>geometry + dimensions</td><td>geometry subset</td><td>one dimension row</td><td>construction</td><td>—</td></tr>
                   <tr><td>2+ dimensions</td><td>—</td><td>delete only</td><td>—</td><td>—</td></tr>
-                  <tr><td>1+ profiles</td><td>—</td><td>—</td><td>all / voids / auto</td><td><code>extrude…</code></td></tr>
-                  <tr><td>1 planar face</td><td>—</td><td>—</td><td>—</td><td><code>new sketch</code>, <code>shell…</code></td></tr>
-                  <tr><td>2+ faces</td><td>—</td><td>—</td><td>—</td><td><code>shell…</code></td></tr>
+                  <tr><td>1+ profiles</td><td>—</td><td>—</td><td>all / voids / auto</td><td><code>extrude…</code>, <code>revolve…</code></td></tr>
+                  <tr><td>1 planar face</td><td>—</td><td>—</td><td>—</td><td><code>new sketch</code>, <code>offset face…</code>, <code>shell…</code></td></tr>
+                  <tr><td>2+ faces</td><td>—</td><td>—</td><td>—</td><td><code>offset face…</code>, <code>shell…</code></td></tr>
                   <tr><td>1+ edges</td><td>—</td><td>—</td><td>—</td><td><code>fillet…</code>, <code>chamfer…</code></td></tr>
                   <tr><td>constraint</td><td>—</td><td>—</td><td>reset position</td><td>—</td></tr>
                   <tr><td>reference only</td><td>chips that use it</td><td>dimensions that use it</td><td>—</td><td>—</td></tr>
                 </tbody>
               </table></div>
+            </section>
+
+            <section class="study-section" id="inputs">
+              <h2>Picking inputs inside a form</h2>
+              <p class="study-lede">
+                A feature form has <b>inputs</b> and <b>values</b>. The inputs are
+                picked the same way everywhere: a row says what is needed, a list
+                says what is chosen, and the stage is the pick surface. There are
+                only three pick patterns. See <a href="PICKS.md">PICKS.md</a>.
+              </p>
+
+              <div class="sel-table-wrap"><table class="sel-table">
+                <thead>
+                  <tr><th>Pattern</th><th>Inputs</th><th>Stage</th><th>Row control</th><th>List</th></tr>
+                </thead>
+                <tbody>
+                  <tr><td>Model multi</td><td>faces, edges</td><td>the model, always live</td><td>none; the hint says click to add/remove</td><td>yes</td></tr>
+                  <tr><td>Sketch regions</td><td>profiles</td><td>the sketch, region mode</td><td><code>select</code> / <code>pick in sketch</code></td><td>yes</td></tr>
+                  <tr><td>Single candidate</td><td>axis, support</td><td>a temporary candidate mode</td><td><code>pick</code></td><td>no; one value row</td></tr>
+                </tbody>
+              </table></div>
+
+              <div class="sel-grid">
+                <div class="sel-card is-wide">
+                  <h3>Model multi: faces and edges are always live</h3>
+                  <p>No pick button. A plain click toggles the item, Shift adds, and the form forces the matching filter for its duration.</p>
+                  <div class="form-pair">
+                    <div class="tool-panel">
+                      <div class="tool-panel-head">
+                        <div>
+                          <div class="tool-panel-kicker">new feature</div>
+                          <h2 class="tool-panel-title">Offset face</h2>
+                        </div>
+                      </div>
+                      <div class="tool-panel-body">
+                        <div class="tool-row"><span class="tool-label">faces</span><span class="tool-note">2 selected</span></div>
+                        <div class="input-list">
+                          <div class="input-row"><span class="input-kind">Face 1</span><span class="input-detail">planar · 640 mm²</span><span class="input-remove">remove</span></div>
+                          <div class="input-row"><span class="input-kind">Face 2</span><span class="input-detail">cylindrical · 188 mm²</span><span class="input-remove">remove</span></div>
+                        </div>
+                        <div class="tool-row"><span class="tool-label">distance</span><span class="tool-note">2.0 mm</span></div>
+                        <input class="tool-range" type="range" min="0" max="10" value="2" aria-label="Offset distance" />
+                        <div class="tool-row"><span class="tool-label">direction</span>
+                          <span class="seg" role="group" aria-label="Offset direction">
+                            <button class="is-selected" type="button">out</button>
+                            <button type="button">in</button>
+                          </span>
+                        </div>
+                        <p class="tool-hint">click faces in the model to add or remove them</p>
+                      </div>
+                      <div class="tool-panel-foot">
+                        <span class="tool-summary">+2.0 mm · 2 faces</span>
+                        <span class="tool-panel-actions">
+                          <button class="text-action is-quiet" type="button">cancel</button>
+                          <button class="text-action" type="button">apply</button>
+                        </span>
+                      </div>
+                    </div>
+
+                    <div class="tool-panel">
+                      <div class="tool-panel-head">
+                        <div>
+                          <div class="tool-panel-kicker">new feature</div>
+                          <h2 class="tool-panel-title">Fillet</h2>
+                        </div>
+                      </div>
+                      <div class="tool-panel-body">
+                        <div class="tool-row"><span class="tool-label">edges</span><span class="tool-note">2 selected</span></div>
+                        <div class="input-list">
+                          <div class="input-row"><span class="input-kind">Edge 1</span><span class="input-detail">18.0 mm</span><span class="input-remove">remove</span></div>
+                          <div class="input-row"><span class="input-kind">Edge 2</span><span class="input-detail">22.4 mm</span><span class="input-remove">remove</span></div>
+                        </div>
+                        <div class="tool-row"><span class="tool-label">radius</span><span class="tool-note">2.0 mm</span></div>
+                        <input class="tool-range" type="range" min="0" max="8" value="2" aria-label="Fillet radius" />
+                        <p class="tool-hint">click edges in the model to add or remove them</p>
+                      </div>
+                      <div class="tool-panel-foot">
+                        <span class="tool-summary">R 2.0 mm · 2 edges</span>
+                        <span class="tool-panel-actions">
+                          <button class="text-action is-quiet" type="button">cancel</button>
+                          <button class="text-action" type="button">fillet</button>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <p class="sel-note">The filter is forced to <b>faces</b> for offset/shell and <b>edges</b> for fillet/chamfer; a filtered-out hit is blocked, not a replacement. The list scrolls, and the last row never hides the footer. Chamfer is the same form with `distance`; shell is the same face input with `open faces` and `thickness`.</p>
+                </div>
+
+                <div class="sel-card is-wide">
+                  <h3>Sketch regions: the profile row switches stage</h3>
+                  <p><code>select</code> makes region fills the targets; the form stays open. The list is the profile set, not a count.</p>
+                  <div class="tool-panel">
+                    <div class="tool-panel-head">
+                      <div>
+                        <div class="tool-panel-kicker">new feature</div>
+                        <h2 class="tool-panel-title">Extrude</h2>
+                      </div>
+                    </div>
+                    <div class="tool-panel-body">
+                      <div class="tool-row"><span class="tool-label">sketch</span><span class="tool-note">Sketch 1</span></div>
+                      <div class="tool-row"><span class="tool-label">profile</span><span class="tool-note">2 selected</span><button class="text-action" type="button">select</button></div>
+                      <div class="input-list">
+                        <div class="input-row"><span class="input-kind">Profile 1</span><span class="input-detail">2,400 mm²</span><span class="input-remove">remove</span></div>
+                        <div class="input-row"><span class="input-kind">Profile 2</span><span class="input-detail">860 mm²</span><span class="input-remove">remove</span></div>
+                      </div>
+                      <div class="tool-row"><span class="tool-label">distance</span><span class="tool-note">12.0 mm</span></div>
+                      <input class="tool-range" type="range" min="1" max="60" value="12" aria-label="Extrude distance" />
+                      <div class="tool-row"><span class="tool-label">operation</span>
+                        <span class="seg" role="group" aria-label="Extrude operation">
+                          <button type="button">new body</button>
+                          <button type="button">join</button>
+                          <button class="is-selected" type="button">cut</button>
+                          <button type="button">intersect</button>
+                        </span>
+                      </div>
+                      <p class="tool-hint">select opens the sketch; region clicks toggle, Shift adds, marquee selects</p>
+                    </div>
+                    <div class="tool-panel-foot">
+                      <span class="tool-summary">12.0 mm · cut · 2 profiles</span>
+                      <span class="tool-panel-actions">
+                        <button class="text-action is-quiet" type="button">cancel</button>
+                        <button class="text-action" type="button">extrude</button>
+                      </span>
+                    </div>
+                  </div>
+                  <p class="sel-note">The region panel is still <b>All / Voids / Auto</b>. Changing the source sketch clears the list and any axis; an empty sketch click clears the profiles and keeps the draft.</p>
+                </div>
+
+                <div class="sel-card is-wide">
+                  <h3>Single candidate: axis is a row + pick</h3>
+                  <p>One candidate is a decision, not a chip wall. <code>pick</code> makes only the candidates pickable; Escape exits the pick first, then cancels.</p>
+                  <div class="tool-panel">
+                    <div class="tool-panel-head">
+                      <div>
+                        <div class="tool-panel-kicker">new feature</div>
+                        <h2 class="tool-panel-title">Revolve</h2>
+                      </div>
+                    </div>
+                    <div class="tool-panel-body">
+                      <div class="tool-row"><span class="tool-label">sketch</span><span class="tool-note">Sketch 1</span></div>
+                      <div class="tool-row"><span class="tool-label">profile</span><span class="tool-note">2 selected</span><button class="text-action" type="button">select</button></div>
+                      <div class="input-list">
+                        <div class="input-row"><span class="input-kind">Profile 1</span><span class="input-detail">2,400 mm²</span><span class="input-remove">remove</span></div>
+                        <div class="input-row"><span class="input-kind">Profile 2</span><span class="input-detail">860 mm²</span><span class="input-remove">remove</span></div>
+                      </div>
+                      <div class="tool-row"><span class="tool-label">axis</span><span class="tool-note">line 1 · construction</span><button class="text-action" type="button">pick</button></div>
+                      <div class="tool-row"><span class="tool-label">angle</span><span class="tool-note">360°</span></div>
+                      <input class="tool-range" type="range" min="1" max="360" value="360" aria-label="Revolve angle" />
+                      <div class="tool-row"><span class="tool-label">operation</span>
+                        <span class="seg" role="group" aria-label="Revolve operation">
+                          <button type="button">new body</button>
+                          <button type="button">join</button>
+                          <button class="is-selected" type="button">cut</button>
+                          <button type="button">intersect</button>
+                        </span>
+                      </div>
+                      <p class="tool-hint">pick a sketch line or X/Y; the profile must stay on one side</p>
+                    </div>
+                    <div class="tool-panel-foot">
+                      <span class="tool-summary">360° · cut · 2 profiles</span>
+                      <span class="tool-panel-actions">
+                        <button class="text-action is-quiet" type="button">cancel</button>
+                        <button class="text-action" type="button">revolve</button>
+                      </span>
+                    </div>
+                  </div>
+                  <p class="sel-note">A deleted axis is a lost support: the row says <b>lost</b> and offers reselect/revert. It never retargets to X/Y or the next line.</p>
+                </div>
+
+                <div class="sel-card is-wide">
+                  <h3>The list anatomy, and the form order</h3>
+                  <div class="input-list">
+                    <div class="input-row"><span class="input-kind">Face 1</span><span class="input-detail">planar · 640 mm²</span><span class="input-remove">remove</span></div>
+                  </div>
+                  <p class="sel-note">Ordinal · mono detail · one <b>remove</b>. The ordinal is the position in the set; removing renumbers. Stable refs stay in the document; the selection popover keeps stable labels, the form lists the picked set.</p>
+                  <div class="form-order">
+                    <span>source</span><span class="arrow">→</span>
+                    <span>input row + list</span><span class="arrow">→</span>
+                    <span>value</span><span class="arrow">→</span>
+                    <span>options</span><span class="arrow">→</span>
+                    <span>readout</span><span class="arrow">→</span>
+                    <span>error</span><span class="arrow">→</span>
+                    <span>footer</span>
+                  </div>
+                  <p class="sel-note">Inputs and their lists come before the value. The footer summary is <b>value · input</b> for a modification and <b>size · operation · input</b> for a boolean. The list is not repeated in the summary.</p>
+                </div>
+
+                <div class="sel-card is-wide">
+                  <h3>Empty and lost</h3>
+                  <p>No auto-pick. An empty input says so, names the gesture and disables the primary; a lost input stays visible.</p>
+                  <div class="tool-panel">
+                    <div class="tool-panel-head">
+                      <div>
+                        <div class="tool-panel-kicker">new feature</div>
+                        <h2 class="tool-panel-title">Fillet</h2>
+                      </div>
+                    </div>
+                    <div class="tool-panel-body">
+                      <div class="tool-row"><span class="tool-label">edges</span><span class="tool-note">0 selected</span></div>
+                      <p class="tool-hint">click edges in the model to add or remove them</p>
+                    </div>
+                    <div class="tool-panel-foot">
+                      <span class="tool-summary">0 edges</span>
+                      <span class="tool-panel-actions">
+                        <button class="text-action is-quiet" type="button">cancel</button>
+                        <button class="text-action" type="button" disabled>fillet</button>
+                      </span>
+                    </div>
+                  </div>
+                  <p class="sel-note">A lost row is `Face 2 · lost` with `reselect` / `revert`; it is never dropped silently. A failed preview keeps the list.</p>
+                </div>
+              </div>
             </section>
 
             <section class="study-section" id="mixed">
@@ -298,8 +614,8 @@
                       </div>
                     </div>
                     <div class="tool-panel-body">
-                      <div class="tool-row"><span class="tool-label">line 04</span><span class="tool-note">70.0 mm</span></div>
-                      <div class="tool-row"><span class="tool-label">line 07</span><span class="tool-note">44.0 mm</span></div>
+                      <div class="tool-row"><span class="tool-label">Line 1</span><span class="tool-note">70.0 mm</span></div>
+                      <div class="tool-row"><span class="tool-label">Line 2</span><span class="tool-note">44.0 mm</span></div>
                       <div class="tool-row"><span class="tool-label">dimension</span><span class="tool-note">70.0 mm · driving</span></div>
                       <div class="sel-group">
                         <span class="tool-label">constrain</span>
@@ -360,10 +676,10 @@
                       </div>
                     </div>
                     <div class="tool-panel-body">
-                      <div class="tool-row"><span class="tool-label">line 04</span><span class="tool-note">70.0 mm</span></div>
-                      <div class="tool-row"><span class="tool-label">line 05</span><span class="tool-note">44.0 mm</span></div>
-                      <div class="tool-row"><span class="tool-label">line 06</span><span class="tool-note">52.0 mm</span></div>
-                      <div class="tool-row"><span class="tool-label">line 07</span><span class="tool-note">44.0 mm</span></div>
+                      <div class="tool-row"><span class="tool-label">Line 1</span><span class="tool-note">70.0 mm</span></div>
+                      <div class="tool-row"><span class="tool-label">Line 2</span><span class="tool-note">44.0 mm</span></div>
+                      <div class="tool-row"><span class="tool-label">Line 3</span><span class="tool-note">52.0 mm</span></div>
+                      <div class="tool-row"><span class="tool-label">Line 4</span><span class="tool-note">44.0 mm</span></div>
                       <p class="tool-hint">Backspace deletes all four; one undo entry. An empty marquee is a no-op.</p>
                     </div>
                     <div class="tool-panel-foot">
@@ -379,8 +695,10 @@
               <h2>The rules in one place</h2>
               <ul class="sel-rules">
                 <li><b>Select first, act second.</b> A click never creates a feature; the selection popover holds the commands.</li>
-                <li><b>Feature chips start drafts.</b> `extrude…`, `new sketch`, `shell…`, `fillet…`, `chamfer…` open the relevant draft; they do not apply immediately.</li>
-                <li><b>A profile is not a face.</b> A profile offers `extrude…`; a face offers `new sketch` / `shell…`, never extrude.</li>
+                <li><b>Feature chips start drafts.</b> `extrude…`, `revolve…`, `new sketch`, `offset face…`, `shell…`, `fillet…`, `chamfer…` open the relevant draft; they do not apply immediately.</li>
+                <li><b>A profile is not a face.</b> A profile offers `extrude…` / `revolve…`; a face offers `new sketch` / `offset face…` / `shell…`, never extrude.</li>
+                <li><b>Selection looks the same everywhere.</b> A selected line/edge is a highlighter block under an ink centerline; a face/region is a wash with the ink boundary; a point is a marker fill with an ink ring; hover is the same block at lower opacity. Never a single opaque highlighter line.</li>
+                <li><b>Inputs inside a form are rows and lists.</b> Model faces/edges are always live on the stage; profiles switch to the sketch; an axis/support uses <code>pick</code>. Every multi input lists its items with <code>remove</code>, before the value. See <a href="PICKS.md">PICKS.md</a>.</li>
                 <li><b>One family at a time.</b> Geometry + dimensions is the one allowed mix; a constraint, profile or another model family replaces.</li>
                 <li><b>Any type mix inside geometry is allowed.</b> Two lines, a line + arc, a point + line: the chips come from what that exact set supports.</li>
                 <li><b>Shift toggles inside the family.</b> Shift on an incompatible family is blocked; a plain click replaces.</li>
@@ -415,25 +733,29 @@
         <button class="text-action" type="button" data-notes-close>close</button>
       </div>
       <p>
-        The current app has a few direct shortcuts: clicking a profile starts an
-        extrude draft, and box/lasso in the sketch picks profile regions. That is
+        The old app had a few direct shortcuts: clicking a profile started an
+        extrude draft, and box/lasso in the sketch picked profile regions. That is
         convenient once, and confusing every other time. This study separates the
         two acts: <b>select</b> the thing, then choose an action from the popover.
       </p>
       <h3>What this study settles</h3>
       <ul>
-        <li><b>A profile is selected, not extruded.</b> The profile popover has `all / voids / auto` and `extrude…`; the chip starts the draft.</li>
-        <li><b>A face is a support.</b> The face popover has `new sketch` and `shell…`; it never has `extrude`.</li>
+        <li><b>A profile is selected, not extruded.</b> The profile popover has `all / voids / auto`, `extrude…` and `revolve…`; a chip starts the draft.</li>
+        <li><b>A face is a support.</b> The face popover has `new sketch`, `offset face…` and `shell…`; it never has `extrude`.</li>
         <li><b>Feature actions are chips, like constraints.</b> They live in the same selection popover under `FEATURE`, not in a footer and not on a raw click.</li>
+        <li><b>Form inputs follow PICKS.md.</b> Faces/edges are always live, profiles switch to the sketch, an axis/support uses `pick`; each multi input is a row plus a <code>remove</code> list before the value.</li>
         <li><b>Box/lasso select sketch geometry</b> in ordinary select, respecting the filter. Backspace deletes the set. Profile mode is the only marquee that picks regions.</li>
         <li><b>Geometry + dimensions may mix.</b> Constraint chips use the geometry subset; the dimension row edits/deletes; the footer delete handles all.</li>
         <li><b>A constraint is single.</b> Clicking one replaces the set; it has name, participants, delete and reset position.</li>
         <li><b>Model families do not mix yet.</b> Edges and faces are separate; no direct feature on click.</li>
+        <li><b>Selection has one visual language.</b> Lines/edges are a highlighter block under an ink centerline, faces/regions are a wash, points are a fill with an ink ring, and hover is the same block at lower opacity.</li>
         <li><b>References are click-only.</b> They can participate in constraints/dimensions, but delete skips them.</li>
       </ul>
       <h3>Open questions</h3>
       <ul>
         <li>Should there be a `regions` filter, or is profile mode enough for marquee region selection?</li>
+        <li>Should an empty model click clear the face/edge set and keep the form, like profiles, or cancel the form (MODES D8)?</li>
+        <li>Should a profile list row use area or boundary count as its detail?</li>
         <li>Does a double-click on one dimension in a multi-selection make it the sole selection?</li>
         <li>Should `new sketch` appear on a face popover as well as the insert gap?</li>
         <li>Should the delete summary name skipped references?</li>

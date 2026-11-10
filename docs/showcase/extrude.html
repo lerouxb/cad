@@ -22,12 +22,14 @@
         <a href="sketch-create.html">sketch create</a>
         <a href="select.html">select</a>
         <a href="select-model.html">model select</a>
+        <a href="offset-faces.html">offset</a>
         <a href="body-ops.html">body ops</a>
         <a href="bodies.html">bodies</a>
         <a href="transform.html">transform</a>
         <a class="is-active" href="extrude.html">extrude</a>
+        <a href="revolve.html">revolve</a>
+        <a href="booleans.html">booleans</a>
         <a href="inspect.html">inspect</a>
-        <a href="BACKLOG.md">backlog</a>
       </nav>
       <div class="mockbar-right">
         <a class="mockbar-btn" href="../mockups/index.html">studies</a>
@@ -93,8 +95,10 @@
             </div>
             <div class="stage-foot-right">
               <span class="sc-legend">
-                <span class="key"><span class="swatch is-selected"></span>result</span>
-                <span class="key"><span class="swatch is-ghost"></span>target / cutter</span>
+                <span class="key"><span class="swatch"></span>result</span>
+                <span class="key"><span class="swatch is-selected"></span>added</span>
+                <span class="key"><span class="swatch is-remove"></span>removed</span>
+                <span class="key"><span class="swatch is-ghost"></span>ghost</span>
               </span>
             </div>
           </div>
@@ -118,16 +122,16 @@
       </p>
       <h3>What is shown</h3>
       <ul>
+        <li><b>Profile:</b> an input row + list. <b>select</b> switches to the sketch and makes region fills the targets; the form stays open. The list is `Profile N · area · remove`, before the value (see <a href="PICKS.md">PICKS.md</a>).</li>
         <li><b>Start:</b> from the profile plane, or offset by an exact distance. The dashed profile marks where the solid starts.</li>
         <li><b>End:</b> blind (a distance), <b>to object</b> (up to a picked body/face), <b>to next</b> (the first surface), or <b>all</b> (through everything). To-object and to-next coincide here because there is one body above; they differ when several are stacked.</li>
         <li><b>Taper:</b> a draft angle on the side walls, so the top is smaller (or larger) than the base.</li>
-        <li><b>Operation:</b> new body, join, cut or intersect — the same three booleans as Combine, resolved here against the target.</li>
+        <li><b>Operation:</b> the same four-way row as every solid feature — <b>new body</b>, <b>join</b>, <b>cut</b> or <b>intersect</b> (see <a href="BOOLEANS.md">BOOLEANS.md</a>). A cut previews the removed material in red; an intersect keeps the overlap and ghosts the rest.</li>
       </ul>
       <h3>Open questions</h3>
       <ul>
         <li>Do start offset and to-object need a value field plus a pick, or can the pick fill the value (Fusion's "to object" does)?</li>
         <li>Should the end condition be a segmented row, or a small list like the split-body splitting tool?</li>
-        <li>Where does the operation live — in the feature dialog (here) or in the timeline detail?</li>
         <li>Taper and to-object can conflict; how is that surfaced without a red error?</li>
       </ul>
       <div class="mini-note">

@@ -22,12 +22,14 @@
         <a href="sketch-create.html">sketch create</a>
         <a href="select.html">select</a>
         <a class="is-active" href="select-model.html">model select</a>
+        <a href="offset-faces.html">offset</a>
         <a href="body-ops.html">body ops</a>
         <a href="bodies.html">bodies</a>
         <a href="transform.html">transform</a>
         <a href="extrude.html">extrude</a>
+        <a href="revolve.html">revolve</a>
+        <a href="booleans.html">booleans</a>
         <a href="inspect.html">inspect</a>
-        <a href="BACKLOG.md">backlog</a>
       </nav>
       <div class="mockbar-right">
         <a class="mockbar-btn" href="../mockups/index.html">studies</a>
@@ -97,7 +99,8 @@
             </div>
             <div class="stage-foot-right">
               <span class="sc-legend">
-                <span class="key"><span class="swatch is-selected"></span>hover</span>
+                <span class="key"><span class="swatch is-hover"></span>hover</span>
+                <span class="key"><span class="swatch is-sel"><span class="swatch-ink"></span></span>selected</span>
                 <span class="key"><span class="swatch is-dim"></span>filtered out</span>
               </span>
             </div>
@@ -126,6 +129,7 @@
         <li><b>An edge beats the face behind it.</b> Each edge has a wide invisible hit stroke above the faces, so hovering near an edge highlights the edge and hovering inside a face highlights the face.</li>
         <li><b>The body filter picks the whole solid.</b> A face hit becomes a body hit, so the whole plate washes rather than one face.</li>
         <li><b>Select other cycles the overlap.</b> Where an edge and a face (or two bodies' edges) overlap, a chip at the cursor lists them and clicking advances.</li>
+        <li><b>Selection has the sketch's visual grammar.</b> A selected edge is a highlighter block under an ink centerline, not a solid marker line; hover is the block at lower opacity; a selected face or body is a highlighter wash with the ink edges still visible.</li>
       </ul>
       <h3>Notes</h3>
       <ul>

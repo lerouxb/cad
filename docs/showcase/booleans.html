@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — boolean operations</title>
+    <link rel="stylesheet" href="../mockups/mockup.css" />
+    <link rel="stylesheet" href="showcase.css" />
+    <script src="../mockups/theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="../mockups/index.html">
+        cad <span class="tag">tool showcase</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Showcase">
+        <a href="index.html">sketch layout</a>
+        <a href="sketch-edit.html">sketch edit</a>
+        <a href="dimension.html">dimension</a>
+        <a href="constraints.html">constraints</a>
+        <a href="selection.html">selection</a>
+        <a href="sketch-create.html">sketch create</a>
+        <a href="select.html">select</a>
+        <a href="select-model.html">model select</a>
+        <a href="offset-faces.html">offset</a>
+        <a href="body-ops.html">body ops</a>
+        <a href="bodies.html">bodies</a>
+        <a href="transform.html">transform</a>
+        <a href="extrude.html">extrude</a>
+        <a href="revolve.html">revolve</a>
+        <a class="is-active" href="booleans.html">booleans</a>
+        <a href="inspect.html">inspect</a>
+      </nav>
+      <div class="mockbar-right">
+        <a class="mockbar-btn" href="../mockups/index.html">studies</a>
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" title="File menu">
+            <span class="doc-name">booleans</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-center">
+          <span>model</span>
+          <span class="mode">study</span>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage is-study is-booleans" id="stage">
+          <div class="study-scroll">
+            <header class="study-head">
+              <div class="notes-kicker">design study · booleans</div>
+              <h1>One boolean language</h1>
+              <p>
+                Extrude, revolve and every future solid feature offer the same four
+                operations — <b>new body</b>, <b>join</b>, <b>cut</b> and
+                <b>intersect</b> — in the same order, with the same words and the same
+                preview colours. New body keeps its result-body preview; join
+                highlights the material it adds; cut and intersect become
+                unmistakable.
+              </p>
+              <div class="study-controls">
+                <span>new body · join · cut · intersect</span>
+                <a class="text-action" href="BOOLEANS.md">open the contract</a>
+                <span>one row · one preview grammar</span>
+              </div>
+            </header>
+
+            <section class="study-section" id="four">
+              <h2>The four operations</h2>
+              <p class="study-lede">
+                One profile, one operation row. The result body is always normal
+                material. The material a join adds is highlighter; only the
+                material a cut removes is red; intersect ghosts what it discards.
+              </p>
+
+              <div class="sel-grid">
+                <div class="sel-card">
+                  <h3>New body</h3>
+                  <p>A separate body. Existing bodies stay untouched, even where the new body overlaps them.</p>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 320 150" role="img" aria-label="A new body standing apart from the existing plate.">
+                      <path d="M150 92 190 80 230 92 190 104Z" class="op-normal-top"/>
+                      <path d="M150 92 190 104 190 132 150 120Z" class="op-normal-front"/>
+                      <path d="M190 104 230 92 230 120 190 132Z" class="op-normal-side"/>
+                      <path d="M66 74 116 60 166 74 116 88Z" class="op-ghost"/>
+                      <path d="M66 74 116 88 116 116 66 102Z" class="op-ghost"/>
+                      <path d="M116 88 166 74 166 102 116 116Z" class="op-ghost"/>
+                      <text x="78" y="60" class="constraint-label">existing</text>
+                      <text x="196" y="60" text-anchor="middle" class="constraint-label">+ body</text>
+                    </svg>
+                  </div>
+                  <p class="sel-note">No diff tint: the whole body is new. It never washes the existing body.</p>
+                </div>
+
+                <div class="sel-card">
+                  <h3>Join</h3>
+                  <p>The added material is highlighter. The target and the overlap that was already material stay normal.</p>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 320 150" role="img" aria-label="A boss joined onto the plate, with the added boss highlighted.">
+                      <path d="M70 76 150 52 230 76 150 100Z" class="op-normal-top"/>
+                      <path d="M70 76 150 100 150 130 70 106Z" class="op-normal-front"/>
+                      <path d="M150 100 230 76 230 106 150 130Z" class="op-normal-side"/>
+                      <path d="M116 76 150 66 184 76 150 86Z" class="op-add-top"/>
+                      <path d="M116 76 150 86 150 56 116 46Z" class="op-add-front"/>
+                      <path d="M150 86 184 76 184 46 150 56Z" class="op-add-side"/>
+                      <path d="M116 46 150 36 184 46 150 56Z" class="op-add-top"/>
+                      <text x="160" y="24" text-anchor="middle" class="constraint-label">added</text>
+                      <text x="160" y="146" text-anchor="middle" class="constraint-label">→ body · join</text>
+                    </svg>
+                  </div>
+                  <p class="sel-note">Tint only the tool minus target. The overlap is already material; do not repaint the whole union.</p>
+                </div>
+
+                <div class="sel-card">
+                  <h3>Cut</h3>
+                  <p>The removed volume is red. The cutter outside the body is a ghost, so the tool still reads.</p>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 320 150" role="img" aria-label="A cut preview: the removed material is red and the cutter above is a ghost.">
+                      <path d="M70 76 150 52 230 76 150 100Z" class="op-normal-top"/>
+                      <path d="M70 76 150 100 150 130 70 106Z" class="op-normal-front"/>
+                      <path d="M150 100 230 76 230 106 150 130Z" class="op-normal-side"/>
+                      <path d="M116 76 150 66 184 76 150 86Z" class="op-remove"/>
+                      <path d="M116 76 150 86 150 100 116 90Z" class="op-remove"/>
+                      <path d="M150 86 184 76 184 90 150 100Z" class="op-remove"/>
+                      <path d="M116 76 150 66 184 76 150 86Z" class="op-ghost"/>
+                      <path d="M116 76 150 86 150 46 116 36Z" class="op-ghost"/>
+                      <path d="M150 86 184 76 184 36 150 46Z" class="op-ghost"/>
+                      <path d="M116 36 150 26 184 36 150 46Z" class="op-ghost"/>
+                      <text x="160" y="18" text-anchor="middle" class="constraint-label">red = removed</text>
+                    </svg>
+                  </div>
+                  <p class="sel-note">The red plug is the material the cut takes away. The result body stays normal.</p>
+                </div>
+
+                <div class="sel-card">
+                  <h3>Intersect</h3>
+                  <p>Only the shared volume survives. The target and the rest of the tool are ghosts — never red.</p>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 320 150" role="img" aria-label="An intersect preview: the overlap is normal and the rest is ghosted.">
+                      <path d="M70 76 150 52 230 76 150 100Z" class="op-ghost"/>
+                      <path d="M70 76 150 100 150 130 70 106Z" class="op-ghost"/>
+                      <path d="M150 100 230 76 230 106 150 130Z" class="op-ghost"/>
+                      <path d="M116 76 150 66 184 76 150 86Z" class="op-normal-top"/>
+                      <path d="M116 76 150 86 150 100 116 90Z" class="op-normal-front"/>
+                      <path d="M150 86 184 76 184 90 150 100Z" class="op-normal-side"/>
+                      <path d="M116 76 150 66 184 76 150 86Z" class="op-ghost"/>
+                      <path d="M116 76 150 86 150 36 116 26Z" class="op-ghost"/>
+                      <path d="M150 86 184 76 184 26 150 36Z" class="op-ghost"/>
+                      <path d="M116 26 150 16 184 26 150 36Z" class="op-ghost"/>
+                      <text x="160" y="12" text-anchor="middle" class="constraint-label">ghost = discarded</text>
+                      <text x="150" y="92" text-anchor="middle" class="constraint-label">keep</text>
+                    </svg>
+                  </div>
+                  <p class="sel-note">The overlap is the result; ghosting the outside is what makes it different from a cut.</p>
+                </div>
+              </div>
+            </section>
+
+            <section class="study-section" id="row">
+              <h2>The operation row</h2>
+              <p class="study-lede">
+                One segmented row in the feature form, all four options visible, in
+                this order. No dropdown, no per-feature vocabulary. The summary uses
+                the same word.
+              </p>
+
+              <div class="sel-grid">
+                <div class="sel-card is-wide">
+                  <h3>The row, in an extrude</h3>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 660 132" role="img" aria-label="The operation row with new body, join, cut and intersect and the resulting summary.">
+                      <rect x="40" y="18" width="580" height="96" fill="var(--bg)" stroke="var(--rule)"/>
+                      <text x="58" y="40" class="constraint-label">extrude</text>
+                      <text x="58" y="58" class="constraint-label">operation</text>
+                      <rect x="132" y="44" width="78" height="22" fill="var(--marker)" stroke="var(--ink)" stroke-width="1"/>
+                      <text x="171" y="59" text-anchor="middle" class="constraint-label">new body</text>
+                      <rect x="210" y="44" width="52" height="22" fill="none" stroke="var(--rule)"/>
+                      <text x="236" y="59" text-anchor="middle" class="constraint-label">join</text>
+                      <rect x="262" y="44" width="46" height="22" fill="none" stroke="var(--rule)"/>
+                      <text x="285" y="59" text-anchor="middle" class="constraint-label">cut</text>
+                      <rect x="308" y="44" width="70" height="22" fill="none" stroke="var(--rule)"/>
+                      <text x="343" y="59" text-anchor="middle" class="constraint-label">intersect</text>
+                      <text x="58" y="88" class="constraint-label">12.0 mm · new body · 1 region</text>
+                      <text x="600" y="88" text-anchor="end" class="constraint-label">cancel   extrude</text>
+                    </svg>
+                  </div>
+                  <p class="sel-note">The default is <b>new body</b> with no body in the document, <b>join</b> when there is one. There is no silent change after the row is touched.</p>
+                </div>
+
+                <div class="sel-card">
+                  <h3>First feature</h3>
+                  <p>Cut and intersect are visible but disabled with the reason. The primary is disabled too.</p>
+                  <div class="tool-panel">
+                    <div class="tool-panel-head">
+                      <div>
+                        <div class="tool-panel-kicker">new feature</div>
+                        <h2 class="tool-panel-title">Extrude</h2>
+                      </div>
+                    </div>
+                    <div class="tool-panel-body">
+                      <div class="tool-row"><span class="tool-label">operation</span>
+                        <span class="seg" role="group" aria-label="Extrude operation">
+                          <button class="is-selected" type="button">new body</button>
+                          <button type="button">join</button>
+                          <button type="button" disabled>cut</button>
+                          <button type="button" disabled>intersect</button>
+                        </span>
+                      </div>
+                      <p class="tool-hint">cut and intersect need a body</p>
+                    </div>
+                    <div class="tool-panel-foot">
+                      <span class="tool-summary">12.0 mm · new body · 1 region</span>
+                      <span class="tool-panel-actions">
+                        <button class="text-action is-quiet" type="button">cancel</button>
+                        <button class="text-action" type="button">extrude</button>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="sel-card">
+                  <h3>Through all is cut-only</h3>
+                  <p>A finite tool is required for new body, join and intersect. Switching away from cut restores <b>blind</b>.</p>
+                  <div class="tool-panel">
+                    <div class="tool-panel-head">
+                      <div>
+                        <div class="tool-panel-kicker">extrude feature</div>
+                        <h2 class="tool-panel-title">Extrude 2</h2>
+                      </div>
+                    </div>
+                    <div class="tool-panel-body">
+                      <div class="tool-row"><span class="tool-label">operation</span>
+                        <span class="seg" role="group" aria-label="Extrude operation">
+                          <button type="button">new body</button>
+                          <button type="button">join</button>
+                          <button class="is-selected" type="button">cut</button>
+                          <button type="button">intersect</button>
+                        </span>
+                      </div>
+                      <div class="tool-row"><span class="tool-label">end</span>
+                        <span class="seg" role="group" aria-label="Extrude end">
+                          <button type="button">blind</button>
+                          <button class="is-selected" type="button">through all</button>
+                        </span>
+                      </div>
+                      <p class="tool-hint">through all measures the body along the feature direction</p>
+                    </div>
+                    <div class="tool-panel-foot">
+                      <span class="tool-summary">through all · cut · 1 region</span>
+                      <span class="tool-panel-actions">
+                        <button class="text-action is-quiet" type="button">cancel</button>
+                        <button class="text-action" type="button">apply</button>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="study-section" id="cut-vs-intersect">
+              <h2>Cut is red, intersect is ghost</h2>
+              <p class="study-lede">
+                Both operations discard material. The colour is the difference: a cut
+                marks the material that disappears in red; an intersect leaves the
+                result normal and ghosts everything outside it.
+              </p>
+
+              <div class="sel-grid">
+                <div class="sel-card">
+                  <h3>Cut</h3>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 320 150" role="img" aria-label="Cut: red removed material inside the result body.">
+                      <path d="M70 76 150 52 230 76 150 100Z" class="op-normal-top"/>
+                      <path d="M70 76 150 100 150 130 70 106Z" class="op-normal-front"/>
+                      <path d="M150 100 230 76 230 106 150 130Z" class="op-normal-side"/>
+                      <path d="M116 76 150 66 184 76 150 86Z" class="op-remove"/>
+                      <path d="M116 76 150 86 150 100 116 90Z" class="op-remove"/>
+                      <path d="M150 86 184 76 184 90 150 100Z" class="op-remove"/>
+                      <path d="M116 76 150 86 150 36 116 26Z" class="op-ghost"/>
+                      <path d="M150 86 184 76 184 26 150 36Z" class="op-ghost"/>
+                      <path d="M116 26 150 16 184 26 150 36Z" class="op-ghost"/>
+                      <text x="160" y="12" text-anchor="middle" class="constraint-label">cutter ghost</text>
+                      <text x="160" y="92" text-anchor="middle" class="constraint-label">removed</text>
+                    </svg>
+                  </div>
+                  <p class="sel-note">The result body is normal with the red plug showing what the cut removes.</p>
+                </div>
+
+                <div class="sel-card">
+                  <h3>Intersect</h3>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 320 150" role="img" aria-label="Intersect: normal overlap with ghosted target and tool.">
+                      <path d="M70 76 150 52 230 76 150 100Z" class="op-ghost"/>
+                      <path d="M70 76 150 100 150 130 70 106Z" class="op-ghost"/>
+                      <path d="M150 100 230 76 230 106 150 130Z" class="op-ghost"/>
+                      <path d="M116 76 150 66 184 76 150 86Z" class="op-normal-top"/>
+                      <path d="M116 76 150 86 150 100 116 90Z" class="op-normal-front"/>
+                      <path d="M150 86 184 76 184 90 150 100Z" class="op-normal-side"/>
+                      <path d="M116 76 150 86 150 36 116 26Z" class="op-ghost"/>
+                      <path d="M150 86 184 76 184 26 150 36Z" class="op-ghost"/>
+                      <path d="M116 26 150 16 184 26 150 36Z" class="op-ghost"/>
+                      <text x="160" y="12" text-anchor="middle" class="constraint-label">tool ghost</text>
+                      <text x="160" y="92" text-anchor="middle" class="constraint-label">keep</text>
+                    </svg>
+                  </div>
+                  <p class="sel-note">No red. The kept overlap is normal; the target outside it and the tool above it are ghosts.</p>
+                </div>
+
+                <div class="sel-card is-wide">
+                  <h3>The same pair, side by side</h3>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 680 170" role="img" aria-label="Cut with red removed material compared with intersect with ghosted discarded material.">
+                      <g transform="translate(0,8)">
+                        <path d="M50 82 130 58 210 82 130 106Z" class="op-normal-top"/>
+                        <path d="M50 82 130 106 130 136 50 112Z" class="op-normal-front"/>
+                        <path d="M130 106 210 82 210 112 130 136Z" class="op-normal-side"/>
+                        <path d="M96 82 130 72 164 82 130 92Z" class="op-remove"/>
+                        <path d="M96 82 130 92 130 106 96 96Z" class="op-remove"/>
+                        <path d="M130 92 164 82 164 96 130 106Z" class="op-remove"/>
+                        <text x="130" y="156" text-anchor="middle" class="constraint-label">cut · red removed</text>
+                      </g>
+                      <g transform="translate(340,0)">
+                        <path d="M70 82 150 58 230 82 150 106Z" class="op-ghost"/>
+                        <path d="M70 82 150 106 150 136 70 112Z" class="op-ghost"/>
+                        <path d="M150 106 230 82 230 112 150 136Z" class="op-ghost"/>
+                        <path d="M116 82 150 72 184 82 150 92Z" class="op-normal-top"/>
+                        <path d="M116 82 150 92 150 106 116 96Z" class="op-normal-front"/>
+                        <path d="M150 92 184 82 184 96 150 106Z" class="op-normal-side"/>
+                        <text x="150" y="156" text-anchor="middle" class="constraint-label">intersect · ghost discarded</text>
+                      </g>
+                    </svg>
+                  </div>
+                  <p class="sel-note">A user should never have to read the operation word to tell these apart.</p>
+                </div>
+              </div>
+            </section>
+
+            <section class="study-section" id="offset">
+              <h2>Offset faces reuses the grammar</h2>
+              <p class="study-lede">
+                Offset faces is a modification, not a boolean: there is no operation
+                row, and it always edits the selected body. But <b>out</b> adds
+                material in the highlighter and <b>in</b> removes it in red, over a
+                ghost of the pre-offset body.
+              </p>
+
+              <div class="sel-grid">
+                <div class="sel-card">
+                  <h3>Out</h3>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 320 150" role="img" aria-label="An offset out adds material in the highlighter.">
+                      <path d="M90 86H230V126H90Z" class="op-ghost"/>
+                      <path d="M90 54H230V86H90Z" class="op-add"/>
+                      <path d="M90 54H230V86" class="op-line"/>
+                      <path d="M90 54 90 86M230 54 230 86" class="op-line"/>
+                      <text x="160" y="44" text-anchor="middle" class="constraint-label">added</text>
+                    </svg>
+                  </div>
+                  <p class="sel-note">The dashed outline is the pre-offset body; the highlighter band is the material added.</p>
+                </div>
+
+                <div class="sel-card">
+                  <h3>In</h3>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 320 150" role="img" aria-label="An offset in removes material in red.">
+                      <path d="M90 54H230V126H90Z" class="op-ghost"/>
+                      <path d="M90 54H230V86H90Z" class="op-remove"/>
+                      <path d="M90 86H230V126" class="op-line"/>
+                      <path d="M90 54 90 126M230 54 230 126" class="op-line"/>
+                      <text x="160" y="44" text-anchor="middle" class="constraint-label">removed</text>
+                    </svg>
+                  </div>
+                  <p class="sel-note">Out/in is a signed distance, not join/cut: the step still modifies the same body (<b>→ body</b>).</p>
+                </div>
+
+                <div class="sel-card">
+                  <h3>No operation row</h3>
+                  <p>The offset form has faces and a distance, not four booleans. Adding the row here would imply a target/tool choice it does not have.</p>
+                  <div class="tool-panel">
+                    <div class="tool-panel-head">
+                      <div>
+                        <div class="tool-panel-kicker">offset face feature</div>
+                        <h2 class="tool-panel-title">Offset face</h2>
+                      </div>
+                    </div>
+                    <div class="tool-panel-body">
+                      <div class="tool-row"><span class="tool-label">faces</span><span class="tool-note">1 selected</span></div>
+                      <div class="tool-row"><span class="tool-label">distance</span><span class="tool-note">+2.0 mm</span></div>
+                      <div class="tool-row"><span class="tool-label">direction</span>
+                        <span class="seg" role="group" aria-label="Offset direction">
+                          <button class="is-selected" type="button">out</button>
+                          <button type="button">in</button>
+                        </span>
+                      </div>
+                      <p class="tool-hint">out adds material; in removes it</p>
+                    </div>
+                    <div class="tool-panel-foot">
+                      <span class="tool-summary">1 face · +2.0 mm</span>
+                      <span class="tool-panel-actions">
+                        <button class="text-action is-quiet" type="button">cancel</button>
+                        <button class="text-action" type="button">apply</button>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="study-section" id="steps">
+              <h2>What the step says</h2>
+              <p class="study-lede">
+                The output chip says create vs reference, not which boolean ran. The
+                operation word lives in the step meta, next to the distance.
+              </p>
+
+              <div class="sel-grid">
+                <div class="sel-card is-wide">
+                  <div class="off-step-wrap">
+                    <div class="steps">
+                      <div class="step">
+                        <div class="step-head">
+                          <span class="step-index">03</span>
+                          <span class="step-sep">·</span>
+                          <span class="step-kind">extrude</span>
+                        </div>
+                        <span class="step-name">Extrude 1</span>
+                        <span class="step-meta">12.0 mm · new body</span>
+                        <span class="step-bodies"><span class="body-chip"><span class="body-op">+</span><span class="body-name">body</span></span></span>
+                      </div>
+                      <div class="step is-active">
+                        <div class="step-head">
+                          <span class="step-index">04</span>
+                          <span class="step-sep">·</span>
+                          <span class="step-kind">extrude</span>
+                        </div>
+                        <span class="step-name">Extrude 2</span>
+                        <span class="step-meta">through all · cut</span>
+                        <span class="step-bodies"><span class="body-chip"><span class="body-op">→</span><span class="body-name">body</span></span></span>
+                      </div>
+                      <div class="step">
+                        <div class="step-head">
+                          <span class="step-index">05</span>
+                          <span class="step-sep">·</span>
+                          <span class="step-kind">extrude</span>
+                        </div>
+                        <span class="step-name">Extrude 3</span>
+                        <span class="step-meta">12.0 mm · intersect</span>
+                        <span class="step-bodies"><span class="body-chip"><span class="body-op">→</span><span class="body-name">body</span></span></span>
+                      </div>
+                    </div>
+                  </div>
+                  <p class="sel-note">`−` stays “consumes this body”; cut/intersect reference the surviving body with `→`.</p>
+                </div>
+              </div>
+            </section>
+
+            <section class="study-section" id="failure">
+              <h2>When it does not work</h2>
+              <p class="study-lede">
+                Cut and intersect need a body and a non-empty result. Both are visible
+                errors; the last good body stays and the operation never changes
+                itself to something that would work.
+              </p>
+              <div class="sel-grid">
+                <div class="sel-card is-wide">
+                  <h3>Empty cut / intersect</h3>
+                  <div class="sel-scene">
+                    <svg viewBox="0 0 660 132" role="img" aria-label="A cut that misses the body is a visible error.">
+                      <path d="M70 76 150 52 230 76 150 100Z" class="op-normal-top"/>
+                      <path d="M70 76 150 100 150 130 70 106Z" class="op-normal-front"/>
+                      <path d="M150 100 230 76 230 106 150 130Z" class="op-normal-side"/>
+                      <path d="M250 76 290 64 330 76 290 88Z" class="op-ghost"/>
+                      <path d="M250 76 290 88 290 118 250 106Z" class="op-ghost"/>
+                      <path d="M290 88 330 76 330 106 290 118Z" class="op-ghost"/>
+                      <text x="290" y="60" text-anchor="middle" class="constraint-label">no overlap</text>
+                      <text x="380" y="66" class="off-error">Can’t cut with this tool.</text>
+                      <text x="380" y="84" class="constraint-label">the cutter does not intersect the body</text>
+                      <text x="380" y="100" class="constraint-label">the last good body stays</text>
+                    </svg>
+                  </div>
+                  <div class="tool-panel">
+                    <div class="tool-panel-head">
+                      <div>
+                        <div class="tool-panel-kicker">extrude feature</div>
+                        <h2 class="tool-panel-title">Extrude 2</h2>
+                      </div>
+                    </div>
+                    <div class="tool-panel-body">
+                      <div class="tool-row"><span class="tool-label">operation</span>
+                        <span class="seg" role="group" aria-label="Extrude operation">
+                          <button type="button">new body</button>
+                          <button type="button">join</button>
+                          <button class="is-selected" type="button">cut</button>
+                          <button type="button">intersect</button>
+                        </span>
+                      </div>
+                      <p class="off-error"><b>The cutter does not intersect the body.</b></p>
+                      <p class="tool-hint">pick a profile that crosses the body, or change the operation</p>
+                    </div>
+                    <div class="tool-panel-foot">
+                      <span class="tool-summary">through all · cut · 1 region</span>
+                      <span class="tool-panel-actions">
+                        <button class="text-action is-quiet" type="button">cancel</button>
+                        <button class="text-action" type="button" disabled>apply</button>
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="study-section" id="rules">
+              <h2>The rules in one place</h2>
+              <ul class="sel-rules">
+                <li><b>Four operations, four words.</b> `new body`, `join`, `cut`, `intersect` — always in that order, in every feature form.</li>
+                <li><b>One segmented row.</b> All four visible; no dropdown and no per-feature synonyms. The summary uses the chosen word.</li>
+                <li><b>Join is added material.</b> Highlight tool minus target; the target and the overlap that was already material stay normal. Never repaint the whole union.</li>
+                <li><b>New body is a whole body.</b> Keep its result-body preview; tinting it all would read as a selection.</li>
+                <li><b>Cut is red.</b> The removed volume is cut red; the tool outside the body is a ghost; the result body stays normal.</li>
+                <li><b>Intersect is ghost.</b> The kept overlap is normal, everything outside it is a ghost. Intersect never uses red.</li>
+                <li><b>Offset faces is not a boolean row.</b> Out/in reuses the add/remove/ghost grammar and always modifies the same body.</li>
+                <li><b>No silent operation change.</b> The draft default is new body/join; after that, an impossible operation is a visible error.</li>
+                <li><b>Cut and intersect need a base and a non-empty result.</b> No base, no overlap or an empty result is an error, never an empty step. An end that stops on the target surface leaves nothing to remove; use blind or through-all (cut).</li>
+                <li><b>Through all is cut-only.</b> The other operations need a finite tool.</li>
+                <li><b>The chip is create vs reference.</b> `+ body` for new body, `→ body` for join/cut/intersect; `−` stays “consumes”.</li>
+              </ul>
+            </section>
+          </div>
+        </section>
+
+        <footer class="stage-foot">
+          <div class="stage-foot-left">
+            <span>booleans · new body · join · cut · intersect</span>
+          </div>
+          <div class="stage-foot-right">
+            <span>add = highlighter · remove = red · discard = ghost</span>
+            <span>paper · ink</span>
+          </div>
+        </footer>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · booleans</div>
+          <h2>The operation row and the preview</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        Extrude, revolve and every future solid feature use the same four
+        operations. This study pins the words, the order, the control and the
+        preview so the app cannot drift one feature at a time.
+      </p>
+      <h3>What this study settles</h3>
+      <ul>
+        <li><b>The set is complete:</b> new body, join, cut, intersect. Combine reuses join/cut/intersect; split and offset are not booleans.</li>
+        <li><b>The row is one segmented control</b>, all four options visible, same order everywhere. `new body` is spelled out; it is never `new`.</li>
+        <li><b>Cut is red, intersect is ghost.</b> The result body is never repainted; only the diff layer is tinted.</li>
+        <li><b>Join highlights the material it adds.</b> Tool minus target is highlighter; the target and the existing overlap stay normal. New body keeps its result-body preview.</li>
+        <li><b>Offset faces reuses add/remove/ghost</b> but has no operation row: out/in is a signed distance, not join/cut.</li>
+        <li><b>No silent operation change, no empty step.</b> Cut/intersect need a base and a non-empty result.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Does intersect ship with extrude/revolve in v1, or wait for Combine?</li>
+        <li>Does a disjoint join create a separate body or error? Current behaviour stays for now.</li>
+        <li>Should the cut red become a semantic token instead of the two viewer literals?</li>
+        <li>Should the tool outside the target be ghosted for a cut, or only the removed overlap?</li>
+      </ul>
+      <div class="mini-note">
+        The contract, including the four operations, the preview table, decisions
+        B1–B11 and the current gap, is in <a href="BOOLEANS.md">BOOLEANS.md</a>.
+      </div>
+    </aside>
+
+    <script src="../mockups/mockups.js"></script>
+  </body>
+</html>
