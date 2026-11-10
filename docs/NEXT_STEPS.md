@@ -18,13 +18,7 @@ coaxial full-360° through hole/boss. The current errors are guards against a
 visible step or undercut, not missing UI. Do not relax them without a real
 replacement path.
 
-Item 1 is done (`a67c044`); item 2 is next.
-
-- [ ] **2. Slanted planar neighbours on prismatic bodies** — 1–3 days.
-  Move the face plane and rebuild the straight neighbours by split/trim or
-  half-space intersection instead of sweeping a perpendicular prism. Start with
-  convex planar-faced bodies; non-convex bodies and shared corners are a
-  separate 3–5 day slice.
+Items 1–2 are done (`a67c044`, `496b42c`); item 3 is next.
 
 - [ ] **3. Partial/blind cylindrical walls with planar caps** — 2–5 days.
   Trim a coaxial cylinder/annular tool between the actual caps. The current
@@ -78,6 +72,8 @@ Move it under **Now** when it becomes the next priority.
 
 ## Done
 
+- 2026-11-10 — offset faces follow slanted planar neighbours with a ruled loft,
+  including holes and both out/in (`496b42c`).
 - 2026-11-10 — offset-face rejection diagnostics name the blocking neighbour
   and the workaround (`a67c044`).
 - 2026-11-10 — constraint-mark stroke width stays screen-space at zoom
