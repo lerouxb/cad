@@ -14,6 +14,7 @@ import {
   type EdgeRef,
 } from "../core/kernel/protocol";
 import type { PlaneFrame } from "../core/types";
+import type { OffsetHint } from "./offsetHint";
 import {
   boxBetween,
   boxIsEmpty,
@@ -135,6 +136,9 @@ export class Viewport {
   /** The pre-offset body shown as a ghost under an offset draft. */
   private ghostGroup = new THREE.Group();
   private ghostMesh: BodyMesh | null = null;
+  /** Source-face boundary and normal arrows for an offset draft. */
+  private offsetHintGroup = new THREE.Group();
+  private offsetHint: OffsetHint | null = null;
   /** Added/removed material for an offset preview. */
   private diffGroup = new THREE.Group();
   private diff: BodyDiff | null = null;
@@ -223,6 +227,7 @@ export class Viewport {
     this.scene.add(this.faceSelectionGroup);
     this.scene.add(this.featureGroup);
     this.scene.add(this.ghostGroup);
+    this.scene.add(this.offsetHintGroup);
     this.scene.add(this.diffGroup);
     this.addEnvironment();
 
@@ -252,6 +257,7 @@ export class Viewport {
     // same value in both modes; re-materialise the diff even when the colour
     // effect below does not run.
     this.setDiff(this.diff);
+    this.setOffsetHint(this.offsetHint);
     this.dirty = true;
   }
 
@@ -267,6 +273,7 @@ export class Viewport {
     this.rebuildSketchOverlay();
     this.setSupportPreview(this.supportPreviewFrame);
     this.setDiff(this.diff);
+    this.setOffsetHint(this.offsetHint);
     this.dirty = true;
   }
 
@@ -807,6 +814,91 @@ export class Viewport {
     this.dirty = true;
   }
 
+  /** Dashed source face plus one normal arrow per selected offset face. */
+  setOffsetHint(hint: OffsetHint | null): void {
+    this.offsetHint = hint;
+    this.clearGroup(this.offsetHintGroup);
+    this.canvas.dataset.offsetHintSegments = hint
+      ? String(hint.boundary.length / 6)
+      : "";
+    this.canvas.dataset.offsetHintArrows = hint
+      ? String(hint.arrows.length)
+      : "";
+    if (!hint) {
+      this.dirty = true;
+      return;
+    }
+
+    if (hint.boundary.length > 0) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute(
+        "position",
+        new THREE.BufferAttribute(hint.boundary, 3),
+      );
+      const material = new THREE.LineDashedMaterial({
+        color: this.highlightColor,
+        transparent: true,
+        opacity: 0.85,
+        dashSize: 1.8,
+        gapSize: 1.5,
+        depthTest: false,
+      });
+      const boundary = new THREE.LineSegments(geometry, material);
+      boundary.computeLineDistances();
+      boundary.renderOrder = 8;
+      boundary.raycast = () => {};
+      this.offsetHintGroup.add(boundary);
+    }
+
+    const color = this.edgeColor();
+    for (const arrow of hint.arrows) {
+      if (arrow.length < 1e-6) continue;
+      const origin = new THREE.Vector3(...arrow.origin);
+      const direction = new THREE.Vector3(...arrow.direction).normalize();
+      const tip = origin.clone().addScaledVector(direction, arrow.length);
+      const shaftGeometry = new THREE.BufferGeometry().setFromPoints([
+        origin,
+        tip,
+      ]);
+      const shaftMaterial = new THREE.LineBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 1,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const shaft = new THREE.LineSegments(shaftGeometry, shaftMaterial);
+      shaft.renderOrder = 9;
+      shaft.raycast = () => {};
+      this.offsetHintGroup.add(shaft);
+
+      const headLength = Math.min(arrow.length * 0.28, 3);
+      const headRadius = Math.max(headLength * 0.32, 0.25);
+      const headGeometry = new THREE.ConeGeometry(
+        headRadius,
+        headLength,
+        10,
+      );
+      const headMaterial = new THREE.MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: 1,
+        depthTest: false,
+        depthWrite: false,
+      });
+      const head = new THREE.Mesh(headGeometry, headMaterial);
+      head.position.copy(tip).addScaledVector(direction, -headLength / 2);
+      head.quaternion.setFromUnitVectors(
+        new THREE.Vector3(0, 1, 0),
+        direction,
+      );
+      head.renderOrder = 9;
+      head.raycast = () => {};
+      this.offsetHintGroup.add(head);
+    }
+    this.dirty = true;
+  }
+
   frameAll(): void {
     const box = new THREE.Box3().setFromObject(this.body);
     if (box.isEmpty()) box.setFromObject(this.sketch);
@@ -837,6 +929,7 @@ export class Viewport {
     this.cancelMarquee();
     this.clearBody();
     this.clearGroup(this.ghostGroup);
+    this.clearGroup(this.offsetHintGroup);
     this.clearGroup(this.diffGroup);
     this.clearSketchOverlay();
     this.clearEnvironment();
@@ -1790,6 +1883,10 @@ export class Viewport {
     this.edges = null;
     this.diff = null;
     this.clearGroup(this.diffGroup);
+    this.offsetHint = null;
+    this.clearGroup(this.offsetHintGroup);
+    this.canvas.dataset.offsetHintSegments = "";
+    this.canvas.dataset.offsetHintArrows = "";
     this.hoverPick = null;
     this.selectedPick = null;
     this.edgePicks = [];

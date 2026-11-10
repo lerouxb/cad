@@ -72,6 +72,12 @@ test("offsets the top face out and in as a history step", async ({
   await expect(page.getByTestId("offset-face-popover")).toBeVisible();
   const canvas = page.locator("canvas.viewport-canvas");
   await expect(canvas).toHaveAttribute("data-offset-ghost", "on");
+  await expect(canvas).toHaveAttribute("data-offset-hint-arrows", "1");
+  await expect
+    .poll(async () =>
+      Number(await canvas.getAttribute("data-offset-hint-segments")),
+    )
+    .toBeGreaterThan(0);
 
   await page.getByTestId("offset-face-distance").fill("5");
   await expect
@@ -92,6 +98,7 @@ test("offsets the top face out and in as a history step", async ({
   await expect(page.getByTestId("offset-face-popover")).toHaveCount(0);
   await expect(canvas).toHaveAttribute("data-offset-ghost", "");
   await expect(canvas).toHaveAttribute("data-offset-diff", "");
+  await expect(canvas).toHaveAttribute("data-offset-hint-arrows", "");
   await expect
     .poll(() => volume(page))
     .toBeCloseTo(examplePlateVolume(17), -1);

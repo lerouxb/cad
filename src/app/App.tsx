@@ -213,6 +213,7 @@ import {
   type PickInfo,
   type SketchOverlayData,
 } from "../viewer/Viewport";
+import { offsetHintFor } from "../viewer/offsetHint";
 import { FeaturePopover } from "./FeaturePopover";
 import { SupportPopover } from "./SupportPopover";
 import {
@@ -4797,6 +4798,20 @@ export function App() {
   useEffect(() => {
     viewportRef.current?.setGhostMesh(offsetGhostMesh);
   }, [offsetGhostMesh]);
+
+  useEffect(() => {
+    const hint =
+      offsetDraft && offsetGhostMesh
+        ? offsetHintFor(
+            offsetGhostMesh,
+            offsetDraft.faces,
+            offsetDraft.distance,
+          )
+        : null;
+    viewportRef.current?.setOffsetHint(hint);
+    // The preview mesh rebuild calls clearBody, which drops the transient hint;
+    // re-apply it after every preview response.
+  }, [offsetDraft, offsetGhostMesh, mesh]);
 
   // The timeline only scrolls sideways, so a vertical wheel over it scrolls the
   // real native scroll container horizontally (shift+wheel and trackpad
