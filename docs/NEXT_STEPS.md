@@ -18,11 +18,7 @@ coaxial full-360° through hole/boss. The current errors are guards against a
 visible step or undercut, not missing UI. Do not relax them without a real
 replacement path.
 
-Items 1–2 are done (`a67c044`, `496b42c`); item 3 is next.
-
-- [ ] **3. Partial/blind cylindrical walls with planar caps** — 2–5 days.
-  Trim a coaxial cylinder/annular tool between the actual caps. The current
-  cylindrical path only handles full-360° through holes and bosses.
+Items 1–3 are done (`a67c044`, `496b42c`, `b58f5d7`); item 4 is next.
 
 - [ ] **4. Tangent top-edge fillet / tangent-chain offset** — design first;
   1–3 weeks.
@@ -72,6 +68,8 @@ Move it under **Now** when it becomes the next priority.
 
 ## Done
 
+- 2026-11-10 — offset faces support blind holes and partial cylinders with
+  planar radial caps (`b58f5d7`).
 - 2026-11-10 — offset faces follow slanted planar neighbours with a ruled loft,
   including holes and both out/in (`496b42c`).
 - 2026-11-10 — offset-face rejection diagnostics name the blocking neighbour
