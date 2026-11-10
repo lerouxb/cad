@@ -34,10 +34,6 @@ export function offsetNonParallelSelectionMessage(): string {
   return "The selected faces do not share one normal. Offset faces moves one face direction at a time; offset them in separate steps, or select parallel faces together.";
 }
 
-export function offsetSlantedWallMessage(): string {
-  return "A neighbouring face is a slanted wall, so the sweep would leave a step. Move this offset before the draft/slant in the timeline, or edit the wall so it is perpendicular to the move.";
-}
-
 export function offsetTangentFilletMessage(): string {
   return "A neighbouring face is a top-edge fillet, so the sweep would leave an undercut. Move this offset before the fillet in the timeline, or edit the fillet after this step.";
 }
@@ -50,6 +46,20 @@ export function offsetCurvedNeighbourMessage(type: string): string {
   return `A neighbouring face is ${offsetSurfaceLabel(
     type,
   )}, which v1 cannot follow. Move this offset before the operation that creates it, or edit that operation.`;
+}
+
+export function offsetMixedSlantedCurvedMessage(type: string): string {
+  return `This face has both a slanted planar neighbour and ${offsetSurfaceLabel(
+    type,
+  )} on its outer boundary. v1.5 supports slanted planar neighbours with straight outer walls only; move this offset before the curved feature, or edit that feature.`;
+}
+
+export function offsetNonConvexFaceMessage(): string {
+  return "The selected face has a non-convex outer boundary. v1.5 supports convex planar faces with slanted planar neighbours; split the face or edit the profile first.";
+}
+
+export function offsetHoleWallMessage(): string {
+  return "A hole in the selected face has a slanted wall, so the hole would change shape. v1.5 translates holes only through straight or parallel-cylindrical walls; move this offset before that feature, or edit it.";
 }
 
 export function offsetPartialCylinderMessage(fraction: number): string {

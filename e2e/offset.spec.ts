@@ -396,13 +396,13 @@ test("names a top-edge fillet when the offset would undercut it", async ({
   expect(errors).toEqual([]);
 });
 
-test("names a slanted wall when the offset cannot follow it", async ({
+test("follows a slanted wall by rebuilding the moved face", async ({
   app: page,
 }) => {
   const errors = collectErrors(page);
   await fitView(page);
-  // Chamfering a long top edge leaves a slanted planar neighbour. Moving the
-  // top face along Z would step against it.
+  // Chamfer two long top edges, then move the top face up. The chamfer planes
+  // stay put, so the new top face shrinks and the chamfers grow taller.
   const selected = await addVisibleEdges(
     page,
     (ref) =>
@@ -416,17 +416,76 @@ test("names a slanted wall when the offset cannot follow it", async ({
   await page.getByTestId("chamfer-feature-apply").click();
   await page.keyboard.press("Escape");
 
+  const before = await volume(page);
   await pickTopFace(page);
   await page.getByTestId("start-offset-face").click();
   await page.getByTestId("offset-face-distance").fill("1");
-  await expect(page.getByTestId("offset-face-error")).toContainText(
-    "slanted wall",
+  await expect(page.getByTestId("offset-face-error")).toHaveCount(0);
+  await expect(page.getByTestId("offset-face-apply")).toBeEnabled();
+  const topArea = 60 * (40 - 2 * selected.length) - Math.PI * 8 * 8;
+  const expected = before + topArea - 30 * selected.length;
+  await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
+
+  await page.getByTestId("offset-face-apply").click();
+  const step = page.locator('[data-feature-type="offset"]').last();
+  await expect(step).toHaveAttribute("data-status", "ok");
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(expected, -1);
+  await expect(page.getByTestId("mesh-stats")).toHaveAttribute(
+    "data-bbox",
+    exampleBounds(13),
   );
-  await expect(page.getByTestId("offset-face-error")).toContainText(
-    "edit the wall so it is perpendicular",
-  );
-  await expect(page.getByTestId("offset-face-apply")).toBeDisabled();
+
+  // Inward uses the same moved outline as a cut. Moving the plane down grows
+  // the top face, so the removed volume is larger than the outward addition.
+  await step.click();
+  await expect(page.getByTestId("offset-face-popover")).toBeVisible();
+  await page.getByTestId("offset-face-in").click();
+  await page.getByTestId("offset-face-distance").fill("1");
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(before - (topArea + 30 * selected.length), -1);
   await page.getByTestId("offset-face-cancel").click();
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(expected, -1);
+  expect(errors).toEqual([]);
+});
+
+test("follows a slanted vertical wall on a side face", async ({ app: page }) => {
+  const errors = collectErrors(page);
+  // The example's suppressed chamfer runs along the four vertical edges, so
+  // the +X face is bounded by two slanted planar chamfers.
+  const chamfer = page
+    .locator('[data-feature-type="chamfer"]')
+    .filter({ hasText: "Beveled plate" });
+  await chamfer.click();
+  await page.getByTestId("feature-suppress").click();
+  await expect(chamfer).toHaveAttribute("data-status", "ok");
+  await page.keyboard.press("Escape");
+  // Wait for the unsuppressed chamfer's rebuild before reading the baseline.
+  const plate = examplePlateVolume() - 4 * ((4 * 4) / 2) * 12;
+  await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
+  const before = await volume(page);
+  await pickRightFace(page);
+  await page.getByTestId("start-offset-face").click();
+  await page.getByTestId("offset-face-distance").fill("1");
+  await expect(page.getByTestId("offset-face-error")).toHaveCount(0);
+  // The chamfer planes stay put: the 4 mm bevel makes the face 32 mm wide at
+  // x=30 and 30 mm wide at x=31, so the added volume is 12 × 31 = 372 mm³.
+  const expected = before + 12 * 31;
+  await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
+  await page.getByTestId("offset-face-apply").click();
+  const step = page.locator('[data-feature-type="offset"]').last();
+  await expect(step).toHaveAttribute("data-status", "ok");
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(expected, -1);
+  await expect(page.getByTestId("mesh-stats")).toHaveAttribute(
+    "data-bbox",
+    "-30,-20,0,31,20,12",
+  );
   expect(errors).toEqual([]);
 });
 

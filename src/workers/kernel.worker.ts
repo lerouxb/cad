@@ -42,7 +42,10 @@ import {
   innerWires,
   isEmpty,
   isValid,
+  isShell,
+  isSolid,
   line,
+  loft,
   measureDistance,
   measureLength,
   measureLinearProps,
@@ -58,6 +61,7 @@ import {
   shape,
   shellWithEvolution,
   sharedEdges,
+  solidFromShell,
   threePointArc,
   toBREP,
   toBufferGeometryData,
@@ -75,6 +79,7 @@ import {
   type Matrix4x4,
   type PlanarWire,
   type RoleTable,
+  type Shape3D,
   type Solid,
   type ValidSolid,
 } from "brepjs";
@@ -104,12 +109,14 @@ import { faceRefKey } from "../core/kernel/protocol";
 import {
   offsetBlindCylinderMessage,
   offsetCurvedNeighbourMessage,
+  offsetHoleWallMessage,
   offsetHorizontalCylinderMessage,
+  offsetMixedSlantedCurvedMessage,
   offsetMultipleCylinderSelectionMessage,
+  offsetNonConvexFaceMessage,
   offsetNonParallelSelectionMessage,
   offsetPartialCylinderMessage,
   offsetSelectedSurfaceMessage,
-  offsetSlantedWallMessage,
   offsetTangentFilletMessage,
 } from "../core/features/offsetDiagnostics";
 
@@ -1240,6 +1247,275 @@ function tangentNeighbour(
   return false;
 }
 
+interface OffsetPlane {
+  normal: Vec3;
+  /** dot(normal, pointOnPlane), with a unit normal. */
+  d: number;
+}
+
+function facePlane(face: Face): OffsetPlane {
+  const center = faceCenter(face);
+  const normal = unit(normalAt(face, center));
+  return { normal, d: dot(normal, center) };
+}
+
+function pointKey(point: Vec3): string {
+  return `${Math.round(point[0] * 1e6)},${Math.round(point[1] * 1e6)},${Math.round(point[2] * 1e6)}`;
+}
+
+function cross3(a: Vec3, b: Vec3): Vec3 {
+  return [
+    a[1] * b[2] - a[2] * b[1],
+    a[2] * b[0] - a[0] * b[2],
+    a[0] * b[1] - a[1] * b[0],
+  ];
+}
+
+function intersectPlanes(
+  a: OffsetPlane,
+  b: OffsetPlane,
+  c: OffsetPlane,
+): Vec3 | null {
+  const bc = cross3(b.normal, c.normal);
+  const det = dot(a.normal, bc);
+  if (Math.abs(det) < 1e-9) return null;
+  const ca = cross3(c.normal, a.normal);
+  const ab = cross3(a.normal, b.normal);
+  const point = scale(
+    add(add(scale(bc, a.d), scale(ca, b.d)), scale(ab, c.d)),
+    1 / det,
+  );
+  return point.every((value) => Number.isFinite(value)) ? point : null;
+}
+
+/** Walk a closed wire's edges and return its vertices in order. */
+function orderedWirePoints(wire: ClosedWire): Vec3[] {
+  const edges = getEdges(wire);
+  if (edges.length < 3) {
+    throw new Error(
+      "The selected face has a curved outer boundary; slanted planar neighbours need straight edges.",
+    );
+  }
+  const incidents = new Map<
+    string,
+    Array<{ index: number; other: string }>
+  >();
+  const pointByKey = new Map<string, Vec3>();
+  const endpoints: Array<[string, string]> = [];
+  for (const [index, edge] of edges.entries()) {
+    const start = curvePointAt(edge, 0);
+    const end = curvePointAt(edge, 1);
+    const startKey = pointKey(start);
+    const endKey = pointKey(end);
+    pointByKey.set(startKey, start);
+    pointByKey.set(endKey, end);
+    endpoints.push([startKey, endKey]);
+    for (const [key, other] of [
+      [startKey, endKey],
+      [endKey, startKey],
+    ] as const) {
+      const list = incidents.get(key) ?? [];
+      list.push({ index, other });
+      incidents.set(key, list);
+    }
+  }
+  for (const list of incidents.values()) {
+    if (list.length !== 2) {
+      throw new Error(
+        "The selected face has a non-manifold outer boundary; edit the sketch or the feature.",
+      );
+    }
+  }
+  const start = endpoints[0]![0];
+  const ordered: string[] = [start];
+  let current = start;
+  let previous = -1;
+  for (let step = 0; step < edges.length; step += 1) {
+    const next = incidents
+      .get(current)!
+      .find((candidate) => candidate.index !== previous);
+    if (!next) break;
+    previous = next.index;
+    current = next.other;
+    if (current === start) break;
+    ordered.push(current);
+  }
+  if (ordered.length !== edges.length || current !== start) {
+    throw new Error(
+      "The selected face's outer boundary could not be followed; edit the sketch or the feature.",
+    );
+  }
+  return ordered.map((key) => pointByKey.get(key)!);
+}
+
+function wireFromPoints(points: Vec3[]): ClosedWire & PlanarWire {
+  const edges = points.map((point, index) =>
+    line(point, points[(index + 1) % points.length]!),
+  );
+  return unwrap(wireLoop(edges)) as ClosedWire & PlanarWire;
+}
+
+function otherFaceOnEdge(
+  solid: Solid,
+  edge: Edge,
+  selectedHash: number,
+): Face {
+  const others = facesOfEdge(solid, edge).filter(
+    (face) => getHashCode(face) !== selectedHash,
+  );
+  if (others.length !== 1) {
+    throw new Error(
+      "The selected face does not have a simple straight wall on every edge; edit the feature before offsetting it.",
+    );
+  }
+  return others[0] as Face;
+}
+
+/** A convex outer loop has the same turn direction at every non-collinear vertex. */
+function isConvexLoop(points: Vec3[], normal: Vec3): boolean {
+  if (points.length < 3) return false;
+  let sign = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const a = points[index]!;
+    const b = points[(index + 1) % points.length]!;
+    const c = points[(index + 2) % points.length]!;
+    const turn = dot(
+      cross3(
+        [b[0] - a[0], b[1] - a[1], b[2] - a[2]],
+        [c[0] - b[0], c[1] - b[1], c[2] - b[2]],
+      ),
+      normal,
+    );
+    if (Math.abs(turn) < 1e-9) continue;
+    const next = Math.sign(turn);
+    if (sign !== 0 && next !== sign) return false;
+    sign = next;
+  }
+  return true;
+}
+
+/** A lofted shape is a solid, or a shell that can be closed into one. */
+function loftToSolid(
+  wires: ClosedWire[],
+  scope: {
+    track: <T extends Shape3D>(shape: T) => T;
+  },
+): Solid {
+  const shape = scope.track(unwrap(loft(wires, { ruled: true })));
+  if (isSolid(shape)) return shape;
+  if (isShell(shape)) {
+    return scope.track(unwrap(solidFromShell(shape)));
+  }
+  shape.delete();
+  throw new Error(
+    "The offset could not build a valid move volume; edit the walls or split the face into simpler steps.",
+  );
+}
+
+/**
+ * Build the material a slanted planar neighbour move adds/removes. The tool is
+ * the ruled loft between the old face boundary and the moved boundary; the
+ * neighbouring planes supply each moved vertex, so the side walls stay on the
+ * existing adjacent planes and the later boolean extends them.
+ */
+function buildPlanarMoveTool(
+  base: Solid,
+  face: Parameters<typeof captureHint>[0],
+  normal: Vec3,
+  distance: number,
+): Solid {
+  const faceAsFace = face as Face;
+  const selectedHash = getHashCode(faceAsFace);
+  const outer = outerWire(faceAsFace);
+  const outerPoints = orderedWirePoints(outer);
+  if (!isConvexLoop(outerPoints, normal)) {
+    throw new Error(offsetNonConvexFaceMessage());
+  }
+
+  const planesByVertex = new Map<string, OffsetPlane[]>();
+  for (const edge of getEdges(outer)) {
+    if (String(getCurveType(edge)).toUpperCase() !== "LINE") {
+      throw new Error(
+        "The selected face has a curved outer edge; slanted planar neighbours need straight edges.",
+      );
+    }
+    const startKey = pointKey(curvePointAt(edge, 0));
+    const endKey = pointKey(curvePointAt(edge, 1));
+    const neighbour = otherFaceOnEdge(base, edge, selectedHash);
+    const type = String(faceGeomType(neighbour)).toUpperCase();
+    if (!type.includes("PLANE")) {
+      throw new Error(
+        offsetMixedSlantedCurvedMessage(String(faceGeomType(neighbour))),
+      );
+    }
+    const plane = facePlane(neighbour);
+    for (const key of [startKey, endKey]) {
+      const list = planesByVertex.get(key) ?? [];
+      list.push(plane);
+      planesByVertex.set(key, list);
+    }
+  }
+
+  const selectedPlane: OffsetPlane = {
+    normal,
+    d: dot(normal, faceCenter(faceAsFace)) + distance,
+  };
+  const movedByKey = new Map<string, Vec3>();
+  for (const [key, planes] of planesByVertex) {
+    if (planes.length !== 2) {
+      throw new Error(
+        "The selected face has a non-manifold corner; edit the feature before offsetting it.",
+      );
+    }
+    const moved = intersectPlanes(selectedPlane, planes[0]!, planes[1]!);
+    if (!moved) {
+      throw new Error(
+        "The offset would collapse or twist a corner; reduce the distance or edit the adjacent walls.",
+      );
+    }
+    movedByKey.set(key, moved);
+  }
+  const movedOuterPoints = outerPoints.map(
+    (point) => movedByKey.get(pointKey(point))!,
+  );
+
+  const holes = innerWires(faceAsFace);
+  const sweep = scale(normal, distance);
+  return withScope((scope) => {
+    const newOuter = scope.track(wireFromPoints(movedOuterPoints));
+    const newHoles = holes.map((hole) => {
+      for (const edge of getEdges(hole)) {
+        const neighbour = otherFaceOnEdge(base, edge, selectedHash);
+        const type = String(faceGeomType(neighbour)).toUpperCase();
+        if (type.includes("PLANE")) {
+          if (Math.abs(dot(facePlane(neighbour).normal, normal)) > 0.01) {
+            throw new Error(offsetHoleWallMessage());
+          }
+        } else if (type.includes("CYL")) {
+          const axis = faceAxis(neighbour);
+          if (!axis || Math.abs(dot(unit(axis.direction), normal)) < 0.99) {
+            throw new Error(offsetHoleWallMessage());
+          }
+        } else {
+          throw new Error(offsetHoleWallMessage());
+        }
+      }
+      return scope.track(translate(hole, sweep) as ClosedWire);
+    });
+    let tool = loftToSolid([outer, newOuter], scope);
+    for (let index = 0; index < holes.length; index += 1) {
+      const cutter = loftToSolid([holes[index]!, newHoles[index]!], scope);
+      tool = scope.track(unwrap(cut(tool, cutter)));
+    }
+    if (!isValid(tool)) {
+      throw new Error(
+        "The offset did not produce a valid closed body; edit the walls or split the face into simpler steps.",
+      );
+    }
+    return unwrap(clone(tool));
+  });
+}
+
 function buildCylindricalOffset(
   feature: KernelOffsetFaceFeature,
   base: Solid,
@@ -1556,6 +1832,7 @@ function buildOffsetFaceFeature(
     normal: Vec3;
     center: Vec3;
     hash: number;
+    method: "prism" | "planarMove";
   }> = [];
 
   for (const ref of feature.faces) {
@@ -1572,7 +1849,13 @@ function buildOffsetFaceFeature(
     }
     const center = faceCenter(face as Face);
     const normal = unit(normalAt(face as Face, center));
-    selected.push({ face, normal, center, hash: getHashCode(face) });
+    selected.push({
+      face,
+      normal,
+      center,
+      hash: getHashCode(face),
+      method: "prism",
+    });
   }
 
   const first = selected[0]!;
@@ -1584,13 +1867,12 @@ function buildOffsetFaceFeature(
 
   const sweep: Vec3 = scale(first.normal, distance > 0 ? 1 : -1);
   for (const entry of selected) {
+    let hasSlantedPlane = false;
     for (const neighbour of adjacentFaces(base, entry.face as Face)) {
       const type = String(faceGeomType(neighbour)).toUpperCase();
       if (type.includes("PLANE")) {
         const normal = unit(normalAt(neighbour, faceCenter(neighbour)));
-        if (Math.abs(dot(normal, sweep)) > 0.01) {
-          throw new Error(offsetSlantedWallMessage());
-        }
+        if (Math.abs(dot(normal, sweep)) > 0.01) hasSlantedPlane = true;
         continue;
       }
       if (type.includes("CYL")) {
@@ -1611,17 +1893,26 @@ function buildOffsetFaceFeature(
         offsetCurvedNeighbourMessage(String(faceGeomType(neighbour))),
       );
     }
+    if (hasSlantedPlane) entry.method = "planarMove";
   }
 
   let solid = base;
   try {
     for (const entry of selected) {
-      const tool = unwrap(
-        extrude(
-          entry.face as unknown as Parameters<typeof extrude>[0],
-          scale(entry.normal, distance),
-        ),
-      );
+      const tool =
+        entry.method === "planarMove"
+          ? buildPlanarMoveTool(
+              base,
+              entry.face,
+              entry.normal,
+              distance,
+            )
+          : unwrap(
+              extrude(
+                entry.face as unknown as Parameters<typeof extrude>[0],
+                scale(entry.normal, distance),
+              ),
+            );
       try {
         const next = unwrap(distance > 0 ? fuse(solid, tool) : cut(solid, tool));
         if (solid !== base) solid.delete();
@@ -1708,34 +1999,27 @@ function transferOffsetRoles(
     if (owners.length === 0) continue;
 
     const predicted = add(entry.center, scale(entry.normal, distance));
+    const expectedPlane = dot(entry.normal, predicted);
     let best: { hash: number; score: number } | null = null;
-    const preHint = captureHint(entry.face);
     for (const candidate of postFaces) {
       const hash = getHashCode(candidate);
       if (claimed.has(hash)) continue;
       const type = String(faceGeomType(candidate as Face)).toUpperCase();
       if (!type.includes("PLANE")) continue;
       const center = faceCenter(candidate as Face);
-      if (Math.abs(dot(unit(normalAt(candidate as Face, center)), entry.normal)) < 0.999) {
-        continue;
-      }
-      const hint = captureHint(candidate);
       if (
-        preHint.area !== undefined &&
-        hint.area !== undefined &&
-        Math.abs(hint.area - preHint.area) > Math.max(0.01, preHint.area * 0.01)
+        Math.abs(dot(unit(normalAt(candidate as Face, center)), entry.normal)) <
+        0.999
       ) {
         continue;
       }
-      let projection;
-      try {
-        projection = projectPointOnFace(candidate as Face, predicted);
-      } catch {
+      // The moved plane is the hard identity; the outline may grow or shrink
+      // when a slanted neighbour is followed, so area is not a filter.
+      if (Math.abs(dot(entry.normal, center) - expectedPlane) > 0.05) {
         continue;
       }
-      if (!projection.ok || projection.value.distance > 0.1) continue;
-      if (classifyPointOnFace(candidate as Face, predicted, 0.1) === "out") continue;
-      const score = projection.value.distance;
+      const delta = add(center, scale(predicted, -1));
+      const score = Math.hypot(delta[0], delta[1], delta[2]);
       if (!best || score < best.score) best = { hash, score };
     }
     if (!best) continue;

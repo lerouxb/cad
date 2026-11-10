@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   offsetBlindCylinderMessage,
   offsetCurvedNeighbourMessage,
+  offsetHoleWallMessage,
+  offsetMixedSlantedCurvedMessage,
   offsetMultipleCylinderSelectionMessage,
+  offsetNonConvexFaceMessage,
   offsetNonParallelSelectionMessage,
   offsetPartialCylinderMessage,
   offsetSelectedSurfaceMessage,
-  offsetSlantedWallMessage,
   offsetSurfaceLabel,
   offsetTangentFilletMessage,
 } from "./offsetDiagnostics";
@@ -24,10 +26,6 @@ describe("offset diagnostics", () => {
   });
 
   it("names the blocking neighbour and suggests the workaround", () => {
-    expect(offsetSlantedWallMessage()).toContain("slanted wall");
-    expect(offsetSlantedWallMessage()).toContain(
-      "edit the wall so it is perpendicular",
-    );
     expect(offsetTangentFilletMessage()).toContain("top-edge fillet");
     expect(offsetTangentFilletMessage()).toContain(
       "Move this offset before the fillet",
@@ -55,5 +53,16 @@ describe("offset diagnostics", () => {
     expect(partial).toContain("partial wall (25% of a full circle)");
     expect(partial).toContain("full cylindrical holes and bosses only");
     expect(offsetBlindCylinderMessage()).toContain("blind hole");
+  });
+
+  it("names the slanted-move limits", () => {
+    expect(offsetMixedSlantedCurvedMessage("CYLINDRE")).toContain(
+      "slanted planar neighbour",
+    );
+    expect(offsetMixedSlantedCurvedMessage("CYLINDRE")).toContain(
+      "a cylindrical face",
+    );
+    expect(offsetNonConvexFaceMessage()).toContain("non-convex");
+    expect(offsetHoleWallMessage()).toContain("hole");
   });
 });
