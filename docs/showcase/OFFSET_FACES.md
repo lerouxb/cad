@@ -67,9 +67,9 @@ Editing an existing offset step uses the same popover: changes commit live,
 │ NEW FEATURE / OFFSET FEATURE                 │  drag handle
 │ Offset face                                  │
 ├──────────────────────────────────────────────┤
-│ faces        2                               │
-│  face 04     planar · 640 mm²          remove│
-│  face 07     cylindrical · 188 mm²     remove│
+│ faces        2 selected                       │
+│  Face 1      planar · 640 mm²          remove│
+│  Face 2      cylindrical · 188 mm²     remove│
 │ distance     [ 2.0 ] mm   ─────●─────        │
 │ direction    out  |  in                       │
 │ chain        tangent chain                   │
@@ -77,15 +77,17 @@ Editing an existing offset step uses the same popover: changes commit live,
 ├──────────────────────────────────────────────┤
 │ moves the selected faces along their normals │
 ├──────────────────────────────────────────────┤
-│ 2 faces · +2.0 mm              cancel  apply │
+│ +2.0 mm · 2 faces               cancel  apply│
 └──────────────────────────────────────────────┘
 ```
 
 - **Kicker** `new feature` for a draft, `offset feature` when editing a step.
 - **Title** `Offset face` for one, `Offset N faces` for several.
-- **Faces** rows: a short surface detail (planar/cylindrical, area) and
-  `remove`. Clicking the stage also adds/removes. The list scrolls; long sets do
-  not grow the popover.
+- **Faces** rows: a `faces 2 selected` header row, then one `Face 1 … remove`
+  row per face with a short surface detail (planar/cylindrical, area). Clicking
+  the stage also adds/removes. The list is the input's detail and scrolls; long
+  sets do not grow the popover. See [`PICKS.md`](PICKS.md) for the shared input
+  row/list grammar.
 - **Distance** is the shared `MeasureField` (range + exact field + unit). The
   slider ceiling is adaptive (a sensible fraction of the shortest adjacent/
   body dimension); the number field may exceed it to surface a failure, never to
@@ -98,8 +100,9 @@ Editing an existing offset step uses the same popover: changes commit live,
 - **Result** is a derived readout for a single cylindrical face: e.g.
   `Ø 20.0 → 20.4 mm`, with `enlarge`/`shrink` when the face is a hole/boss wall.
   It is not document state. For planar/mixed selections it is omitted.
-- **Footer** summary: `2 faces · +2.0 mm`, `1 face · Ø 20.0 → 20.4 mm`, etc.
-  Quiet `cancel`, primary `apply` (or `offset` for a draft).
+- **Footer** summary: `+2.0 mm · 2 faces`, `Ø 20.0 → 20.4 mm · 1 face`, etc.
+  Quiet `cancel`, primary `apply` (or `offset` for a draft). The summary is
+  value · input; the list is not repeated.
 - **Disabled primary**: no faces, distance 0, or a known-invalid preview.
   Enter with a disabled primary is a visible no-op with the reason.
 - **Error**: inline in the popover, honest and specific: "The offset is too
@@ -155,7 +158,11 @@ shell and blend drafts. The preview body is the result, not a new pick surface.
   meshes: added material in the highlighter and removed material in red, over a
   faint ghost of the pre-offset body. The ghost and difference are previews,
   never pick targets. A dashed **ghost of the input face** and normal arrow are
-  still open.
+  still open. This added/removed/ghost grammar is the source of truth for every
+  boolean preview; see [`BOOLEANS.md`](BOOLEANS.md).
+- **Offset faces has no operation row.** It always modifies the selected body
+  (`→ body`); `out`/`in` is a signed distance, not `join`/`cut`. Do not add
+  `new body / join / cut / intersect` to this form.
 - The selected face rows in the popover are the source of truth for the input
   set; stage clicks toggle that set.
 - On apply the preview becomes the step's body. On cancel the original body
@@ -186,7 +193,7 @@ shell and blend drafts. The preview body is the result, not a new pick surface.
 - The feature type is an **`OffsetFaceFeature`** (name TBD), a history step with
   face refs, a distance and a direction. It modifies the existing body
   (`→ body`), not a new body.
-- The step meta: `2 faces · +2.0 mm` or `Ø 20.0 → 20.4 mm`; the output chip is
+- The step meta: `+2.0 mm · 2 faces` or `Ø 20.0 → 20.4 mm · 1 face`; the output chip is
   `→ ○ body`.
 - Selecting the step opens the same popover; edits commit live; `cancel`
   restores the baseline. Suppress/delete are timeline actions.
@@ -270,10 +277,10 @@ different feature.
 
 | # | Question | Current proposal | Status |
 | --- | --- | --- | --- |
-| O1 | Exact kernel operation for selected faces on a solid? | v1: checked face sweep + boolean for planar/prismatic faces. Cylindrical walls still need a rebuild strategy. | **Decided for planar; cylindrical open** |
+| O1 | Exact kernel operation for selected faces on a solid? | v1: checked face sweep + boolean for planar/prismatic faces and full 360° cylindrical walls. Blind/partial cylinders still need a rebuild strategy. | **Decided for planar and full cylinders; blind/partial open** |
 | O2 | Store a signed distance or positive + `flip`? | **Decided: signed `distance`**; the UI shows a magnitude and an out/in flip. | Implemented |
 | O3 | Is `chain` a selection helper or a kernel offset mode? | Selection helper that expands to tangent faces; the same distance applies. | Open — not in v1 |
-| O4 | Show a diameter/radius readout for a single cylindrical face? | Yes, derived: `Ø 20.0 → 20.4 mm`; `enlarge`/`shrink`. | Open — waits for cylindrical v2 |
+| O4 | Show a diameter/radius readout for a single cylindrical face? | Yes, derived: `Ø 20.0 → 20.4 mm`; `enlarge`/`shrink`. | Implemented for a single full cylindrical face |
 | O5 | Are disjoint/opposite faces one feature? | Yes, one distance, one step; each face moves along its normal. | Proposed |
 | O6 | Symmetric or two-sided offset? | Not v1. | Deferred |
 | O7 | Offset to a face/reference? | Not v1; a different relation. | Deferred |
@@ -287,7 +294,7 @@ different feature.
 
 ## 12. Current implementation and gap
 
-Landed (schema v12):
+Landed (schema v12, current 2026-11-10):
 
 - `OffsetFaceFeature` (`type: "offset"`) with face refs and a signed distance;
   migration v11 → v12; rebuild evaluator and worker operation.
@@ -297,11 +304,18 @@ Landed (schema v12):
 - The worker rebuilds the planar/prismatic slice and the full cylindrical
   hole/boss slice from §9, re-derives roles, carries the moved face's role, and
   surfaces invalid/empty/no-op results in the popover and the stage status.
+  Cylindrical holes are enlarged with a bigger cut; bosses are grown with an
+  annular shell so a coaxial bore (a revolve tube) stays hollow.
 - The `Ø old → new` readout is derived from `TopoRef.hint.radius`/`radialSign`.
 - The draft shows true added/removed boolean-difference meshes (added in the
   highlighter, removed in red) over a faint ghost of the whole pre-offset body,
   so the material change is visible while the form is open.
 - Editing an existing step commits live; `cancel` restores the baseline.
+- The form follows [`PICKS.md`](PICKS.md): `faces N selected` and a `Face N` list
+  sit above the distance row, the list scrolls, and the footer summary is
+  `+2.0 mm · 2 faces`.
+- A same-domain face split left by the kernel is coalesced for refs, the seam
+  edge is hidden, and the reported face count is the logical one.
 
 Still missing:
 
@@ -310,8 +324,9 @@ Still missing:
 - the tangent-chain toggle;
 - the normal arrow and dashed source-face ghost (the whole-body ghost and
   boolean-difference overlays are in);
-- the adaptive slider ceiling from the shortest adjacent dimension (the current
-  ceiling is the body's shortest dimension).
+- the adaptive slider ceiling from the shortest **adjacent** dimension (the
+  current ceiling is the body's shortest dimension);
+- faces on a shelled body (O8).
 
 Same-domain merging landed through an isolated BREP copy; the raw
 `unifySameDomain` prefix bug is documented for an upstream ticket. A kernel build can

@@ -74,7 +74,7 @@ Conclusions:
 
 | Feature | Why it matters | Proposed home |
 | --- | --- | --- |
-| **Combine** — join / cut / **intersect**, keep tool bodies, use a body as a tool | The main way to use one body against another | M6 (elevate "general body booleans" to a real Combine feature) |
+| **Combine** — join / cut / **intersect**, keep tool bodies, use a body as a tool | The main way to use one body against another | M6 (elevate "general body booleans" to a real Combine feature); preview language in [`BOOLEANS.md`](BOOLEANS.md) |
 | **Split Body** — split with a plane / face / body, keep both halves | Break one body into two independent bodies | M6, alongside Combine |
 | **Move / Copy** — bodies *and* sketch geometry | Reposition or duplicate without redrawing | M6 (bodies); **M6.0** (sketch, same grammar as pattern/mirror/offset) |
 | **Align** | Line up bodies/faces without hand-measuring | M6 |
@@ -82,14 +82,14 @@ Conclusions:
 | **Redefine / edit sketch plane** | Change a sketch's support after creation | **M4** (partner of the support picker) |
 | **Extrude start offset** | Start a solid away from the sketch plane | **M3** |
 | **Extrude taper angle** | Drafted side walls without a separate Draft feature | **M3** |
-| **Extrude intersect** | The third boolean operation | **M3** |
+| **Extrude intersect** | The fourth operation; the shared row is `new body`/`join`/`cut`/`intersect` | **M3** (see [`BOOLEANS.md`](BOOLEANS.md)) |
 | **Extrude to-object / to-next** | End a solid against existing geometry | **M4** (needs `TopoRef`) |
 | **Collinear** constraint | Common when aligning points/edges | Constraint + one `drag.ts` row (small) |
 | **Center / 3-point rectangle** | Frequently used drawing variants | Sketch-create variants (small) |
 | **Center-point / tangent arc** | Frequently used drawing variants | Sketch-create variants (small) |
 | **2-point / 3-point circle** | Frequently used drawing variants | Sketch-create variants (small) |
 | **Selection filters / Select Other** | Cycle overlapping picks; restrict to edges/faces | M5 selection UX (box/lasso is done, M2.9) |
-| **Offset Faces** | Offset a face by a distance — tolerance/fit and wall adjustments. **Used 11× in the real part.** | **M5/M6** (reversed from *Drop* by the design audit) |
+| **Offset Faces** | Offset a face by a distance — tolerance/fit and wall adjustments. **Used 11× in the real part.** Design: [`OFFSET_FACES.md`](OFFSET_FACES.md). | **M5/M6** (reversed from *Drop* by the design audit) |
 | **Component insert / occurrences** | Insert parts (including imported STEP) into an assembly | **M8** |
 | **Rigid Group** | Fix a set of components together | **M8** |
 | **Capture Position / Snapshot** | Record and restore component positions | **M8** |
@@ -101,6 +101,7 @@ Conclusions:
 | --- | --- |
 | **Polygon** (inscribed/circumscribed, N sides) | Used occasionally; a sketch-create variant |
 | **Press/Pull** | Workaround is a sketch on the face; revisit only as *multi-face* offset/selection (pairs with M9 offset-face) |
+| **Revolve / lathe** | Not used in the reference part; M5 v1 is implemented (see [`REVOLVE.md`](REVOLVE.md)); further work is low priority |
 | **Sketch projections** (project / include 3D / intersect / project-to-surface) | The subset that is wanted lands with M4; the rest waits |
 
 ## Defer to its own design pass
@@ -156,14 +157,24 @@ already ahead in several places, which is worth not regressing:
   not a second document list, so the timeline stays the only structure. A split
   mints **new body ids with a role + geometry `TopoRef`** so downstream references
   can recover.
+- **Feature input pickers (2026-11-10):** [`PICKS.md`](PICKS.md) is implemented in
+  the forms. Blends force the `edges` filter; revolve has a profile
+  `select`/`pick in sketch` row, a `Profile N` list and an
+  `axis · line N · construction · pick` candidate mode; extrude lists its profiles
+  above the value; every multi input is a scrolling row + list before its value.
+  The project form uses the same rows/lists and cancels on an empty model click.
+- **Sketch-create variants (2026-11-10):** resolved as one tool plus the shared
+  **tool options row** under the tool line (`corner/center/3-point` rectangle,
+  `center/2-/3-point` circle, `3-point/centre/tangent` arc). No separate tool-line
+  entries or flyouts.
 
 **Still open:**
 
+- **Single-candidate support picker:** [`PICKS.md`](PICKS.md) says a support uses a
+  row + `pick`, while the new-sketch support picker still lists world planes, the
+  picked face and datum planes. Decide whether that picker is exempt or moves to
+  the row + `pick` shape (also tracked in `PLAN.md`).
 - **Section Analysis:** is it a view-only overlay (never in history), and how does
   it relate to the visibility toggles? The visibility direction is now "per body,
   folded into the output chip, no second list" — see
-  [`TIMELINE.md`](TIMELINE.md).
-- **Sketch-create variants:** do the extra rectangle/circle/arc variants share one
-  tool with a mode, or get their own tool-line entries? Fusion uses press-and-hold
-  flyouts. The current idea is a **tool options row** under the tool line — see
   [`TIMELINE.md`](TIMELINE.md).

@@ -1,11 +1,11 @@
 # Interaction modes and input rules
 
-> Status: **implemented contract**, 2026-11-07; the timeline/escape additions
-> of 2026-11-08 are implemented. Decisions D1–D12 are accepted
-> (see §5) and the app implements the tables in §3. §4 records the outcome of
-> the original audit: every divergence is fixed or explicitly deferred. Keep the
-> `⚠` markers out of §3 — a cell that disagrees with the code is a bug in one of
-> them, not an annotation.
+> Status: **contract**, 2026-11-07; the timeline/escape additions of 2026-11-08
+> are pending implementation. Decisions D1–D12 are accepted
+> (see §5) and the app otherwise implements the tables in §3. §4 records the
+> outcome of the original audit: every divergence is fixed or explicitly
+> deferred. Keep the `⚠` markers out of §3 — a cell that disagrees with the code
+> is a bug in one of them, not an annotation.
 >
 > Companion docs: [`INTERACTION.md`](INTERACTION.md) (surfaces, actions,
 > popovers) and [`TIMELINE.md`](TIMELINE.md) (steps, bodies, insertion).
@@ -58,14 +58,15 @@ entity, or a line draft — all different answers to "what does Escape do?".
 Escape acts on the topmost layer only, in this order:
 
 1. an open menu (insert, file);
-2. an inline editor (dimension, point X/Y);
-3. an operation (extrude draft/editor, datum, fillet/chamfer, shell, support,
-   sketch corner fillet, export);
-4. the current gesture (line draft, marquee, dimension target), **keeping the
+2. a constraint chooser / cluster list (when open);
+3. an inline editor (dimension, point X/Y);
+4. an operation (extrude draft/editor, datum, fillet/chamfer, shell, support,
+   sketch corner fillet, export, measure);
+5. the current gesture (line draft, marquee, dimension target), **keeping the
    armed tool**;
-5. the armed tool → `select`;
-6. the selection / picks;
-7. the **history cursor** → no step, exactly like clicking the end tail: the
+6. the armed tool → `select`;
+7. the selection / picks;
+8. the **history cursor** → no step, exactly like clicking the end tail: the
    full document renders, the stage returns to the model, no step or step
    popover is active, the selection is empty, and the track sits at its end.
    If there is no active step, this is the final no-op.
@@ -178,10 +179,6 @@ If Enter cannot do anything (an incomplete form, a disabled primary, an
 operation with no input), it does nothing **and the footer says why**. Do not
 quietly close, apply a default, or fall through to "finish sketch".
 
-**The Escape column is the first press.** The stack is per-press: once the
-popover, gesture, tool or selection is gone, the next Escape clears the history
-cursor exactly like the end tail (full document, no step, track at the end).
-
 ## 3. The matrix
 
 **Abbreviations**
@@ -194,6 +191,10 @@ cursor exactly like the end tail (full document, no step, track at the end).
 - `⚠ F#` — current behaviour differs; see §4.
 - `D#` — the accepted decision in §5 applies.
 - `[popover]` — the surface is open.
+
+**The Escape column is the first press.** The stack is per-press: once the
+popover, gesture, tool or selection is gone, the next Escape clears the history
+cursor exactly like the end tail (full document, no step, track at the end).
 
 ### 3.1 Sketch stage
 
@@ -230,9 +231,10 @@ Notes:
   it. It is mutually exclusive with a geometry/dimension selection. A constraint
   chooser or cluster list is a transient overlay above the selection; Escape
   closes it before it clears the selection.
-- A **selection is not a command**: feature actions (`extrude…`, `new sketch`,
-  `shell…`, `fillet…`, `chamfer…`) are chips in the selection popover, not the
-  result of a click. See `SELECTION.md`.
+- A **selection is not a command**: feature actions (`extrude…`, `revolve…`,
+  `new sketch`, `offset face…`, `shell…`, `fillet…`, `chamfer…`) are chips in the
+  selection popover, not the result of a click. See `SELECTION.md`,
+  `OFFSET_FACES.md` and `REVOLVE.md`.
 
 ### 3.2 Model stage
 
@@ -254,6 +256,8 @@ Notes:
 | M13 | File menu | activate the focused item (native) | close the menu | close | close | — |
 | M14 | Rename input (document / feature) | commit | cancel | commit on blur (text field) | blur commits, then `nav` | text edit |
 | M15 | Measure mode `[popover]` (0–2 targets) | — | close, drop the targets | canvas: `input` (add/remove a target); elsewhere close | close, then `nav` | — |
+| M16 | Offset face draft/editor `[popover]` | apply if ≥ 1 face and the preview is valid | cancel (revert) | cancel (revert); the canvas is the face pick surface | `nav` · cancel (revert) D5 | — |
+| M17 | Revolve draft/editor `[popover]` | apply if the profile, axis and angle are valid | cancel (revert); an axis pick exits first | cancel (revert); the canvas is the profile/axis pick surface | `nav` · cancel (revert) D5 | — |
 
 Notes:
 
@@ -261,8 +265,20 @@ Notes:
   edge/face set (additive selection never throws the set away).
 - A filtered-out pick (`all` / `edges` / `faces`) is *blocked*: it keeps the
   current selection instead of clearing it.
-- In a blend/shell/support operation the canvas is a pick surface. Edge/face
-  clicks feed the operation; they do not cancel it.
+- In a blend/shell/offset/support operation the canvas is a pick surface. Edge/
+  face clicks feed the operation; they do not cancel it. The offset draft's
+  distance is a `MeasureField`; Enter applies only a valid preview. A feature
+  form follows [`PICKS.md`](PICKS.md): model inputs are always live, profiles
+  switch to the sketch stage, and an axis/support uses a candidate pick. The form
+  forces its input family filter (`faces`/`edges`) and restores `all` on close.
+- The project picker is a model multi form too: it keeps `all` (faces + edges)
+  live, lists both families, and an empty model click cancels it and returns to
+  the sketch (F22).
+- In the revolve draft, `select axis` enters an **axis pick**: candidate sketch
+  lines and the X/Y references are pickable, the region fills are decoration.
+  Escape exits the pick first; the next Escape cancels the draft. `select
+  profiles` returns to region mode. The profile must stay on one side of the
+  axis.
 - Selection filters (`all` / `edges` / `faces` on the model, `all` / `points` /
   `curves` / `dimensions` in the sketch) persist across stage and cursor changes,
   and reset on new/open document (D12).
@@ -318,6 +334,8 @@ implemented. The status is the outcome of that work.
 | F18 | Escape flags were refreshed after render, so the first tick could miss them. | **Fixed.** The keydown effect re-registers every render and reads current state. |
 | F19 | The Select Other chip looked like a control but was `pointer-events:none` and never called `cyclePick()`. | **Fixed.** The chip is a real button that cycles the overlapping candidates. |
 | F20 | Delete is a no-op in model mode. | **Deferred** (D10). The timeline detail remains the only feature-delete path until a model selection owns deletion. |
+| F21 | Enter during an IME composition could commit the inline dimension/point editor, a rename or a form primary. | **Fixed (2026-11-10).** The field and window handlers ignore composing Enter (`isComposing` / keyCode 229). |
+| F22 | The project picker was a model multi form but an empty model click only cleared the pick and kept the form. | **Fixed (2026-11-10).** It now cancels like blend/shell/offset (D8); the form returns to the sketch stage. |
 
 ## 5. Decisions
 
@@ -372,12 +390,16 @@ log below.
   blur, alt-tab), the draft currently survives. Should blur cancel the gesture?
 - **Touch.** "Tap outside" is defined as cancel for inline editors; is that
   discoverable enough on touch, or does the inline editor need a `done`?
-- **IME composition.** Enter during IME composition should not commit the field;
-  the current guard only checks the focus target.
 - **Undo while a gesture is in progress.** The `mergeKey` contract covers point
   and slider drags, but a line/circle draft is not in the document yet; undo
   during it currently undoes the previous document change.
 - **Header actions.** New/open/clear while a form is open: the document reset
   clears state, but it is not expressed as "cancel first" anywhere.
-- **The Select Other chip.** Should it become a real button that cycles the
-  candidates, or should the readout stop looking clickable?
+
+Resolved since the audit:
+
+- **IME composition** (2026-11-10). Enter that confirms an IME composition no
+  longer commits the dimension editor, point X/Y, a document/feature rename or a
+  global form primary; the field and window handlers check `isComposing`.
+- **The Select Other chip.** It is a real button that cycles the overlapping
+  candidates (F19).

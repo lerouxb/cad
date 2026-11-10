@@ -208,6 +208,25 @@ the selection popover closes. The draft owns its inputs until apply/cancel.
   editor (sketch canvas, feature popover, datum editor). It never becomes a
   mixed selection.
 
+### Picking the inputs inside a form
+
+A feature chip starts the form from the current selection; the form then follows
+[`PICKS.md`](PICKS.md). There are three pick patterns:
+
+- **Model multi** — faces (offset/shell) and edges (fillet/chamfer) are always
+  live on the model stage. A click toggles, Shift adds, there is no pick button,
+  and the form forces the matching filter for its duration.
+- **Sketch regions** — profiles use a `select` row (or `pick in sketch`) that
+  switches to the sketch stage; region fills are the targets and the form stays
+  open.
+- **Single candidate** — a revolve axis or a support uses a row + `pick` and a
+  temporary candidate mode; Escape exits the pick first.
+
+Every multi input is a row (`faces 2 selected`) plus a list directly under it
+(`Face 1 · planar · 640 mm² · remove`), before the value row. The list is the
+truth; an empty input disables the primary, and a lost input offers
+reselect/revert. Do not list a candidate wall of chips in the form.
+
 ## 7. Mixed selections
 
 - **Geometry + dimensions is allowed.** They are both sketch objects; the
@@ -270,8 +289,8 @@ Selection means the same thing in the sketch and the model. The highlighter is a
 │ SELECTION                                    │  drag handle
 │ 2 lines                                      │
 ├──────────────────────────────────────────────┤
-│ line 04 · 70.0 mm                            │  selected rows
-│ line 07 · 44.0 mm                            │
+│ Line 1 · 70.0 mm                            │  selected rows
+│ Line 2 · 44.0 mm                            │
 ├──────────────────────────────────────────────┤
 │ CONSTRAIN  │ parallel  perpendicular  equal  │  immediate
 │ MEASURE    │ angle                         │
@@ -336,16 +355,16 @@ Selection means the same thing in the sketch and the model. The highlighter is a
 | O2 | Can a box/lasso select profiles outside profile mode? | No; enter via a region click (single/multi) or a feature chip (`extrude…`/`revolve…`), then marquee in the draft. | Proposed |
 | O3 | Double-click one dimension inside a multi-selection? | Make it the sole selection and open the editor. | Proposed |
 | O4 | Show an inapplicable feature chip disabled or hide it? | Hide it; the hint explains when nothing applies. | Proposed |
-| O5 | Is `new sketch` also in the face popover, or only the insert gap? | Both; the face popover is the direct path. | Proposed |
-| O6 | Does Delete delete a selected feature step? | No; use the timeline detail (D10). | Proposed |
-| O7 | Does a feature chip show a preview before the draft? | No; it starts the draft, which is the preview. | Proposed |
-| O8 | Is a void-only profile extrudable? | Yes; the region is the profile; parity is shown. | Proposed |
-| O9 | Should the delete summary mention skipped references? | Yes: e.g. `2 user objects · 1 reference skipped`. | Open |
-| O10 | Box/lasso in the model + Backspace? | No-op for edges/faces; delete the feature step. | Proposed |
+| O5 | Is `new sketch` also in the face popover, or only the insert gap? | Both; the face popover is the direct path. | Implemented |
+| O6 | Does Delete delete a selected feature step? | No; use the timeline detail (D10). | Implemented (no-op) |
+| O7 | Does a feature chip show a preview before the draft? | No; it starts the draft, which is the preview. | Implemented |
+| O8 | Is a void-only profile extrudable? | Yes; the region is the profile; parity is shown. | Implemented |
+| O9 | Should the delete summary mention skipped references? | Yes: e.g. `2 user objects · 1 reference skipped`. | Implemented (2026-11-10): sketch notice `N user objects · M references skipped` |
+| O10 | Box/lasso in the model + Backspace? | No-op for edges/faces; delete the feature step. | Implemented (no-op) |
 | O11 | Is there a select-all shortcut? | Not in v1. | Deferred |
 | O12 | Do bodies get a selection popover? | Later; appearance/isolate/visibility, not a feature. | Deferred |
-| O13 | Does a single click on a dimension open the editor? | No; double-click edits, the popover offers edit. | Proposed |
-| O14 | Can a reference-only selection be deleted? | No; the row says `fixed`; Delete is a no-op. | Proposed |
+| O13 | Does a single click on a dimension open the editor? | No; double-click edits, the popover offers edit. | Implemented |
+| O14 | Can a reference-only selection be deleted? | No; the row says `fixed`; Delete is a no-op. | Implemented |
 
 ## 13. Current implementation and gap
 
@@ -360,8 +379,9 @@ Implemented (2026-11-08):
   references are excluded. Profile mode (a draft or an existing extrude editor)
   is the only region marquee.
 - **Delete spans the allowed mix.** Geometry + dimensions delete in one undo;
-  profile regions clear; a constraint removes itself; references are skipped;
-  model edge/face/body delete stays a no-op.
+  profile regions clear; a constraint removes itself; references are skipped and
+  the sketch notice reports `N user objects · M references skipped`; model
+  edge/face/body delete stays a no-op.
 - **Feature chips:** profile `extrude…`/`revolve…`, face `new sketch` (one
   planar face), `offset face…` and `shell…`, edge `fillet…`/`chamfer…`. A face
   never offers extrude. The offset chip opens the draft from
@@ -381,8 +401,10 @@ Implemented (2026-11-08):
 
 Remaining / open:
 
-- O9 (delete summary mentions skipped references), O11 (select-all), O12 (body
-  family), O14 (reference-only delete) remain as proposed/deferred.
+- O11 (select-all) and O12 (body family) remain deferred; O3 (double-click one
+  dimension inside a multi-selection) remains proposed.
+- O9 and O14 are implemented: a mixed delete reports the skipped references, and
+  a reference-only delete is a no-op.
 - A profile marquee outside profile mode is still click/Shift-click only; O2
   keeps that deliberate.
 - The profile popover's `auto` is the existing "largest material region"; a

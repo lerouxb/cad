@@ -6,8 +6,8 @@
 > profile feature chips), [`INTERACTION.md`](INTERACTION.md) (the popover
 > surface) and [`MODES.md`](MODES.md) (the draft and the axis pick).
 >
-> Revolve is **not in the reference part** (PLAN M9), so this is a design study
-> first; the kernel operation already exists.
+> Revolve is **not in the reference part**, but the v1 history step and kernel
+> operation are implemented; the remaining gaps are listed in §14.
 
 ## The one line
 
@@ -76,7 +76,7 @@ Double-clicking a profile does nothing special.
   lines are highlighted and the region fills are not pickable. Clicking a line
   sets the axis and returns to the form; Escape exits the pick and leaves the
   form open. Escape again cancels the draft. The axis row shows the chosen line
-  (`line 04 · construction`) or `X axis` / `Y axis`.
+  (`line 1 · construction`) or `X axis` / `Y axis`.
 - **Direction:** the axis line has a direction; a partial revolve sweeps around
   it by the right-hand rule. A `flip` reverses the sweep, including the side of
   the profile it starts on. A full 360° hides the flip.
@@ -128,8 +128,10 @@ Double-clicking a profile does nothing special.
 │ Revolve                                      │
 ├──────────────────────────────────────────────┤
 │ sketch       Sketch 1                        │
-│ profile      2 profiles              select │
-│ axis         line 04 · construction  pick    │
+│ profile      2 selected              select │
+│  Profile 1   2,400 mm²              remove  │
+│  Profile 2   860 mm²                remove  │
+│ axis         line 1 · construction  pick    │
 │ angle        [ 360 ] °   ───────●────        │
 │ direction    ccw | cw        (angle < 360)   │
 │ operation    new body·join·cut·intersect     │
@@ -144,10 +146,13 @@ Double-clicking a profile does nothing special.
 - **Title** `Revolve`; the sketch row is fixed (changing it resets profile and
   axis) and matches extrude's sketch row.
 - **Profile** row: count + `select`; enters region mode (the same region panel
-  `all / voids / auto` as extrude).
+  `all / voids / auto` as extrude) and lists each profile as
+  `Profile N · area · remove`. Changing the sketch resets the list. See
+  [`PICKS.md`](PICKS.md).
 - **Axis** row: current axis + `pick`; enters axis mode. The row shows the
   construction marker for a construction line and `X axis` / `Y axis` for a
-  reference.
+  reference. Do not put every candidate line in the form as a wall of chips; the
+  stage is the candidate pick.
 - **Angle** is the MeasureField; `direction` only for <360.
 - **Operation** is the same four-way `new body / join / cut / intersect`
   segmented control as extrude, with the [`BOOLEANS.md`](BOOLEANS.md) preview
@@ -250,31 +255,37 @@ revolve(face, { axis?: Vec3; at?: Vec3; angle?: number })
 | --- | --- | --- | --- |
 | O1 | Should a construction line be required, or is any sketch line allowed? | Any line; construction is the recommended centreline. | Proposed |
 | O2 | Is a profile that straddles the axis ever allowed? | No v1; one side or touching only. | Proposed |
-| O3 | Does the axis pick use the stage overlay or a dropdown? | Stage pick, with X/Y as explicit chips; the row shows the result. | Proposed |
+| O3 | Does the axis pick use the stage overlay or a dropdown? | Stage candidate pick from the axis row; the candidates include the sketch lines and X/Y. No dropdown and no wall of chips. | Implemented |
 | O4 | Should the angle have 90/180/270/360 presets? | The MeasureField is enough; presets are optional. | Open |
 | O5 | Symmetric/two-sided partial revolve? | Not v1. | Deferred |
 | O6 | Partial end faces: same material/appearance? | Yes; one body, same appearance. | Proposed |
 | O7 | A profile with a hole and the axis through the hole? | Revolving the material on one side; validate. | Open |
-| O8 | Full 360 seam handling on a touching profile? | Test the kernel; seams are normal, not a failure. | Open |
+| O8 | Full 360 seam handling on a touching profile? | Test the kernel; seams are normal, not a failure. | Implemented/tested: the 360° tube e2e covers a profile touching the axis |
 | O9 | Can a revolve axis be a datum axis outside the sketch plane? | Out of scope until datum axes; needs a 3D axis. | Deferred |
 | O10 | Should the sketch step detail also offer `revolve`, or only the profile popover? | Both, like extrude's sketch-step entry. | Proposed |
 | O11 | What is the step type/name? | `revolve`, `Revolve 1`, output `+`/`→ body`. | Proposed |
-| O12 | Lost axis: reselect only, or also convert to X/Y? | Reselect/revert only; never silently retarget. | Proposed |
+| O12 | Lost axis: reselect only, or also convert to X/Y? | Reselect only; never silently retarget. The row says `lost · line removed` and `pick` reselects; a deleted sketch line cannot be reverted from the form. | Implemented (reselect) |
 
 ## 14. Current implementation and gap
 
-Implemented (2026-11-08):
+Implemented (2026-11-10):
 
 - Schema v14 `RevolveFeature` (`sketchId`, `regions`, explicit `axis`, 1–360° `angle`,
   partial `direction`, `operation`, `suppressed`), validation and migration.
-- `revolve…` in the profile selection popover starts a UI-only draft. The form has the
-  sketch/profile rows, explicit X/Y/sketch-line **axis chips**, and clicking a sketch line
-  or the X/Y reference in the stage sets the same axis; the shared `MeasureField` angle,
-  ccw/cw for partial angles, and new/join/cut follow.
+- `revolve…` in the profile selection popover starts a UI-only draft. The form follows
+  [`PICKS.md`](PICKS.md): the profile row is `N selected` with `select` / `pick in sketch`
+  and a `Profile N` list; the axis is `axis · line N · construction · pick`, not a chip
+  wall. The axis pick highlights the candidate sketch lines and X/Y references, and a
+  stage click sets the axis. Escape exits the pick first; the next Escape cancels.
+- The shared `MeasureField` angle, ccw/cw for partial angles, and the four-way
+  new body / join / cut / intersect row follow. Preview uses the same added/removed/ghost
+  boolean-difference language as extrude and offset.
 - The engine resolves the axis against the solved sketch, rejects a missing/degenerate
   axis and a profile that crosses the infinite axis, and the worker builds each region
   with `brepjs.revolve`, fuses multiple regions, applies the sketch frame and runs the
   normal history boolean/role path.
+- A deleted axis line is named `lost · line removed`; `pick` reselects another line or
+  X/Y. It never falls back to a made-up ordinal or silently retargets.
 - Apply inserts a re-editable step; edits commit live and `cancel` restores the baseline.
   The timeline shows `revolve`, the profile/angle/operation meta and the body chip.
 - Full 360° touching profiles (cylinder/cone/sphere) and partial end faces are covered by
@@ -282,9 +293,11 @@ Implemented (2026-11-08):
 
 Still open:
 
-- **candidate highlighting during axis pick**; the stage click and chips already select
-  the axis, but candidates are not pre-highlighted.
-- **intersect** (the shared four-way boolean row is not in extrude either yet).
-- the start-profile ghost and angle-arc preview; v1 previews the result body.
-- **BOOLEANS.md** preview language for cut/intersect (the same gap as extrude).
-- a 3D axis outside the sketch plane (needs datum axes).
+- the start-profile ghost and angle-arc preview; v1 previews the result body;
+- a 3D axis outside the sketch plane (needs datum axes);
+- optional 90/180/270/360 angle presets;
+- O7 (revolving a profile with a hole when the axis passes through the hole);
+- O10 (a `revolve` entry on the sketch step detail; only the profile popover starts it
+  today because a new revolve needs at least one profile);
+- O12 `revert`: a lost axis can be re-picked, but the deleted sketch line cannot be
+  restored from the form.

@@ -51,7 +51,7 @@ is an editable sketcher driving an exact solid:
   definition, fillet radius / chamfer distance and edges). The main-thread rebuild walks
   the feature list in order with a prefix cache and per-feature diagnostics. The worker
   receives the successful solid features, caches prefix solids by cache key, applies
-  new/join/cut booleans, constant-size fillets/chamfers, open-face shells and
+  new body/join/cut/intersect booleans, constant-size fillets/chamfers, open-face shells and
   STL/STEP export of the cached prefix and exact measurements, with per-feature build
   statuses. The worker also reports body health (bodies, shells, BRepCheck validity), and
   the file menu opens an export page with those checks. Multi-edge model selection opens the body-selection
@@ -235,7 +235,10 @@ docs/
   side of the axis crossing, not at the participants (at 6 px the pair reads as one
   blob); a fix pin is lifted above the point on a stem. The perpendicular mark is an
   offset L, not a closed square. The badge text uses the mono token at 9 px, and
-  point-on-line/midpoint/tangent ticks are longer than equal ticks. Invisible pick targets
+  point-on-line/midpoint/tangent ticks are longer than equal ticks. Every stroked mark
+  shape carries `vector-effect="non-scaling-stroke"` **on the shape itself**: the property
+  is not inherited, so a group-level value lets the stroke width scale with the viewBox
+  and turns chevrons/ticks into blobs at high zoom. Invisible pick targets
   use `fill="none"`/`pointer-events: all`, and the hit targets and constraint-mark layer
   opt out of forced-colors repaint, so a hit halo can never show as a dark block.
 - **Selection families and actions are in `docs/showcase/SELECTION.md`.** A click selects;
@@ -260,6 +263,19 @@ docs/
   change. Through all is cut-only. The timeline chip stays `+`/`→`; `−` means
   consumes. Extrude/revolve and offset now share the added/removed/ghost preview;
   the offset-face diff remains the simplest reference implementation.
+- **Feature-form inputs follow `docs/showcase/PICKS.md`.** There are three pick patterns:
+  model faces/edges are **always live** on the stage (plain click toggles, Shift adds, no
+  pick button, the form forces the matching filter and restores `all`); profiles use a
+  `select` / `pick in sketch` stage switch and a region list; a single axis/support uses a
+  row + `pick` with a candidate mode (Escape exits the pick first, never a chip wall).
+  Every multi input is a row (`faces 2 selected`) then a list directly under it
+  (`Face 1 · planar · 640 mm² · remove`) **before** the value row; the list scrolls and is
+  the truth. Empty inputs show `0 selected` and disable the primary; an empty model click
+  cancels a model form (the project form included). Summary is `value · input` for
+  modifications and `size · operation · input` for booleans. A lost revolve axis is named
+  `lost · line removed` and re-picked; lost face/edge inputs surface the kernel error and
+  can be removed/re-picked but do not yet have a dedicated lost/reselect row. The
+  new-sketch support picker is still the open single-candidate decision.
 - **Offset faces v1 is planar/prismatic plus full cylindrical holes and bosses.**
   `docs/showcase/OFFSET_FACES.md` is the contract. `OffsetFaceFeature` (schema v13) stores
   face refs and a signed distance. The planar path sweeps a face and fuses/cuts it; it
@@ -282,14 +298,16 @@ docs/
 - **Revolve v1 is a history step around an in-plane sketch axis.** `docs/showcase/REVOLVE.md`
   is the contract. Schema v14 `RevolveFeature` stores `sketchId`, regions, an explicit axis
   (a sketch line id or the X/Y reference), a 1–360° angle, a partial direction and
-  new/join/cut. The profile popover's `revolve…` chip starts the draft; the form lists
-  explicit X/Y/line axis chips, and clicking a sketch line or the X/Y reference in the
-  stage sets the same axis (no silent default). It validates that every region stays on
-  one side of the infinite axis or touches it, previews through the worker and inserts a
-  re-editable step. A sketch edit that deletes the line is a lost axis, never a retarget.
-  A 3D axis outside the sketch plane is out of scope until datum axes. The stage axis-pick
-  highlight, intersect, and the start-profile/angle-arc preview are still open; do not
-  claim them.
+  new body/join/cut/intersect. The profile popover's `revolve…` chip starts the draft; the
+  form follows PICKS with a profile `select` / `pick in sketch` row and an
+  `axis · line N · construction · pick` row. Clicking a candidate sketch line or the X/Y
+  reference in the stage sets the axis (no silent default), and the candidates are
+  highlighted during the pick. It validates that every region stays on one side of the
+  infinite axis or touches it, previews through the worker with the shared boolean diff and
+  inserts a re-editable step. A sketch edit that deletes the line is a lost axis
+  (`lost · line removed`), never a retarget; `pick` reselects it. A 3D axis outside the
+  sketch plane is out of scope until datum axes. The start-profile ghost and angle-arc
+  preview are still open; do not claim them.
 - The worker protocol is a discriminated union in `core/kernel/protocol.ts`. Both
   sides import the same types.
 - Prefer small, explicit functions over clever abstractions. This domain is already
@@ -402,7 +420,7 @@ docs/
   the engine so the auto/largest material fallback cannot drift.
 - **The worker builds an ordered single body.** `KernelFeature` is a discriminated union
   of extrude and fillet, each carrying its cacheKey. The worker caches the prefix solid
-  per cacheKey, applies new/join/cut or a constant-size fillet/chamfer, and returns
+  per cacheKey, applies new body/join/cut/intersect or a constant-size fillet/chamfer, and returns
   `FeatureBuildStatus[]`. A failed feature is skipped and later features use the last good
   base; a failed first feature returns an error with statuses. The first feature may be
   new or join; cut needs a base; new after a base is an error; an edge blend needs a base.
@@ -750,14 +768,14 @@ docs/
   dotted, non-selectable `bodyReference` lines. This is derived from the selection
   cursor, so suppressed and downstream bodies do not appear; editing the body updates
   it. Face sketches already get the supporting boundary through the live face projection
-  and do not duplicate it. Explicit user projections are still a separate M9 feature.
-- **Snapping order is points, then crossings, then lines, then circles, then grid.**
-  Every existing line is a snap target — ordinary sketch edges, the fixed X/Y axes and
-  projected face boundaries. A snapped vertex gets an ordinary `pointOnLine` constraint
-  for every line it lies on, not only projected references; at a crossing it attaches to
-  **both** lines (two point-on-line constraints) and is fully coincident with the
-  intersection. A point snapped onto a circle/arc (including an analytic projected
-  circle) gets `pointOnCircle`, so it can be dragged around the circumference. Snapping
+  and do not duplicate it. Explicit user projections are the separate `project` sketch
+  tool: it resolves picked faces/edges against the body at that sketch step and adds them
+  as live fixed references, distinct from this automatic supporting boundary.
+- **Snapping order is points, then crossings, then lines, then grid.** Every existing
+  line is a snap target — ordinary sketch edges, the fixed X/Y axes and projected face
+  boundaries. A snapped vertex gets an ordinary `pointOnLine` constraint for every line
+  it lies on, not only projected references; at a crossing it attaches to **both** lines
+  (two point-on-line constraints) and is fully coincident with the intersection. Snapping
   to an existing point reuses that point id (coincident), including projected points.
   Drawing tools must return early from `onCurvePointerDown` (`tool` is not
   select/dimension/trim) so an existing edge cannot swallow the click before the draft
@@ -802,8 +820,8 @@ docs/
   constraint marks (not only in the solver), snap targets and profiles (when normal), and
   can be dimensioned. A measurement made only of fixed/projected geometry is forced to a
   reference dimension; a free point measured against projected geometry can still drive.
-  `circleLike` and the constraint-mark lookup use the projected-reference curves, not
-  only `sketch.curves`, or projected circles would render no dimension/mark.
+  `circleLike` and the constraint-mark lookup use `allCurves`, not `sketch.curves`, or
+  projected circles would render no dimension/mark.
 - **Box/lasso selection is a sketch tool, not a pan gesture.** `tool === "box"` uses
   `regionsFullyInside` (fully enclosed); `tool === "lasso"` uses
   `regionsIntersectingPolygon` (touched/crossing, including a freehand loop inside a
