@@ -26,6 +26,10 @@ Items 1–3 are done (`a67c044`, `496b42c`, `b58f5d7`); item 4 is next.
   this means moving the pre-fillet face and rebuilding the tangent chain, or
   offsetting the blend surface itself. This is a history/rebuild decision and
   needs an ADR before code.
+  **Judgment (2026-11-10):** do not move blend faces in place. The supported
+  workflow is history order — insert the offset before the fillet, or edit the
+  fillet after it. A direct blend rebuild changes the feature graph and needs its
+  own ADR; the current diagnostic says exactly that.
 
 - [ ] **5. Adjacent non-parallel selected faces / move-face set** — hard;
   split after 2 and 3.

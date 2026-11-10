@@ -277,16 +277,16 @@ different feature.
 
 | # | Question | Current proposal | Status |
 | --- | --- | --- | --- |
-| O1 | Exact kernel operation for selected faces on a solid? | v1: checked face sweep + boolean for planar/prismatic faces and full 360° cylindrical walls. Blind/partial cylinders still need a rebuild strategy. | **Decided for planar and full cylinders; blind/partial open** |
+| O1 | Exact kernel operation for selected faces on a solid? | v1.5: a checked planar/prismatic move, a ruled loft for slanted planar neighbours, a full/partial cylindrical sector, or a blind cylinder with a planar cap. General curved surfaces and tangent-capped blends are still open. | **Decided for planar, slanted-planar and cylindrical-with-planar-caps** |
 | O2 | Store a signed distance or positive + `flip`? | **Decided: signed `distance`**; the UI shows a magnitude and an out/in flip. | Implemented |
 | O3 | Is `chain` a selection helper or a kernel offset mode? | Selection helper that expands to tangent faces; the same distance applies. | Open — not in v1 |
-| O4 | Show a diameter/radius readout for a single cylindrical face? | Yes, derived: `Ø 20.0 → 20.4 mm`; `enlarge`/`shrink`. | Implemented for a single full cylindrical face |
-| O5 | Are disjoint/opposite faces one feature? | Yes, one distance, one step; each face moves along its normal. | Proposed |
+| O4 | Show a diameter/radius readout for a single cylindrical face? | Yes, derived: `Ø 20.0 → 20.4 mm`; `enlarge`/`shrink`. | Implemented for full and partial cylindrical faces |
+| O5 | Are disjoint/opposite faces one feature? | Yes, one distance, one step; each face moves along its normal. | Implemented for parallel sets; adjacent non-parallel sets are still rejected |
 | O6 | Symmetric or two-sided offset? | Not v1. | Deferred |
 | O7 | Offset to a face/reference? | Not v1; a different relation. | Deferred |
-| O8 | Faces on a shelled body? | Not v1; error or later. | Open |
+| O8 | Faces on a shelled body? | A planar inner/outer wall follows the same limits. | Implemented for a planar wall; other shell topology keeps the same limits |
 | O9 | Multi-body face selection? | Not v1; one body per feature. | Deferred |
-| O10 | How is the source-face ghost drawn during the preview? | Dashed ghost + normal arrow; input faces from the prefix. | Open — not in v1 |
+| O10 | How is the source-face ghost drawn during the preview? | Dashed ghost + normal arrow; input faces from the prefix. | Implemented: dashed source boundary + one normal arrow per selected face |
 | O11 | What is the step type/name and output? | `offset` step, `Offset 1`, `→ body`; rollback prefix input. | Proposed |
 | O12 | Does an offset that removes a face feature (boss/hole) get a special error? | Let the kernel fail; surface the diagnostic; no silent fallback. | Proposed |
 | O13 | How does the feature interact with a downstream sketch on the moved face? | Re-derived role; lost support with reselect/revert if gone. | Proposed |
@@ -306,6 +306,21 @@ Landed (schema v12, current 2026-11-10):
   surfaces invalid/empty/no-op results in the popover and the stage status.
   Cylindrical holes are enlarged with a bigger cut; bosses are grown with an
   annular shell so a coaxial bore (a revolve tube) stays hollow.
+- Slanted planar neighbours use a ruled loft between the old and moved boundary
+  instead of a perpendicular sweep. Each moved vertex is the intersection of
+  the moved face plane and the two adjacent planes, so the outline grows or
+  shrinks with the walls; holes are translated through straight or
+  parallel-cylindrical walls. Convex outer loops only.
+- Blind full cylinders use the wall's axial extent: the open end gets a small
+  pad, the closed end stays at its plane, and the closed end must be a planar
+  cap. Partial cylinders with two straight radial planar caps build an annular
+  sector revolved around the same axis; tangent-capped partial cylinders
+  (fillets) still reject.
+- A planar inner or outer wall on a shelled body follows the same paths and
+  stays one watertight shell in the tested inner-wall case.
+- The draft draws a dashed source-face boundary and a normal arrow per selected
+  face, both taken from the pre-offset ghost mesh; the form errors name the
+  blocking neighbour and a workaround.
 - The `Ø old → new` readout is derived from `TopoRef.hint.radius`/`radialSign`.
 - The draft shows true added/removed boolean-difference meshes (added in the
   highlighter, removed in red) over a faint ghost of the whole pre-offset body,
@@ -319,14 +334,15 @@ Landed (schema v12, current 2026-11-10):
 
 Still missing:
 
-- blind holes and partial cylindrical faces;
-- adjacent non-parallel face sets (they are rejected in v1);
-- the tangent-chain toggle;
-- the normal arrow and dashed source-face ghost (the whole-body ghost and
-  boolean-difference overlays are in);
+- tangent top-edge fillets and tangent-capped partial cylinders (a blend must
+  be rebuilt; use history order and place the offset before the fillet);
+- general curved faces (cone/sphere/torus/B-spline) without a local offset
+  kernel operation;
+- adjacent non-parallel selected faces (a move-face set, not independent
+  sweeps);
+- the tangent-chain selection helper (O3);
 - the adaptive slider ceiling from the shortest **adjacent** dimension (the
-  current ceiling is the body's shortest dimension);
-- faces on a shelled body (O8).
+  current ceiling is the body's shortest dimension).
 
 Same-domain merging landed through an isolated BREP copy; the raw
 `unifySameDomain` prefix bug is documented for an upstream ticket. A kernel build can

@@ -276,25 +276,35 @@ docs/
   `lost · line removed` and re-picked; lost face/edge inputs surface the kernel error and
   can be removed/re-picked but do not yet have a dedicated lost/reselect row. The
   new-sketch support picker is still the open single-candidate decision.
-- **Offset faces v1 is planar/prismatic plus full cylindrical holes and bosses.**
+- **Offset faces v1.5 is planar/prismatic plus cylindrical-with-planar-caps.**
   `docs/showcase/OFFSET_FACES.md` is the contract. `OffsetFaceFeature` (schema v13) stores
   face refs and a signed distance. The planar path sweeps a face and fuses/cuts it; it
-  only accepts parallel face sets and neighbours the sweep preserves (perpendicular
-  planes, coaxial cylinders). The cylindrical path accepts one full 360° wall: a hole is
-  enlarged with a bigger cut cylinder and shrunk by fusing an annular tube; a boss is
-  grown by fusing an annular shell (a solid cylinder would fill a coaxial bore, e.g. a
-  revolve tube) and shrunk by cutting an annular tube. Through holes only;
-  partial cylinders, blind holes, tangent top-edge fillets, slanted walls and non-parallel
-  sets are visible errors. `TopoRef.hint.radius`/`radialSign` feed the `Ø old → new`
-  readout. Same-domain faces are merged through `unifySameDomain` on an isolated BREP
-  copy: calling it directly on a shape that shares subshapes with the cached prefix
-  corrupts a later fuse. If a kernel build still leaves one adjacent cylinder split (seen
-  on a filleted plate after a top-face offset), `topoRefs` coalesces adjacent same-surface
-  faces for refs, the seam edge is not drawn and the face count is the logical one; the
-  B-rep itself is untouched. The draft returns true added/removed boolean-difference meshes
-  (added in the highlighter, removed in red) over a faint ghost of the pre-offset body.
-  Do not replace the feature with a whole-body `offset`, a shell or a scale. Blind/partial cylinders, the tangent-chain expansion and the normal arrow/dashed
-  input-face ghost are still open; do not claim them.
+  only accepts parallel selected faces and neighbours the sweep preserves (perpendicular
+  planes, parallel cylinders). A slanted planar neighbour uses a ruled loft between the
+  old and moved boundary: each moved vertex is the intersection of the moved plane and
+  the two adjacent planes, so convex outer loops grow/shrink with the walls; holes are
+  translated through straight or parallel-cylindrical walls. The cylindrical path
+  accepts a full 360° wall or a partial wall bounded by two straight radial planar caps.
+  A hole is enlarged with a bigger cut and shrunk by fusing an annular tube; a boss is
+  grown with an annular shell (a solid cylinder would fill a coaxial bore, e.g. a revolve
+  tube) and shrunk by cutting an annular tube. A blind cylinder uses the wall's axial
+  extent, pads only the open end, and requires a planar cap. A planar inner/outer wall on
+  a shelled body follows the same paths. `TopoRef.hint.radius`/`radialSign` feed the
+  `Ø old → new` readout.
+  Still rejected: tangent top-edge fillets and tangent-capped partial cylinders (a blend
+  must be rebuilt; place the offset before the fillet in history), general curved
+  surfaces (cone/sphere/torus/B-spline), adjacent non-parallel selected faces and
+  non-convex outer loops. The tangent-chain selection helper and the adaptive adjacent
+  ceiling remain open. The offset diagnostics module names the blocking neighbour and the
+  workaround. The draft draws the dashed source-face boundary and a normal arrow per
+  selected face, and returns true added/removed boolean-difference meshes (added in the
+  highlighter, removed in red) over a faint ghost of the pre-offset body. Same-domain
+  faces are merged through `unifySameDomain` on an isolated BREP copy: calling it directly
+  on a shape that shares subshapes with the cached prefix corrupts a later fuse. If a
+  kernel build still leaves one adjacent cylinder split (seen on a filleted plate after a
+  top-face offset), `topoRefs` coalesces adjacent same-surface faces for refs, the seam
+  edge is not drawn and the face count is the logical one; the B-rep itself is untouched.
+  Do not replace the feature with a whole-body `offset`, a shell or a scale.
 - **Revolve v1 is a history step around an in-plane sketch axis.** `docs/showcase/REVOLVE.md`
   is the contract. Schema v14 `RevolveFeature` stores `sketchId`, regions, an explicit axis
   (a sketch line id or the X/Y reference), a 1–360° angle, a partial direction and

@@ -1,6 +1,7 @@
 # ADR-0006: Offset Faces v1 is a checked planar/prismatic push/pull
 
-- Status: **accepted** (v1 scope, extended to full cylinders), 2026-11-08
+- Status: **accepted** (v1 scope; extended to slanted planar, blind/partial
+  cylinders and shelled bodies), 2026-11-10
 - Contract: [`docs/showcase/OFFSET_FACES.md`](../showcase/OFFSET_FACES.md)
 
 ## Context
@@ -122,6 +123,38 @@ that this repo does not use. File it against `occt-wasm`; only an upstream C++/O
 say whether the binding's handle ownership or OCCT's `ShapeUpgrade_UnifySameDomain` is at
 fault.
 
+## v1.5 extensions (2026-11-10)
+
+The v1 checked sweep stays the reference path for the cases it already handles.
+The following slices were added without a general local-offset kernel:
+
+- **Slanted planar neighbours.** A convex planar face with planar neighbours is
+  rebuilt as a ruled loft between its old and moved boundaries. Each moved
+  vertex is the intersection of the moved face plane and the two adjacent
+  planes. Holes are translated through straight or parallel-cylindrical walls.
+  Outward and inward both use the same tool; the existing boolean, validity,
+  coalescing and role paths run unchanged. Non-convex outer loops are rejected.
+- **Blind full cylinders.** The tool uses the wall's axial extent, pads only the
+  open end, and requires the closed end to be a planar cap.
+- **Partial cylinders with planar radial caps.** The two generatrix edges give
+  the angular span; an annular sector is revolved around the same axis and the
+  boolean extends the fixed radial caps. This supports partial bosses and holes.
+  Tangent-capped partial cylinders (fillets) still reject.
+- **Shelled bodies.** A planar inner/outer wall follows the same paths; the
+  tested inner wall thickens into the cavity and stays one watertight shell.
+- **Draft hint.** The pre-offset source boundary is dashed and each selected face
+  gets a normal arrow, both derived from the ghost mesh.
+- **Diagnostics.** The rejection names the blocking neighbour (slanted wall,
+  top-edge fillet, partial cap, curved face, blind cap, ...) and a workaround.
+
+**Tangent top-edge fillets are deliberately not moved in place.** Doing so would
+rebuild the blend and change the feature graph; the supported workflow is to
+place the offset before the fillet in history (or edit the fillet after it).
+That is a history/feature decision, not a local offset variant, and is left for
+a separate ADR. The same applies to tangent-capped partial cylinders. General
+curved surfaces (cone/sphere/torus/B-spline) and adjacent non-parallel selected
+faces still need a real local-offset/sewing kernel operation.
+
 ## Alternatives considered
 
 1. **Whole-solid `offset()`.** Moves every face; returns a shell in this kernel. Rejected.
@@ -135,14 +168,15 @@ fault.
 
 ## Consequences
 
-- v1 supports planar faces with prismatic neighbours. Curved faces, tangent top-edge
-  fillets, slanted walls and non-parallel sets are visible errors.
-- Cylindrical hole/boss walls (the tolerance/fit case) are **not** done yet; they need a
-  separate rebuild (for example a concentric-tube boolean) and remain the next kernel
-  slice.
-- The tangent-chain toggle, normal arrow and dashed input-face ghost are not
-  implemented. The draft shows true added/removed boolean-difference meshes (added in the
-  highlighter, removed in red) over a faint ghost of the whole pre-offset body.
-- Tests assert volume, bounds, validity and the hole, and failure tests cover a partial
-  cylinder and an inward collapse. The multi-face L-step and undercut are rejected by the
-  adjacency checks.
+- v1.5 supports planar faces with prismatic or slanted planar neighbours, full and
+  partial cylindrical walls with planar radial caps, blind cylinders with planar caps,
+  and planar inner/outer walls on a shelled body. General curved faces, tangent-capped
+  partial cylinders (fillets) and adjacent non-parallel selected faces are visible errors.
+- The cylindrical hole/boss rebuild uses a concentric cut/tube or annular sector; no
+  whole-solid offset is involved.
+- The draft shows the dashed source-face boundary, the normal arrows, and true
+  added/removed boolean-difference meshes over a faint ghost of the whole pre-offset
+  body. The tangent-chain helper and adaptive adjacent ceiling are still open.
+- Tests assert volume, bounds, validity and the hole; failure tests cover a tangent-capped
+  partial cylinder and an inward collapse. The multi-face L-step and undercut are rejected
+  by the adjacency checks.
