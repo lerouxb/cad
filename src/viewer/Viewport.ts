@@ -927,6 +927,18 @@ export class Viewport {
     this.frameContents(direction);
   }
 
+  /**
+   * The `look at sketch` preset: normal to the draft plane, still in the model
+   * scene (DRAFT_VIEW §3). `null` means the default XY plane.
+   */
+  frameDraftNormal(frame?: PlaneFrame | null): void {
+    this.frameContents(
+      frame
+        ? new THREE.Vector3(...frame.normal)
+        : new THREE.Vector3(0, 0, 1),
+    );
+  }
+
   private frameContents(direction: THREE.Vector3): void {
     if (direction.lengthSq() === 0) direction.set(0.9, -1.15, 0.75);
     const box = new THREE.Box3().setFromObject(this.body);

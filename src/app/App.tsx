@@ -6241,7 +6241,8 @@ export function App() {
   ]);
 
   /** View-only stage switch for an open feature draft. */
-  const showDraftInModel = (): void => {    setMode("model");
+  const showDraftInModel = (): void => {
+    setMode("model");
     setModelTool("select");
     setTool("select");
     setSelection([]);
