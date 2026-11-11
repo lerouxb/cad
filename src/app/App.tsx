@@ -10,6 +10,11 @@ import {
 import { copyDocument, createBlankDocument } from "../core/doc/create";
 import { createExampleDocument } from "../core/doc/example";
 import {
+  DEFAULT_EXAMPLE_ID,
+  EXAMPLES,
+  createExampleDocumentById,
+} from "../core/doc/examples";
+import {
   collectDatumFaceRefs,
   faceRefKey,
   refreshDatumFrames,
@@ -673,6 +678,7 @@ export function App() {
   );
   const [historyNotice, setHistoryNotice] = useState<string | null>(null);
   const [fileMenuOpen, setFileMenuOpen] = useState(false);
+  const [exampleMenuOpen, setExampleMenuOpen] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -1849,6 +1855,8 @@ export function App() {
     cancelOpenOperationRef.current();
     setSupportOpen(false);
     setExportOpen(false);
+    setFileMenuOpen(false);
+    setExampleMenuOpen(false);
     setBodyPick(null);
     setEdgeSelection([]);
     setFaceSelection([]);
@@ -4899,6 +4907,16 @@ export function App() {
     return () => window.removeEventListener("pointerdown", close);
   }, [fileMenuOpen]);
 
+  useEffect(() => {
+    if (!exampleMenuOpen) return;
+    const close = (event: PointerEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target?.closest(".example-wrap")) setExampleMenuOpen(false);
+    };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [exampleMenuOpen]);
+
   // The document is the source of truth; keep a local copy for reopening.
   // Debounce because a drag commits a new document on every pointer move.
   useEffect(() => {
@@ -5471,11 +5489,13 @@ export function App() {
     scrollTimelineToEnd();
   };
 
-  const loadExample = (): void => {
+  const loadExample = (id: string = DEFAULT_EXAMPLE_ID): void => {
     endMeasure();
-    // "Load the example" is a full reset, not an edit of the current sketch:
+    setExampleMenuOpen(false);
+    setFileMenuOpen(false);
+    // Loading an example is a full reset, not an edit of the current sketch:
     // created features and document names must not survive it.
-    const fresh = createExampleDocument();
+    const fresh = createExampleDocumentById(id);
     rebuildCache.clear();
     faceBoundaryCache.current.clear();
     faceBoundaryPending.current.clear();
@@ -5577,9 +5597,23 @@ export function App() {
       endMeasure();
       setExportOpen(false);
       setFileIndex(loadFileIndex());
+      setExampleMenuOpen(false);
     }
     setFileDeleteId(null);
     setFileMenuOpen((open) => !open);
+  };
+
+  const toggleExampleMenu = (): void => {
+    if (!exampleMenuOpen) {
+      // The example menu is a page-level header surface: it leaves an open
+      // operation exactly as its cancel would, like the file menu.
+      cancelOpenOperationRef.current();
+      setCancelToken((token) => token + 1);
+      endMeasure();
+      setExportOpen(false);
+      setFileMenuOpen(false);
+    }
+    setExampleMenuOpen((open) => !open);
   };
 
   const openLocalDocument = (entry: LocalFileEntry): void => {
@@ -5782,6 +5816,10 @@ export function App() {
           setFileMenuOpen(false);
           return;
         }
+        if (exampleMenuOpen) {
+          setExampleMenuOpen(false);
+          return;
+        }
         if (filletOpen) {
           cancelFillet();
           return;
@@ -5890,7 +5928,7 @@ export function App() {
       if (textField || event.defaultPrevented) return;
       if (event.key === "Enter" && (tag === "BUTTON" || tag === "A")) return;
       // Menus own their content; Enter activates a focused menu item natively.
-      if (insertMenu || fileMenuOpen) return;
+      if (insertMenu || fileMenuOpen || exampleMenuOpen) return;
 
       const meta = event.metaKey || event.ctrlKey;
       if (meta && event.key.toLowerCase() === "z") {
@@ -6293,7 +6331,9 @@ export function App() {
             title="File menu"
             data-testid="file-menu"
           >
-            <span className="doc-name">{doc.name}</span>
+            <span className="doc-name" data-testid="doc-name">
+              {doc.name}
+            </span>
             <span className="doc-ext">.cad</span>
             <span className="doc-caret">▾</span>
           </button>
@@ -6353,6 +6393,7 @@ export function App() {
                   viewportRef.current?.clearPick();
                   viewportRef.current?.setFaceSelection([]);
                   setFileMenuOpen(false);
+                  setExampleMenuOpen(false);
                   setExportError(null);
                   setExportOpen(true);
                 }}
@@ -6464,14 +6505,40 @@ export function App() {
             redo
           </button>
           <span className="doc-sep" aria-hidden="true" />
-          <button
-            className="text-action"
-            type="button"
-            onClick={loadExample}
-            data-testid="load-example"
-          >
-            example
-          </button>
+          <div className="example-wrap">
+            <button
+              className="text-action"
+              type="button"
+              onClick={toggleExampleMenu}
+              aria-haspopup="menu"
+              aria-expanded={exampleMenuOpen}
+              data-testid="load-example"
+            >
+              example <span className="doc-caret">▾</span>
+            </button>
+            {exampleMenuOpen ? (
+              <div
+                className="file-menu example-menu"
+                role="menu"
+                aria-label="Examples"
+                data-testid="example-menu"
+              >
+                {EXAMPLES.map((example) => (
+                  <button
+                    key={example.id}
+                    className="example-item"
+                    type="button"
+                    role="menuitem"
+                    onClick={() => loadExample(example.id)}
+                    data-testid={`example-${example.id}`}
+                  >
+                    <span className="example-name">{example.label}</span>
+                    <span className="example-note">{example.description}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <button
             className="text-action"
             type="button"

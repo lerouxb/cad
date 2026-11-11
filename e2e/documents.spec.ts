@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect } from "@playwright/test";
-import { resetExample, test } from "./support/app";
+import { loadExample, resetExample, test } from "./support/app";
 import {
   setSlider,
   volume,
@@ -168,9 +168,9 @@ test("reloading the example reuses its local file entry", async ({ app: page }) 
   // The built-in example has a stable id, so a reload updates its local file
   // instead of piling up identical Example.cad rows.
   await page.getByTestId("timeline-sketch").click();
-  await page.getByTestId("load-example").click();
+  await loadExample(page);
   await page.waitForTimeout(400);
-  await page.getByTestId("load-example").click();
+  await loadExample(page);
   await page.waitForTimeout(400);
   await page.getByTestId("file-menu").click();
   const rows = page.getByTestId("local-file-list").locator(".file-entry");

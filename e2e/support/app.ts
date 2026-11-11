@@ -63,14 +63,14 @@ export async function resetExample(page: Page): Promise<void> {
     if (document.querySelector('[data-testid="file-menu-popover"]')) {
       click("file-menu");
     }
+    if (document.querySelector('[data-testid="example-menu"]')) {
+      click("load-example");
+    }
   });
-  // `load-example` is a header button that survives every document, so a
-  // direct DOM click is safe here and skips the actionability round trip.
-  await page.evaluate(() => {
-    document
-      .querySelector<HTMLElement>('[data-testid="load-example"]')
-      ?.click();
-  });
+  // The menu item only exists after React has rendered the open menu, so this
+  // is two real clicks rather than one page evaluation.
+  await page.getByTestId("load-example").click();
+  await page.getByTestId("example-plate").click();
   // Loading leaves the history cursor empty: the full document renders. A test
   // that edits a step selects it explicitly.
   await expect.poll(() => volume(page)).toBeCloseTo(examplePlateVolume(), -1);
@@ -78,6 +78,15 @@ export async function resetExample(page: Page): Promise<void> {
     "data-active-feature",
     "",
   );
+}
+
+/** Open the header example menu and load one by id. */
+export async function loadExample(
+  page: Page,
+  id: string = "plate",
+): Promise<void> {
+  await page.getByTestId("load-example").click();
+  await page.getByTestId(`example-${id}`).click();
 }
 
 /** Set a range input the way a user would, through React's onChange. */

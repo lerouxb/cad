@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect } from "@playwright/test";
-import { resetExample, test } from "./support/app";
+import { loadExample, resetExample, test } from "./support/app";
 import {
   setSlider,
   volume,
@@ -63,7 +63,7 @@ test("the sketch body reference follows the history cursor", async ({
 
   // Loading the example resets the cursor to its first sketch and drops the
   // body with it, so no stale reference survives the document switch.
-  await page.getByTestId("load-example").click();
+  await loadExample(page);
   await expect(references).toHaveCount(0);
   expect(errors).toEqual([]);
 });

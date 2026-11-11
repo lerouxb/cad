@@ -77,11 +77,15 @@ is an editable sketcher driving an exact solid:
   reselect/revert, face sketches can flip sides while keeping that side stable, and the
   support picker previews the chosen plane on a dimmed body, and datum-plane drafts
   preview their candidate frame live. M4's core flow is in; only support-list detail copy
-  and through-3-point planes remain. The example part is
-  hand-authored (`core/sketch/demo.ts` + `core/doc/example.ts`, including a suppressed
-  center-pin extrude from the same sketch, a suppressed mounting-holes cut, a suppressed
-  four-edge "Rounded plate" fillet and an alternative suppressed "Beveled plate" chamfer
-  so the base body, picking coordinates and volume goldens stay stable); the
+  and through-3-point planes remain. The default part is hand-authored
+  (`core/sketch/demo.ts` + `core/doc/example.ts`, including a suppressed center-pin
+  extrude from the same sketch, a suppressed mounting-holes cut, a suppressed four-edge
+  "Rounded plate" fillet and an alternative suppressed "Beveled plate" chamfer so the
+  base body, picking coordinates and volume goldens stay stable). `core/doc/examples.ts`
+  is the example registry behind the header `example` menu: default plate, revolve
+  tube/half/cone, D-shaped partial boss, blind-hole plate, chamfered plate, top-edge
+  fillet plate, shelled tray and the rounded/beveled variants. Each example is plain
+  JSON and is covered by `e2e/examples.spec.ts`; the
   timeline now lists the real feature history with select,
   inline rename, create, edit, drag-reorder, suppress, delete-cascade, a
   selection-driven history cursor and per-feature status/diagnostics. `.cad` download/open/rename/new, blind/symmetric/
