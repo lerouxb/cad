@@ -123,7 +123,7 @@ import type {
   TopoRef,
 } from "../core/kernel/protocol";
 import { edgeRefKey } from "../core/kernel/protocol";
-import { formatLength } from "../core/format";
+import { formatArea, formatLength } from "../core/format";
 import { extractKernelFeatures, rebuildDocument } from "../core/rebuild/engine";
 import { canonicalJson, stableHash } from "../core/rebuild/hash";
 import {
@@ -7552,6 +7552,15 @@ export function App() {
                 if (handleNewSketch()) setSupportOpen(false);
               }}
               faceLabel={supportFace?.role}
+              faceDetail={
+                supportFace
+                  ? `${supportFace.hint.surfaceType === "PLANE" ? "planar" : "curved"}${
+                      supportFace.hint.area !== undefined
+                        ? ` · ${formatArea(supportFace.hint.area)} mm²`
+                        : ""
+                    }`
+                  : undefined
+              }
               faceSupported={supportFaceSupported}
               plane={supportPlane}
               onPlane={(plane) => {
@@ -7561,6 +7570,7 @@ export function App() {
               datums={datumPlaneFeatures(buildDoc).map((feature) => ({
                 id: feature.id,
                 name: feature.name,
+                detail: datumDefinitionLabel(feature.definition),
               }))}
               datumId={supportDatumId}
               onDatum={setSupportDatumId}

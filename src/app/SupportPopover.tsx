@@ -8,6 +8,8 @@ interface SupportPopoverProps {
   onApply: () => void;
   /** A current body-face pick, used as the sketch support when planar. */
   faceLabel?: string;
+  /** Surface type + area for the selected face row. */
+  faceDetail?: string;
   faceSupported?: boolean;
   /** Sketch on the opposite side of the picked face. */
   faceFlipped?: boolean;
@@ -16,7 +18,7 @@ interface SupportPopoverProps {
   plane: WorldPlane;
   onPlane: (plane: WorldPlane) => void;
   /** Existing datum planes, selectable as a support. */
-  datums?: ReadonlyArray<{ id: string; name: string }>;
+  datums?: ReadonlyArray<{ id: string; name: string; detail?: string }>;
   datumId?: string | null;
   onDatum?: (id: string | null) => void;
 }
@@ -31,6 +33,7 @@ export function SupportPopover({
   onCancel,
   onApply,
   faceLabel,
+  faceDetail,
   faceSupported = false,
   faceFlipped = false,
   onFlipFace,
@@ -73,7 +76,10 @@ export function SupportPopover({
       {faceLabel ? (
         <div className="feature-row">
           <span className="detail-key">selected face</span>
-          <span className="detail-value">{faceLabel}</span>
+          <span className="detail-value">
+            {faceLabel}
+            {faceDetail ? ` · ${faceDetail}` : ""}
+          </span>
           {onFlipFace ? (
             <button
               className={`text-action${faceFlipped ? " is-primary" : ""}`}
@@ -128,6 +134,7 @@ export function SupportPopover({
             {datums.map((candidate) => (
               <option key={candidate.id} value={candidate.id}>
                 {candidate.name}
+                {candidate.detail ? ` · ${candidate.detail}` : ""}
               </option>
             ))}
           </select>

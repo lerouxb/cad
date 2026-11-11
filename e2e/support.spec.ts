@@ -126,7 +126,15 @@ test("creates an offset datum plane and sketches on it", async ({
   );
 
   await openInsert(page, "sketch");
-  await page.getByTestId("support-datum").selectOption({ label: "Plane 2" });
+  await expect(
+    page
+      .getByTestId("support-datum")
+      .locator("option")
+      .filter({ hasText: "Plane 2 · offset 10 mm" }),
+  ).toHaveCount(1);
+  await page.getByTestId("support-datum").selectOption({
+    label: "Plane 2 · offset 10 mm",
+  });
   await expect(page.getByTestId("support-popover")).toContainText(
     "datum plane · Plane 2",
   );
@@ -258,7 +266,9 @@ test("datum planes based on a face follow source body edits", async ({
   await page.getByTestId("datum-apply").click();
 
   await openInsert(page, "sketch");
-  await page.getByTestId("support-datum").selectOption({ label: "Plane 2" });
+  await page.getByTestId("support-datum").selectOption({
+    label: "Plane 2 · offset 0 mm",
+  });
   await page.getByTestId("new-sketch").click();
   await page.getByTestId("tool-circle").click();
   await clickSketch(page, 10, 10);

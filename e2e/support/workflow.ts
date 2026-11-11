@@ -39,6 +39,7 @@ export async function sketchOnPickedFace(page: Page): Promise<void> {
   await expect(page.getByTestId("support-popover")).toContainText(
     "planar face",
   );
+  await expect(page.getByTestId("support-popover")).toContainText("mm²");
   await expect(page.getByTestId("new-sketch")).toBeEnabled();
   await page.getByTestId("new-sketch").click();
 
