@@ -85,10 +85,12 @@ These are our decisions or our remaining algorithms, not dependency gaps:
   feature-graph ADR, not an upstream kernel change.
 - **Adjacent non-parallel selected faces.** A move-face set needs a combined
   vertex solve; independent per-face sweeps are wrong.
-- **Draft view: model profile/axis picking and plane-aware framing.** The
-  default model entry, preview, selected-profile fill and background no-op have
-  landed, but the 3D profile/axis pick and plane-aware camera are app UX work
-  tracked in `NEXT_STEPS` item 8. No dependency gap.
+- **Draft view: model profile/axis picking, plane-aware framing and the
+  remaining model controls.** The default model entry, preview,
+  selected-profile fill and background no-op have landed, but the 3D
+  profile/axis pick, plane-aware camera, model tool-options draft state and
+  on-geometry height/angle handles are app UX work tracked in `NEXT_STEPS`
+  item 8. No dependency gap.
 - **Adaptive adjacent slider ceiling and tangent-chain selection helper.** UX
   work, not blocked upstream.
 - **Multi-body, assemblies, patterns, mirrors, drafts, lofts/sweeps, splines,
