@@ -105,6 +105,8 @@ Move it under **Now** when it becomes the next priority.
 
 ## Done
 
+- 2026-11-11 — complex stepped-shaft revolve example with an arc groove and a
+  Pappus volume check (`9e6368d`).
 - 2026-11-11 — header example menu with 11 built-in revolve/offset/blend/shell
   fixtures and exact-volume e2e (`bd9fe56`).
 - 2026-11-10 — offset an inner wall of a shelled body, covering O8's planar
