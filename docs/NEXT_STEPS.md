@@ -111,12 +111,29 @@ Move it under **Now** when it becomes the next priority.
 - Constraint marks: keep the screen-space checks in the e2e suite when adding
   a new mark shape (`vector-effect` on each stroked child, not the group).
 
+## Contained wins
+
+These are planned small, self-contained changes: no kernel or schema dependency,
+no open design decision, and one commit each. Good fill-in tasks while a larger
+UX slice is blocked.
+
+- [ ] **Support-picker row details** — show the face role + area and the datum
+  definition (e.g. “between faces”) in the existing support list. Do **not**
+  include the pending “untitled” history row; that is a separate timeline state.
+- [x] **Revolve angle presets** — 90° / 180° / 270° / 360° quick buttons beside
+  the angle field, calling the same `onAngle` (REVOLVE O4). No kernel change
+  (`c9824ee`).
+- [ ] **Dimension double-click makes it sole** — if the label is part of a
+  multi-selection, select only that dimension before opening the inline editor
+  (SELECTION O3). No document change.
+
 ## Doing
 
 - Nothing in progress.
 
 ## Done
 
+- 2026-11-11 — revolve angle presets (`c9824ee`).
 - 2026-11-11 — complex stepped-shaft revolve example with an arc groove and a
   Pappus volume check (`9e6368d`).
 - 2026-11-11 — header example menu with 11 built-in revolve/offset/blend/shell
