@@ -617,7 +617,10 @@ docs/
   controls are exempt. **Exception:** an extrude/revolve preview (new draft or editor)
   makes the canvas the orbit surface, so a background press is a no-op; footer cancel,
   Escape and the timeline are the exits. New extrude/revolve drafts open on the model
-  with the preview; their profile/axis rows still switch to the sketch for precise
+  with the preview; the camera frames the resolved sketch plane and preview obliquely
+  (`Viewport.frameDraft`, derived from the plane frame so an inclined face is readable),
+  once per draft/editor — value drags never re-frame. Their profile/axis rows still
+  switch to the sketch for precise
   picking until the model pick mode lands (`NEXT_STEPS` item 8). The popover footer is a
   summary + quiet `cancel` + primary `apply`; `cancel` restores the feature as it was
   when the popover opened. A **new extrude is a UI-only draft** (`extrudeDraft`) started

@@ -8,6 +8,12 @@
 > [`MODES.md`](MODES.md) (the input tables), [`SELECTION.md`](SELECTION.md)
 > (selection families and feature chips), [`BOOLEANS.md`](BOOLEANS.md) (the
 > preview language) and [`REVOLVE.md`](REVOLVE.md) (the axis).
+>
+> **Landed so far:** drafts open on the model with the preview, the source sketch
+> overlay, the view-only sketch round trip, a background no-op, and the
+> plane-aware oblique camera (§2.4). Profile/axis picking still switches to the
+> sketch stage; the model pick modes, plane quad, on-geometry handles and the
+> x-ray pick state remain.
 
 ## The one line
 
@@ -62,7 +68,9 @@ The transition is a **camera move and a preview**, not a new document state.
    sketch plane and the preview, not to a canned world isometric. The plane is
    readable, the growth direction is visible, and the surrounding body is in
    frame. The camera does not spin; it tilts from the normal view to the
-   drafting view.
+   drafting view. *Landed:* `Viewport.frameDraft` builds the direction from the
+   resolved frame's axes so a sketch on an inclined face is not viewed edge-on;
+   the frame is applied once per draft/editor, not on every value drag.
 5. **The form appears.** The same draggable `FeaturePopover` opens top-right;
    it is never a modal and never replaces the stage.
 6. **The stage becomes the draft's input surface.** Orbit/zoom work normally.

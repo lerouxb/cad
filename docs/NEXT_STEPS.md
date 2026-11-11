@@ -61,8 +61,9 @@ the offset queue; schedule the remaining model-pick work as a UX pass.
 
 - [ ] **8. Open feature drafts on the model** — no kernel, document or schema
   change; the existing preview/rebuild is the engine. **Partial:** the default
-  model entry, model fit, selected-profile fill, view-only stage round trip and
-  preview background rule landed (`552af78`, `45ceadc`, `8967f0d`).
+  model entry, model fit, selected-profile fill, view-only stage round trip,
+  preview background rule and plane-aware oblique framing landed (`552af78`,
+  `45ceadc`, `8967f0d`).
   - [x] View-only `view 3D` / `look at sketch` stage toggle in the foot; the
     draft form and profile list stay open and the model overlay fills the
     selected draft profiles.
@@ -73,9 +74,11 @@ the offset queue; schedule the remaining model-pick work as a UX pass.
     is the orbit surface); footer cancel, Escape and the timeline are the exits.
     Ordinary face/edge picking is suspended while the preview owns the canvas
     (`8967f0d`).
-  - [ ] Frame the camera on the **sketch plane + preview** (oblique drafting
+  - [x] Frame the camera on the **sketch plane + preview** (oblique drafting
     view) rather than only fitting the body; keep the normal sketch camera
-    available in the sketch stage.
+    available in the sketch stage. The direction is derived from the resolved
+    plane frame (`Viewport.frameDraft`) and frames once per draft/editor, not on
+    a value drag. E2E covers a right-face sketch draft.
   - Draw the source sketch as a read-only draft overlay on its resolved frame:
     regions, edges, construction and X/Y references; no dimensions, constraint
     marks, grid or sketch selection.
