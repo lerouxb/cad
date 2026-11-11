@@ -48,11 +48,19 @@ test("revolves a rectangle around Y into a tube", async ({ app: page }) => {
   await expect(page.getByTestId("revolve-select-profiles")).toHaveText(
     "select",
   );
-  await page.getByTestId("revolve-angle").fill("180");
+  await page.getByTestId("revolve-angle-180").click();
+  await expect(page.getByTestId("revolve-angle")).toHaveValue("180");
   await expect
     .poll(() => volume(page))
     .toBeCloseTo(full / 2, -1);
   await expect(page.getByTestId("revolve-ccw")).toBeVisible();
+  await page.getByTestId("revolve-angle-360").click();
+  await expect(page.getByTestId("revolve-angle")).toHaveValue("360");
+  await expect.poll(() => volume(page)).toBeCloseTo(full, -1);
+  await page.getByTestId("revolve-angle-180").click();
+  await expect
+    .poll(() => volume(page))
+    .toBeCloseTo(full / 2, -1);
   await page.getByTestId("revolve-cancel").click();
   await expect
     .poll(() => volume(page))

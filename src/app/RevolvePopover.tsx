@@ -172,6 +172,24 @@ export function RevolvePopover({
         ariaLabel="Revolve angle in degrees"
       />
 
+      <div className="feature-row">
+        <span className="detail-key">preset</span>
+        <span className="sc-chip-row">
+          {[90, 180, 270, 360].map((value) => (
+            <button
+              key={value}
+              className={`sc-chip${angles === value ? " is-active" : ""}`}
+              type="button"
+              onClick={() => onAngle(value)}
+              aria-pressed={angles === value}
+              data-testid={`revolve-angle-${value}`}
+            >
+              {value}°
+            </button>
+          ))}
+        </span>
+      </div>
+
       {angles < 360 ? (
         <div className="feature-row">
           <span className="detail-key">direction</span>
