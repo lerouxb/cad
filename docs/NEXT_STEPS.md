@@ -123,9 +123,10 @@ UX slice is blocked.
 - [x] **Revolve angle presets** — 90° / 180° / 270° / 360° quick buttons beside
   the angle field, calling the same `onAngle` (REVOLVE O4). No kernel change
   (`c9824ee`).
-- [ ] **Dimension double-click makes it sole** — if the label is part of a
+- [x] **Dimension double-click makes it sole** — if the label is part of a
   multi-selection, select only that dimension before opening the inline editor
-  (SELECTION O3). No document change.
+  (SELECTION O3). The label's plain press already collapses the set, so this
+  was a regression test, not a code change (`7c7185d`).
 
 ## Doing
 
@@ -133,6 +134,7 @@ UX slice is blocked.
 
 ## Done
 
+- 2026-11-11 — dimension double-click sole-selection regression (`7c7185d`).
 - 2026-11-11 — support-picker face/datum details (`c528793`).
 - 2026-11-11 — revolve angle presets (`c9824ee`).
 - 2026-11-11 — complex stepped-shaft revolve example with an arc groove and a
