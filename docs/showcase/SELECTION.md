@@ -358,7 +358,7 @@ Selection means the same thing in the sketch and the model. The highlighter is a
 | --- | --- | --- | --- |
 | O1 | Add a `regions` filter to the tool options row? | No; profile mode owns regions, normal select owns geometry. | Proposed |
 | O2 | Can a box/lasso select profiles outside profile mode? | No; enter via a region click (single/multi) or a feature chip (`extrude…`/`revolve…`), then marquee in the draft. | Proposed |
-| O3 | Double-click one dimension inside a multi-selection? | Make it the sole selection and open the editor. | Proposed |
+| O3 | Double-click one dimension inside a multi-selection? | Make it the sole selection and open the editor. | Implemented (2026-11-11): the label's own plain press collapses the set before the editor opens; e2e regression in `sketch.spec.ts` |
 | O4 | Show an inapplicable feature chip disabled or hide it? | Hide it; the hint explains when nothing applies. | Proposed |
 | O5 | Is `new sketch` also in the face popover, or only the insert gap? | Both; the face popover is the direct path. | Implemented |
 | O6 | Does Delete delete a selected feature step? | No; use the timeline detail (D10). | Implemented (no-op) |

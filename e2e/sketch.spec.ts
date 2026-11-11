@@ -178,6 +178,45 @@ test("creates, edits and deletes parametric dimensions", async ({ app: page }) =
 });
 
 
+test("double-clicking a dimension in a multi-selection makes it sole", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+
+  const dimensions = page.locator("[data-dimension-id]");
+  await expect(dimensions).toHaveCount(3);
+  const width = dimensions.filter({ hasText: /^60$/ });
+  const height = dimensions.filter({ hasText: /^40$/ });
+  await width.click();
+  await page.keyboard.down("Shift");
+  await height.click();
+  await page.keyboard.up("Shift");
+  await expect(page.getByTestId("selection-panel")).toHaveAttribute(
+    "data-count",
+    "2",
+  );
+
+  // The edit target is the subject: opening the inline editor collapses the
+  // pair to the one dimension (SELECTION O3) instead of editing inside a set.
+  await width.dblclick();
+  await expect(page.getByTestId("dimension-input")).toBeVisible();
+  await expect(page.getByTestId("selection-panel")).toHaveAttribute(
+    "data-count",
+    "1",
+  );
+  await expect(page.locator("[data-selection-id]")).toHaveCount(1);
+  await expect(page.locator("[data-selection-id]")).toHaveAttribute(
+    "data-selection-id",
+    "dim-width",
+  );
+
+  await page.getByTestId("dimension-input").press("Escape");
+  await expect(page.getByTestId("dimension-input")).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+
+
 test("commits a dimension kind change with Enter and locks reference values", async ({
   app: page,
 }) => {
