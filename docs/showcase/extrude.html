@@ -28,6 +28,7 @@
         <a href="transform.html">transform</a>
         <a class="is-active" href="extrude.html">extrude</a>
         <a href="revolve.html">revolve</a>
+        <a href="draft-view.html">draft</a>
         <a href="booleans.html">booleans</a>
         <a href="inspect.html">inspect</a>
       </nav>
@@ -128,6 +129,14 @@
         <li><b>Taper:</b> a draft angle on the side walls, so the top is smaller (or larger) than the base.</li>
         <li><b>Operation:</b> the same four-way row as every solid feature — <b>new body</b>, <b>join</b>, <b>cut</b> or <b>intersect</b> (see <a href="BOOLEANS.md">BOOLEANS.md</a>). A cut previews the removed material in red; an intersect keeps the overlap and ghosts the rest.</li>
       </ul>
+      <h3>Where the draft lives</h3>
+      <p>
+        An extrude is a solid operation, so the draft should open on the
+        <b>model</b> with the profile visible in 3D, not stay in the sketch.
+        <a href="DRAFT_VIEW.md">DRAFT_VIEW.md</a> proposes that stage: live
+        preview, profiles picked in the same view, and a camera preset back to
+        the plane. <a href="draft-view.html">draft-view.html</a> is the study.
+      </p>
       <h3>Open questions</h3>
       <ul>
         <li>Do start offset and to-object need a value field plus a pick, or can the pick fill the value (Fusion's "to object" does)?</li>

@@ -119,6 +119,23 @@ list is the detail.
   unlike a model form's background click. Profile pixels are the form's input
   surface; losing the whole draft on a deselect is surprising.
 
+### 4a. Draft view (proposed, 2026-11-10)
+
+[`DRAFT_VIEW.md`](DRAFT_VIEW.md) proposes that an extrude/revolve draft opens on
+the **model** stage, with the source sketch on its plane. The profile row then
+uses `profile N selected  pick` in both stages (no `pick in sketch`), and the
+pick surface is the sketch's region fills rendered in the model view:
+
+- entering the pick ghosts the preview body and makes the region fills targets;
+- the model tool row shows the draft input family (`profiles` / `axis`) and a
+  quiet `done`, instead of the ordinary selection filters;
+- the same list, `All / Voids / Auto` helper, Shift-add, box/lasso and empty-pick
+  behaviour apply; the stage does not switch.
+
+This is a proposed change to the pattern table, not the current app. The single
+candidate (axis/support) is unchanged: it is still a row + `pick`; only its
+candidate lines are rendered in the model view.
+
 ## 5. Single candidate: axis and support
 
 - A single candidate is a **row + `pick`**, never a wall of chips in the form.
@@ -241,3 +258,7 @@ Still open:
   row + `pick` shape).
 - **Profile row detail** is area for every region; a bounds fallback for a
   degenerate/meaningless area is still open (O2).
+- **Draft view (proposed).** Moving the profile pick into the model
+  ([`DRAFT_VIEW.md`](DRAFT_VIEW.md)) changes the stage-switch button to a pick
+  toggle and adds a draft input family to the model tool row. The list, ordinals,
+  pruning and summary rules are unchanged; the implementation is not landed.

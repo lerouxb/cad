@@ -46,6 +46,9 @@ entity, or a line draft — all different answers to "what does Escape do?".
 - **I3** An operation belongs to a stage. An extrude draft lives in sketch
   mode; fillet/chamfer/shell/datum/support live in model mode. Crossing to the
   other stage cancels the operation; it is never left hidden.
+  [`DRAFT_VIEW.md`](DRAFT_VIEW.md) proposes moving the new extrude/revolve draft
+  to model mode so the operation and its preview share a stage; that is not
+  implemented yet.
 - **I4** A hidden stage holds no live input state (no draft, no marquee, no
   inline editor, no armed tool).
 - **I5** Selection is not a mode. It is data that the current operation reads.
@@ -282,6 +285,27 @@ Notes:
 - Selection filters (`all` / `edges` / `faces` on the model, `all` / `points` /
   `curves` / `dimensions` in the sketch) persist across stage and cursor changes,
   and reset on new/open document (D12).
+
+### 3.2a Proposed: the draft view
+
+> Status: **proposed**, 2026-11-10. The design is
+> [`DRAFT_VIEW.md`](DRAFT_VIEW.md). Until it lands, the extrude/revolve draft
+> rows are still S10 and M17 above.
+
+A sketch-consuming feature draft moves to the model stage. The source sketch is a
+read-only overlay on its plane; the preview is the subject. The profile and axis
+picks happen in the model, not by switching to the sketch stage.
+
+| State | Enter | Escape | Stage background | Timeline | Delete |
+| --- | --- | --- | --- | --- | --- |
+| Draft · model · no pick | apply if valid | cancel (restore origin) | preview: no-op; pick surface: input | cancel, then `nav` | — |
+| Draft · model · profile pick | `done` → preview | exit pick, keep draft | input (toggle a region); an empty click clears hover, keeps the draft | cancel, then `nav` | clear profiles, keep draft |
+| Draft · model · axis pick | `done` → preview | exit pick, keep draft | input (pick a candidate); a non-candidate is blocked | cancel, then `nav` | — |
+
+The deliberate difference from D8 is the background click: the draft's canvas is
+a preview and a pick surface, not a modal backdrop, so an empty click is a no-op
+rather than a cancel. The form's `cancel`, Escape and a timeline click remain
+the one meaning of "leave".
 
 ### 3.3 Global keyboard
 

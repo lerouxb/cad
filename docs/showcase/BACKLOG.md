@@ -178,3 +178,8 @@ already ahead in several places, which is worth not regressing:
   it relate to the visibility toggles? The visibility direction is now "per body,
   folded into the output chip, no second list" — see
   [`TIMELINE.md`](TIMELINE.md).
+- **Feature draft view:** an extrude/revolve draft should open on the model, not
+  stay in the sketch. [`DRAFT_VIEW.md`](DRAFT_VIEW.md) proposes one scene, two
+  cameras, profile/axis picking in 3D and `look at sketch` as a view preset. It
+  is designed but not implemented; `beginExtrudeDraft`/`beginRevolveDraft` still
+  set the sketch stage.

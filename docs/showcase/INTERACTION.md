@@ -250,6 +250,16 @@ The kicker says what *kind* of thing this is (`sketch tool`, `body op`,
 `sketch feature`, `inspect`); the title is the object's name when editing
 (`pattern 1`) or the tool's name when creating (`rectangular pattern`).
 
+## Feature drafts open on the model
+
+An extrude or revolve draft is a **solid operation**, not a bigger sketch
+popover. The draft opens on the model stage with the source sketch on its plane;
+the preview is the subject and profiles/the axis stay pickable there. The form
+does not change shape — only the stage behind it. The sketch is read-only input
+while the draft is open, and `look at sketch` is a camera preset, not a stage
+switch. See [`DRAFT_VIEW.md`](DRAFT_VIEW.md) (proposed; the app still keeps the
+draft in the sketch stage).
+
 ## Where each surface stands
 
 | Surface | Input | Actions | Target |

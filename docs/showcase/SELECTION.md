@@ -168,6 +168,11 @@ the selection popover closes. The draft owns its inputs until apply/cancel.
 - `revolve…` starts the revolve draft with the same profile; its form adds an
   axis and an angle (see [`REVOLVE.md`](REVOLVE.md)). The region set is still the
   one selection.
+- **The draft opens on the model** (proposed in
+  [`DRAFT_VIEW.md`](DRAFT_VIEW.md)): the source sketch stays on its plane as a
+  read-only overlay and the profile/axis are picked in the same 3D view as the
+  preview. The chip is still the only entry; a click on a profile never starts a
+  feature.
 - The form's **operation row** (`new body` / `join` / `cut` / `intersect`) is the
   shared contract in [`BOOLEANS.md`](BOOLEANS.md). The selection popover starts
   the feature; it never chooses the boolean itself.

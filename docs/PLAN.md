@@ -606,6 +606,15 @@ follows; deleting a base face produces a visible, recoverable error.
       list and `axis · line N · construction · pick` candidate mode (with the candidate
       highlight and Escape-first exit) are in. The start-profile/angle-arc preview and a
       3D axis outside the sketch plane remain open. Contract: `docs/showcase/REVOLVE.md`
+- [ ] **Feature drafts open on the model** (proposed 2026-11-10; design:
+      `docs/showcase/DRAFT_VIEW.md` + `draft-view.html`). An extrude/revolve draft
+      should leave the sketch stage: the source sketch stays on its plane as a
+      read-only overlay, the preview is the subject, and profiles/axis are picked in
+      the same 3D view. `look at sketch` is a camera preset, not a stage switch.
+      The contract is **one scene, two cameras**: the sketch stage is a normal-to-plane
+      camera over the same world. This replaces the sketch-stage draft cells (S10/M17)
+      when implemented; today `beginExtrudeDraft`/`beginRevolveDraft` still set
+      `mode = "sketch"`.
 - [x] **Offset Faces v1 (planar + full cylinders)** — schema v12 `OffsetFaceFeature`
       with face refs and a signed distance (schema v13 adds the face-hint radius/
       radial-sign data used by the cylindrical readout). The plan path sweeps planar

@@ -472,9 +472,17 @@
         <li><b>The operation row is shared.</b> <a href="BOOLEANS.md">BOOLEANS.md</a> wins: cut shows removed material in red; intersect keeps the overlap and ghosts the rest.</li>
         <li><b>Kernel is available.</b> `brepjs.revolve` takes a planar face and an axis; the missing work is the feature, form and worker path.</li>
       </ul>
+      <h3>Where the draft lives</h3>
+      <p>
+        The revolve draft should open on the <b>model</b>, with the profile on
+        its plane and the candidate axes in 3D. The axis is still an in-plane
+        sketch line, but the sweep, the side and the end faces are visible while
+        picking. <a href="DRAFT_VIEW.md">DRAFT_VIEW.md</a> is the proposed stage;
+        <a href="draft-view.html">draft-view.html</a> shows the live axis pick.
+      </p>
       <h3>Open questions</h3>
       <ul>
-        <li>Axis pick in the stage or a dropdown? The study proposes stage pick with X/Y chips.</li>
+        <li>Axis pick in the stage or a dropdown? The study proposes the 3D stage pick with X/Y references.</li>
         <li>90 / 180 / 270 / 360 angle presets?</li>
         <li>Symmetric/two-sided partial revolve?</li>
         <li>Can a datum axis outside the sketch plane be a revolve axis later?</li>

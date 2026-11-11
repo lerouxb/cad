@@ -1,0 +1,495 @@
+<!doctype html>
+<html lang="en" data-theme="day">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>cad studies — the draft leaves the sketch</title>
+    <link rel="stylesheet" href="../mockups/mockup.css" />
+    <link rel="stylesheet" href="showcase.css" />
+    <script src="../mockups/theme-init.js"></script>
+  </head>
+  <body>
+    <div class="mockbar">
+      <a class="mockbar-brand" href="../mockups/index.html">
+        cad <span class="tag">tool showcase</span>
+      </a>
+      <nav class="mockbar-nav" aria-label="Showcase">
+        <a href="index.html">sketch layout</a>
+        <a href="sketch-edit.html">sketch edit</a>
+        <a href="dimension.html">dimension</a>
+        <a href="constraints.html">constraints</a>
+        <a href="selection.html">selection</a>
+        <a href="sketch-create.html">sketch create</a>
+        <a href="select.html">select</a>
+        <a href="select-model.html">model select</a>
+        <a href="offset-faces.html">offset</a>
+        <a href="body-ops.html">body ops</a>
+        <a href="bodies.html">bodies</a>
+        <a href="transform.html">transform</a>
+        <a href="extrude.html">extrude</a>
+        <a href="revolve.html">revolve</a>
+        <a class="is-active" href="draft-view.html">draft</a>
+        <a href="booleans.html">booleans</a>
+        <a href="inspect.html">inspect</a>
+      </nav>
+      <div class="mockbar-right">
+        <a class="mockbar-btn" href="../mockups/index.html">studies</a>
+        <button class="mockbar-btn" type="button" data-notes-toggle>notes</button>
+      </div>
+    </div>
+
+    <div class="app">
+      <header class="doc-head">
+        <div class="doc-left">
+          <button class="doc-file" type="button" title="File menu">
+            <span class="doc-name">draft-view</span><span class="doc-ext">.cad</span><span class="doc-caret">▾</span>
+          </button>
+        </div>
+        <div class="doc-center">
+          <span>model</span>
+          <span class="mode">draft</span>
+        </div>
+        <div class="doc-right">
+          <div class="appearance" role="group" aria-label="Appearance">
+            <div class="theme-switch" role="group" aria-label="Theme">
+              <button type="button" data-theme-option="day" title="Day theme" aria-label="Day theme" aria-pressed="true"><span class="theme-swatch is-day"></span></button>
+              <button type="button" data-theme-option="night" title="Night theme" aria-label="Night theme" aria-pressed="false"><span class="theme-swatch is-night"></span></button>
+            </div>
+            <div class="highlight-switch" role="group" aria-label="Highlight colour">
+              <button type="button" data-highlight-option="yellow" title="Yellow highlighter" aria-label="Yellow highlighter" aria-pressed="true"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="pink" title="Pink highlighter" aria-label="Pink highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="blue" title="Blue highlighter" aria-label="Blue highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+              <button type="button" data-highlight-option="green" title="Green highlighter" aria-label="Green highlighter" aria-pressed="false"><span class="hl-dot"></span></button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <section class="stage is-study" id="stage">
+          <div class="study-scroll">
+            <header class="study-head">
+              <div class="notes-kicker">design study · feature drafts</div>
+              <h1>The draft leaves the sketch</h1>
+              <p>
+                Extrude and revolve are solid operations. The sketch is their
+                input, not their workspace. This study opens the draft on the
+                model, keeps the source sketch on its plane, and makes profiles
+                and the axis pickable in the same 3D view as the preview.
+              </p>
+              <div class="study-controls">
+                <span>model view · live preview · sketch overlay</span>
+                <a class="text-action" href="DRAFT_VIEW.md">open the contract</a>
+                <span>proposed · not implemented</span>
+              </div>
+            </header>
+
+            <section class="study-section" id="move">
+              <h2>The move</h2>
+              <p class="study-lede">
+                The last frame of the sketch and the first frame of the draft are
+                the same geometry. Only the camera and the preview layer change.
+                The form stays open and the stage stays live.
+              </p>
+
+              <div class="sel-grid">
+                <div class="sel-card">
+                  <h3>1 · finish the sketch</h3>
+                  <p>
+                    The profile is selected in the sketch. <b>extrude…</b> is a
+                    feature chip, not a command that applies anything.
+                  </p>
+                  <div class="sel-scene">
+                    <svg class="dv-still" viewBox="0 0 320 150" role="img" aria-label="A sketch profile on a flat paper plane with the extrude feature chip.">
+                      <rect x="58" y="30" width="204" height="86" class="dv-face-1"/>
+                      <g class="dv-axis">
+                        <path d="M58 52h204M58 74h204M58 96h204M92 30v86M126 30v86M160 30v86M194 30v86M228 30v86"/>
+                      </g>
+                      <polygon points="122,57 190,57 190,101 122,101" class="dv-marker"/>
+                      <text x="160" y="132" text-anchor="middle" class="dv-label is-strong">sketch · normal</text>
+                      <g transform="translate(210 120)">
+                        <rect x="0" y="0" width="70" height="18" fill="var(--bg)" stroke="var(--rule-strong)"/>
+                        <text x="8" y="12" class="dv-label is-strong">extrude…</text>
+                      </g>
+                    </svg>
+                  </div>
+                </div>
+
+                <div class="sel-card">
+                  <h3>2 · the camera tilts</h3>
+                  <p>
+                    The same plane becomes an oblique sheet in the model. The
+                    preview grows through the worker while the camera settles.
+                  </p>
+                  <div class="sel-scene">
+                    <svg class="dv-still" viewBox="0 0 320 150" role="img" aria-label="The sketch plane tilted into an oblique view while a translucent extrusion preview grows from it.">
+                      <polygon points="58,98 188,62 270,96 140,132" class="dv-face-1"/>
+                      <polygon points="58,98 188,62 270,96 140,132" class="dv-frame"/>
+                      <polygon points="122,88 178,72 196,88 140,104" class="dv-marker"/>
+                      <polygon points="122,88 178,72 178,44 122,60" class="dv-marker-ghost"/>
+                      <polygon points="178,72 196,88 196,60 178,44" class="dv-marker-ghost"/>
+                      <polygon points="122,60 178,44 196,60 140,76" class="dv-marker-ghost"/>
+                      <path d="M160 96V48" class="dv-arrow"/>
+                      <path d="M160 48l-4 8h8z" class="dv-arrow-head"/>
+                      <path d="M236 54c20 4 28 16 20 30" class="dv-camera"/>
+                      <path d="M256 84l-2-9 9 2z" class="dv-camera-head"/>
+                      <text x="160" y="144" text-anchor="middle" class="dv-label is-strong">camera tilts · preview appears</text>
+                    </svg>
+                  </div>
+                </div>
+
+                <div class="sel-card">
+                  <h3>3 · decide in 3D</h3>
+                  <p>
+                    The preview is solid, the sketch is a read-only overlay, and
+                    the form's inputs stay live. Orbit, change the value, add a
+                    profile, pick the axis.
+                  </p>
+                  <div class="sel-scene">
+                    <svg class="dv-still" viewBox="0 0 320 150" role="img" aria-label="The same plane and extrusion as a solid model with the feature form beside it.">
+                      <polygon points="34,104 154,70 236,104 116,138" class="dv-face-1"/>
+                      <polygon points="98,94 154,78 172,94 116,110" class="dv-marker"/>
+                      <polygon points="98,94 154,78 154,51 98,67" class="dv-face-2"/>
+                      <polygon points="154,78 172,94 172,67 154,51" class="dv-face-3"/>
+                      <polygon points="98,67 154,51 172,67 116,83" class="dv-face-1"/>
+                      <path d="M116 94V56" class="dv-arrow"/>
+                      <path d="M116 56l-4 8h8z" class="dv-arrow-head"/>
+                      <text x="105" y="44" class="dv-label is-strong">18 mm</text>
+                      <g transform="translate(196 28)">
+                        <rect width="104" height="98" fill="var(--bg)" stroke="var(--rule-strong)"/>
+                        <text x="8" y="15" class="dv-label">new feature</text>
+                        <text x="8" y="31" class="dv-label is-strong">Extrude</text>
+                        <path d="M8 40h88M8 52h88M8 64h88M8 76h88" stroke="var(--rule)"/>
+                        <text x="8" y="50" class="dv-label">profile 2</text>
+                        <text x="8" y="62" class="dv-label">height 18</text>
+                        <text x="8" y="74" class="dv-label">join</text>
+                        <text x="8" y="91" class="dv-label is-strong">extrude</text>
+                      </g>
+                      <text x="118" y="146" text-anchor="middle" class="dv-label is-strong">model · draft open</text>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="study-section" id="live">
+              <h2>The live draft</h2>
+              <p class="study-lede">
+                This is the stage the form opens onto. Switch the scene, turn
+                the camera with <b>look at sketch</b>, pick profiles or the
+                revolve axis, and change the value. The same scene is rendered
+                from a normal camera and from the drafting view.
+              </p>
+
+              <div class="study-controls draft-scene-switch" role="group" aria-label="Study scene">
+                <span>scene</span>
+                <button class="text-action is-on" type="button" data-scene="extrude">extrude</button>
+                <button class="text-action" type="button" data-scene="revolve">revolve</button>
+                <span class="text-action is-quiet">stylised geometry · not a B-rep</span>
+              </div>
+
+              <div class="draft-live" id="draft-live">
+                <div class="stage-head is-wide">
+                  <div class="tool-line" role="toolbar" aria-label="Model tools">
+                    <span class="tool-kicker">tools</span>
+                    <button class="tool is-active" type="button">select <kbd>v</kbd></button>
+                    <button class="tool" type="button">box <kbd>b</kbd></button>
+                    <button class="tool" type="button">lasso <kbd>g</kbd></button>
+                    <button class="tool" type="button">measure <kbd>m</kbd></button>
+                  </div>
+                  <div class="tool-options" id="draft-options" role="toolbar" aria-label="Draft input"></div>
+                </div>
+
+                <svg
+                  class="draft-svg"
+                  id="draft-svg"
+                  viewBox="0 0 1200 700"
+                  preserveAspectRatio="xMidYMid meet"
+                  role="img"
+                  aria-label="A model stage with the source sketch on its plane, a live extrusion or revolve preview, profile and axis pick modes, and a feature form."
+                >
+                  <g id="draft-grid"></g>
+                  <g id="draft-body"></g>
+                  <g id="draft-overlay"></g>
+                  <g id="draft-hover"></g>
+                </svg>
+
+                <div class="tool-panel" id="draft-panel" role="dialog" aria-label="Extrude draft"></div>
+                <div class="draft-closed" id="draft-closed" hidden></div>
+
+                <div class="stage-foot">
+                  <div class="stage-foot-left">
+                    <span id="draft-foot-left"></span>
+                  </div>
+                  <div class="stage-foot-right">
+                    <span class="draft-view-switch">
+                      <span class="tool-label">view</span>
+                      <span class="seg" role="group" aria-label="Camera">
+                        <button type="button" data-view="0" class="is-selected">3/4</button>
+                        <button type="button" data-view="1">look at sketch</button>
+                      </span>
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <p class="sel-note">
+                The form is the only commit surface. A background click does not
+                cancel the draft; <b>cancel</b>, Escape and a timeline click do.
+                See <a href="DRAFT_VIEW.md">DRAFT_VIEW.md</a> §8.
+              </p>
+            </section>
+
+            <section class="study-section" id="why">
+              <h2>Why the model view</h2>
+              <p class="study-lede">
+                The form was never the problem. The stage was. The model view
+                answers the questions a sketch cannot.
+              </p>
+              <div class="sel-grid">
+                <div class="sel-card">
+                  <h3>Depth and direction</h3>
+                  <p>
+                    The preview shows which side of the plane the solid grows
+                    from, how far it goes, and whether a cut or join is touching
+                    the body. The distance arrow is on the model; the exact value
+                    is still the field.
+                  </p>
+                </div>
+                <div class="sel-card">
+                  <h3>The body in context</h3>
+                  <p>
+                    The sketch plane may be a face or a datum, and other bodies
+                    may be in the way. The model view shows the target body, the
+                    plane's frame and the operation's added/removed volume in the
+                    shared <a href="BOOLEANS.md">boolean</a> language.
+                  </p>
+                </div>
+                <div class="sel-card">
+                  <h3>The input stays in place</h3>
+                  <p>
+                    Profiles and the axis are sketch geometry on a plane. In the
+                    model they are still exactly there, but now they can be
+                    picked without leaving the preview. No stage switch, no
+                    second selection model.
+                  </p>
+                </div>
+              </div>
+            </section>
+
+            <section class="study-section" id="picking">
+              <h2>Picking without leaving the model</h2>
+              <p class="study-lede">
+                Profiles and the axis are two pick modes on the same stage. The
+                form's row and the model tool row show the active family; the
+                preview ghosts while a pick is active.
+              </p>
+
+              <div class="sel-grid">
+                <div class="sel-card">
+                  <h3>Profiles</h3>
+                  <p>
+                    <b>pick</b> makes every region fill a target: material
+                    regions and void profiles. A click toggles, Shift adds, box
+                    and lasso take a set. The list is the truth. An empty pick
+                    keeps the draft; zero profiles disables the primary.
+                  </p>
+                  <div class="sel-scene">
+                    <svg class="dv-still" viewBox="0 0 320 150" role="img" aria-label="A tilted sketch plane with one selected profile, one unselected profile and a void profile.">
+                      <polygon points="48,102 170,66 278,100 156,138" class="dv-face-1"/>
+                      <polygon points="48,102 170,66 278,100 156,138" class="dv-frame"/>
+                      <polygon points="92,94 148,78 176,92 120,110" class="dv-marker"/>
+                      <polygon points="190,86 230,74 248,84 208,97" class="dv-sketch"/>
+                      <circle cx="136" cy="93" r="9" class="dv-sketch"/>
+                      <text x="120" y="120" class="dv-label is-strong">profile 1</text>
+                      <text x="214" y="112" class="dv-label">profile 2</text>
+                      <text x="140" y="82" text-anchor="middle" class="dv-label">void</text>
+                    </svg>
+                  </div>
+                </div>
+
+                <div class="sel-card">
+                  <h3>The axis</h3>
+                  <p>
+                    Candidates are the sketch lines and the X/Y references,
+                    highlighted in 3D. The chosen axis is an infinite dash-dot
+                    line. A profile that crosses it is visible in cut red, not
+                    silently retargeted.
+                  </p>
+                  <div class="sel-scene">
+                    <svg class="dv-still" viewBox="0 0 320 150" role="img" aria-label="A revolve profile with two candidate axes, one chosen and one crossing the profile.">
+                      <polygon points="52,106 168,72 272,104 156,138" class="dv-face-1"/>
+                      <line x1="108" y1="92" x2="108" y2="40" class="dv-axis"/>
+                      <line x1="138" y1="96" x2="138" y2="44" class="dv-construction"/>
+                      <line x1="138" y1="96" x2="230" y2="70" class="dv-construction" stroke="var(--cut)"/>
+                      <polygon points="158,94 196,83 210,91 172,103" class="dv-marker"/>
+                      <path d="M108 62c18-6 30-4 38 4" class="dv-arrow"/>
+                      <text x="86" y="38" class="dv-label is-strong">axis</text>
+                      <text x="146" y="104" class="dv-label is-invalid" fill="var(--cut)">crosses</text>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="study-section" id="cameras">
+              <h2>One scene, two cameras</h2>
+              <p class="study-lede">
+                The sketch stage is a camera normal to the plane, not a separate
+                world. <b>look at sketch</b> is a view preset; it does not leave
+                the draft. The long-run direction is an orbitable sketch view:
+                the geometry stays on its plane, but the camera does not have
+                to.
+              </p>
+
+              <div class="sel-grid">
+                <div class="sel-card">
+                  <h3>Normal to the plane</h3>
+                  <p>
+                    The precise authoring view. The same sketch, the same plane,
+                    the same preview underneath. For drawing and snapping, this
+                    remains orthographic.
+                  </p>
+                  <div class="sel-scene">
+                    <svg class="dv-still" viewBox="0 0 320 150" role="img" aria-label="The sketch plane seen straight on, with the profile and a faint body footprint.">
+                      <rect x="66" y="28" width="188" height="94" class="dv-face-1"/>
+                      <rect x="66" y="28" width="188" height="94" class="dv-frame"/>
+                      <rect x="116" y="52" width="82" height="46" class="dv-marker"/>
+                      <rect x="150" y="66" width="16" height="16" class="dv-sketch"/>
+                      <text x="160" y="138" text-anchor="middle" class="dv-label is-strong">normal · precise</text>
+                    </svg>
+                  </div>
+                </div>
+                <div class="sel-card">
+                  <h3>Oblique drafting view</h3>
+                  <p>
+                    The same plane tilted into the model. The body and the
+                    preview are in frame; the profile, axis and values are still
+                    editable. The camera is the only thing that moved.
+                  </p>
+                  <div class="sel-scene">
+                    <svg class="dv-still" viewBox="0 0 320 150" role="img" aria-label="The same sketch plane as an oblique sheet with the extrusion preview and the surround body.">
+                      <polygon points="42,104 162,70 270,102 150,138" class="dv-face-1"/>
+                      <polygon points="42,104 162,70 270,102 150,138" class="dv-frame"/>
+                      <polygon points="104,94 160,78 180,92 124,108" class="dv-marker"/>
+                      <polygon points="104,94 160,78 160,50 104,66" class="dv-face-2"/>
+                      <polygon points="160,78 180,92 180,64 160,50" class="dv-face-3"/>
+                      <polygon points="104,66 160,50 180,64 124,80" class="dv-face-1"/>
+                      <text x="158" y="138" text-anchor="middle" class="dv-label is-strong">3/4 · same scene</text>
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="study-section" id="entry">
+              <h2>Entry and exit</h2>
+              <p class="study-lede">
+                The draft always knows where it came from. Apply keeps the model;
+                cancel restores the origin, including the seed profile selection.
+              </p>
+              <div class="sel-table-wrap">
+                <table class="sel-table">
+                  <thead>
+                    <tr><th>Entry</th><th>Seed</th><th>After</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td><b>extrude…</b> / <b>revolve…</b> in the profile popover</td><td>the selected regions</td><td>model · draft open</td></tr>
+                    <tr><td><b>extrude</b> / <b>revolve</b> on a sketch step</td><td>no profiles; profile mode</td><td>model · draft open · profile pick</td></tr>
+                    <tr><td>selecting an existing feature step</td><td>the stored inputs</td><td>model · editor open</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="sel-table-wrap">
+                <table class="sel-table">
+                  <thead>
+                    <tr><th>Action</th><th>Result</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td><b>apply</b> / Enter when ready</td><td>insert the step; stay in the model; select it</td></tr>
+                    <tr><td><b>cancel</b> / Escape with no pick open</td><td>drop the draft; restore the origin and the seed selection</td></tr>
+                    <tr><td>timeline click</td><td>cancel first, then navigate</td></tr>
+                    <tr><td>background click</td><td>no cancel; clear the transient hover/pick</td></tr>
+                    <tr><td>Escape while picking</td><td>exit the pick, keep the draft</td></tr>
+                    <tr><td>Enter while picking</td><td>done → preview, not apply</td></tr>
+                    <tr><td>Delete while profile-picking</td><td>clear the profile set, keep the draft</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="study-section" id="decisions">
+              <h2>Decisions</h2>
+              <ul class="sel-rules">
+                <li><b>A sketch-consuming feature opens on the model.</b> The sketch is the input, not the workspace.</li>
+                <li><b>One scene, two cameras.</b> The sketch stage is a normal-to-plane camera; the draft is the same scene from an oblique camera.</li>
+                <li><b>The sketch is read-only input.</b> Geometry and regions stay; editing, dimensions and constraints do not.</li>
+                <li><b>Profiles are a model pick mode.</b> The preview ghosts, the fills are targets, the list is the truth.</li>
+                <li><b>The axis is picked in 3D but stays in the sketch plane.</b> No silent default; a crossing axis is visible.</li>
+                <li><b>The form does not change shape.</b> Same popover, same rows, same footer; only the stage behind it changes.</li>
+                <li><b>The sketch stays on its plane.</b> The camera may orbit; the geometry may not.</li>
+                <li><b>Cancel restores the origin.</b> Apply keeps the model and selects the new step.</li>
+              </ul>
+            </section>
+
+            <section class="study-section" id="open">
+              <h2>Open questions</h2>
+              <ul class="sel-rules">
+                <li>Should the draft show dimensions and constraint marks over the model, or keep them for sketching only?</li>
+                <li>Should unselected regions be visible outside profile mode, or only when picking?</li>
+                <li>Can a revolve axis be a model edge outside the sketch plane? That needs datum axes.</li>
+                <li>Should <b>look at sketch</b> live in the foot (view-only) or in the form? The study puts it in the foot.</li>
+                <li>Can a draft offer <b>edit sketch</b>, or must the user cancel first?</li>
+                <li>How soon can the sketch stage itself orbit, with drawing still constrained to the plane?</li>
+              </ul>
+            </section>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <aside class="notes" id="notes" aria-label="Design notes">
+      <div class="notes-head">
+        <div>
+          <div class="notes-kicker">design notes · feature drafts</div>
+          <h2>The draft leaves the sketch</h2>
+        </div>
+        <button class="text-action" type="button" data-notes-close>close</button>
+      </div>
+      <p>
+        Extrude and revolve are solid operations. Keeping the draft in the sketch
+        stage hides the only thing the user is deciding: the solid in context.
+        This study moves the draft to the model and keeps the sketch on its plane
+        as a read-only input layer.
+      </p>
+      <h3>What this study tests</h3>
+      <ul>
+        <li><b>The transition is a camera move.</b> The source sketch and the preview are the same scene; the sketch stage is a normal camera, not a separate world.</li>
+        <li><b>The form is unchanged.</b> The viewport is the new part; the popover, rows, list, `MeasureField`, operation row and footer stay exactly as they are.</li>
+        <li><b>Profiles stay pickable.</b> A model pick mode ghosts the preview, makes region fills the targets and keeps the list in sync. No stage switch.</li>
+        <li><b>The axis stays pickable.</b> Candidate sketch lines and X/Y are highlighted in 3D; the chosen axis is an infinite dash-dot line; a crossing axis is visible, not silently retargeted.</li>
+        <li><b>`look at sketch` is a view preset.</b> It returns to the normal view without leaving the draft. This is the seed of an orbitable sketch stage later.</li>
+      </ul>
+      <h3>What is stylised</h3>
+      <ul>
+        <li>The 3D geometry is an isometric drawing, not a B-rep. The live scene is for interaction decisions.</li>
+        <li>The extrude scene's preview sits on top of the base, so a cut/intersect choice is shown as a visible overlap error rather than a faked pocket.</li>
+        <li>Box/lasso region selection and the boolean diff meshes are described by the contract; the live study implements click picks and a style change. The distance arrow is draggable; the angle arc is a readout, with the field as the exact input.</li>
+      </ul>
+      <h3>Open questions</h3>
+      <ul>
+        <li>Do dimensions belong in the draft overlay? The proposal is no; they are authoring annotations.</li>
+        <li>When the sketch stage can orbit, does it keep the normal camera as the drawing default?</li>
+        <li>Does a 3D edge axis arrive with datum axes, or can the revolve axis pick accept a model edge earlier?</li>
+      </ul>
+      <div class="mini-note">
+        The contract is <a href="DRAFT_VIEW.md">DRAFT_VIEW.md</a>. The live stage
+        is a design target; nothing in <code>src/</code> is imported by this page.
+      </div>
+    </aside>
+
+    <script src="../mockups/mockups.js"></script>
+    <script src="showcase-ui.js"></script>
+    <script src="draft-view.js"></script>
+  </body>
+</html>

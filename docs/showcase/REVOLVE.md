@@ -179,6 +179,11 @@ Double-clicking a profile does nothing special.
 - The **operation** preview follows [`BOOLEANS.md`](BOOLEANS.md): new body and
   join show the result body; cut shows the removed volume in red; intersect keeps
   the overlap normal and ghosts the discarded target/tool.
+- **Proposed draft view:** [`DRAFT_VIEW.md`](DRAFT_VIEW.md) moves the whole
+  revolve draft to the model stage. The axis and profile are then picked in 3D
+  on the sketch plane, the preview is the subject, and `look at sketch` is a
+  camera preset. The axis stays an in-plane sketch line (v1) and the no-silent-
+  default rule is unchanged.
 
 ## 9. History, roles and downstream
 

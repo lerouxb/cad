@@ -1,6 +1,6 @@
 # Tool showcase
 
-Interactive design targets for tools and input surfaces, including ones not built yet, split into sixteen pages.
+Interactive design targets for tools and input surfaces, including ones not built yet, split into seventeen pages.
 
 This folder and [`../mockups/`](../mockups/) are the two halves of one design
 system:
@@ -8,8 +8,8 @@ system:
 - the **[studies](../mockups/index.html)** fix the surfaces — timeline, sketch,
   model, support, export, errors, files, body;
 - the **showcase** (here) makes the interactions work — pattern, mirror, offset,
-  move/copy, combine, split, transforms, extrude, inspect, and the selection
-  inputs (sketch and model).
+  move/copy, combine, split, transforms, extrude, revolve, feature drafts,
+  inspect, and the selection inputs (sketch and model).
 
 The [study index](../mockups/index.html) lists both, and the shared interaction
 rules are in [`INTERACTION.md`](INTERACTION.md). The timeline surface — steps,
@@ -20,7 +20,8 @@ constraint and dimension is drawn is in [`CONSTRAINTS.md`](CONSTRAINTS.md); what
 a selection means and where its actions live is in
 [`SELECTION.md`](SELECTION.md); the offset-face study is in
 [`OFFSET_FACES.md`](OFFSET_FACES.md), the revolve study in
-[`REVOLVE.md`](REVOLVE.md), the operation/preview language in
+[`REVOLVE.md`](REVOLVE.md), the draft-on-the-model study in
+[`DRAFT_VIEW.md`](DRAFT_VIEW.md), the operation/preview language in
 [`BOOLEANS.md`](BOOLEANS.md), and the form input pickers in
 [`PICKS.md`](PICKS.md).
 
@@ -41,6 +42,7 @@ a selection means and where its actions live is in
 | **Body transforms** | [`transform.html`](transform.html) | **move / copy**, **align** | M6 |
 | **Extrude options** | [`extrude.html`](extrude.html) | start offset, to-object / to-next / all, taper, operation | **M3/M4** |
 | **Revolve** | [`revolve.html`](revolve.html) | profile + in-plane axis, 1–360°, cylinder/tube/cone/sphere/torus, partial end faces, history step | M5 v1 (see REVOLVE.md) |
+| **Feature drafts** | [`draft-view.html`](draft-view.html) | the draft opens on the **model**, 3D preview, profiles and axis picked in the same view, `look at sketch` as a camera preset | study (see DRAFT_VIEW.md) |
 | **Inspect** | [`inspect.html`](inspect.html) | **section analysis** | M5 |
 
 The decisions behind these (what to keep, drop, defer) are in
@@ -101,6 +103,28 @@ of constraints), not as separate history steps. The sketch step owns them and
 the timeline detail lists them. If M6.0 decides they are history steps instead,
 the same badge + selection-line + edit flow still applies — only the home
 changes.
+
+## What the draft-view study explores
+
+Extrude and revolve are solid operations whose first input is a sketch. The
+current app keeps the new draft in the sketch stage, where the profile is easy
+to see but the solid is not. This study moves the draft to the **model**:
+
+- the source sketch is drawn on its plane as a read-only overlay;
+- the preview body is the subject, and the camera tilts to an oblique view of
+  the plane rather than jumping to a world isometric;
+- **profiles** are picked in a model pick mode: the preview ghosts, region fills
+  become targets, and the form's list stays the truth;
+- **the axis** is picked in the same 3D view: candidate sketch lines and X/Y are
+  highlighted, the chosen axis is an infinite dash-dot line, and a crossing axis
+  is a visible error;
+- **`look at sketch`** is a view preset in the stage foot, not a stage switch.
+
+The rule behind it is **one scene, two cameras**: the sketch stage is a camera
+normal to the plane, not a separate world. The draft is the first place the two
+must agree, and the long-run direction is an orbitable sketch view where the
+geometry stays on its plane. The contract is
+[`DRAFT_VIEW.md`](DRAFT_VIEW.md).
 
 ## How to use it
 
@@ -175,6 +199,8 @@ booleans.html        the four operations + the shared add/remove/ghost preview
 bodies.html          multiple bodies inline in one timeline
 transform.html       move / copy + align
 extrude.html         extrude options (start, end, taper, operation)
+revolve.html         revolve profile, axis, angle and history step
+draft-view.html      the draft opens on the model: live 3D preview + 3D input picks
 inspect.html         section analysis
 showcase.css         popup, preview, manipulator and 3D styles (mockup tokens)
 showcase-ui.js       shared draggable popovers + the footer action grammar
@@ -185,6 +211,7 @@ showcase-dimension.js  the dimension kind control (driving / reference)
 showcase-select.js   the tool options row (filters, create variants, select other)
 showcase-select-model.js  the model-mode selection scene
 showcase-3d.js       isometric helpers + body ops + transforms + extrude + section
+draft-view.js        the draft-view live stage: 3D scene, profile/axis picks, camera
 showcase-constraints.js  the constraint/measurement atlas, finder and collision examples
 INTERACTION.md       the interaction contract (popover, actions, foot)
 MODES.md             the input contract (modes × Enter / Escape / background / timeline)
@@ -194,6 +221,7 @@ PICKS.md             the form input contract (row + list, model/sketch/single pi
 OFFSET_FACES.md      the offset-face contract (history step, distance, failure, kernel)
 BOOLEANS.md          the boolean contract (new body, join, cut, intersect, preview, errors)
 REVOLVE.md           the revolve contract (profile, axis, angle, history, kernel)
+DRAFT_VIEW.md        the draft-on-the-model contract (stage, camera, picks, exit)
 TIMELINE.md          the timeline contract (steps, bodies, groups, insert)
 BACKLOG.md           the gap decisions (keep / drop / defer) and their homes
 README.md            this file
