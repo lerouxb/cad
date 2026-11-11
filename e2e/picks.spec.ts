@@ -80,7 +80,7 @@ test("an extrude form lists its profiles and removes one", async ({
   expect(errors).toEqual([]);
 });
 
-test("an open extrude draft can preview in the model and return", async ({
+test("a new extrude draft opens in the model and can look at the sketch", async ({
   app: page,
 }) => {
   const errors = collectErrors(page);
@@ -88,18 +88,20 @@ test("an open extrude draft can preview in the model and return", async ({
   await clickSketch(page, -20, 10);
   await page.getByTestId("profile-extrude").click();
   await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
-  await expect(page.getByTestId("extrude-profiles")).toHaveText("1 selected");
-
-  await page.getByTestId("draft-view-3d").click();
   await expect(page.getByTestId("model-tool-select")).toBeVisible();
-  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
   await expect(page.getByTestId("extrude-profiles")).toHaveText("1 selected");
   await expect(page.getByTestId("mesh-stats")).toBeVisible();
 
   await page.getByTestId("draft-look-at-sketch").click();
   await expect(page.getByTestId("tool-select")).toBeVisible();
   await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
+  await page.getByTestId("draft-view-3d").click();
+  await expect(page.getByTestId("model-tool-select")).toBeVisible();
+  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
+  await expect(page.getByTestId("extrude-profiles")).toHaveText("1 selected");
+
   await page.getByTestId("extrude-cancel").click();
+  await expect(page.getByTestId("tool-select")).toBeVisible();
   expect(errors).toEqual([]);
 });
 
@@ -122,10 +124,9 @@ test("a revolve form lists profiles and Escape exits the axis pick first", async
   await expect(
     page.getByTestId("revolve-profile-list").locator(".selection-item"),
   ).toHaveCount(1);
-  // A new draft opens over the sketch stage, so the row offers the stage
-  // switch; editing the committed step switches back to the model label.
+  // A new draft opens on the model, so the row offers the sketch switch.
   await expect(page.getByTestId("revolve-select-profiles")).toHaveText(
-    "pick in sketch",
+    "select",
   );
 
   await page.getByTestId("revolve-axis-pick").click();

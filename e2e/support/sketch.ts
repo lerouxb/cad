@@ -6,7 +6,27 @@ import { expect, type Page } from "@playwright/test";
  * size (and therefore the CTM) without changing the sketch-space viewBox. Both
  * must settle before mapping the next gesture.
  */
+/**
+ * A feature draft now opens in the model. Legacy sketch-coordinate helpers that
+ * are used to pick profiles enter the sketch through the form's stage row first.
+ */
+async function ensureSketchStage(page: Page): Promise<void> {
+  const canvas = page.locator("svg.sketch-canvas");
+  if (await canvas.isVisible()) return;
+  const extrude = page.getByTestId("popover-select-profiles");
+  if ((await extrude.count()) > 0 && (await extrude.isVisible())) {
+    await extrude.click();
+  } else {
+    const revolve = page.getByTestId("revolve-select-profiles");
+    if ((await revolve.count()) > 0 && (await revolve.isVisible())) {
+      await revolve.click();
+    }
+  }
+  await expect(canvas).toBeVisible();
+}
+
 export async function settleSketch(page: Page): Promise<void> {
+  await ensureSketchStage(page);
   await page.evaluate(
     () =>
       new Promise<void>((resolve) => {

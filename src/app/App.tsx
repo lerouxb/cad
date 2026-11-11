@@ -3688,8 +3688,11 @@ export function App() {
       operation: hasBody ? "join" : "new",
       end: "blind",
     });
-    // Stay in the sketch to choose profiles and edit the extrude parameters.
-    setMode("sketch");
+    // The draft opens on the model: the sketch is the input, the solid is the
+    // subject. The form's profile row can switch to the sketch when the user
+    // wants to add/remove profiles until the model pick mode lands.
+    setMode("model");
+    setModelTool("select");
     setTool("select");
     setSelection([]);
     setTrimNotice(null);
@@ -3697,6 +3700,8 @@ export function App() {
     setEdgeSelection([]);
     setSelectOther(null);
     viewportRef.current?.clearPick();
+    setZoomPreset("fit");
+    setFitToken((token) => token + 1);
   };
 
   const handleNewExtrude = (): void => {
@@ -3737,9 +3742,15 @@ export function App() {
   };
 
   const cancelExtrudeDraft = (): void => {
+    const draft = extrudeDraft;
     setExtrudeDraft(null);
     setSelection([]);
-    // The draft was started from a sketch step; cancelling returns to that sketch.
+    // A new draft originated in the seed sketch; cancelling returns there.
+    if (draft) {
+      setMode("sketch");
+      setTool("select");
+      setFitToken((token) => token + 1);
+    }
   };
 
   const beginRevolveDraft = (): void => {
@@ -3770,13 +3781,17 @@ export function App() {
     setProfileSelection([]);
     setSelection([]);
     setSelectedConstraintId(null);
+    setActiveFeatureId(source.id);
     setTool("select");
-    setMode("sketch");
+    setMode("model");
+    setModelTool("select");
     setBodyPick(null);
     setEdgeSelection([]);
     setFaceSelection([]);
     setSelectOther(null);
     viewportRef.current?.clearPick();
+    setZoomPreset("fit");
+    setFitToken((token) => token + 1);
   };
 
   const updateRevolveDraft = (
@@ -3836,6 +3851,11 @@ export function App() {
       }
       setActiveFeatureId(baseline.id);
       setMode("model");
+    } else if (draft?.mode === "new") {
+      // A new revolve came from the seed sketch; leave the user back there.
+      setMode("sketch");
+      setTool("select");
+      setFitToken((token) => token + 1);
     }
     setSelection([]);
   };
@@ -3858,7 +3878,8 @@ export function App() {
     });
     setRevolveAxisPicking(false);
     setActiveFeatureId(feature.id);
-    setMode("sketch");
+    setMode("model");
+    setModelTool("select");
     setTool("select");
     setSelection([]);
     setProfileSelection([]);
@@ -7168,50 +7189,6 @@ export function App() {
               </div>
             ) : null}
 
-            {revolveDraft ? (
-              <RevolvePopover
-                sketchName={
-                  findFeature(doc, revolveDraft.sketchId)?.name ?? "Sketch"
-                }
-                profiles={revolveSelectedRegions}
-                axis={revolveDraft.axis}
-                axisCandidates={revolveAxisCandidates}
-                axisPicking={revolveAxisPicking}
-                mode={mode}
-                angles={revolveDraft.angle}
-                direction={revolveDraft.direction}
-                operation={revolveDraft.operation}
-                hasBase={hasBaseForForm}
-                isDraft={revolveDraft.mode === "new"}
-                error={revolveDraftError ?? revolvePreviewError}
-                position={popoverPosition}
-                onMove={setPopoverPosition}
-                onSelectProfiles={selectRevolveProfiles}
-                onRemoveProfile={removeRevolveProfile}
-                onPickAxis={beginRevolveAxisPick}
-                onAngle={(angle) =>
-                  updateRevolveDraft(
-                    (draft) => ({
-                      ...draft,
-                      angle,
-                      direction:
-                        angle >= 360 ? "ccw" : draft.direction,
-                    }),
-                    "revolve-angle",
-                  )
-                }
-                onAngleEnd={endMerge}
-                onDirection={(direction) =>
-                  updateRevolveDraft((draft) => ({ ...draft, direction }))
-                }
-                onOperation={(operation) =>
-                  updateRevolveDraft((draft) => ({ ...draft, operation }))
-                }
-                onApply={commitRevolveDraft}
-                onCancel={cancelRevolveEditor}
-              />
-            ) : null}
-
             {!profileMode &&
             !revolveDraft &&
             mode === "sketch" &&
@@ -7665,6 +7642,50 @@ export function App() {
               }
             />
           ) : null}
+
+            {revolveDraft ? (
+              <RevolvePopover
+                sketchName={
+                  findFeature(doc, revolveDraft.sketchId)?.name ?? "Sketch"
+                }
+                profiles={revolveSelectedRegions}
+                axis={revolveDraft.axis}
+                axisCandidates={revolveAxisCandidates}
+                axisPicking={revolveAxisPicking}
+                mode={mode}
+                angles={revolveDraft.angle}
+                direction={revolveDraft.direction}
+                operation={revolveDraft.operation}
+                hasBase={hasBaseForForm}
+                isDraft={revolveDraft.mode === "new"}
+                error={revolveDraftError ?? revolvePreviewError}
+                position={popoverPosition}
+                onMove={setPopoverPosition}
+                onSelectProfiles={selectRevolveProfiles}
+                onRemoveProfile={removeRevolveProfile}
+                onPickAxis={beginRevolveAxisPick}
+                onAngle={(angle) =>
+                  updateRevolveDraft(
+                    (draft) => ({
+                      ...draft,
+                      angle,
+                      direction:
+                        angle >= 360 ? "ccw" : draft.direction,
+                    }),
+                    "revolve-angle",
+                  )
+                }
+                onAngleEnd={endMerge}
+                onDirection={(direction) =>
+                  updateRevolveDraft((draft) => ({ ...draft, direction }))
+                }
+                onOperation={(operation) =>
+                  updateRevolveDraft((draft) => ({ ...draft, operation }))
+                }
+                onApply={commitRevolveDraft}
+                onCancel={cancelRevolveEditor}
+              />
+            ) : null}
 
           {projectDraft ? (
             <ProjectPopover
