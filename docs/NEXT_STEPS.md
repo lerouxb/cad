@@ -52,6 +52,37 @@ Items 1–3 are done (`a67c044`, `496b42c`, `b58f5d7`); item 4 is next.
   - [x] Faces on a shelled body (OFFSET_FACES O8): an inner planar wall offsets
     into the cavity and stays watertight (`5580fe3`).
 
+## Next: model-stage feature drafts
+
+[`showcase/DRAFT_VIEW.md`](showcase/DRAFT_VIEW.md) is a **proposed design**
+(2026-11-10, not implemented): extrude/revolve drafts should open on the model
+stage with the source sketch laid on its plane and the preview as the subject.
+It is independent of the offset queue; schedule it as a UX pass.
+
+- [ ] **8. Open feature drafts on the model** — no kernel, document or schema
+  change; the existing preview/rebuild is the engine.
+  - Move `beginExtrudeDraft` / `beginRevolveDraft` from the sketch stage to the
+    model stage and frame the camera on the sketch plane + preview.
+  - Draw the source sketch as a read-only draft overlay on its resolved frame:
+    regions, edges, construction and X/Y references; no dimensions, constraint
+    marks, grid or sketch selection.
+  - Render **all** regions in profile mode (material/void/selected classes) and
+    x-ray the overlay while a pick is active; solid preview while tuning values.
+  - Add the model profile pick mode: ray-plane intersection against the sketch
+    frame, point-in-region, region ids and the same `All / Voids / Auto`.
+  - Reuse the axis candidate pick in 3D; show the infinite axis and the
+    profile-side/angle error in the model.
+  - Add the draft state to the model tool options row, the `look at sketch`
+    view preset, and the on-geometry height/angle handles.
+  - Exit rules: background click is a no-op while previewing; Escape exits a
+    pick first then cancels; Enter is `done` while picking; Delete clears the
+    profile set; apply selects the new step; cancel restores the seed sketch or
+    the existing editor baseline.
+  - Update `MODES.md` S10/M17 and the D8 background rule when it lands; do not
+    leave both contracts active. Tests: model preview on entry, region
+    add/remove + list, 3D axis pick, cancel-to-sketch, background no-op,
+    invalid/lost axis.
+
 ## Candidates (not ordered)
 
 Add a candidate here when it is worth remembering but not yet ready to start.
