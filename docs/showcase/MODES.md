@@ -286,11 +286,14 @@ Notes:
   `curves` / `dimensions` in the sketch) persist across stage and cursor changes,
   and reset on new/open document (D12).
 
-### 3.2a Proposed: the draft view
+### 3.2a In progress: the draft view
 
-> Status: **proposed**, 2026-11-10. The design is
-> [`DRAFT_VIEW.md`](DRAFT_VIEW.md). Until it lands, the extrude/revolve draft
-> rows are still S10 and M17 above.
+> Status: **in progress**, 2026-11-10. The design is
+> [`DRAFT_VIEW.md`](DRAFT_VIEW.md). New extrude/revolve drafts and revolve editors
+> now open on the model with the preview, and a background press on that preview is
+> a no-op (DRAFT_VIEW D11). The profile/axis rows still switch to the sketch stage
+> (S10/M17) until the model pick mode lands; the model pick rows below are the
+> target, not current behaviour.
 
 A sketch-consuming feature draft moves to the model stage. The source sketch is a
 read-only overlay on its plane; the preview is the subject. The profile and axis
@@ -306,6 +309,12 @@ The deliberate difference from D8 is the background click: the draft's canvas is
 a preview and a pick surface, not a modal backdrop, so an empty click is a no-op
 rather than a cancel. The form's `cancel`, Escape and a timeline click remain
 the one meaning of "leave".
+
+For the landed preview forms this supersedes the **stage-background** cell of
+M4/M17: an extrude/revolve draft or editor keeps the form on a background press
+(the canvas is the orbit surface). The profile/axis row still switches to the
+sketch, so S10/M17 still govern that temporary stage. Update M4/M17 and delete
+S10's draft use once the model profile/axis pick lands.
 
 ### 3.3 Global keyboard
 

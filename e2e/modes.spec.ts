@@ -83,17 +83,21 @@ test("leaving an editor by timeline reverts it, like its cancel", async ({
   expect(errors).toEqual([]);
 });
 
-test("a background click dismisses an editor without selecting through it", async ({
+test("a background click dismisses a datum editor without selecting through it", async ({
   app: page,
 }) => {
-  await page.getByTestId("timeline-extrude").click();
-  await expect(page.getByTestId("feature-popover")).toBeVisible();
+  const datum = page
+    .locator('[data-feature-type="datum"]')
+    .filter({ hasText: "Midplane" });
+  await datum.click();
+  await expect(page.getByTestId("datum-popover")).toBeVisible();
   await fitView(page);
 
   // A face interior that a normal click would pick. The dismissal swallows it
-  // (F6): the operation closes and no body selection appears behind it.
+  // (F6): the operation closes and no body selection appears behind it. Extrude
+  // and revolve previews are the exception: the canvas is their orbit surface.
   await page.mouse.click(700, 330);
-  await expect(page.getByTestId("feature-popover")).toHaveCount(0);
+  await expect(page.getByTestId("datum-popover")).toHaveCount(0);
   await expect(page.getByTestId("body-pick")).toHaveCount(0);
 });
 

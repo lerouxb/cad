@@ -105,6 +105,32 @@ test("a new extrude draft opens in the model and can look at the sketch", async 
   expect(errors).toEqual([]);
 });
 
+test("a background click or orbit does not dismiss a model draft", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await clickSketch(page, -20, 10);
+  await page.getByTestId("profile-extrude").click();
+  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
+  await expect(page.getByTestId("model-tool-select")).toBeVisible();
+
+  // The canvas is the preview surface: a click and a drag are orbit gestures,
+  // not a dismissal. The footer cancel remains the exit.
+  await page.mouse.click(1000, 400);
+  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
+  await page.mouse.move(1000, 400);
+  await page.mouse.down();
+  await page.mouse.move(900, 440, { steps: 8 });
+  await page.mouse.up();
+  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
+  await expect(page.getByTestId("extrude-profiles")).toHaveText("1 selected");
+
+  await page.getByTestId("extrude-cancel").click();
+  await expect(page.getByTestId("tool-select")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
 test("a revolve form lists profiles and Escape exits the axis pick first", async ({
   app: page,
 }) => {

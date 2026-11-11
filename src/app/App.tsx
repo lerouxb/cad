@@ -2610,6 +2610,24 @@ export function App() {
   ): void => {
     // A filtered-out hit is not a background click: keep the selection.
     if (info?.blocked) return;
+    // An extrude/revolve preview owns the canvas. Ordinary face/edge picking
+    // is suspended until the form closes (DRAFT_VIEW D10).
+    if (
+      mode === "model" &&
+      (extrudeDraft !== null ||
+        revolveDraft !== null ||
+        (editorOpen &&
+          (activeFeature?.type === "extrude" ||
+            activeFeature?.type === "revolve")))
+    ) {
+      setSelectOther(null);
+      setBodyPick(null);
+      setEdgeSelection([]);
+      setFaceSelection([]);
+      viewportRef.current?.setEdgeSelection([]);
+      viewportRef.current?.setFaceSelection([]);
+      return;
+    }
     if (measureOpen) {
       // Measure mode consumes face/edge picks; clicking a target toggles it
       // and a third target replaces the oldest.
@@ -6727,6 +6745,10 @@ export function App() {
               (blendDraft || shellDraft || offsetDraft || projectDraft || supportOpen)
             )
               return;
+            // An extrude/revolve draft or editor makes the canvas a preview
+            // surface: a background click is the orbit gesture, not a
+            // dismissal. The footer cancel, Escape and timeline still exit.
+            if (draftStageOpen) return;
             if (supportOpen) {
               cancelOpenOperationRef.current();
               return;

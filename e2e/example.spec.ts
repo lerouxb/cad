@@ -191,7 +191,7 @@ test("shows only the selected extrude's profiles on the model overlay", async ({
 });
 
 
-test("clicking the model background cancels the feature editor", async ({
+test("a background click keeps an extrude editor but cancels a datum editor", async ({
   app: page,
 }) => {
   const errors = collectErrors(page);
@@ -205,13 +205,16 @@ test("clicking the model background cancels the feature editor", async ({
     .poll(() => volume(page))
     .toBeCloseTo(examplePlateVolume(30), -1);
 
-  // The stage background is not a popover or a view control: cancel like the
-  // footer button, restoring the feature as it was when the editor opened.
+  // The extrude preview owns the canvas: a background press is an orbit, not a
+  // dismissal. The footer cancel still restores the feature baseline.
   await page.mouse.click(1100, 180);
+  await expect(page.getByTestId("feature-popover")).toBeVisible();
+  await expect.poll(() => volume(page)).toBeCloseTo(examplePlateVolume(30), -1);
+  await page.getByTestId("feature-popover-cancel").click();
   await expect(page.getByTestId("feature-popover")).toHaveCount(0);
   await expect.poll(() => volume(page)).toBeCloseTo(plate, -1);
 
-  // The same applies to a datum editor.
+  // The datum editor is not a preview surface; the background still cancels it.
   const datum = page
     .locator('[data-feature-type="datum"]')
     .filter({ hasText: "Midplane" });
@@ -243,8 +246,9 @@ test("cancelling an editor does not undo a suppression change", async ({
   await expect.poll(() => volume(page)).toBeCloseTo(plate + pinVolume, -1);
 
   // Cancelling the parameter editor restores the form's parameters, not the
-  // history actions taken while it was open.
-  await page.mouse.click(1100, 180);
+  // history actions taken while it was open. The footer is the cancel path;
+  // the preview canvas background is an orbit surface.
+  await page.getByTestId("feature-popover-cancel").click();
   await expect(page.getByTestId("feature-popover")).toHaveCount(0);
   await expect(pin).toHaveAttribute("data-status", "ok");
   await expect.poll(() => volume(page)).toBeCloseTo(plate + pinVolume, -1);

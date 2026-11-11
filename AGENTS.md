@@ -614,8 +614,13 @@ docs/
   never repeats the step/type/outputs; those live in the step block. A `pointerdown` on
   the model background cancels an open feature/datum editor with the same revert
   semantics as its footer `cancel`; popovers, sketch tools and the stage-foot view
-  controls are exempt. The popover footer is a summary + quiet `cancel` + primary
-  `apply`; `cancel` restores the feature as it was when the popover opened. A **new extrude is a UI-only draft** (`extrudeDraft`) started
+  controls are exempt. **Exception:** an extrude/revolve preview (new draft or editor)
+  makes the canvas the orbit surface, so a background press is a no-op; footer cancel,
+  Escape and the timeline are the exits. New extrude/revolve drafts open on the model
+  with the preview; their profile/axis rows still switch to the sketch for precise
+  picking until the model pick mode lands (`NEXT_STEPS` item 8). The popover footer is a
+  summary + quiet `cancel` + primary `apply`; `cancel` restores the feature as it was
+  when the popover opened. A **new extrude is a UI-only draft** (`extrudeDraft`) started
   from the selected sketch step: it is not written to the document and its `extrude`
   primary stays disabled until at least one profile is picked. The draft's own test ids
   are `extrude-draft-popover`, `extrude-apply` and `extrude-cancel`; existing features
