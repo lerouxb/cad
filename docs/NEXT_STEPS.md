@@ -57,6 +57,8 @@ Items 1–3 are done (`a67c044`, `496b42c`, `b58f5d7`); item 4 is next.
 Add a candidate here when it is worth remembering but not yet ready to start.
 Move it under **Now** when it becomes the next priority.
 
+- Add a built-in example whenever a new geometry/feature slice lands; the
+  header `example` menu is now the fast manual-QC path.
 - PICKS single-candidate support picker: keep the world/face/datum picker or
   move to `support · face 1 · planar · pick`.
 - PICKS P14: lost face/edge inputs get an explicit lost marker with
@@ -72,6 +74,8 @@ Move it under **Now** when it becomes the next priority.
 
 ## Done
 
+- 2026-11-11 — header example menu with 11 built-in revolve/offset/blend/shell
+  fixtures and exact-volume e2e (`bd9fe56`).
 - 2026-11-10 — offset an inner wall of a shelled body, covering O8's planar
   case (`5580fe3`).
 - 2026-11-10 — offset draft shows the dashed source face and normal arrows
