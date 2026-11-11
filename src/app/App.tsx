@@ -917,10 +917,15 @@ export function App() {
         ? undefined
         : supportFrame(activeSketchFeature.support));
 
-    // When an extrude step is active, show only the profile loops that extrude
-    // actually uses. The full sketch is still visible in profile-selection mode.
+    // When a feature step or an open draft is active, show only the profile
+    // loops that feature actually uses. The full sketch is still visible in
+    // profile-selection mode.
     const usedProfiles =
-      activeFeature?.type === "extrude" && activeRegions.length > 0;
+      ((activeFeature?.type === "extrude" ||
+        activeFeature?.type === "revolve") &&
+        activeRegions.length > 0) ||
+      ((extrudeDraft !== null || revolveDraft !== null) &&
+        activeRegions.length > 0);
     if (usedProfiles) {
       const seen = new Set<string>();
       const closeRing = (
@@ -1040,6 +1045,8 @@ export function App() {
     activeSketchBuild,
     supportOpen,
     datumDraft,
+    extrudeDraft,
+    revolveDraft,
   ]);
   const activeVoidCount = useMemo(
     () => activeRegions.filter((region) => region.kind === "void").length,
@@ -6127,6 +6134,45 @@ export function App() {
 
   const shownMesh = solidFeatures.length > 0 ? mesh : null;
   const shownRoundTrip = solidFeatures.length > 0 ? roundTripMs : null;
+  const draftStageOpen =
+    extrudeDraft !== null ||
+    revolveDraft !== null ||
+    (editorOpen &&
+      (activeFeature?.type === "extrude" ||
+        activeFeature?.type === "revolve"));
+
+  /** View-only stage switch for an open feature draft. */
+  const showDraftInModel = (): void => {
+    setMode("model");
+    setModelTool("select");
+    setTool("select");
+    setSelection([]);
+    setSelectedConstraintId(null);
+    setCancelToken((token) => token + 1);
+    setBodyPick(null);
+    setEdgeSelection([]);
+    setFaceSelection([]);
+    setSelectOther(null);
+    viewportRef.current?.clearPick();
+    viewportRef.current?.setFaceSelection([]);
+    setZoomPreset("fit");
+    setFitToken((token) => token + 1);
+  };
+
+  const showDraftInSketch = (): void => {
+    setMode("sketch");
+    setTool("select");
+    setSelection([]);
+    setSelectedConstraintId(null);
+    setCancelToken((token) => token + 1);
+    setBodyPick(null);
+    setEdgeSelection([]);
+    setFaceSelection([]);
+    setSelectOther(null);
+    viewportRef.current?.clearPick();
+    viewportRef.current?.setFaceSelection([]);
+    setFitToken((token) => token + 1);
+  };
   const matchedSolve =
     editor.solved && editor.solvedFor === activeSketchFeature?.id
       ? editor.solved
@@ -7393,6 +7439,16 @@ export function App() {
                       the annotation is not a control and should not read like
                       the fit button next to it. */}
                   <span className="stage-divider" aria-hidden="true" />
+                  {draftStageOpen ? (
+                    <button
+                      className="text-action"
+                      type="button"
+                      onClick={showDraftInSketch}
+                      data-testid="draft-look-at-sketch"
+                    >
+                      look at sketch
+                    </button>
+                  ) : null}
                   <button
                     className="text-action"
                     type="button"
@@ -7404,6 +7460,16 @@ export function App() {
                 </>
               ) : (
                 <>
+                  {draftStageOpen ? (
+                    <button
+                      className="text-action"
+                      type="button"
+                      onClick={showDraftInModel}
+                      data-testid="draft-view-3d"
+                    >
+                      view 3D
+                    </button>
+                  ) : null}
                   <label className="grid-control">
                     <span className="stage-meta">grid</span>
                     <input

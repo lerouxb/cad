@@ -1,7 +1,7 @@
 import { expect } from "@playwright/test";
 import { collectErrors, resetExample, test } from "./support/app";
 import { fitView, scanVisibleEdges } from "./support/model";
-import { clickSketch, dragSketch } from "./support/sketch";
+import { clickSketch, dragSketch, enterSketch } from "./support/sketch";
 
 test.beforeEach(async ({ app: page }) => {
   await resetExample(page);
@@ -76,6 +76,29 @@ test("an extrude form lists its profiles and removes one", async ({
     page.getByTestId("extrude-profile-list").locator(".selection-item"),
   ).toHaveCount(1);
   await expect(page.getByTestId("extrude-apply")).toBeEnabled();
+  await page.getByTestId("extrude-cancel").click();
+  expect(errors).toEqual([]);
+});
+
+test("an open extrude draft can preview in the model and return", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await enterSketch(page);
+  await clickSketch(page, -20, 10);
+  await page.getByTestId("profile-extrude").click();
+  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
+  await expect(page.getByTestId("extrude-profiles")).toHaveText("1 selected");
+
+  await page.getByTestId("draft-view-3d").click();
+  await expect(page.getByTestId("model-tool-select")).toBeVisible();
+  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
+  await expect(page.getByTestId("extrude-profiles")).toHaveText("1 selected");
+  await expect(page.getByTestId("mesh-stats")).toBeVisible();
+
+  await page.getByTestId("draft-look-at-sketch").click();
+  await expect(page.getByTestId("tool-select")).toBeVisible();
+  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
   await page.getByTestId("extrude-cancel").click();
   expect(errors).toEqual([]);
 });
