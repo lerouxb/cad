@@ -117,9 +117,9 @@ These are planned small, self-contained changes: no kernel or schema dependency,
 no open design decision, and one commit each. Good fill-in tasks while a larger
 UX slice is blocked.
 
-- [ ] **Support-picker row details** — show the face role + area and the datum
-  definition (e.g. “between faces”) in the existing support list. Do **not**
-  include the pending “untitled” history row; that is a separate timeline state.
+- [x] **Support-picker row details** — show the face role + area and the datum
+  definition (e.g. “between faces”) in the existing support list. The pending
+  “untitled” history row is still a separate timeline state (`c528793`).
 - [x] **Revolve angle presets** — 90° / 180° / 270° / 360° quick buttons beside
   the angle field, calling the same `onAngle` (REVOLVE O4). No kernel change
   (`c9824ee`).
@@ -133,6 +133,7 @@ UX slice is blocked.
 
 ## Done
 
+- 2026-11-11 — support-picker face/datum details (`c528793`).
 - 2026-11-11 — revolve angle presets (`c9824ee`).
 - 2026-11-11 — complex stepped-shaft revolve example with an arc groove and a
   Pappus volume check (`9e6368d`).
