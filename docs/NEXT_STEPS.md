@@ -54,19 +54,24 @@ Items 1–3 are done (`a67c044`, `496b42c`, `b58f5d7`); item 4 is next.
 
 ## Next: model-stage feature drafts
 
-[`showcase/DRAFT_VIEW.md`](showcase/DRAFT_VIEW.md) is a **proposed design**
-(2026-11-10, not implemented): extrude/revolve drafts should open on the model
-stage with the source sketch laid on its plane and the preview as the subject.
-It is independent of the offset queue; schedule it as a UX pass.
+[`showcase/DRAFT_VIEW.md`](showcase/DRAFT_VIEW.md) is a **design target in
+progress**: extrude/revolve drafts open on the model stage with the source
+sketch laid on its plane and the preview as the subject. It is independent of
+the offset queue; schedule the remaining model-pick work as a UX pass.
 
 - [ ] **8. Open feature drafts on the model** — no kernel, document or schema
-  change; the existing preview/rebuild is the engine. **Partial:** the view-only
-  stage round trip and selected-profile fill landed (`45ceadc`).
+  change; the existing preview/rebuild is the engine. **Partial:** the default
+  model entry, model fit, selected-profile fill and view-only stage round trip
+  landed (`552af78`, `45ceadc`).
   - [x] View-only `view 3D` / `look at sketch` stage toggle in the foot; the
     draft form and profile list stay open and the model overlay fills the
     selected draft profiles.
-  - Move `beginExtrudeDraft` / `beginRevolveDraft` from the sketch stage to the
-    model stage and frame the camera on the sketch plane + preview.
+  - [x] New extrude/revolve drafts and existing revolve editors open on the
+    model with an initial fit; the profile/axis rows still switch to the sketch
+    for precise picking until the model pick mode lands.
+  - [ ] Frame the camera on the **sketch plane + preview** (oblique drafting
+    view) rather than only fitting the body; keep the normal sketch camera
+    available in the sketch stage.
   - Draw the source sketch as a read-only draft overlay on its resolved frame:
     regions, edges, construction and X/Y references; no dimensions, constraint
     marks, grid or sketch selection.
