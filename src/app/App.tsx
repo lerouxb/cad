@@ -6180,9 +6180,43 @@ export function App() {
       (activeFeature?.type === "extrude" ||
         activeFeature?.type === "revolve"));
 
+  // A draft opens as a camera move: frame the sketch plane and the preview
+  // obliquely, once per draft or editor (DRAFT_VIEW §2.4). The key ignores the
+  // value fields, so dragging the height/angle never re-frames the view.
+  const draftFramedKey = useRef<string | null>(null);
+  useEffect(() => {
+    if (!draftStageOpen || mode !== "model") {
+      draftFramedKey.current = null;
+      return;
+    }
+    const key = extrudeDraft
+      ? `extrude:${extrudeDraft.sketchId}`
+      : revolveDraft
+        ? `revolve:${revolveDraft.sketchId}`
+        : editorOpen && activeFeature
+          ? `edit:${activeFeature.id}`
+          : null;
+    if (!key || draftFramedKey.current === key) return;
+    draftFramedKey.current = key;
+    const frame = modelSketchOverlay?.frame ?? null;
+    // Let the overlay render in the same frame as the camera move.
+    requestAnimationFrame(() => {
+      if (draftFramedKey.current === key) {
+        viewportRef.current?.frameDraft(frame);
+      }
+    });
+  }, [
+    mode,
+    draftStageOpen,
+    extrudeDraft,
+    revolveDraft,
+    editorOpen,
+    activeFeature,
+    modelSketchOverlay,
+  ]);
+
   /** View-only stage switch for an open feature draft. */
-  const showDraftInModel = (): void => {
-    setMode("model");
+  const showDraftInModel = (): void => {    setMode("model");
     setModelTool("select");
     setTool("select");
     setSelection([]);

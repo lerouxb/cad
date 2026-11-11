@@ -1,7 +1,13 @@
 import { expect } from "@playwright/test";
 import { collectErrors, resetExample, test } from "./support/app";
-import { fitView, scanVisibleEdges } from "./support/model";
+import {
+  fitView,
+  pickRightFace,
+  scanVisibleEdges,
+  waitForCameraSettled,
+} from "./support/model";
 import { clickSketch, dragSketch, enterSketch } from "./support/sketch";
+import { sketchOnPickedFace } from "./support/workflow";
 
 test.beforeEach(async ({ app: page }) => {
   await resetExample(page);
@@ -99,6 +105,47 @@ test("a new extrude draft opens in the model and can look at the sketch", async 
   await expect(page.getByTestId("model-tool-select")).toBeVisible();
   await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
   await expect(page.getByTestId("extrude-profiles")).toHaveText("1 selected");
+
+  await page.getByTestId("extrude-cancel").click();
+  await expect(page.getByTestId("tool-select")).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("a face sketch draft frames the view on its plane", async ({
+  app: page,
+}) => {
+  const errors = collectErrors(page);
+  await pickRightFace(page);
+  await sketchOnPickedFace(page);
+  await page.getByTestId("tool-circle").click();
+  await clickSketch(page, 0, 0);
+  await clickSketch(page, 5, 0);
+  await page.keyboard.press("Escape");
+  await page.getByTestId("finish-sketch").click();
+  await page.getByTestId("new-extrude").click();
+  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
+  await expect(page.getByTestId("model-tool-select")).toBeVisible();
+  await waitForCameraSettled(page);
+
+  // The right (+X) face frame is x = +Y, y = +Z, normal = +X. The oblique
+  // drafting direction therefore points to (0.75, 0.9, -1.15): the camera sits
+  // on the face's side and below the sketch, not at the canned world iso
+  // (0.9, -1.15, 0.75), which looks at the face from above and would make the
+  // plane read edge-on from the wrong side.
+  const camera = (
+    await page
+      .locator("canvas.viewport-canvas")
+      .getAttribute("data-camera")
+  )!
+    .split(",")
+    .map(Number);
+  const direction = [
+    camera[0]! - camera[3]!,
+    camera[1]! - camera[4]!,
+    camera[2]! - camera[5]!,
+  ];
+  const length = Math.hypot(...direction);
+  expect(direction[2]! / length).toBeLessThan(-0.4);
 
   await page.getByTestId("extrude-cancel").click();
   await expect(page.getByTestId("tool-select")).toBeVisible();

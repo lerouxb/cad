@@ -291,6 +291,12 @@ export class Viewport {
     // The drawing sits on its plane in world depth, so the body occludes it.
     this.canvas.dataset.sketchDepth = overlay ? "depth" : "";
     this.rebuildSketchOverlay();
+    // If the overlay landed after the first preview (the worker can answer
+    // before the effect that sets it), frame once the plane is known.
+    if (!this.framed && this.mesh) {
+      this.frameDraft(overlay?.frame ?? null);
+      this.framed = true;
+    }
     this.dirty = true;
   }
 
@@ -476,7 +482,7 @@ export class Viewport {
     this.rebuildEdgeSelection();
     this.rebuildFaceSelection();
     if (!this.framed && geometry.boundingSphere) {
-      this.frameAll();
+      this.frameDraft(this.sketchOverlay?.frame ?? null);
       this.framed = true;
     }
     // A rebuild can remove a face/edge. Drop a selection only when its stable
@@ -900,16 +906,42 @@ export class Viewport {
   }
 
   frameAll(): void {
+    this.frameContents(new THREE.Vector3(0.9, -1.15, 0.75));
+  }
+
+  /**
+   * Frame the body and the sketch overlay from an oblique view of `frame`'s
+   * plane (DRAFT_VIEW §2.4). A world isometric hides an inclined sketch plane;
+   * leaning on the frame's own axes keeps the profile readable without
+   * switching to the flat sketch camera. `null` falls back to the world iso.
+   */
+  frameDraft(frame?: PlaneFrame | null): void {
+    if (!frame) {
+      this.frameAll();
+      return;
+    }
+    const direction = new THREE.Vector3(...frame.xAxis)
+      .multiplyScalar(0.9)
+      .addScaledVector(new THREE.Vector3(...frame.yAxis), -1.15)
+      .addScaledVector(new THREE.Vector3(...frame.normal), 0.75);
+    this.frameContents(direction);
+  }
+
+  private frameContents(direction: THREE.Vector3): void {
+    if (direction.lengthSq() === 0) direction.set(0.9, -1.15, 0.75);
     const box = new THREE.Box3().setFromObject(this.body);
-    if (box.isEmpty()) box.setFromObject(this.sketch);
+    const sketchBox = new THREE.Box3().setFromObject(this.sketch);
+    if (box.isEmpty()) box.copy(sketchBox);
+    else if (!sketchBox.isEmpty()) box.union(sketchBox);
     if (box.isEmpty()) return;
 
     const center = box.getCenter(new THREE.Vector3());
     const radius = box.getSize(new THREE.Vector3()).length() / 2;
     const distance = (radius / Math.sin(THREE.MathUtils.degToRad(this.camera.fov / 2))) * 1.6;
 
-    const direction = new THREE.Vector3(0.9, -1.15, 0.75).normalize();
-    this.camera.position.copy(center).addScaledVector(direction, distance);
+    this.camera.position
+      .copy(center)
+      .addScaledVector(direction.normalize(), distance);
     this.controls.target.copy(center);
     this.controls.update();
     this.dirty = true;
