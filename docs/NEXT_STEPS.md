@@ -61,14 +61,18 @@ the offset queue; schedule the remaining model-pick work as a UX pass.
 
 - [ ] **8. Open feature drafts on the model** — no kernel, document or schema
   change; the existing preview/rebuild is the engine. **Partial:** the default
-  model entry, model fit, selected-profile fill and view-only stage round trip
-  landed (`552af78`, `45ceadc`).
+  model entry, model fit, selected-profile fill, view-only stage round trip and
+  preview background rule landed (`552af78`, `45ceadc`, `8967f0d`).
   - [x] View-only `view 3D` / `look at sketch` stage toggle in the foot; the
     draft form and profile list stay open and the model overlay fills the
     selected draft profiles.
   - [x] New extrude/revolve drafts and existing revolve editors open on the
     model with an initial fit; the profile/axis rows still switch to the sketch
     for precise picking until the model pick mode lands.
+  - [x] A background press on an extrude/revolve preview is a no-op (the canvas
+    is the orbit surface); footer cancel, Escape and the timeline are the exits.
+    Ordinary face/edge picking is suspended while the preview owns the canvas
+    (`8967f0d`).
   - [ ] Frame the camera on the **sketch plane + preview** (oblique drafting
     view) rather than only fitting the body; keep the normal sketch camera
     available in the sketch stage.
@@ -83,10 +87,9 @@ the offset queue; schedule the remaining model-pick work as a UX pass.
     profile-side/angle error in the model.
   - Add the draft state to the model tool options row, the `look at sketch`
     view preset, and the on-geometry height/angle handles.
-  - Exit rules: background click is a no-op while previewing; Escape exits a
-    pick first then cancels; Enter is `done` while picking; Delete clears the
-    profile set; apply selects the new step; cancel restores the seed sketch or
-    the existing editor baseline.
+  - [ ] Remaining exit rules: Escape exits a pick first then cancels; Enter is
+    `done` while picking; Delete clears the profile set; apply selects the new
+    step; cancel restores the seed sketch or the existing editor baseline.
   - Update `MODES.md` S10/M17 and the D8 background rule when it lands; do not
     leave both contracts active. Tests: model preview on entry, region
     add/remove + list, 3D axis pick, cancel-to-sketch, background no-op,
