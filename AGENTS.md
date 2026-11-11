@@ -619,7 +619,10 @@ docs/
   Escape and the timeline are the exits. New extrude/revolve drafts open on the model
   with the preview; the camera frames the resolved sketch plane and preview obliquely
   (`Viewport.frameDraft`, derived from the plane frame so an inclined face is readable),
-  once per draft/editor — value drags never re-frame. Their profile/axis rows still
+  once per draft/editor — value drags never re-frame. While that preview owns the
+  canvas, the ordinary model pick tools (select/box/lasso/measure) and the filter row
+  are disabled and their shortcuts are inert; the row is a read-only readout until the
+  model pick mode lands. Their profile/axis rows still
   switch to the sketch for precise
   picking until the model pick mode lands (`NEXT_STEPS` item 8). The popover footer is a
   summary + quiet `cancel` + primary `apply`; `cancel` restores the feature as it was

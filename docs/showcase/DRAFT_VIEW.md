@@ -132,6 +132,11 @@ plane is not a special flat world; it is a plane with a frame.
 
 ## 5. Picking profiles in the model
 
+> **Interim:** until this pick mode lands, an open preview disables the ordinary
+> model select/box/lasso/measure tools and the filter row (their shortcuts are
+> inert). The form's profile/axis rows switch to the sketch stage for precise
+> picking. Do not let a marquee or a face pick run behind the preview.
+
 Profiles are **a model pick mode**, not a stage switch. The form's row changes
 from `profile 2 selected  pick in sketch` to `profile 2 selected  pick` (and
 `done` while picking).

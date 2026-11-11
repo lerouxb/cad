@@ -82,14 +82,19 @@ the offset queue; schedule the remaining model-pick work as a UX pass.
   - Draw the source sketch as a read-only draft overlay on its resolved frame:
     regions, edges, construction and X/Y references; no dimensions, constraint
     marks, grid or sketch selection.
+  - [x] While a preview owns the canvas, the ordinary model pick tools
+    (select/box/lasso/measure) and the filter row are disabled, and their
+    shortcuts are inert. This is the read-only interim; the draft input state
+    (`profiles` + `done`) waits for the model pick.
   - Render **all** regions in profile mode (material/void/selected classes) and
     x-ray the overlay while a pick is active; solid preview while tuning values.
   - Add the model profile pick mode: ray-plane intersection against the sketch
     frame, point-in-region, region ids and the same `All / Voids / Auto`.
   - Reuse the axis candidate pick in 3D; show the infinite axis and the
     profile-side/angle error in the model.
-  - Add the draft state to the model tool options row, the `look at sketch`
-    view preset, and the on-geometry height/angle handles.
+  - [ ] Add the draft input state to the model tool options row (the ordinary
+    tools are already read-only), the `look at sketch` view preset, and the
+    on-geometry height/angle handles.
   - [ ] Remaining exit rules: Escape exits a pick first then cancels; Enter is
     `done` while picking; Delete clears the profile set; apply selects the new
     step; cancel restores the seed sketch or the existing editor baseline.
