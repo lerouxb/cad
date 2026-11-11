@@ -60,7 +60,11 @@ stage with the source sketch laid on its plane and the preview as the subject.
 It is independent of the offset queue; schedule it as a UX pass.
 
 - [ ] **8. Open feature drafts on the model** — no kernel, document or schema
-  change; the existing preview/rebuild is the engine.
+  change; the existing preview/rebuild is the engine. **Partial:** the view-only
+  stage round trip and selected-profile fill landed (`45ceadc`).
+  - [x] View-only `view 3D` / `look at sketch` stage toggle in the foot; the
+    draft form and profile list stay open and the model overlay fills the
+    selected draft profiles.
   - Move `beginExtrudeDraft` / `beginRevolveDraft` from the sketch stage to the
     model stage and frame the camera on the sketch plane + preview.
   - Draw the source sketch as a read-only draft overlay on its resolved frame:
