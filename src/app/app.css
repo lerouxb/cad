@@ -2709,6 +2709,20 @@ body {
   color: var(--marker-ink);
 }
 
+/* A feature preview owns the model canvas; the ordinary pick tools are a
+   read-only row until the form closes. */
+.tool-button:disabled {
+  background: none;
+  color: var(--ink-3);
+  cursor: default;
+  opacity: 0.45;
+}
+
+.tool-button:disabled:hover {
+  background: none;
+  color: var(--ink-3);
+}
+
 .tool-key {
   color: var(--ink-3);
   font-family: var(--font-mono);

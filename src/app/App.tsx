@@ -655,6 +655,13 @@ export function App() {
   const [projectError, setProjectError] = useState<string | null>(null);
   const projectApplySeq = useRef(0);
   const [editorOpen, setEditorOpen] = useState(false);
+  /** An extrude/revolve preview owns the model canvas (see DRAFT_VIEW D10). */
+  const draftStageOpen =
+    extrudeDraft !== null ||
+    revolveDraft !== null ||
+    (editorOpen &&
+      (activeFeature?.type === "extrude" ||
+        activeFeature?.type === "revolve"));
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportPlane, setSupportPlane] = useState<WorldPlane>("XY");
   const [supportDatumId, setSupportDatumId] = useState<string | null>(null);
@@ -2865,6 +2872,19 @@ export function App() {
     picks: readonly BodyPick[],
     additive: boolean,
   ): void => {
+    // An extrude/revolve preview owns the canvas; a marquee is not a pick
+    // surface (DRAFT_VIEW D10). The tool row is disabled, but a stale armed
+    // tool can still deliver one.
+    if (
+      mode === "model" &&
+      (extrudeDraft !== null ||
+        revolveDraft !== null ||
+        (editorOpen &&
+          (activeFeature?.type === "extrude" ||
+            activeFeature?.type === "revolve")))
+    ) {
+      return;
+    }
     const kind = picks[0]?.kind;
     if (kind === "face") {
       const usable = picks.filter(
@@ -6117,6 +6137,17 @@ export function App() {
 
       if (meta || event.altKey) return;
       const key = event.key.toLowerCase();
+      // While an extrude/revolve preview owns the canvas, the selection and
+      // measure shortcuts are inert: a stray key must not cancel the draft or
+      // arm a tool behind it (DRAFT_VIEW D10).
+      if (
+        mode === "model" &&
+        draftStageOpen &&
+        (key === "v" || key === "b" || key === "g" || key === "m")
+      ) {
+        event.preventDefault();
+        return;
+      }
       if (mode === "model" && key === "m") {
         event.preventDefault();
         toggleMeasure();
@@ -6173,12 +6204,6 @@ export function App() {
 
   const shownMesh = solidFeatures.length > 0 ? mesh : null;
   const shownRoundTrip = solidFeatures.length > 0 ? roundTripMs : null;
-  const draftStageOpen =
-    extrudeDraft !== null ||
-    revolveDraft !== null ||
-    (editorOpen &&
-      (activeFeature?.type === "extrude" ||
-        activeFeature?.type === "revolve"));
 
   // A draft opens as a camera move: frame the sketch plane and the preview
   // obliquely, once per draft or editor (DRAFT_VIEW §2.4). The key ignores the
@@ -6843,6 +6868,12 @@ export function App() {
                     setSelectOther(null);
                   }}
                   testId="model-tool-select"
+                  disabled={draftStageOpen}
+                  title={
+                    draftStageOpen
+                      ? "The draft preview owns the canvas; cancel the form to select"
+                      : undefined
+                  }
                 />
                 <ToolButton
                   label="box"
@@ -6854,6 +6885,12 @@ export function App() {
                     setModelTool("box");
                   }}
                   testId="model-tool-box"
+                  disabled={draftStageOpen}
+                  title={
+                    draftStageOpen
+                      ? "The draft preview owns the canvas; cancel the form to select"
+                      : undefined
+                  }
                 />
                 <ToolButton
                   label="lasso"
@@ -6865,6 +6902,12 @@ export function App() {
                     setModelTool("lasso");
                   }}
                   testId="model-tool-lasso"
+                  disabled={draftStageOpen}
+                  title={
+                    draftStageOpen
+                      ? "The draft preview owns the canvas; cancel the form to select"
+                      : undefined
+                  }
                 />
                 <ToolButton
                   label="measure"
@@ -6872,7 +6915,16 @@ export function App() {
                   active={measureOpen}
                   onClick={toggleMeasure}
                   testId="model-tool-measure"
+                  disabled={draftStageOpen}
+                  title={
+                    draftStageOpen
+                      ? "The draft preview owns the canvas; cancel the form to measure"
+                      : undefined
+                  }
                 />
+                {draftStageOpen ? (
+                  <span className="tool-note">preview · orbit to inspect</span>
+                ) : null}
               </div>
               <ToolOptionsRow
                 kicker="filter"
@@ -6885,6 +6937,7 @@ export function App() {
                 note={selectionFilterNote(modelFilter)}
                 testPrefix="model-filter"
                 disabled={
+                  draftStageOpen ||
                   blendDraft !== null ||
                   shellDraft !== null ||
                   offsetDraft !== null ||
@@ -8570,21 +8623,26 @@ function ToolButton({
   active,
   onClick,
   testId,
+  disabled = false,
+  title,
 }: {
   label: string;
   shortcut?: string;
   active?: boolean;
   onClick: () => void;
   testId: string;
+  disabled?: boolean;
+  title?: string;
 }) {
-  const title = shortcut ? `${label} (${shortcut})` : label;
+  const labelText = shortcut ? `${label} (${shortcut})` : label;
   return (
     <button
       className={`tool-button${active ? " is-active" : ""}`}
       type="button"
-      title={title}
-      aria-label={title}
+      title={title ?? labelText}
+      aria-label={labelText}
       aria-pressed={active}
+      disabled={disabled}
       // Pointer clicks should not leave focus on the toolbar (or on a timeline
       // step clicked earlier), so Enter keeps meaning "end the armed tool".
       onMouseDown={(event) => {

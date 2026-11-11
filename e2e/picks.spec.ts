@@ -98,11 +98,27 @@ test("a new extrude draft opens in the model and can look at the sketch", async 
   await expect(page.getByTestId("extrude-profiles")).toHaveText("1 selected");
   await expect(page.getByTestId("mesh-stats")).toBeVisible();
 
+  // The preview owns the canvas, so the ordinary pick tools are a read-only
+  // row. Their shortcuts are inert too: `m` must not open measure behind the
+  // draft, and `b` must not arm a marquee over the preview.
+  await expect(page.getByTestId("model-tool-select")).toBeDisabled();
+  await expect(page.getByTestId("model-tool-box")).toBeDisabled();
+  await expect(page.getByTestId("model-tool-measure")).toBeDisabled();
+  await expect(page.getByTestId("model-filter-all")).toBeDisabled();
+  await page.keyboard.press("m");
+  await page.keyboard.press("b");
+  await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
+  await expect(page.getByTestId("model-tool-box")).toHaveAttribute(
+    "aria-pressed",
+    "false",
+  );
+
   await page.getByTestId("draft-look-at-sketch").click();
   await expect(page.getByTestId("tool-select")).toBeVisible();
   await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
   await page.getByTestId("draft-view-3d").click();
   await expect(page.getByTestId("model-tool-select")).toBeVisible();
+  await expect(page.getByTestId("model-tool-select")).toBeDisabled();
   await expect(page.getByTestId("extrude-draft-popover")).toBeVisible();
   await expect(page.getByTestId("extrude-profiles")).toHaveText("1 selected");
 
