@@ -24,6 +24,7 @@ export type ExampleId =
   | "revolve-tube"
   | "revolve-half"
   | "revolve-cone"
+  | "revolve-stepped-shaft"
   | "d-boss"
   | "blind-hole"
   | "chamfered-plate"
@@ -157,6 +158,77 @@ function revolveExample(
   };
 }
 
+function steppedShaftSketch() {
+  let sketch = addPolyline(
+    emptySketch(),
+    [
+      { point: [0, 0] },
+      { point: [14, 0] },
+      { point: [14, 3] },
+      { point: [20, 3] },
+      { point: [20, 7] },
+      { point: [12, 7] },
+      { point: [12, 11] },
+    ],
+    false,
+  );
+  sketch = addArc(
+    sketch,
+    { point: [12, 11] },
+    { point: [12, 15] },
+    [10, 13],
+  );
+  sketch = addPolyline(
+    sketch,
+    [
+      { point: [12, 15] },
+      { point: [14, 17] },
+      { point: [14, 20] },
+      { point: [8, 20] },
+      { point: [8, 24] },
+      { point: [0, 24] },
+    ],
+    false,
+  );
+  // Close the profile along the axis; this is the revolved centreline edge.
+  return addPolyline(
+    sketch,
+    [{ point: [0, 24] }, { point: [0, 0] }],
+    false,
+  );
+}
+
+function revolveFromSketch(
+  id: string,
+  name: string,
+  sketch: ReturnType<typeof emptySketch>,
+  angle = 360,
+): Doc {
+  const profile = regionsFromSketch(sketch)[0];
+  if (!profile) throw new Error(`${name}: no profile`);
+  const sketchFeature = createSketchFeature(sketch, {
+    id: `${id}-sketch`,
+    name: "Profile",
+  });
+  return {
+    schemaVersion: CURRENT_SCHEMA_VERSION,
+    id,
+    name,
+    features: [
+      sketchFeature,
+      {
+        ...createRevolveFeature(sketchFeature.id, {
+          id: `${id}-revolve`,
+          name: "Revolve",
+          axis: { kind: "reference", axis: "y" },
+          angle,
+        }),
+        regions: [profile.id],
+      },
+    ],
+  };
+}
+
 function dShapeSketch() {
   const base = addPolyline(
     emptySketch(),
@@ -262,6 +334,17 @@ export const EXAMPLES: readonly ExampleDefinition[] = [
           { point: [0, 10] },
         ],
         360,
+      ),
+  },
+  {
+    id: "revolve-stepped-shaft",
+    label: "Revolve stepped shaft",
+    description: "Multi-shoulder shaft with a flange, taper and rounded groove",
+    create: () =>
+      revolveFromSketch(
+        "doc-example-revolve-shaft",
+        "Revolve stepped shaft",
+        steppedShaftSketch(),
       ),
   },
   {

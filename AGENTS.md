@@ -83,8 +83,9 @@ is an editable sketcher driving an exact solid:
   "Rounded plate" fillet and an alternative suppressed "Beveled plate" chamfer so the
   base body, picking coordinates and volume goldens stay stable). `core/doc/examples.ts`
   is the example registry behind the header `example` menu: default plate, revolve
-  tube/half/cone, D-shaped partial boss, blind-hole plate, chamfered plate, top-edge
-  fillet plate, shelled tray and the rounded/beveled variants. Each example is plain
+  tube/half/cone, a multi-shoulder stepped shaft with an arc groove, D-shaped partial
+  boss, blind-hole plate, chamfered plate, top-edge fillet plate, shelled tray and the
+  rounded/beveled variants. Each example is plain
   JSON and is covered by `e2e/examples.spec.ts`; the
   timeline now lists the real feature history with select,
   inline rename, create, edit, drag-reorder, suppress, delete-cascade, a

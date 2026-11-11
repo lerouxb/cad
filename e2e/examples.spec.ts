@@ -1,7 +1,33 @@
 import { expect } from "@playwright/test";
 import { EXAMPLES } from "../src/core/doc/examples";
 import { examplePlateVolume } from "../src/core/doc/exampleMetrics";
+import type { Doc } from "../src/core/doc/types";
+import { regionsFromSketch } from "../src/core/sketch/loops";
 import { collectErrors, resetExample, test, volume } from "./support/app";
+
+/** Pappus: a full revolution of a profile is 2π · area · centroid distance. */
+function revolvedVolume(doc: Doc): number {
+  const sketch = doc.features.find((feature) => feature.type === "sketch");
+  if (sketch?.type !== "sketch") return Number.NaN;
+  const region = regionsFromSketch(sketch.sketch).find(
+    (candidate) => candidate.kind === "material",
+  );
+  if (!region) return Number.NaN;
+  const points =
+    region.outer.kind === "circle" ? [] : region.outer.points;
+  let doubleArea = 0;
+  let centroid = 0;
+  for (let index = 0; index < points.length; index += 1) {
+    const a = points[index]!;
+    const b = points[(index + 1) % points.length]!;
+    const cross = a[0] * b[1] - b[0] * a[1];
+    doubleArea += cross;
+    centroid += (a[0] + b[0]) * cross;
+  }
+  const area = doubleArea / 2;
+  centroid /= 6 * area;
+  return 2 * Math.PI * Math.abs(area * centroid);
+}
 
 const EXPECTED_VOLUME: Partial<Record<string, number>> = {
   plate: examplePlateVolume(),
@@ -40,7 +66,10 @@ for (const example of EXAMPLES) {
       "ok",
     );
     await expect(page.getByTestId("mesh-stats")).toBeVisible();
-    const expected = EXPECTED_VOLUME[example.id];
+    const expected =
+      example.id === "revolve-stepped-shaft"
+        ? revolvedVolume(doc)
+        : EXPECTED_VOLUME[example.id];
     if (expected !== undefined) {
       await expect.poll(() => volume(page)).toBeCloseTo(expected, -1);
     } else {
